@@ -1,0 +1,13 @@
+[submodule "etc/coq-scripts"]
+	path = etc/coq-scripts
+	url = https://github.com/JasonGross/coq-scripts.git
+[submodule "coqprime"]
+	path = coqprime
+	url = https://github.com/thery/coqprime
+	ignore = dirty
+[submodule "rewriter"]
+	path = rewriter
+	url = https://github.com/mit-plv/rewriter.git
+[submodule "rupicola"]
+	path = rupicola
+	url = https://github.com/mit-plv/rupicola.git

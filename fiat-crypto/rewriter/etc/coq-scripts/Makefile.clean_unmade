@@ -1,0 +1,19 @@
+# http://stackoverflow.com/a/18137056/377022
+Makefile_mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+Makefile_mkfile_dir := $(patsubst %/,%,$(dir $(Makefile_mkfile_path)))
+
+include $(Makefile_mkfile_dir)/Makefile.vo_closure
+
+RECURSIVELY_ALL_MADE_VO_FILES := $(call vo_closure,$(addsuffix .vo,$(basename $(filter %.vio %.vi %.vo,$(RECURSIVE_TARGETS_WITHOUT_CLEAN_UNMADE)))))
+PRE_FILES_TO_REMOVE := $(filter-out $(basename $(RECURSIVELY_ALL_MADE_VO_FILES)),$(basename $(VOFILES)))
+FILES_TO_REMOVE := $(wildcard $(addsuffix .vo,$(PRE_FILES_TO_REMOVE)) $(addsuffix .vi,$(PRE_FILES_TO_REMOVE)) $(addsuffix .vio,$(PRE_FILES_TO_REMOVE)))
+
+ifneq (,$(FILES_TO_REMOVE))
+clean-unmade::
+	@ echo "Warning: clean-unmade probably will not do what you want it to; I couldn't get it working"
+	rm -f $(FILES_TO_REMOVE)
+else
+clean-unmade::
+	@ echo "Warning: clean-unmade probably will not do what you want it to; I couldn't get it working"
+	@ echo "No outdated .vo files which will not be remade"
+endif

@@ -1,0 +1,220 @@
+_COQPROJECT_NAME?=_CoqProject
+UPDATE_COQPROJECT_TARGET?=update-_CoqProject
+_COQPROJECT_EXCLUDED_VFILES?=
+
+# http://stackoverflow.com/a/18137056/377022
+Makefile_coq_common_mkfile_path := $(lastword $(MAKEFILE_LIST))
+Makefile_coq_common_mkfile_abspath := $(abspath $(Makefile_coq_common_mkfile_path))
+Makefile_coq_common_mkfile_dir := $(patsubst %/,%,$(dir $(Makefile_coq_common_mkfile_path)))
+Makefile_coq_common_mkfile_absdir := $(patsubst %/,%,$(dir $(Makefile_coq_common_mkfile_abspath)))
+
+VERBOSE?=
+SHOW := $(if $(VERBOSE),@true "",@echo "")
+HIDE := $(if $(VERBOSE),,@)
+
+ifneq ($(SHOULD_SILENCE),)
+
+SILENCE_COQC_ = @echo 'COQC $<'; #
+SILENCE_COQC_1 =
+SILENCE_COQC = $(SILENCE_COQC_$(VERBOSE))
+
+SILENCE_COQDEP_ = @echo 'COQDEP $<'; #
+SILENCE_COQDEP_1 =
+SILENCE_COQDEP = $(SILENCE_COQDEP_$(VERBOSE))
+
+ifeq ($(STRICT_COQDEP),1)
+  SILENCE_COQDEP += '$(Makefile_coq_common_mkfile_dir)/strictify-coqdep.py' #
+endif
+
+SILENCE_OCAMLC_ = @echo 'OCAMLC $<'; #
+SILENCE_OCAMLC_1 =
+SILENCE_OCAMLC = $(SILENCE_OCAMLC_$(VERBOSE))
+
+SILENCE_OCAMLDEP_ = @echo 'OCAMLDEP $<'; #
+SILENCE_OCAMLDEP_1 =
+SILENCE_OCAMLDEP = $(SILENCE_OCAMLDEP_$(VERBOSE))
+
+SILENCE_OCAMLOPT_ = @echo 'OCAMLOPT $<'; #
+SILENCE_OCAMLOPT_1 =
+SILENCE_OCAMLOPT = $(SILENCE_OCAMLOPT_$(VERBOSE))
+
+SILENCED_COQC = $(COQC)
+
+else
+
+SILENCE_COQC?=
+SILENCE_COQDEP?=
+SILENCE_OCAMLC?=
+SILENCE_OCAMLDEP?=
+SILENCE_OCAMLOPT?=
+
+ifeq ($(STRICT_COQDEP),1)
+  SILENCE_COQDEP += '$(Makefile_coq_common_mkfile_dir)/strictify-coqdep.py' #
+endif
+
+SILENCED_COQC = $(SHOW)'COQC $*'; $(COQC)
+endif
+
+Q_ := @
+Q_1 :=
+Q = $(Q_$(VERBOSE))
+
+VECHO_ := @echo
+VECHO_1 := @true
+VECHO = $(VECHO_$(VERBOSE))
+
+TIMED=
+TIMECMD=
+STDTIME?=/usr/bin/time -f "$* (user: %U mem: %M ko)"
+TIMER=$(if $(TIMED), $(STDTIME), $(TIMECMD))
+
+containing = $(foreach v,$2,$(if $(findstring $1,$v),$v))
+not-containing = $(foreach v,$2,$(if $(findstring $1,$v),,$v))
+
+.PHONY: clean FORCE $(UPDATE_COQPROJECT_TARGET) clean-unmade error-if-clean-unmade check-clean-unmade selective-clean-unmade selective-vio2vo selective-checkproofs
+
+FAST_TARGETS += archclean clean cleanall printenv clean-old $(UPDATE_COQPROJECT_TARGET) Makefile.coq
+SUPER_FAST_TARGETS += $(UPDATE_COQPROJECT_TARGET) Makefile.coq
+
+# pipe the output of coq_makefile through sed so that we don't have to run coqdep just to clean
+# use tr to handle the fact that BSD sed doesn't substitute \n
+# Quoting CAMLP4BIN on Windows results in "The input line is too long." (https://coq.inria.fr/bugs/show_bug.cgi?id=4266)
+# so we unquote it with sed
+ifneq ($(INSTALLDEFAULTROOT),)
+INSTALLDEFAULTROOT_ARG=INSTALLDEFAULTROOT = "$(INSTALLDEFAULTROOT)"
+else
+INSTALLDEFAULTROOT_ARG=
+endif
+Makefile.coq: Makefile _CoqProject
+	$(SHOW)'COQ_MAKEFILE -f _CoqProject > $@'
+	$(HIDE)$(COQBIN)coq_makefile COQC = "\$$(SILENCE_COQC)\$$(TIMER) \"\$$(COQBIN)coqc\"" COQDEP = "\$$(SILENCE_COQDEP)\"\$$(COQBIN)coqdep\" -c" $(INSTALLDEFAULTROOT_ARG) -f _CoqProject -o "$@-old" && ( cat "$@-old" | sed s'/$@-old.conf:/$@-old.conf-old:/g' | sed 's|^\(-include.*\.d.*\)$$|ifneq ($$(filter-out $(FAST_TARGETS),$$(MAKECMDGOALS)),)~\1~else~ifeq ($$(MAKECMDGOALS),)~\1~endif~endif|g' | tr '~' '\n' | sed s'/^clean:$$/clean-old::/g' | sed s'/^clean::$$/clean-old::/g' | sed s'/"$$(CAMLP4BIN)$$(CAMLP4)o"/$$(CAMLP4BIN)$$(CAMLP4)o/g' | sed s'/\$$(OCAMLFIND) /"$$(OCAMLFIND)" /g' > "$@" ) && rm -f "$@-old"
+
+IS_FAST := 1
+IS_SUPER_FAST := 1
+
+ifeq ($(MAKECMDGOALS),)
+IS_FAST := 0
+IS_SUPER_FAST := 0
+endif
+
+ifneq ($(filter-out $(SUPER_FAST_TARGETS) $(FAST_TARGETS),$(MAKECMDGOALS)),)
+IS_FAST := 0
+endif
+
+ifneq ($(filter-out $(SUPER_FAST_TARGETS),$(MAKECMDGOALS)),)
+IS_SUPER_FAST := 0
+endif
+
+ifneq ($(IS_SUPER_FAST),1)
+include Makefile.coq
+endif
+
+# 0 if same, 1 if different
+test_files_are_same = $(shell cmp -s $(1) $(2); echo $$?)
+
+# overwrite OCAMLC, OCAMLOPT, OCAMLDEP to make `make` quieter
+OCAMLC_OLD := $(OCAMLC)
+OCAMLC = $(SILENCE_OCAMLC)$(OCAMLC_OLD)
+
+OCAMLDEP_OLD := $(OCAMLDEP)
+OCAMLDEP = $(SILENCE_OCAMLDEP)$(OCAMLDEP_OLD)
+
+OCAMLOPT_OLD := $(OCAMLOPT)
+OCAMLOPT = $(SILENCE_OCAMLOPT)$(OCAMLOPT_OLD)
+
+clean::
+	@# Extension point
+	$(SHOW)'CLEAN'
+	$(HIDE)rm -f $(CMOFILES)
+	$(HIDE)rm -f $(CMIFILES)
+	$(HIDE)rm -f $(CMAFILES)
+	$(HIDE)rm -f $(CMOFILES:.cmo=.cmx)
+	$(HIDE)rm -f $(CMXAFILES)
+	$(HIDE)rm -f $(CMXSFILES)
+	$(HIDE)rm -f $(CMOFILES:.cmo=.o)
+	$(HIDE)rm -f $(CMXAFILES:.cmxa=.a)
+	$(HIDE)rm -f $(ALLDFILES)
+	$(HIDE)rm -f $(NATIVEFILES)
+	$(HIDE)find . -name .coq-native -type d -empty -delete
+	$(HIDE)rm -f $(VOFILES)
+	$(HIDE)rm -f $(VOFILES:.vo=.vio)
+	$(HIDE)rm -f $(GFILES)
+	$(HIDE)rm -f $(BEAUTYFILES) $(VFILES:=.old)
+	$(HIDE)rm -f all.ps all-gal.ps all.pdf all-gal.pdf all.glob all-mli.tex
+	$(HIDE)rm -f $(VFILES:.v=.glob)
+	$(HIDE)rm -f $(VFILES:.v=.tex)
+	$(HIDE)rm -f $(VFILES:.v=.g.tex)
+	$(HIDE)rm -f pretty-timed-success.ok
+	$(HIDE)rm -rf html mlihtml
+
+include $(Makefile_coq_common_mkfile_dir)/Makefile.vo_closure
+
+vo_to_installv = $(addsuffix .v,$(basename $(call vo_closure,$(filter %.vo,$1))))
+
+SORT_COQPROJECT = sed 's,[^/]*/,~&,g' | env LC_COLLATE=C sort | sed 's,~,,g'
+
+$(VOFILES): | FORCE
+
+$(VFILES:.v=.timing): %.timing: %.vo
+	$(SILENCED_COQC) -time $(COQDEBUG) $(COQFLAGS) $* > "$@" || ( RV=$$?; rm -f "$@"; exit $${RV} )
+
+$(VFILES:.v=.timings): %.timings: %.vo
+	$(SILENCED_COQC) -verbose $(COQDEBUG) $(COQFLAGS) $* | "$(Makefile_coq_common_mkfile_dir)/timing/insert-timings.sh" > "$@" || ( RV=$$?; rm -f "$@"; exit $${RV} )
+
+ifneq ($(IS_FAST),1)
+MISSING_COQPROJECT_VFILES = $(addsuffix .v,$(basename $(filter-out $(VOFILES),$(call vo_closure,$(VOFILES)))))
+ifneq (,$(MISSING_COQPROJECT_VFILES))
+FORCE::
+	@ echo
+	@ echo 'error: $(MISSING_COQPROJECT_VFILES) is missing from $(_COQPROJECT_NAME).'
+	@ echo 'error: Please run `$(MAKE) $(UPDATE_COQPROJECT_TARGET)`.'
+	@ echo
+	@ false
+endif
+
+NONEXISTANT_COQPROJECT_VFILES = $(filter-out $(_COQPROJECT_EXCLUDED_VFILES) $(wildcard $(VFILES)),$(VFILES))
+ifneq (,$(NONEXISTANT_COQPROJECT_VFILES))
+FORCE::
+	@ echo
+	@ echo 'error: $(NONEXISTANT_COQPROJECT_VFILES) is in $(_COQPROJECT_NAME) but does not exist.'
+	@ echo 'error: Please run `$(MAKE) $(UPDATE_COQPROJECT_TARGET)`.'
+	@ echo
+	@ false
+endif
+endif
+
+$(VOFILES): | check-clean-unmade
+
+clean-unmade::
+
+ifneq (,$(filter clean-unmade,$(MAKECMDGOALS)))
+check-clean-unmade: | $(VOFILES:.vo=.v.d)
+	$(SHOW)"MAKE clean-unmade"
+	$(HIDE)make -f "$(Makefile_coq_common_mkfile_dir)/Makefile.clean_unmade" clean-unmade VOFILES="$(VOFILES)" RECURSIVE_TARGETS_WITHOUT_CLEAN_UNMADE="$$($(MAKE) --dry-run --debug=v error-if-clean-unmade $(filter-out clean-unmade,$(MAKECMDGOALS)) 2>&1 | grep -o "target '[^']*\|target file '[^']*" | sed s"/target '//g" | sed s"/target file '//g" | tr '\n' ' ')"
+else
+check-clean-unmade: | $(VOFILES:.vo=.v.d)
+
+endif
+
+ifneq (,$(filter clean-unmade,$(MAKECMDGOALS)))
+error-if-clean-unmade::
+	@ echo "###"
+	@ echo "### ERROR: Loop detected; clean-unmade caused clean-unmade to be called"
+	@ echo "###"
+	@ false
+else
+error-if-clean-unmade::
+
+endif
+
+files_to_pre_vo_vi_vio = $(addsuffix .vo,$1) $(addsuffix .vi,$1) $(addsuffix .vio,$1)
+files_to_vo_vi_vio = $(wildcard $(call files_to_pre_vo_vi_vio,$1))
+
+selective-clean-unmade::
+	rm -f $(call files_to_vo_vi_vio,$(filter-out $(basename $(call vo_closure,$(filter %.vo,$(T)))),$(basename $(VOFILES))))
+
+selective-vio2vo:
+	$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vio2vo $(J) $(addsuffix .vio,$(basename $(call vo_closure,$(filter %.vo,$(T)))))
+
+selective-checkproofs:
+	$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vio-checking $(J) $(addsuffix .vio,$(basename $(call vo_closure,$(filter %.vo,$(T)))))

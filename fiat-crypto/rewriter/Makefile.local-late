@@ -1,0 +1,18 @@
+include Makefile.local.common
+
+.merlin: $(COQ_VERSION_FILE)
+
+$(VOFILES) $(CMOFILES) $(CMXFILES) $(OFILES) $(CMAFILES) $(CMIFILES) $(CMXSFILES): $(COQ_VERSION_FILE)
+
+$(COMPATIBILITY_FILES) : % : %$(EXPECTED_EXT) $(COQ_VERSION_FILE)
+	$(SHOW)'CP $@{$(EXPECTED_EXT),}'
+	$(HIDE)cp $< $@
+
+# ensure that the ml compat files exist before we call coqdep on the corresponding .v files
+$(ALLDFILES): $(COMPATIBILITY_FILES) $(COQ_VERSION_FILE) _CoqProject
+
+# Remove -undeclared-scope once we stop supporting 8.9
+OTHERFLAGS += -w -notation-overridden,-undeclared-scope
+ifneq ($(PROFILE),)
+OTHERFLAGS += -profile-ltac
+endif

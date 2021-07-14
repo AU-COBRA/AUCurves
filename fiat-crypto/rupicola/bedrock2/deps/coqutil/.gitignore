@@ -1,0 +1,15 @@
+.coqdeps.d
+Makefile.coq.*
+.Makefile.coq.*
+*.vo
+*.vos
+*.vok
+*~
+*.glob
+*.aux
+*.v.timing
+.depend
+.lia.cache
+.nia.cache
+.coq-native
+\#*\#

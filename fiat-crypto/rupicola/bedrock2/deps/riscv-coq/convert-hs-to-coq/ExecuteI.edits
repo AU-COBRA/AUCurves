@@ -1,1 +1,0 @@
-rename value GHC.Real.fromIntegral = id

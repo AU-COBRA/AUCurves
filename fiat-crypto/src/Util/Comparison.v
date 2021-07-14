@@ -1,1 +1,0 @@
-Scheme Equality for comparison.

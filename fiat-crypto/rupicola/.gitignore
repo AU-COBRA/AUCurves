@@ -1,0 +1,15 @@
+CoqMakefile.conf
+Makefile.coq
+Makefile.coq.conf
+Makefile.coq.lib
+Makefile.coq.lib.conf
+*.vo
+*.vok
+*.vos
+*.v~
+*.d
+*.glob
+*.aux
+*.cache
+*.timing
+.coq-native

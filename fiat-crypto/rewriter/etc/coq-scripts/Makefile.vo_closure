@@ -1,0 +1,34 @@
+# Recursively find the transitively closed dependencies of the set $1
+# of *.vo files, using an accumulating parameter $2 of dependencies
+# previously found.  We extract the dependencies from the
+# corresponding *.v.d files using sed(1), filter out previously found
+# dependencies, sort to remove duplicates, then make a recursive call
+# with the deduplicated newly found dependencies.  When $1 becomes
+# empty, the result is $2.
+ifdef VDFILE
+# Coq >= 8.8
+REAL_VDFILE:=$(VDFILE).d
+ifdef ALLDFILES
+ifeq (,$(filter $(REAL_VDFILE),$(ALLDFILES)))
+ifneq (,$(filter $(VDFILE),$(ALLDFILES)))
+# Coq >= 8.11
+REAL_VDFILE:=$(VDFILE)
+endif
+endif
+endif
+read_deps = $(if $(wildcard $(REAL_VDFILE)),$(filter %.vo,$(foreach vo,$1,$(shell grep '^[^:]*$(vo)[^:]*:' $(REAL_VDFILE) | sed -n 's/^[^:]*: // p'))))
+else
+read_deps = $(if $(wildcard $(1:.vo=.v.d)),$(filter %.vo,$(shell sed -n 's/^[^:]*: // p' $(wildcard $(1:.vo=.v.d)))))
+endif
+vo_closure = $(if $1,$(call vo_closure,$(sort $(filter-out $1 $2,$(call read_deps,$1))),$1 $2),$2)
+
+# Recursively find the transitively closed reverse dependencies of the
+# $2 of *.vo files, using an accumulating parameter $3 of dependencies
+# previously found.  The parameter $1 is the full set of *.vo files.
+# We use read_deps above to extract the depedencies of each file in
+# $1, filtering for files that mention dependencies in $2.  As in
+# vo_closure, we filter out previously found dependencies, sort to
+# remove duplicates, then make a recursive call with the deduplicated
+# newly found dependencies.  When $1 becomes empty, the result is $2.
+read_reverse_deps = $(foreach vo,$1,$(if $(filter $2,$(call read_deps,$(vo))),$(vo)))
+vo_reverse_closure = $(if $2,$(call vo_reverse_closure,$1,$(sort $(filter-out $2 $3,$(call read_reverse_deps,$1,$2))),$2 $3),$3)

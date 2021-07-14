@@ -1,0 +1,47 @@
+# http://stackoverflow.com/a/18137056/377022
+Makefile_coq_compat_84_85_ocaml_mkfile_path := $(lastword $(MAKEFILE_LIST))
+Makefile_coq_compat_84_85_ocaml_mkfile_abspath := $(abspath $(Makefile_coq_compat_84_85_ocaml_mkfile_path))
+Makefile_coq_compat_84_85_ocaml_mkfile_dir := $(patsubst %/,%,$(dir $(Makefile_coq_compat_84_85_ocaml_mkfile_path)))
+Makefile_coq_compat_84_85_ocaml_mkfile_absdir := $(patsubst %/,%,$(dir $(Makefile_coq_compat_84_85_ocaml_mkfile_abspath)))
+Makefile_coq_compat_84_85_ocaml_current_dir := $(notdir $(Makefile_coq_compat_84_85_ocaml_mkfile_dir))
+Makefile_coq_compat_84_85_ocaml_current_absdir := $(notdir $(Makefile_coq_compat_84_85_ocaml_mkfile_absdir))
+
+.PHONY: update-ml-files
+
+FAST_TARGETS += update-ml-files
+SUPER_FAST_TARGETS += update-ml-files
+
+TEST_EXISTS_ML_FUNCTION_OUTPUT=&2 # /dev/null
+test_exists_ml_function = $(strip $(shell FUNCTION="$1" COQBIN="$(COQBIN)" $(Makefile_coq_compat_84_85_ocaml_mkfile_dir)/test-exists-ml-function.sh >$(TEST_EXISTS_ML_FUNCTION_OUTPUT) 2>$(TEST_EXISTS_ML_FUNCTION_OUTPUT); echo $$?))
+
+update-ml-files:: FORCE
+	@ echo "## "
+	@ echo '## Switching to OCaml files for $(ML_DESCRIPTION).'
+	@ echo "## "
+
+ocaml_test_files_are_same = $(shell cmp -s $(1) $(2); echo $$?)
+
+define SET_ML_COMPATIBILITY
+# $(1) - path to base ml file
+# $(2) - expected extension
+
+ifeq ($(filter $(1), $(ML_COMPATIBILITY_FILES)),)
+FORCE::
+	@ echo
+	@ echo "\033[0;31mERROR: $(1) is missing from ML_COMPATIBILITY_FILES\033[0m"; \
+	echo "\033[0;31mThis causes creation of .ml*.d files to fail, as it\033[0m"; \
+	echo "\033[0;31mhappens too early.\033[0m"; \
+	echo "\033[0;31mThe value of ML_COMPATIBILITY_FILES is '$(ML_COMPATIBILITY_FILES)'\033[0m"
+	@ echo
+	@ false
+endif
+
+ifneq ($(call ocaml_test_files_are_same,$(1),$(1)$(2)),0)
+$(1): update-ml-files
+
+update-ml-files::
+	$(SHOW)'CP $(1)$(2)'
+	$(HIDE)cp -f "$(1)$(2)" "$(1)"
+	$(HIDE)touch "$(1)"
+endif
+endef

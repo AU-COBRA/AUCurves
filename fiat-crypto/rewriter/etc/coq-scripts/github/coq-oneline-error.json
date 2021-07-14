@@ -1,0 +1,18 @@
+{
+    "problemMatcher": [
+        {
+            "owner": "coq-problem-matcher-oneline-error",
+            "pattern": [
+                {
+                    "regexp": "^File \"([^ \"]+)\", line (\\d+), characters (\\d+-\\d+):\\s*(?:%0A\\s*)?(Error):\\s*(.*?)(?:\\s*\\[(.*)\\])?$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5,
+                    "code": 6
+                }
+            ]
+        }
+    ]
+}

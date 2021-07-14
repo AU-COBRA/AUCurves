@@ -1,0 +1,305 @@
+COMPATIBILITY_FILE?=
+_COQPROJECT_IN_NAME?=_CoqProject.in
+_COQPROJECT_NAME?=_CoqProject.in
+COQ_VERSION_FILE=.coq-version
+DONT_USE_ADMIT_AXIOM?=
+USE_BYPASS_API?=
+PROFILE?=
+WARNINGS_STRING?=-deprecated-appcontext -notation-overridden
+EXTRA_PIPE_SED_FOR_COQPROJECT?=
+
+# http://stackoverflow.com/a/18137056/377022
+Makefile_coq_compat_84_85_mkfile_path := $(lastword $(MAKEFILE_LIST))
+Makefile_coq_compat_84_85_mkfile_abspath := $(abspath $(Makefile_coq_compat_84_85_mkfile_path))
+Makefile_coq_compat_84_85_mkfile_dir := $(patsubst %/,%,$(dir $(Makefile_coq_compat_84_85_mkfile_path)))
+Makefile_coq_compat_84_85_mkfile_absdir := $(patsubst %/,%,$(dir $(Makefile_coq_compat_84_85_mkfile_abspath)))
+Makefile_coq_compat_84_85_current_dir := $(notdir $(Makefile_coq_compat_84_85_mkfile_dir))
+Makefile_coq_compat_84_85_current_absdir := $(notdir $(Makefile_coq_compat_84_85_mkfile_absdir))
+
+ifeq (,$(COMPATIBILITY_FILE))
+FORCE::
+	@ echo
+	@ echo "error: You must set the COMPATIBILITY_FILE variable to a .v file to contain the compatibiltiy Coq code"
+	@ echo
+	@ false
+endif
+
+VERSION_TARGETS :=
+
+.PHONY: compatibility warn-compat-file
+
+FAST_TARGETS += coq-version $(COMPATIBILITY_FILE) compatibility _CoqProject warn-compat-file $(COQ_VERSION_FILE)
+SUPER_FAST_TARGETS += coq-version $(COMPATIBILITY_FILE) compatibility _CoqProject warn-compat-file $(COQ_VERSION_FILE)
+
+-include $(Makefile_coq_compat_84_85_mkfile_dir)/Makefile.coq.compat_84_85-ocaml
+
+_COQPROJECT_EXCLUDED_VFILES += $(COMPATIBILITY_FILE)
+
+ifeq ($(_COQPROJECT_NAME),_CoqProject)
+_COQPROJECT_NAME = $(_COQPROJECT_IN_NAME)
+endif
+
+COQ_VERSION_PREFIX = The Coq Proof Assistant, version
+COQ_VERSION := $(firstword $(subst $(COQ_VERSION_PREFIX),,$(shell $(COQBIN)coqc --version 2>/dev/null)))
+COQ_VERSION_MAJOR_MINOR:=$(strip $(shell echo '$(COQ_VERSION)' | grep -o '^[0-9]\+\.[0-9]\+'))
+
+SHOULD_SILENCE := $(filter 8.5% 8.4%,$(COQ_VERSION))
+
+COQ_HELP := $(shell $(COQBIN)coqc -help 2>&1)
+COQ_MAKEFILE_HELP := $(shell $(COQBIN)coq_makefile -help 2>&1)
+
+negate_empty = $(if $(1),,yes)
+and_vals = $(if $(1),$(if $(2),yes,),)
+
+# N.B. These take up about 1-2 seconds of startup time in `make` :-/
+COQ_SUPPORTS_NO_NATIVE_COMPILER := $(findstring -no-native-compiler,$(COQ_HELP))
+COQ_SUPPORTS_NATIVE_COMPILER_ONDEMAND := $(call and_vals,$(findstring -native-compiler,$(COQ_HELP)),$(findstring ondemand,$(COQ_HELP)))
+COQ_SUPPORTS_BYPASS_API := $(findstring -bypass-API,$(COQ_MAKEFILE_HELP))
+COQ_SUPPORTS_PROFILE_LTAC := $(findstring -profile-ltac,$(COQ_HELP))
+COQ_SUPPORTS_WARNINGS := $(call and_vals,$(call negate_empty,$(findstring Error,$(shell echo | $(COQBIN)coqtop -w '$(WARNINGS_STRING)' 2>&1))),$(findstring configure display of warnings,$(COQ_HELP)))
+COQ_SUPPORTS_COMPAT_8_4 := $(call negate_empty,$(findstring Error,$(shell echo | $(COQBIN)coqtop -compat 8.4 2>&1)))
+COQ_SUPPORTS_REQUIRE_8_4 := $(call negate_empty,$(findstring Error,$(shell echo | $(COQBIN)coqtop -require Coq.Compat.Coq84 2>&1 || echo "Error: $$?")))
+ifeq (,$(DONT_USE_ADMIT_AXIOM))
+COQ_SUPPORTS_REQUIRE_ADMIT_AXIOM := $(call negate_empty,$(findstring Error,$(shell echo | $(COQBIN)coqtop -require Coq.Compat.AdmitAxiom 2>&1 || echo "Error: $$?")))
+COQ_SUPPORTS_REQUIRE_IMPORT_ADMIT_AXIOM := $(call negate_empty,$(findstring Error,$(shell echo | $(COQBIN)coqtop -require-import Coq.Compat.AdmitAxiom 2>&1 || echo "Error: $$?")))
+endif
+
+coq-version::
+	@ echo $(COQ_VERSION)
+
+COQ_EXTENDED_VERSION := $(shell (echo | $(COQBIN)coqtop 2>/dev/null; $(COQBIN)coqc --version 2>/dev/null))
+COQ_EXTENDED_VERSION_OLD := $(shell cat $(COQ_VERSION_FILE) 2>/dev/null)
+
+ifneq ($(COQ_EXTENDED_VERSION),$(COQ_EXTENDED_VERSION_OLD))
+$(COQ_VERSION_FILE)::
+	$(SHOW)'echo $$COQ_VERSION_INFO ($(COQ_VERSION)) > $@'
+	$(HIDE)echo "$(COQ_EXTENDED_VERSION)" > $@
+endif
+
+clean::
+	rm -f $(COMPATIBILITY_FILE) _CoqProject $(COQ_VERSION_FILE)
+
+ifeq (,$(wildcard $(COMPATIBILITY_FILE)))
+warn-compat-file::
+	@ echo "## "
+	@ echo "## Warning: No $(COMPATIBILITY_FILE), defaulting to compatibility for $(COQ_VERSION)."
+	@ echo "## "
+else
+warn-compat-file::
+	@ true
+endif
+
+$(COMPATIBILITY_FILE): $(Makefile_coq_compat_84_85_mkfile_dir)/Coq__8_4__Compat.v $(Makefile_coq_compat_84_85_mkfile_dir)/Coq__8_5__Compat.v | warn-compat-file
+	$(Q) $(MAKE) --no-print-directory compatibility
+
+define make_compat_version
+# $(1) - version name, like v8.5beta1
+# $(2) - version file name, like 8_5beta1
+# $(3) - version target name, like vtrunk
+
+COMPAT_IS_NAME := COMPAT_IS_$(2)
+
+$$(COMPAT_IS_NAME) := $(shell cmp -s $(Makefile_coq_compat_84_85_mkfile_dir)/Coq__$(2)__Compat.v $(COMPATIBILITY_FILE); echo $$?)
+
+.PHONY: $(3)
+ifeq ($$($$(COMPAT_IS_NAME)),0)
+$(3)::
+	@ true
+else
+$(3)::
+	@ echo "## "
+	@ echo "## Switching to compatibility for Coq $(1)"
+	@ echo "## "
+	rm -f $(COMPATIBILITY_FILE)
+	cp $(Makefile_coq_compat_84_85_mkfile_dir)/Coq__$(2)__Compat.v $(COMPATIBILITY_FILE)
+endif
+
+VERSION_TARGETS += $(3)
+FAST_TARGETS += $(3)
+SUPER_FAST_TARGETS += $(3)
+endef
+
+$(eval $(call make_compat_version,v8.5,8_5,v8.5))
+$(eval $(call make_compat_version,v8.5beta1,8_5beta1,v8.5beta1))
+$(eval $(call make_compat_version,v8.5beta2,8_5beta2,v8.5beta2))
+$(eval $(call make_compat_version,v8.5beta3,8_5beta3,v8.5beta3))
+$(eval $(call make_compat_version,v8.5rc1,8_5rc1,v8.5rc1))
+$(eval $(call make_compat_version,v8.5pl1,8_5pl1,v8.5pl1))
+$(eval $(call make_compat_version,v8.5pl2,8_5pl2,v8.5pl2))
+$(eval $(call make_compat_version,trunk,trunk,vtrunk))
+$(eval $(call make_compat_version,master,master,vmaster))
+
+EXTRA_ECHO :=
+UPDATE_COQPROJECT?=
+ifneq (,$(wildcard _CoqProject)) # _CoqProject exists
+_COQPROJECT_CONTENTS := $(shell cat _CoqProject)
+endif
+
+ARG_SINGLE_QUOTE:='"'"'
+ARG_DOUBLE_QUOTE:="
+
+strip_single_quotes = $(subst ',,$(1))
+
+
+define add_arg_no_version_echo
+# $(1) - support suffix; $(COQ_SUPPORTS_$(1)) should be nonempty if there is support, empty if there is no support
+# $(2) - arg to pass to coq_makefile (will be wrapped in double and single quotes)
+# $(3) - empty if we should use -arg and quotes; nonempty if the argument should be passed bare
+
+ifneq (,$$(COQ_SUPPORTS_$(1)))
+ifneq (,$(3))
+EXTRA_ECHO += echo '$(2)';
+else
+EXTRA_ECHO += echo '-arg "$(2)"';
+endif
+endif
+
+ifneq (,$(3))
+ECHOED2 := $(shell echo '$(2)')
+else
+ECHOED2 := $(shell echo '-arg "$(2)"')
+endif
+
+ifneq (,$(wildcard _CoqProject)) # _CoqProject exists
+HAS_NAME := _COQPROJECT_HAS_$(1)
+SUPPORTS_NAME := COQ_SUPPORTS_$(1)
+
+$$(HAS_NAME) := $$(findstring $$(call strip_single_quotes,$$(ECHOED2)),$(call strip_single_quotes,$(_COQPROJECT_CONTENTS)))
+
+ifneq (,$$($$(SUPPORTS_NAME))) # supports $(1)
+ifneq (,$$($$(HAS_NAME))) # and has it
+# we're good
+else
+UPDATE_COQPROJECT = yes
+endif
+else # doesn't support $(1)
+ifneq (,$$($$(HAS_NAME))) # but uses it
+UPDATE_COQPROJECT = yes
+else
+# we're good
+endif
+endif
+endif
+
+endef
+
+define add_arg
+# $(1) - support suffix; $(COQ_SUPPORTS_$(1)) should be nonempty if there is support, empty if there is no support
+# $(2) - arg to pass to coq_makefile (will be wrapped in double and single quotes)
+# $(3) - empty if we should use -arg and quotes; nonempty if the argument should be passed bare
+
+ifneq (,$$(COQ_SUPPORTS_$(1)))
+coq-version::
+	@ echo "Supports $(2): Yes"
+else
+coq-version::
+	@ echo "Supports $(2): No"
+endif
+
+$(eval $(call add_arg_no_version_echo,$(1),$(2),$(3)))
+endef
+
+# the native compiler is broken on Windows, so we disable it in 8.5
+$(eval $(call add_arg,NO_NATIVE_COMPILER,-no-native-compiler))
+# the native compiler hangs trying to compile files, so we disable it
+$(eval $(call add_arg,NATIVE_COMPILER_ONDEMAND,-native-compiler no))
+$(eval $(call add_arg,COMPAT_8_4,-compat 8.4))
+$(eval $(call add_arg,REQUIRE_8_4,-require Coq.Compat.Coq84))
+ifneq (,$(USE_BYPASS_API))
+$(eval $(call add_arg,BYPASS_API,-bypass-API,no-arg))
+endif
+#$(eval $(call add_arg,WARNINGS,-w $(ARG_SINGLE_QUOTE)$(WARNINGS_STRING)$(ARG_SINGLE_QUOTE)))
+ifeq (,$(DONT_USE_ADMIT_AXIOM))
+$(eval $(call add_arg,REQUIRE_ADMIT_AXIOM,-require Coq.Compat.AdmitAxiom))
+$(eval $(call add_arg,REQUIRE_IMPORT_ADMIT_AXIOM,-require-import Coq.Compat.AdmitAxiom))
+endif
+
+_CoqProject: $(_COQPROJECT_IN_NAME)
+	($(EXTRA_ECHO) (cat "$<" $(EXTRA_PIPE_SED_FOR_COQPROJECT) ) ) > "$@"
+
+ifneq (,$(filter trunk,$(COQ_VERSION))) # trunk
+compatibility: vtrunk
+else
+ifneq (,$(filter master,$(COQ_VERSION))) # master
+compatibility: vmaster
+else
+ifneq (,$(filter 8.5pl2,$(COQ_VERSION))) # 8.5pl2
+compatibility: v8.5pl2
+else
+ifneq (,$(filter 8.5pl1,$(COQ_VERSION))) # 8.5pl1
+compatibility: v8.5pl1
+else
+ifneq (,$(filter 8.5,$(COQ_VERSION))) # 8.5
+compatibility: v8.5
+else
+ifneq (,$(filter 8.5rc1,$(COQ_VERSION))) # 8.5rc1
+compatibility: v8.5rc1
+else
+ifneq (,$(filter 8.5beta3,$(COQ_VERSION))) # 8.5beta3
+compatibility: v8.5beta3
+else
+ifneq (,$(filter 8.5beta2,$(COQ_VERSION))) # 8.5beta2
+compatibility: v8.5beta2
+else
+ifneq (,$(filter 8.5beta1,$(COQ_VERSION))) # 8.5beta1
+compatibility: v8.5beta1
+else
+ifneq (,$(filter 8.5%,$(COQ_VERSION))) # 8.5?
+compatibility: v8.5pl2
+else
+ifneq (,$(COQ_VERSION_MAJOR_MINOR))
+$(eval $(call make_compat_version,v$(COQ_VERSION_MAJOR_MINOR),$(subst .,_,$(COQ_VERSION_MAJOR_MINOR)),v$(COQ_VERSION_MAJOR_MINOR)))
+compatibility: v$(COQ_VERSION_MAJOR_MINOR)
+else
+compatibility:
+	@ echo
+	@ echo 'error: unrecognized version of Coq $(COQ_VERSION) results in empty major.minor'
+	@ echo
+	@ false
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+
+ifneq (,$(wildcard _CoqProject)) # _CoqProject exists
+ifneq (,$(UPDATE_COQPROJECT))
+$(VERSION_TARGETS)::
+	@ echo "## "
+	@ echo "## Remaking _CoqProject for Coq $@"
+	@ echo "## "
+	rm -f _CoqProject
+	$(MAKE) --no-print-directory _CoqProject
+endif
+endif
+
+PROFILE_LTAC_FLAGS?=
+
+ifneq (,$(COQ_SUPPORTS_PROFILE_LTAC))
+coq-version::
+	@ echo "Supports -profile-ltac: Yes"
+
+ifeq (1,$(PROFILE))
+PROFILE_LTAC_FLAGS := -profile-ltac
+endif
+else
+coq-version::
+	@ echo "Supports -profile-ltac: No"
+endif
+
+WARNINGS_FLAGS?=
+
+ifneq (,$(COQ_SUPPORTS_WARNINGS))
+WARNINGS_FLAGS := -w '$(WARNINGS_STRING)'
+coq-version::
+	@ echo 'Supports -w '"'"'$(WARNINGS_STRING)'"'"': Yes'
+else
+coq-version::
+	@ echo 'Supports -w '"'"'$(WARNINGS_STRING)'"'"': No'
+endif

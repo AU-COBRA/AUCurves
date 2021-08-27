@@ -5164,44 +5164,6 @@ pub fn Fp2_add(outr : &mut [usize], outi : &mut [usize], xr : &mut [usize], xi :
   return;
 }
 
-// pub fn Fp2_mul(outr : &mut [usize], outi : &mut [usize], xr : &mut [usize], xi : &mut [usize], yr : &mut [usize], yi : &mut [usize]) -> () {
-//   let v0 : usize;
-//   let mut v0_arr = [0usize; 6usize];
-//   let v0 = &mut v0_arr;
-//   let mut v1_arr = [0usize; 6usize];
-//   let v1 = &mut v1_arr;
-//   let mut v2_arr = [0usize; 6usize];
-//   let v2 = &mut v2_arr;
-//   bls12_mul(v0, xr, yr);
-//   bls12_mul(v1, xi, yi);
-//   bls12_sub(outr, v0, v1);
-//   bls12_add(v2, xr, xi);
-//   bls12_add(outi, yr, yi);
-//   bls12_mul(outi, v2, outi);
-//   bls12_sub(outi, outi, v0);
-//   bls12_sub(outi, outi, v1);
-//   return;
-// }
-
-// pub fn Fp2_mul(outr : &mut [usize], outi : &mut [usize], xr : &mut [usize], xi : &mut [usize], yr : &mut [usize], yi : &mut [usize]) -> () {
-//   let v0 : usize;
-//   let v0_arr = [0usize; 6usize];
-//   let v0 = &mut v0_arr;
-//   let v1_arr = [0usize; 6usize];
-//   let v1 = &mut v1_arr;
-//   let v2_arr = [0usize; 6usize];
-//   let v2 = &mut v2_arr;
-//   bls12_mul(v0, xr, yr);
-//   bls12_mul(v1, xi, yi);
-//   bls12_sub(outr, v0, v1);
-//   bls12_add(v2, xr, xi);
-//   bls12_add(outi, yr, yi);
-//   bls12_mul(outi, v2, outi);
-//   bls12_sub(outi, outi, v0);
-//   bls12_sub(outi, outi, v1);
-//   return;
-// }
-
 pub fn Fp2_sub(outr : &mut [usize], outi : &mut [usize], xr : &mut [usize], xi : &mut [usize], yr : &mut [usize], yi : &mut [usize]) -> () {
   bls12_sub(outr, xr, yr);
   bls12_sub(outi, xi, yi);

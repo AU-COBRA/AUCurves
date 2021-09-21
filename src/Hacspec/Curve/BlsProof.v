@@ -60,7 +60,7 @@ Definition g1_eq (x y: g1) :=
   let '(x1, x2, xinf) := x in
   let '(y1, y2, yinf) := y in
   if xinf then yinf = true else
-    x1 = y1 /\ x2 = y2.
+    yinf = false /\ x1 = y1 /\ x2 = y2.
 
 Lemma fp_same_if_eq: forall x y: fp', x =.? y = true <-> fp_eq x y.
 Proof. intros x y. split.
@@ -77,7 +77,7 @@ Lemma same_if_g1_eq: forall x y:g1, (x =.? y) = true -> g1_eq x y.
 Proof. intros x y. destruct x. destruct y. destruct p. destruct p0. intros H. apply eqb_leibniz in H.
 destruct b.
 - unfold g1_eq. inversion H. reflexivity.
-- unfold g1_eq. inversion H. split; reflexivity.
+- unfold g1_eq. inversion H. split; split; reflexivity.
 Qed.
 
 (* Every element is equal itself *)
@@ -95,7 +95,6 @@ Proof. apply (GZnZ.FZpZ prime blsprime).  Qed.
 
 Add Field fp_field: fp_field_theory.
 
-Print Fields.
 Example test : forall x, (x +% fp_zero) = x.
 Proof. intros. field. Qed.
 
@@ -135,10 +134,10 @@ Definition g1_fc_add (p1 p2 :g1_fc_point ) :g1_fc_point := (@W.add fp fp_eq fp_z
 Local Notation g1_fc_zero := (@W.zero fp fp_eq nat_mod_add nat_mod_mul fp_zero fp_four).
 
 (* ?x? is x performed by hacspec. #x# is x performed by Fiat-Crypto *)
-Infix "?+?" := g1add (at level 81).
-Infix "?=?" := g1_eq (at level 100).
-Infix "#+#" := g1_fc_add (at level 81).
-Infix "#=#" := g1_fc_eq (at level 100).
+Local Infix "?+?" := g1add (at level 81).
+Local Infix "?=?" := g1_eq (at level 100).
+Local Infix "#+#" := g1_fc_add (at level 81).
+Local Infix "#=#" := g1_fc_eq (at level 100).
 
 (* Checking the Fiat-Crypto functions actually work*)
 Example add_zero_is_zero_in_fc: (g1_fc_zero #+# g1_fc_zero) #=# g1_fc_zero.
@@ -154,19 +153,16 @@ Definition g1_from_fc (p: g1_fc_point): g1 :=
 
 
 (* Translating our points to Fiat-Crypto Points *)
-Program Definition g1_to_fc (p: g1): g1_fc_point :=
+Program Definition g1_to_fc (p: g1) (on_curve: g1_on_curve p): g1_fc_point :=
     match p return fp*fp+unit with
     | (_, _, true) => inr tt
-    | (x, y, false) => if (y*%y) =.? (x*%x*%x +% fp_four) 
-      then inl (x, y) 
-      else inr tt
+    | (x, y, false) => inl (x, y)
     end.
     Opaque "=.?".
     Next Obligation.
     Crypto.Util.Tactics.BreakMatch.break_match. 
     - trivial. 
-    - apply eqb_leibniz in Heqb.  rewrite Heqb. field. 
-    - trivial.
+    - unfold g1_on_curve in on_curve. rewrite on_curve. field. 
     Qed.
 
 
@@ -230,28 +226,27 @@ Proof. intros. unfold nat_mod_exp. rewrite exphelper. fold fp_one. field.
 Qed.
 
 (* The equivalence proof. If two points are on the curve, adding them together using hacspec is the same as converting to fiat-crypto, adding them and converting back *)
-Lemma g1_addition_equal: forall p q: g1, g1_on_curve p -> g1_on_curve q -> (p ?+? q) ?=? (g1_from_fc ((g1_to_fc p) #+# (g1_to_fc q))). 
+Lemma g1_addition_equal: forall (p q: g1) on_curve_p on_curve_q, (p ?+? q) ?=? (g1_from_fc ((g1_to_fc p on_curve_p) #+# (g1_to_fc q on_curve_q))). 
 Proof. intros p q H H0. unfold g1add. destruct p. destruct p. destruct q. 
   unfold g1_from_fc, g1_to_fc, g1_fc_add. destruct p. unfold g1_eq. simpl. 
   (generalize fp_field_theory). intros [[]].
   destruct b eqn:E.
   - destruct b0 eqn:E1.
     + reflexivity.
-    + unfold g1_on_curve in H0. rewrite <- H0. rewrite fp_eq_true. split. reflexivity. reflexivity.
+    + split; split; reflexivity.
   - destruct b0 eqn:E1.
-    + unfold g1_on_curve in H. rewrite <- H. rewrite fp_eq_true. split. reflexivity. reflexivity.
-    + unfold g1_on_curve in H. unfold g1_on_curve in H0. rewrite H0. rewrite H. rewrite fp_eq_true. rewrite fp_eq_true.
-      destruct ((f, f0, false) =.? (f1, f2, false)) eqn:E2. 
+    + split; split; reflexivity.
+    + destruct ((f, f0, false) =.? (f1, f2, false)) eqn:E2. 
       * simpl. destruct (f0 =.? nat_mod_zero) eqn:E3. 
-        --  simpl. apply same_if_g1_eq in E2. unfold g1_eq in E2. destruct E2. rewrite H1. unfold dec. destruct (g1_dec f1 f1) eqn:E6. 
+        --  simpl. apply same_if_g1_eq in E2. unfold g1_eq in E2. destruct E2 as [_ []]. rewrite H1. unfold dec. destruct (g1_dec f1 f1) eqn:E6. 
           ++ destruct (g1_dec f2 (nat_mod_neg f0)).
             ** simpl. reflexivity.
             ** exfalso. rewrite <- H2 in n. apply fp_same_if_eq in E3. rewrite E3 in n. destruct n. reflexivity.
           ++ exfalso. destruct n. reflexivity.
-        -- simpl. apply same_if_g1_eq in E2. simpl in E2. destruct E2. unfold dec. destruct (g1_dec f f1).
+        -- simpl. apply same_if_g1_eq in E2. simpl in E2. destruct E2 as [_ []]. unfold dec. destruct (g1_dec f f1).
           ++ destruct (g1_dec f2 (nat_mod_neg f0)).
             ** exfalso. rewrite <- H2 in e0. apply negation_eq_implies_zero in e0. rewrite e0 in E3. rewrite fp_eq_true in E3. discriminate E3.
-            ** repeat rewrite exp2ismul. split.
+            ** repeat rewrite exp2ismul. split. reflexivity. split.
               ---  rewrite H1. rewrite two_equiv. rewrite three_equiv. unfold fp_three. unfold fp_two. rewrite fp_eq_ok. field. split.
                 +++ intros c. rewrite c in E3. rewrite fp_eq_true in E3. discriminate E3.
                 +++ intros c. discriminate c.
@@ -271,7 +266,7 @@ Proof. intros p q H H0. unfold g1add. destruct p. destruct p. destruct q.
             ** rewrite H1 in E4. rewrite Rsub_def in E4. rewrite Radd_0_l in E4. rewrite fp_eq_true in E4. discriminate E4.
         -- simpl. destruct (dec (fp_eq f f1)).
           ++ exfalso. rewrite e in E3. rewrite fp_eq_true in E3. discriminate E3.
-          ++ rewrite exp2ismul. split;
+          ++ rewrite exp2ismul. split. reflexivity. split;
              rewrite fp_eq_ok; field; intros H1; rewrite sub_eq_zero_means_same in H1; rewrite H1 in E3; rewrite fp_eq_true in E3; discriminate E3.
 Qed.
 
@@ -341,7 +336,7 @@ Definition g2_eq (x y: g2) :=
   let '(x1, x2, xinf) := x in
   let '(y1, y2, yinf) := y in
   if xinf then yinf = true else
-    x1 = y1 /\ x2 = y2.
+    yinf = false /\ x1 = y1 /\ x2 = y2.
 
 (* Fiat-crypto field from standard library field *)
 Instance fp2_fc_field : @field fp2 fp2eq fp2zero fp2one fp2neg fp2add fp2sub fp2mul fp2inv fp2div.
@@ -372,10 +367,10 @@ Definition g2_fc_add (p1 p2 :g2_fc_point ) :g2_fc_point := @W.add fp2 fp2eq fp2z
 Definition g2_fc_zero := @W.zero fp2 fp2eq fp2add fp2mul fp2zero g2_b.
 
 (* ?x? is x performed by hacspec. #x# is x performed by Fiat-Crypto *)
-Infix "?+?" := g2add (at level 81).
-Infix "?=?" := g2_eq (at level 100).
-Infix "#+#" := g2_fc_add (at level 81).
-Infix "#=#" := g2_fc_eq (at level 100).
+Local Infix "?+?" := g2add (at level 81).
+Local Infix "?=?" := g2_eq (at level 100).
+Local Infix "#+#" := g2_fc_add (at level 81).
+Local Infix "#=#" := g2_fc_eq (at level 100).
 
 (* Checking the Fiat-Crypto functions actually work*)
 Example g2_add_zero_is_zero_in_fc: (g2_fc_zero #+# g2_fc_zero) #=# g2_fc_zero.
@@ -473,7 +468,7 @@ Lemma same_if_g2_eq: forall x y, x =.? y = true -> g2_eq x y.
 Proof. intros x y. unfold g2_eq. destruct x. destruct y. destruct p. destruct p0. intros H. apply eqb_leibniz in H.
 destruct b.
 - inversion H. reflexivity.
-- inversion H. split; reflexivity.
+- inversion H. split; split; reflexivity.
 Qed.
 
 Lemma fp2from_two: fp2fromfp fp_two = fp2two.
@@ -501,21 +496,21 @@ Proof. Opaque "=.?". Opaque fp2add. intros p q H H0. unfold g2add. destruct p. d
   destruct b eqn:E.
   - destruct b0 eqn:E1.
     + reflexivity.
-    + unfold g2_on_curve in H0. rewrite <- H0. rewrite fp2_eq_true. split; reflexivity. 
+    + unfold g2_on_curve in H0. rewrite <- H0. rewrite fp2_eq_true. split; split; reflexivity. 
   - destruct b0 eqn:E1.
-    + unfold g2_on_curve in H. rewrite <- H. rewrite fp2_eq_true. split; reflexivity.
+    + unfold g2_on_curve in H. rewrite <- H. rewrite fp2_eq_true. split; split; reflexivity.
     + unfold g2_on_curve in H. unfold g2_on_curve in H0. rewrite H0. rewrite H. repeat rewrite fp2_eq_true.       
     destruct ((p, p0, false) =.? (p1, p2, false)) eqn:E2. 
       * simpl. destruct (p0 =.? fp2zero) eqn:E3. 
-        --  simpl. apply same_if_g2_eq in E2. unfold g2_eq in E2. destruct E2. rewrite H1. unfold fp2eq. unfold dec. destruct (g2_dec p1 p1) eqn:E6. 
+        --  simpl. apply same_if_g2_eq in E2. unfold g2_eq in E2. destruct E2 as [_ []]. rewrite H1. unfold fp2eq. unfold dec. destruct (g2_dec p1 p1) eqn:E6. 
           ++ destruct (g2_dec p2 (fp2neg p0)).
             ** reflexivity.
             ** exfalso. rewrite <- H2 in n. apply fp2_same_if_eq in E3. rewrite E3 in n. destruct n. reflexivity.
           ++ exfalso. destruct n. reflexivity.
-        -- simpl. apply same_if_g2_eq in E2. simpl in E2. destruct E2. destruct (dec (fp2eq p p1)).
+        -- simpl. apply same_if_g2_eq in E2. simpl in E2. destruct E2 as [_ []]. destruct (dec (fp2eq p p1)).
           ++ destruct (dec (fp2eq p2 (fp2neg p0))).
             ** exfalso. rewrite <- H2 in f0. apply fp2_negation_eq_implies_zero in f0. rewrite f0 in E3. rewrite fp2_eq_true in E3. discriminate E3.
-            ** split.
+            ** split. reflexivity. split.
               --- rewrite fp2_eq_ok. rewrite H1. rewrite fp2two_equiv. rewrite fp2three_equiv. unfold fp2three. unfold fp2two. field. split.
                 +++ unfold fp2eq. intros c. rewrite c in E3. rewrite fp2_eq_true in E3. discriminate E3.
                 +++ unfold fp2eq. intros c. discriminate c.
@@ -535,6 +530,6 @@ Proof. Opaque "=.?". Opaque fp2add. intros p q H H0. unfold g2add. destruct p. d
             ** rewrite H1 in E4. rewrite fp2_eq_true in E4. discriminate E4.
         -- simpl. destruct (dec (fp2eq p p1)).
           ++ exfalso. unfold fp2eq in f. rewrite f in E3. rewrite fp2_eq_true in E3. discriminate E3.
-          ++ split;
+          ++ split. reflexivity. split;
             rewrite fp2_eq_ok; field; unfold fp2eq; intros H1; rewrite fp2_sub_eq_zero_means_same in H1; rewrite H1 in E3; rewrite fp2_eq_true in E3; discriminate E3.
 Qed.

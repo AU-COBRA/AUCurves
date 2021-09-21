@@ -24,8 +24,7 @@ src/Bedrock/Examples/felem_copy_32.v
 src/Bedrock/Examples/felem_copy_p224_64.v
 src/Bedrock/Field/quadratic_extension_bls12.v
 src/Bedrock/Field/testFp2.v
-src/Bedrock/Curve/BLS12Curve_G1.v
-src/Bedrock/Curve/BLS12Curve_G2.v
+
 src/Hacspec/Util/MachineIntegers.v
 src/Hacspec/Util/Lib.v
 src/Hacspec/Curve/Bls.v

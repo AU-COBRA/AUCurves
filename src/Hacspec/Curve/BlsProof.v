@@ -62,6 +62,50 @@ Definition g1_eq (x y: g1) :=
   if xinf then yinf = true else
     yinf = false /\ x1 = y1 /\ x2 = y2.
 
+Local Infix "?+?" := g1add (at level 61).
+Local Infix "?=?" := g1_eq (at level 70).
+
+Require Import Setoid.
+ 
+Lemma g1_eq_refl: forall x, x ?=? x.
+Proof. intros [[]]. destruct b; cbn.
+- reflexivity.
+- split; [reflexivity | split]; reflexivity.
+Qed.
+
+Lemma g1_eq_symm: forall x y, x ?=? y -> y ?=? x.
+Proof.
+    intros [[] []] [[] []]; unfold "?=?"; intros; try reflexivity; inversion H. 
+    - discriminate H0.
+    - split.
+        + reflexivity.
+        + destruct H1 as [-> ->]. split; reflexivity.
+Qed. 
+
+Lemma g1_eq_tran: forall x y z, x ?=? y -> y ?=? z -> x ?=? z.
+Proof.
+    intros [[] []] [[] []] [[] []]; unfold "?=?"; intros; try reflexivity; try discriminate H; try discriminate H0.
+    - destruct H. discriminate H.
+    - destruct H0. discriminate H0.
+    - destruct H as [_ [H1 H2]]. destruct H0 as [_ [H3 H4]].
+    split. 
+     + reflexivity.
+     + split.
+      * transitivity f1. 
+       -- apply H1.
+       -- apply H3.
+      * transitivity f2.
+      -- apply H2.
+      -- apply H4.
+Qed.
+
+Add Relation (g1) (g1_eq) 
+    reflexivity proved by g1_eq_refl
+    symmetry proved by g1_eq_symm
+    transitivity proved by g1_eq_tran 
+    as g1_eq_rel.
+
+
 Lemma fp_same_if_eq: forall x y: fp', x =.? y = true <-> fp_eq x y.
 Proof. intros x y. split.
   - apply eqb_leibniz. 
@@ -134,10 +178,8 @@ Definition g1_fc_add (p1 p2 :g1_fc_point ) :g1_fc_point := (@W.add fp fp_eq fp_z
 Local Notation g1_fc_zero := (@W.zero fp fp_eq nat_mod_add nat_mod_mul fp_zero fp_four).
 
 (* ?x? is x performed by hacspec. #x# is x performed by Fiat-Crypto *)
-Local Infix "?+?" := g1add (at level 81).
-Local Infix "?=?" := g1_eq (at level 100).
-Local Infix "#+#" := g1_fc_add (at level 81).
-Local Infix "#=#" := g1_fc_eq (at level 100).
+Local Infix "#+#" := g1_fc_add (at level 61).
+Local Infix "#=#" := g1_fc_eq (at level 70).
 
 (* Checking the Fiat-Crypto functions actually work*)
 Example add_zero_is_zero_in_fc: (g1_fc_zero #+# g1_fc_zero) #=# g1_fc_zero.
@@ -367,13 +409,13 @@ Definition g2_fc_add (p1 p2 :g2_fc_point ) :g2_fc_point := @W.add fp2 fp2eq fp2z
 Definition g2_fc_zero := @W.zero fp2 fp2eq fp2add fp2mul fp2zero g2_b.
 
 (* ?x? is x performed by hacspec. #x# is x performed by Fiat-Crypto *)
-Local Infix "?+?" := g2add (at level 81).
-Local Infix "?=?" := g2_eq (at level 100).
-Local Infix "#+#" := g2_fc_add (at level 81).
-Local Infix "#=#" := g2_fc_eq (at level 100).
+Local Infix "?+2?" := g2add (at level 61).
+Local Infix "?=2?" := g2_eq (at level 70).
+Local Infix "#+2#" := g2_fc_add (at level 61).
+Local Infix "#=2#" := g2_fc_eq (at level 70).
 
 (* Checking the Fiat-Crypto functions actually work*)
-Example g2_add_zero_is_zero_in_fc: (g2_fc_zero #+# g2_fc_zero) #=# g2_fc_zero.
+Example g2_add_zero_is_zero_in_fc: (g2_fc_zero #+2# g2_fc_zero) #=2# g2_fc_zero.
 Proof. reflexivity.
 Qed.
 
@@ -489,7 +531,7 @@ Qed.
 
 
 (* The equivalence proof. If two points are on the curve, adding them together using hacspec is the same as converting to fiat-crypto, adding them and converting back *)
-Lemma g2_addition_equal: forall p q: g2, g2_on_curve p -> g2_on_curve q -> (p ?+? q) ?=? (g2_from_fc ((g2_to_fc p) #+# (g2_to_fc q))). 
+Lemma g2_addition_equal: forall p q: g2, g2_on_curve p -> g2_on_curve q -> (p ?+2? q) ?=2? (g2_from_fc ((g2_to_fc p) #+2# (g2_to_fc q))). 
 Proof. Opaque "=.?". Opaque fp2add. intros p q H H0. unfold g2add. destruct p. destruct p. destruct q. destruct p1.
   unfold g2_from_fc, g2_to_fc, g2_fc_add. unfold g2_eq. simpl. repeat rewrite fp2from_two. repeat rewrite fp2from_three.
   (generalize fp2_field_theory). intros [[]].

@@ -13,6 +13,9 @@ Require Import Crypto.Util.Decidable Crypto.Algebra.Field.
 Require Import Theory.Fields.FieldsUtil.
 Require Import Hacspec.Curve.blsprime.
 From Coqprime Require Import GZnZ.
+Require Import Hacspec.Curve.Bls.
+Require Import Hacspec.Curve.BlsProof.
+Require Import Field.
 
 
 Local Open Scope Z_scope.
@@ -73,6 +76,8 @@ Proof. cbv; auto. Qed.
 Lemma n_small : Z.of_nat n < 2 ^ bw.
 Proof. cbv. auto. Qed.
 
+(** G1 Equivalence section **)
+
 Definition BLS12_add_Gallina_spec :=
     BLS12_add_Gallina_spec m bw n m' a three_b.
 
@@ -112,12 +117,29 @@ Proof. reflexivity. Qed.
 
 Definition char_ge_21 := (Char_geq_p m 21%positive twenty1_small).
 
-
+(* Notation for fiat-crypto specifications/lemmas *)
 Local Notation fc_proj_point := (@Projective.point (znz m) (@eq (znz m)) (zero m) (add m) (mul m) fp_a fp_b).
 Local Notation fc_proj_add := (@Projective.add (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field char_ge_3 fp_dec fp_3_b fp_3_b_correct discriminant_nonzero char_ge_21).
 Local Notation fc_proj_eq := (@Projective.eq (znz m) (@eq (znz m)) (zero m) (add m) (mul m) fp_a fp_b fp_dec).
 
 Local Notation evfrom x := (eval (from_mont x)).
+Local Notation encodemod := (WordByWordMontgomery.encodemod bw n m m').
+
+Local Notation eval_encodemod := (WordByWordMontgomery.eval_encodemod bw n m r' m' r'_correct m'_correct bw_big m_big n_nz m_small).
+Local Notation encodemod_correct := (WordByWordMontgomery.encodemod_correct bw n m r' m' r'_correct m'_correct bw_big m_big n_nz m_small).
+Local Notation valid_mod := (valid_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+
+Local Notation to_affine := (@Projective.to_affine (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec).
+Local Notation to_affine_add := (@Projective.to_affine_add (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field char_ge_3 fp_dec fp_3_b fp_3_b_correct discriminant_nonzero char_ge_21).
+Local Notation not_exceptional := (@Projective.not_exceptional (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field char_ge_3 fp_dec).
+Local Infix "?=?" := g1_eq (at level 70).
+Local Notation of_affine := (@Projective.of_affine (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec ).
+Local Notation fc_eq_iff_Weq := (@Projective.eq_iff_Weq (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec).
+
+Local Notation fc_aff_point := (@WeierstrassCurve.W.point (znz m) (@eq (znz m)) (add m) (mul m) fp_a fp_b).
+Local Notation fc_aff_eq := (@WeierstrassCurve.W.eq (znz m) (@eq (znz m)) (add m) (mul m) fp_a fp_b).
+Local Notation fc_aff_add := (@WeierstrassCurve.W.add (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fc_field fp_dec char_ge_3 fp_a fp_b).
+
 
 Definition On_Curve (X1 Y1 Z1 : znz m) := (Y1 *m Y1 *m Z1) = (X1 *m (X1 *m X1) +m fp_a *m X1 *m (Z1 *m Z1) +m fp_b *m (Z1 *m (Z1 *m Z1))) /\ (Z1 = zero m -> Y1 <> zero m).
 
@@ -140,7 +162,6 @@ Proof. intros. reflexivity. Qed.
 
 Lemma val_eq: forall x H, val m (mkznz m x H) = x.
 Proof. intros. reflexivity. Qed.
-Search ((?x * ?y) mod ?m = (?x mod ?m * ?y mod ?m) mod ?m).
 
 Lemma add_elim_mod: forall x y, x mod m +' y mod m = x +' y.
 Proof. intros. unfold my_add. symmetry. apply Zplus_mod. Qed.
@@ -151,11 +172,10 @@ Proof. intros. unfold my_mul. symmetry. apply Z.mul_mod. unfold m. congruence. Q
 Lemma sub_elim_mod: forall x y, x mod m -' y mod m = x -' y.
 Proof. intros. unfold my_sub. symmetry. apply Zminus_mod. Qed.
 
-(*Ltac helper' := unfold fp_a, fp_3_b; autorewrite with add_eq mul_eq sub_eq val_eq add_elim_mod mul_elim_mod sub_elim_mod; rewrite <- a_small, <- three_b_small.
-*)
-Ltac helper := unfold fp_a, fp_3_b; repeat (try rewrite add_eq; try rewrite mul_eq; try rewrite sub_eq; try rewrite val_eq; try rewrite add_elim_mod; try rewrite mul_elim_mod; try rewrite sub_elim_mod); rewrite <- a_small, <- three_b_small.
-Ltac helper_h H := unfold fp_a, fp_3_b in H; repeat (try rewrite add_eq in H; try rewrite mul_eq in H; try rewrite sub_eq in H; try rewrite val_eq in H; try rewrite add_elim_mod in H; try rewrite mul_elim_mod in H; try rewrite sub_elim_mod in H); rewrite <- a_small, <- three_b_small in H.
+Ltac znz_toz_arith := unfold fp_a, fp_3_b; repeat (try rewrite add_eq; try rewrite mul_eq; try rewrite sub_eq; try rewrite val_eq; try rewrite add_elim_mod; try rewrite mul_elim_mod; try rewrite sub_elim_mod); rewrite <- a_small, <- three_b_small.
+Ltac znz_toz_arith_h H := unfold fp_a, fp_3_b in H; repeat (try rewrite add_eq in H; try rewrite mul_eq in H; try rewrite sub_eq in H; try rewrite val_eq in H; try rewrite add_elim_mod in H; try rewrite mul_elim_mod in H; try rewrite sub_elim_mod in H); rewrite <- a_small, <- three_b_small in H.
 
+(* Equivalence between galina and fiat with eq relation*)
 Lemma galina_fiat_crypto_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
     (evfrom outx, evfrom outy, evfrom outz) = pair_val (proj1_sig (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except))).
@@ -163,15 +183,15 @@ Proof. split.
     - unfold BLS12_add_Gallina_spec. unfold MontgomeryCurveSpecs.BLS12_add_Gallina_spec. intros H. apply pair_equal_spec in H. destruct H as [H H3]. apply pair_equal_spec in H. destruct H as [H1 H2].
     apply pair_equal_spec. split.
         + apply pair_equal_spec. split.
-            * helper. rewrite H1. reflexivity.
-            * helper. rewrite H2. reflexivity.
-        + helper. rewrite H3. reflexivity.
+            * znz_toz_arith. rewrite H1. reflexivity.
+            * znz_toz_arith. rewrite H2. reflexivity.
+        + znz_toz_arith. rewrite H3. reflexivity.
     - intros H. apply pair_equal_spec in H. destruct H as [H H3]. apply pair_equal_spec in H. destruct H as [H1 H2].
     apply pair_equal_spec. split.
         + apply pair_equal_spec. split.
-         * rewrite H1. helper.  reflexivity.
-         * rewrite H2. helper. reflexivity.
-        + rewrite H3. helper. reflexivity.
+         * rewrite H1. znz_toz_arith.  reflexivity.
+         * rewrite H2. znz_toz_arith. reflexivity.
+        + rewrite H3. znz_toz_arith. reflexivity.
 Qed.
 
 
@@ -180,6 +200,7 @@ Proof. intros [[[]]] [[[]]] H. cbn. inversion H. destruct (dec (z4 = zero m))eqn
     split ; reflexivity.
 Qed. 
 
+(* Equivalence between from galina to fiat with point equality relation *)
 Lemma galina_fiat_crypto_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out except, 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz -> 
     fc_proj_eq (to_fc_point_from_mont outx outy outz on_curve_out)  (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except)).
@@ -193,21 +214,11 @@ Proof. intros. rewrite (galina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_
         remember (evfrom Z1) as z1.
         remember (evfrom Z2) as z2.
         split; [apply pair_equal_spec; split |].
-        + destruct H2, H3. helper_h H1. rewrite H1. apply zirr. helper. unfold "-'". rewrite Zmod_mod. reflexivity.
-        + destruct H1, H3. helper_h H2. rewrite H2. apply zirr. helper. unfold "+'". rewrite Zmod_mod. reflexivity.
-        + destruct H1, H2. helper_h H3. rewrite H3. apply zirr. helper. unfold "+'". rewrite Zmod_mod. reflexivity.
- Qed.
-
-
-Lemma fc_proj_eq_refl : forall p, fc_proj_eq p p.
-Proof. intros [[[]]]. cbn. destruct (dec (z1 = zero m)); [apply e |]. split; reflexivity.
+        + destruct H2, H3. znz_toz_arith_h H1. rewrite H1. apply zirr. znz_toz_arith. unfold "-'". rewrite Zmod_mod. reflexivity.
+        + destruct H1, H3. znz_toz_arith_h H2. rewrite H2. apply zirr. znz_toz_arith. unfold "+'". rewrite Zmod_mod. reflexivity.
+        + destruct H1, H2. znz_toz_arith_h H3. rewrite H3. apply zirr. znz_toz_arith. unfold "+'". rewrite Zmod_mod. reflexivity.
 Qed.
 
-Local Notation encodemod := (WordByWordMontgomery.encodemod bw n m m').
-
-Local Notation eval_encodemod := (WordByWordMontgomery.eval_encodemod bw n m r' m' r'_correct m'_correct bw_big m_big n_nz m_small).
-Local Notation encodemod_correct := (WordByWordMontgomery.encodemod_correct bw n m r' m' r'_correct m'_correct bw_big m_big n_nz m_small).
-Local Notation valid_mod := (valid_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
 
 Definition galina_spec_from_fc_point (p1 p2 pout : fc_proj_point) := 
     let '(x1, y1, z1) := pair_val (proj1_sig p1) in
@@ -236,6 +247,7 @@ Proof. reflexivity. Qed.
 Lemma eval_a_list : eval (a_list bw n a) = a.
 Proof. reflexivity. Qed.
 
+(* Equivalence between from fiat to galina with point equality relation *)
 Lemma galina_fiat_crypto_equiv'' : forall p1 p2 pout except,
     fc_proj_eq pout (fc_proj_add p1 p2 except) ->
     exists pout', fc_proj_eq pout pout' /\ galina_spec_from_fc_point p1 p2 pout'.
@@ -244,45 +256,19 @@ Proof. intros. exists (fc_proj_add p1 p2 except).
     - apply H.
     - unfold galina_spec_from_fc_point, BLS12_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_add_Gallina_spec.
     destruct p1 as [[[]]]. destruct p2 as [[[]]]. unfold fc_proj_add, proj1_sig, pair_val. 
-    repeat rewrite eval_encodemod_val. helper. rewrite eval_three_b_list. rewrite eval_a_list. reflexivity.
+    repeat rewrite eval_encodemod_val. znz_toz_arith. rewrite eval_three_b_list. rewrite eval_a_list. reflexivity.
 Qed.
-
-Require Import Hacspec.Curve.Bls.
-Require Import Hacspec.Curve.BlsProof.
-
-Local Notation to_affine := (@Projective.to_affine (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec).
-Local Notation to_affine_add := (@Projective.to_affine_add (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field char_ge_3 fp_dec fp_3_b fp_3_b_correct discriminant_nonzero char_ge_21).
-Local Notation not_exceptional := (@Projective.not_exceptional (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field char_ge_3 fp_dec).
-Local Infix "?=?" := g1_eq (at level 70).
-Local Notation of_affine := (@Projective.of_affine (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec ).
-Local Notation fc_eq_iff_Weq := (@Projective.eq_iff_Weq (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fp_a fp_b fc_field fp_dec).
-
-
-Local Notation fc_aff_point := (@WeierstrassCurve.W.point (znz m) (@eq (znz m)) (add m) (mul m) fp_a fp_b).
-Local Notation fc_aff_eq := (@WeierstrassCurve.W.eq (znz m) (@eq (znz m)) (add m) (mul m) fp_a fp_b).
-Local Notation fc_aff_add := (@WeierstrassCurve.W.add (znz m) (@eq (znz m)) (zero m) (one m) (opp m) (add m) (sub m) (mul m) (inv m) (div m) fc_field fp_dec char_ge_3 fp_a fp_b).
 
 
 Definition to_hacspec_point (X1 Y1 Z1 : list Z) on_curve : g1 := g1_from_fc (to_affine (to_fc_point_from_mont X1 Y1 Z1 on_curve)).
-Require Import Field.
+
 Add Field hs_fp_field: fp_field_theory.
 
 Lemma preserves_on_curve : forall p, g1_on_curve (g1_from_fc p).
 Proof. intros p.  unfold g1_on_curve. destruct p. destruct x.
-- destruct p. cbn. rewrite y. field.
+- destruct p. cbn. rewrite y.  field.
 - cbn. destruct u. trivial.
 Qed.
-
-Require Import Logic.Classical_Prop.
-
-Require Import Eqdep_dec.
-Require Import EqdepFacts.
-
-Local Notation fp_proofs_unicity := (UIP_dec fp_dec).
-
-(*Lemma g1_to_and_back: forall p, fc_aff_eq p (g1_to_fc (g1_from_fc p) (preserves_on_curve _)).
-Proof. intros [[[] | []]]; cbn; [split| trivial]; reflexivity.
-Qed.*)
 
 Lemma g1_fc_eq: forall x y :fc_aff_point, g1_from_fc x ?=? g1_from_fc y <-> fc_aff_eq x y.
 Proof.
@@ -353,7 +339,7 @@ Lemma fc_aff_add_compat: forall x y, fc_aff_eq (fc_aff_add x y) (fc_aff_add (g1_
 Proof. intros [[[] | []]] [[[] | []]]; apply fc_aff_eq_sig; cbn; reflexivity.
 Qed.
 
-(* Hacspec to bedrock equivalence *)
+(* Galina to hacspec equivalence *)
 Lemma galina_hacspec_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_point_from_mont _ _ _ on_curve1) (to_fc_point_from_mont _ _ _ on_curve2)), 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz ->
     (to_hacspec_point outx outy outz on_curve_out ?=? g1add (to_hacspec_point X1 Y1 Z1 on_curve1) (to_hacspec_point X2 Y2 Z2 on_curve2))).
@@ -370,9 +356,9 @@ Proof. intros. rewrite (galina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_
          remember (evfrom Z1) as z1.
          remember (evfrom Z2) as z2.
          split; [apply pair_equal_spec; split |].
-       + destruct H2, H3. helper_h H1. rewrite H1. apply zirr. helper. unfold "-'". rewrite Zmod_mod. reflexivity.
-       + destruct H1, H3. helper_h H2. rewrite H2. apply zirr. helper. unfold "+'". rewrite Zmod_mod. reflexivity.
-       + destruct H1, H2. helper_h H3. rewrite H3. apply zirr. helper. unfold "+'". rewrite Zmod_mod. reflexivity.
+       + destruct H2, H3. znz_toz_arith_h H1. rewrite H1. apply zirr. znz_toz_arith. unfold "-'". rewrite Zmod_mod. reflexivity.
+       + destruct H1, H3. znz_toz_arith_h H2. rewrite H2. apply zirr. znz_toz_arith. unfold "+'". rewrite Zmod_mod. reflexivity.
+       + destruct H1, H2. znz_toz_arith_h H3. rewrite H3. apply zirr. znz_toz_arith. unfold "+'". rewrite Zmod_mod. reflexivity.
 Qed.
 
 Definition galina_spec_from_hacspec p1 p2 pout on_curve1 on_curve2 on_curve_out := 
@@ -381,7 +367,7 @@ Definition galina_spec_from_hacspec p1 p2 pout on_curve1 on_curve2 on_curve_out 
         (of_affine (g1_to_fc p2 on_curve2)) 
         (of_affine (g1_to_fc pout on_curve_out)).
 
-
+(* Hacspec to galina equivalence *)
 Lemma galina_hacspec_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
     g1_from_fc (to_affine pout) ?=? g1add (g1_from_fc (to_affine p1)) (g1_from_fc (to_affine p2)) ->
     exists pout', fc_proj_eq pout pout' /\ galina_spec_from_fc_point p1 p2 pout'.

@@ -26,6 +26,12 @@ src/Bedrock/Field/quadratic_extension_bls12.v
 src/Bedrock/Field/testFp2.v
 src/Bedrock/Curve/BLS12Curve_G1.v
 src/Bedrock/Curve/BLS12Curve_G2.v
+src/Hacspec/Util/MachineIntegers.v
+src/Hacspec/Util/Lib.v
+src/Hacspec/Curve/Bls.v
+src/Hacspec/Curve/blsprime.v
+src/Hacspec/Curve/BlsProof.v
+src/Hacspec/Curve/EquivToBedrock.v
 
 
 

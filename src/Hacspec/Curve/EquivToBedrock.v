@@ -176,8 +176,8 @@ Proof. intros. unfold my_sub. pull_Zmod. reflexivity. Qed.
 Ltac znz_to_z_arith := unfold fp_a, fp_3_b; repeat (try rewrite add_eq; try rewrite mul_eq; try rewrite sub_eq; try rewrite val_eq; try rewrite add_elim_mod; try rewrite mul_elim_mod; try rewrite sub_elim_mod); rewrite <- a_small, <- three_b_small.
 Ltac rememberp X1 X2 Y1 Y2 Z1 Z2 := remember (evfrom X1) as x1; remember (evfrom X2) as x2; remember (evfrom Y1) as y1; remember (evfrom Y2) as y2; remember (evfrom Z1) as z1; remember (evfrom Z2) as z2.
 
-(* Equivalence between galina and fiat with eq relation *)
-Lemma galina_fiat_crypto_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
+(* Equivalence between gallina and fiat with eq relation *)
+Lemma gallina_fiat_crypto_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
     (evfrom outx, evfrom outy, evfrom outz) = pair_val (proj1_sig (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except))).
 Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)). {  intros. rewrite H. reflexivity. } 
@@ -191,18 +191,18 @@ Proof. intros [[[]]] [[[]]] H. cbn. inversion H. destruct (dec (z4 = zero m))eqn
     split ; reflexivity.
 Qed. 
 
-(* Equivalence between from galina to fiat with point equality relation *)
-Lemma galina_fiat_crypto_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out except, 
+(* Equivalence between from gallina to fiat with point equality relation *)
+Lemma gallina_fiat_crypto_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out except, 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz -> 
     fc_proj_eq (to_fc_point_from_mont outx outy outz on_curve_out)  (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except)).
-Proof. intros. rewrite (galina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H. 
+Proof. intros. rewrite (gallina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H. 
     apply fc_proj_eq_sig. unfold to_fc_point_from_mont, to_fc_point, fc_proj_add, proj1_sig.
     apply pair_equal_spec in H.     rememberp X1 X2 Y1 Y2 Z1 Z2. 
     destruct H as [H ->]. apply pair_equal_spec in H. destruct H as [-> ->].
     apply pair_equal_spec. split; [apply pair_equal_spec; split |]; apply zirr; znz_to_z_arith; unfold "-'", "+'"; rewrite Zmod_mod; reflexivity.
 Qed.
 
-Definition galina_spec_from_fc_point (p1 p2 pout : fc_proj_point) := 
+Definition gallina_spec_from_fc_point (p1 p2 pout : fc_proj_point) := 
     let '(x1, y1, z1) := pair_val (proj1_sig p1) in
     let '(x2, y2, z2) := pair_val (proj1_sig p2) in
     let '(outx, outy, outz) := pair_val (proj1_sig pout) in
@@ -229,12 +229,12 @@ Proof. reflexivity. Qed.
 Lemma eval_a_list : eval (a_list bw n a) = a.
 Proof. reflexivity. Qed.
 
-(* Equivalence between from fiat to galina with point equality relation *)
-Lemma galina_fiat_crypto_equiv'' : forall p1 p2 pout except,
+(* Equivalence between from fiat to gallina with point equality relation *)
+Lemma gallina_fiat_crypto_equiv'' : forall p1 p2 pout except,
     fc_proj_eq pout (fc_proj_add p1 p2 except) ->
-    exists pout', fc_proj_eq pout pout' /\ galina_spec_from_fc_point p1 p2 pout'.
+    exists pout', fc_proj_eq pout pout' /\ gallina_spec_from_fc_point p1 p2 pout'.
 Proof. intros. exists (fc_proj_add p1 p2 except).
-    split; [apply H|]. unfold galina_spec_from_fc_point, BLS12_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_add_Gallina_spec.
+    split; [apply H|]. unfold gallina_spec_from_fc_point, BLS12_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_add_Gallina_spec.
     destruct p1 as [[[]]]. destruct p2 as [[[]]]. unfold fc_proj_add, proj1_sig, pair_val. 
     repeat rewrite eval_encodemod_val. znz_to_z_arith. rewrite eval_three_b_list. rewrite eval_a_list. reflexivity.
 Qed.
@@ -293,31 +293,31 @@ Lemma fc_aff_add_compat: forall x y, fc_aff_eq (fc_aff_add x y) (fc_aff_add (g1_
 Proof. intros [[[] | []]] [[[] | []]]; apply fc_aff_eq_sig; cbn; reflexivity.
 Qed.
 
-(* Galina to hacspec equivalence *)
-Lemma galina_hacspec_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_point_from_mont _ _ _ on_curve1) (to_fc_point_from_mont _ _ _ on_curve2)), 
+(* Gallina to hacspec equivalence *)
+Lemma gallina_hacspec_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_point_from_mont _ _ _ on_curve1) (to_fc_point_from_mont _ _ _ on_curve2)), 
     (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz ->
     (to_hacspec_point outx outy outz on_curve_out ?=? g1add (to_hacspec_point X1 Y1 Z1 on_curve1) (to_hacspec_point X2 Y2 Z2 on_curve2))).
-Proof. intros. apply (galina_fiat_crypto_equiv' _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 on_curve_out except) in H.
+Proof. intros. apply (gallina_fiat_crypto_equiv' _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 on_curve_out except) in H.
     unfold to_hacspec_point. rewrite (g1_addition_equal _ _ (preserves_on_curve (to_affine (to_fc_point_from_mont X1 Y1 Z1 on_curve1))) (preserves_on_curve (to_affine (to_fc_point_from_mont X2 Y2 Z2 on_curve2)))).
     apply g1_fc_eq. rewrite same_fc_add. rewrite <- fc_aff_add_compat. rewrite <- (to_affine_add _ _ except). 
     apply fc_eq_iff_Weq. apply H.
 Qed.
 
-Definition galina_spec_from_hacspec p1 p2 pout on_curve1 on_curve2 on_curve_out := 
-        galina_spec_from_fc_point 
+Definition gallina_spec_from_hacspec p1 p2 pout on_curve1 on_curve2 on_curve_out := 
+        gallina_spec_from_fc_point 
         (of_affine (g1_to_fc p1 on_curve1)) 
         (of_affine (g1_to_fc p2 on_curve2)) 
         (of_affine (g1_to_fc pout on_curve_out)).
 
-(* Hacspec to galina equivalence *)
-Lemma galina_hacspec_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
+(* Hacspec to gallina equivalence *)
+Lemma gallina_hacspec_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
     g1_from_fc (to_affine pout) ?=? g1add (g1_from_fc (to_affine p1)) (g1_from_fc (to_affine p2)) ->
-    exists pout', fc_proj_eq pout pout' /\ galina_spec_from_fc_point p1 p2 pout'.
+    exists pout', fc_proj_eq pout pout' /\ gallina_spec_from_fc_point p1 p2 pout'.
 Proof.
     intros. assert (fc_proj_eq pout (fc_proj_add p1 p2 except)).
     { apply fc_eq_iff_Weq. rewrite (to_affine_add). apply g1_fc_eq. rewrite H. 
     rewrite (g1_addition_equal _ _ (preserves_on_curve _) (preserves_on_curve _)). apply g1_fc_eq. rewrite same_fc_add. rewrite <- fc_aff_add_compat. reflexivity. }
-    apply galina_fiat_crypto_equiv'' in H0. apply H0. 
+    apply gallina_fiat_crypto_equiv'' in H0. apply H0. 
 Qed.
 
 (** G2 Equivalence section **)
@@ -438,8 +438,8 @@ Proof. reflexivity. Qed.
 Ltac znz2_to_z2_arith := rewrite three_bp2_eq; rewrite ap2_eq; repeat (try rewrite addp2_eq; try rewrite mulp2_eq; try rewrite subp2_eq; try rewrite valp2_eq; try rewrite addp2_elim_mod; try rewrite mulp2_elim_mod; try rewrite subp2_elim_mod).
 Ltac rememberp2 X1 X2 Y1 Y2 Z1 Z2 := remember (evfrom_pair X1) as x1; remember (evfrom_pair X2) as x2; remember (evfrom_pair Y1) as y1; remember (evfrom_pair Y2) as y2; remember (evfrom_pair Z1) as z1; remember (evfrom_pair Z2) as z2.  
 
-(* Equivalence between galina and fiat with eq relation *)
-Lemma galina_fiat_crypto_p2_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
+(* Equivalence between gallina and fiat with eq relation *)
+Lemma gallina_fiat_crypto_p2_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
     (BLS12_G2_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
     (evfrom_pair outx, evfrom_pair outy, evfrom_pair outz) = pair_p2_val (proj1_sig (fc_proj_p2_add (to_fc_p2_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_p2_point_from_mont X2 Y2 Z2 on_curve2) except))).
 Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)). {  intros. rewrite H. reflexivity. }
@@ -457,11 +457,11 @@ Lemma p2_backandforth: forall p, Fp2_from_Z_Z (valp2 p) = p.
 Proof. intros [[][]]. apply pair_equal_spec. split; apply zirr; cbn; symmetry; [apply inZnZ | apply inZnZ0].
 Qed.
 
-(* Equivalence between from galina to fiat with point equality relation *)
-Lemma galina_fiat_crypto_p2_equiv': forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 on_curveout except, 
+(* Equivalence between from gallina to fiat with point equality relation *)
+Lemma gallina_fiat_crypto_p2_equiv': forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 on_curveout except, 
 (BLS12_G2_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz -> 
 fc_proj_p2_eq (to_fc_p2_point_from_mont outx outy outz on_curveout) (fc_proj_p2_add (to_fc_p2_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_p2_point_from_mont X2 Y2 Z2 on_curve2) except)).
-Proof. intros. apply fc_proj_p2_eq_sig. rewrite (galina_fiat_crypto_p2_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H.
+Proof. intros. apply fc_proj_p2_eq_sig. rewrite (gallina_fiat_crypto_p2_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H.
  unfold to_fc_p2_point_from_mont, to_fc_p2_point, proj1_sig.
  apply pair_equal_spec in H; destruct H as [H ->]; apply pair_equal_spec in H; destruct H as [-> ->].
  do 3 rewrite p2_backandforth. reflexivity. 
@@ -475,7 +475,7 @@ Lemma eval_encodemod_valp2 : forall v, evfrom_pair (encodemodp2 (valp2 v)) = (va
 Proof. intros []. apply pair_equal_spec. unfold encodemodp2, valp2, fst, snd. split; apply eval_encodemod_val.  
 Qed. 
 
-Definition galina_G2_spec_from_fc_point (p1 p2 pout : fc_proj_p2_point) := 
+Definition gallina_G2_spec_from_fc_point (p1 p2 pout : fc_proj_p2_point) := 
     let '(x1, y1, z1) := pair_valp2 (proj1_sig p1) in
     let '(x2, y2, z2) := pair_valp2 (proj1_sig p2) in
     let '(outx, outy, outz) := pair_valp2 (proj1_sig pout) in
@@ -490,12 +490,12 @@ Definition galina_G2_spec_from_fc_point (p1 p2 pout : fc_proj_p2_point) :=
     let outz := encodemodp2 outz in
     BLS12_G2_add_Gallina_spec x1 y1 z1 x2 y2 z2 outx outy outz.
 
-(* Equivalence between from fiat to galina with point equality relation *)
-Lemma galina_fiat_crypto_p2_equiv'' : forall p1 p2 pout except,
+(* Equivalence between from fiat to gallina with point equality relation *)
+Lemma gallina_fiat_crypto_p2_equiv'' : forall p1 p2 pout except,
     fc_proj_p2_eq pout (fc_proj_p2_add p1 p2 except) ->
-    exists pout', fc_proj_p2_eq pout pout' /\ galina_G2_spec_from_fc_point p1 p2 pout'.
+    exists pout', fc_proj_p2_eq pout pout' /\ gallina_G2_spec_from_fc_point p1 p2 pout'.
 Proof. intros. exists (fc_proj_p2_add p1 p2 except).
-    split; [apply H|]. unfold galina_G2_spec_from_fc_point, BLS12_G2_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_G2_add_Gallina_spec.
+    split; [apply H|]. unfold gallina_G2_spec_from_fc_point, BLS12_G2_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_G2_add_Gallina_spec.
     destruct p1 as [[[]]]. destruct p2 as [[[]]]. unfold fc_proj_p2_add, proj1_sig, pair_valp2. 
     repeat rewrite eval_encodemod_valp2. znz2_to_z2_arith. reflexivity.
 Qed.

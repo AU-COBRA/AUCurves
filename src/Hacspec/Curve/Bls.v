@@ -1,3 +1,4 @@
+(** This file is auto-generated **)
 Require Import Hacspec.Util.Lib.
 Require Import Hacspec.Util.MachineIntegers.
 From Coq Require Import ZArith.

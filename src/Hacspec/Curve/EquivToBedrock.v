@@ -250,7 +250,7 @@ Qed.
 
 Lemma g1_fc_eq: forall x y :fc_aff_point, g1_from_fc x ?=? g1_from_fc y <-> fc_aff_eq x y.
 Proof.
-    intros [[[] | []]] [[[] | []]]; unfold "?=?", fc_aff_eq; cbn; split; intros H; inversion H; auto; discriminate.
+    intros [[[] | []]] [[[] | []]]; unfold "?=?", fc_aff_eq; cbn; easy.
 Qed.
 
 Lemma same_field_opp : forall x, Lib.nat_mod_neg x = opp m x.
@@ -429,7 +429,7 @@ Lemma subp2_elim_mod: forall x y, pair_mod x -p2' pair_mod y = x -p2' y.
 Proof. intros [] []. unfold "-p2'". cbn. pull_Zmod. reflexivity.
 Qed. 
 
-Lemma three_bp2_eq: (eval (three_br_list bw n three_bi), eval (three_bi_list bw n three_bi)) = valp2 fp2_3_b.
+Lemma three_bp2_eq: (eval (three_br_list bw n three_br), eval (three_bi_list bw n three_bi)) = valp2 fp2_3_b.
 Proof. reflexivity. Qed.
 
 Lemma ap2_eq: (eval (ar_list bw n 0), eval (ai_list bw n 0)) = valp2 fp2_a.

@@ -51,8 +51,8 @@ Section G1Equiv.
     Local Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m m').
     Local Notation three_b_list := (MontgomeryCurveSpecs.three_b_list bw n three_b).
 
-    Definition BLS12_add_Gallina_spec :=
-        BLS12_add_Gallina_spec m bw n m' a three_b.
+    Local Notation BLS12_add_Gallina_spec :=
+        (BLS12_add_Gallina_spec m bw n m' a three_b).
 
     Local Infix "*'" := (my_mul m) (at level 40).
     Local Infix "+'" := (my_add m) (at level 50).
@@ -134,9 +134,6 @@ Section G1Equiv.
     Lemma sub_elim_mod: forall x y, x mod m -' y mod m = x -' y.
     Proof. intros. unfold my_sub. pull_Zmod. auto. Qed.
 
-    Ltac znz_to_z_arith := repeat (try rewrite add_eq; try rewrite mul_eq; try rewrite sub_eq; try rewrite val_eq; try rewrite add_elim_mod; try rewrite mul_elim_mod; try rewrite sub_elim_mod).
-    Ltac rememberp X1 X2 Y1 Y2 Z1 Z2 := remember (evfrom X1) as x1; remember (evfrom X2) as x2; remember (evfrom Y1) as y1; remember (evfrom Y2) as y2; remember (evfrom Z1) as z1; remember (evfrom Z2) as z2.
-    
     Lemma m_small' : m < uw bw n.
     Proof.
             cbv [uw uweight ModOps.weight].
@@ -147,18 +144,21 @@ Section G1Equiv.
     Lemma eval_list : forall x, x = x mod m -> eval (Partition.partition (uw bw) n x) = x.
     Proof. intros. unfold eval.  rewrite eval_partition; [| apply uwprops, bw_big].
         rewrite Zmod_small; auto.
-        assert (x < m). { rewrite H. apply Z_mod_lt. lia. }
+        assert (x < m) by ( rewrite H; apply Z_mod_lt; lia ).
         pose proof m_small'.
         split; [| lia]. rewrite H. apply Z_mod_lt; pose proof m_big; lia.
     Qed.
+
+    Hint Rewrite add_eq mul_eq sub_eq val_eq add_elim_mod mul_elim_mod sub_elim_mod : znz_to_z_arith.
+    Ltac rememberp X1 X2 Y1 Y2 Z1 Z2 := remember (evfrom X1) as x1; remember (evfrom X2) as x2; remember (evfrom Y1) as y1; remember (evfrom Y2) as y2; remember (evfrom Z1) as z1; remember (evfrom Z2) as z2.
 
     (* Equivalence between gallina and fiat with eq relation *)
     Lemma gallina_fiat_crypto_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
         (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
         (evfrom outx, evfrom outy, evfrom outz) = pair_val (proj1_sig (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except))).
-    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)). {  intros. rewrite H. reflexivity. } 
+    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)) by ( intros; rewrite H; reflexivity ). 
         intros. apply H. unfold pair_val, fc_proj_add, proj1_sig, to_fc_point_from_mont, to_fc_point.
-        rememberp X1 X2 Y1 Y2 Z1 Z2. znz_to_z_arith. 
+        rememberp X1 X2 Y1 Y2 Z1 Z2. autorewrite with znz_to_z_arith.
         unfold three_b_list, a_list. rewrite (eval_list _ three_b_small), (eval_list _ a_small) . reflexivity.
     Qed.
 
@@ -175,7 +175,7 @@ Section G1Equiv.
         apply fc_proj_eq_sig. unfold to_fc_point_from_mont, to_fc_point, fc_proj_add, proj1_sig.
         apply pair_equal_spec in H. rememberp X1 X2 Y1 Y2 Z1 Z2. 
         destruct H as [H ->]. apply pair_equal_spec in H. destruct H as [-> ->].
-        apply pair_equal_spec. split; [apply pair_equal_spec; split |]; apply zirr; znz_to_z_arith; unfold "-'", "+'"; rewrite Zmod_mod; reflexivity.
+        apply pair_equal_spec. split; [apply pair_equal_spec; split |]; apply zirr; autorewrite with znz_to_z_arith; unfold "-'", "+'"; rewrite Zmod_mod; reflexivity.
     Qed.
 
     Definition gallina_spec_from_fc_point (p1 p2 pout : fc_proj_point) := 
@@ -204,9 +204,9 @@ Section G1Equiv.
         fc_proj_eq pout (fc_proj_add p1 p2 except) ->
         exists pout', fc_proj_eq pout pout' /\ gallina_spec_from_fc_point p1 p2 pout'.
     Proof. intros. exists (fc_proj_add p1 p2 except).
-        split; [apply H|]. unfold gallina_spec_from_fc_point, BLS12_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_add_Gallina_spec.
+        split; [apply H|]. unfold gallina_spec_from_fc_point, BLS12_add_Gallina_spec.
         destruct p1 as [[[]]]. destruct p2 as [[[]]]. unfold fc_proj_add, proj1_sig, pair_val. 
-        repeat rewrite eval_encodemod_val. znz_to_z_arith. 
+        repeat rewrite eval_encodemod_val. autorewrite with znz_to_z_arith. 
         unfold three_b_list, a_list. rewrite (eval_list _ three_b_small), (eval_list _ a_small) . reflexivity.
     Qed.
 End G1Equiv.
@@ -227,10 +227,10 @@ Section G2Equiv.
             (ai_small : ai = ai mod m)
             (br_small : br = br mod m)
             (bi_small : bi = bi mod m)
-            (three_bi_small : three_bi = three_bi mod m)
             (three_br_small : three_br = three_br mod m)
-            (three_bi_correct : three_bi = bi + bi + bi)
-            (three_br_correct : three_br = br + br + br).
+            (three_bi_small : three_bi = three_bi mod m)
+            (three_br_correct : three_br = br + br + br)
+            (three_bi_correct : three_bi = bi + bi + bi).
 
     Local Notation r := (MontgomeryRingTheory.r bw).
 
@@ -256,8 +256,8 @@ Section G2Equiv.
 
     Local Notation mont_enc := (mont_enc m bw n).
     
-    Definition BLS12_G2_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz :=
-    @BLS12_G2_add_Gallina_spec m bw n m' ar ai three_br three_bi X1 Y1 Z1 X2 Y2 Z2 outx outy outz.
+    Local Notation BLS12_G2_add_Gallina_spec :=
+        (BLS12_G2_add_Gallina_spec m bw n m' ar ai three_br three_bi).
 
     Local Infix "*p2'" := (my_mulFp2 m) (at level 40).
     Local Infix "+p2'" := (my_addFp2 m) (at level 50).
@@ -353,18 +353,17 @@ Section G2Equiv.
     Proof. unfold ar_list, ai_list. repeat rewrite eval_list; auto. 
     Qed.
 
-    Ltac znz2_to_z2_arith := rewrite three_bp2_eq; rewrite ap2_eq; repeat (try rewrite Fp2_add_equiv; try rewrite Fp2_mul_equiv; try rewrite Fp2_sub_equiv; try rewrite Fp2_to_Z2_eq; try rewrite addp2_elim_mod; try rewrite mulp2_elim_mod; try rewrite subp2_elim_mod).
+    Hint Rewrite three_bp2_eq ap2_eq Fp2_add_equiv Fp2_mul_equiv Fp2_sub_equiv Fp2_to_Z2_eq addp2_elim_mod mulp2_elim_mod subp2_elim_mod : znz2_to_z2_arith.
     Ltac rememberp2 X1 X2 Y1 Y2 Z1 Z2 := remember (evfrom_pair X1) as x1; remember (evfrom_pair X2) as x2; remember (evfrom_pair Y1) as y1; remember (evfrom_pair Y2) as y2; remember (evfrom_pair Z1) as z1; remember (evfrom_pair Z2) as z2.  
-
 
     (* Equivalence between gallina and fiat with eq relation *)
     Lemma gallina_fiat_crypto_p2_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
         (BLS12_G2_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
         (evfrom_pair outx, evfrom_pair outy, evfrom_pair outz) = pair_p2_val (proj1_sig (fc_proj_p2_add (to_fc_p2_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_p2_point_from_mont X2 Y2 Z2 on_curve2) except))).
-    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)). {  intros. rewrite H. reflexivity. }
-        intros. unfold BLS12_G2_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_G2_add_Gallina_spec, to_fc_p2_point_from_mont.
+    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)) by ( intros; rewrite H; reflexivity ). 
+        intros. unfold BLS12_G2_add_Gallina_spec, to_fc_p2_point_from_mont.
         apply H. unfold pair_p2_val, fc_proj_p2_add, proj1_sig, to_fc_p2_point. 
-        rememberp2 X1 X2 Y1 Y2 Z1 Z2. znz2_to_z2_arith. reflexivity.
+        rememberp2 X1 X2 Y1 Y2 Z1 Z2. autorewrite with znz2_to_z2_arith. reflexivity.
     Qed.
 
     Lemma fc_proj_p2_eq_sig: forall x y, proj1_sig x = proj1_sig y -> fc_proj_p2_eq x y.
@@ -416,9 +415,9 @@ Section G2Equiv.
         fc_proj_p2_eq pout (fc_proj_p2_add p1 p2 except) ->
         exists pout', fc_proj_p2_eq pout pout' /\ gallina_G2_spec_from_fc_point p1 p2 pout'.
     Proof. intros. exists (fc_proj_p2_add p1 p2 except).
-        split; [apply H|]. unfold gallina_G2_spec_from_fc_point, BLS12_G2_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_G2_add_Gallina_spec.
+        split; [apply H|]. unfold gallina_G2_spec_from_fc_point, BLS12_G2_add_Gallina_spec.
         destruct p1 as [[[]]]. destruct p2 as [[[]]]. unfold fc_proj_p2_add, proj1_sig, pair_Fp2_to_Z2. 
-        repeat rewrite eval_encodemod_Fp2_to_Z2. znz2_to_z2_arith. reflexivity.
+        repeat rewrite eval_encodemod_Fp2_to_Z2. autorewrite with znz2_to_z2_arith. reflexivity.
     Qed.
 
 End G2Equiv.

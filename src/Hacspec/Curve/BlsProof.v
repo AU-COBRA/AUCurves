@@ -131,7 +131,7 @@ Qed.
 Local Notation g1_fc_point := (@W.point fp' eq nat_mod_add nat_mod_mul nat_mod_zero nat_mod_four). 
 (* Fiat-Crypto Equivalence, Addition and Zero element *)
 Local Notation g1_fc_eq := (@W.eq fp' eq nat_mod_add nat_mod_mul nat_mod_zero nat_mod_four).       
-Local Notation g1_fc_add := (@W.add fp' eq nat_mod_zero nat_mod_one nat_mod_neg nat_mod_add nat_mod_sub nat_mod_mul nat_mod_inv nat_mod_div fp_fc_field g1_dec fp_char_ge nat_mod_zero nat_mod_four).
+Notation g1_fc_add := (@W.add fp' eq nat_mod_zero nat_mod_one nat_mod_neg nat_mod_add nat_mod_sub nat_mod_mul nat_mod_inv nat_mod_div fp_fc_field g1_dec fp_char_ge nat_mod_zero nat_mod_four).
 Local Notation g1_fc_zero := (@W.zero fp' eq nat_mod_add nat_mod_mul nat_mod_zero nat_mod_four).
 
 (* ?x? is x performed by hacspec. #x# is x performed by Fiat-Crypto *)
@@ -234,6 +234,8 @@ Proof. intros [[]] [[]] H H0. unfold g1add, g1_from_fc, g1_to_fc, g1_fc_add, g1_
     subst. rewrite g1_eqb_true. cbn. repeat rewrite exp2ismul. rewrite three_equiv, two_equiv.
     split; split; auto; rewrite fp_eq_ok; field; split; intro c; try (rewrite c in k; rewrite fp_eq_true in k); discriminate.
 Qed.
+
+(* G2 proof section *)
 
 Definition fp2one :fp2 := (nat_mod_one, nat_mod_zero).
 
@@ -353,7 +355,7 @@ Proof.
   rewrite H; easy.
 Qed.
 
-Local Notation g2_b := (nat_mod_four, nat_mod_four).
+Notation g2_b := (nat_mod_four, nat_mod_four).
 
 (* Representation af a Fiat-crypto G1 point *)
 Local Notation g2_fc_point := (@W.point fp2 eq fp2add fp2mul fp2zero g2_b). 

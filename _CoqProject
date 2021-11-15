@@ -10,6 +10,7 @@ src/Theory/Fields/FieldsUtil.v
 src/Theory/WordByWordMontgomery/MontgomeryRingTheory.v
 src/Theory/WordByWordMontgomery/wbw_morphisms.v
 src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v
+src/Theory/WordByWordMontgomery/CurveSpecsEquivalence.v
 src/Implementations/SOS/SOSMul.v
 src/Implementations/SOS/SOSReduction.v
 src/Bedrock/Field/bls12prime.v

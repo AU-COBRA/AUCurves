@@ -1,5 +1,5 @@
 (* ########### PROOF SECTION ########### 
-This file contains proof that the hacspec specification of the bls12-381 curve group operations (addition and 
+This file contains proofs that the hacspec specification of the bls12-381 curve group operations (addition and 
 scalar multiplication) is equivalent to the fiat-crypto specifiaction of curve addition and scalar multiplication.
 This is done for both of the curves E(Fp): y²=x³+4 and E'(Fp²): y²=x²+4(u+1), with Fp² defined as Fp(u)/(u²+1).
 *)

@@ -1,5 +1,5 @@
-(** This file contains a proof the hacspec specifiaction of the group addition over the bls12-381 curve
-is equivalent to the gallina specification of the same group addition. **)
+(** This file contains a proof the hacspec specification of the group addition over the bls12-381 curve
+is equivalent to the MontgomeryCurveSpecs gallina specification of the same group addition. **)
 
 Require Import Hacspec.Util.Lib.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.

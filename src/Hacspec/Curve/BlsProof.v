@@ -1,4 +1,8 @@
-(* ########### PROOF SECTION ########### *)
+(* ########### PROOF SECTION ########### 
+This file contains proofs that the hacspec specification of the bls12-381 curve group operations (addition and 
+scalar multiplication) is equivalent to the fiat-crypto specifiaction of curve addition and scalar multiplication.
+This is done for both of the curves E(Fp): y²=x³+4 and E'(Fp²): y²=x²+4(u+1), with Fp² defined as Fp(u)/(u²+1).
+*)
 
 Require Import Hacspec.Util.Lib. 
 Require Import Hacspec.Util.MachineIntegers.
@@ -247,6 +251,8 @@ Local Notation g1_fc_mul := (@W.mul fp' eq nat_mod_zero nat_mod_one nat_mod_neg 
 
 Local Notation scalarmod := 0x8000000000000000000000000000000000000000000000000000000000000000.
 
+Local Notation inf := (nat_mod_zero, nat_mod_zero, true).
+
 Require Import Lia.
 
 Lemma max_unsigned32 : @max_unsigned WORDSIZE32 = 4294967295.
@@ -255,6 +261,7 @@ Proof. reflexivity. Qed.
 Lemma modulus32 : @modulus WORDSIZE32 = 4294967296.
 Proof. reflexivity. Qed.
 
+(* Lemma for doing a single step in a for-loop *)
 Lemma foldi_helper: forall A n i f (acc : A), 0 <= i <= 256 -> foldi_ (S n) (repr i) f acc = foldi_ (n) (repr (i +1)) f (f (repr i) acc).
 Proof. intros. assert (@add WORDSIZE32 (repr i) one = repr (i + 1)). {
     unfold add. rewrite unsigned_one. rewrite unsigned_repr. reflexivity.
@@ -262,9 +269,6 @@ Proof. intros. assert (@add WORDSIZE32 (repr i) one = repr (i + 1)). {
   } 
   cbn. rewrite H0. reflexivity.
 Qed.
-
-
-Local Notation inf := (nat_mod_zero, nat_mod_zero, true).
 
 Lemma g1_double_inf: forall x y, (g1double (x, y, true)) = inf. 
 Proof. 
@@ -554,7 +558,7 @@ Proof with try lia.
     apply IHn...
 Qed.
     
-
+(* Equivalence between g1mul and an intermediate mul function *)
 Lemma helperg1muleq2 : forall l p, length l <= 256 -> 0 <= from_listbool_to_Z l < scalarmod -> g1mul (GZnZ.mkznz _ _ (GZnZ.modz scalarmod (from_listbool_to_Z l))) p = helperg1mul' l p inf.
 Proof with try lia. 
   intros. unfold g1mul, foldi. pose proof helperg1muleq. unfold helperf in H1.
@@ -565,7 +569,7 @@ Proof with try lia.
   rewrite H1... reflexivity.
 Qed.
 
-
+(* Point multiplication defined over Z *)
 Definition Zhelperg1mul (z: Z) p := match z with
 | Z0 => (nat_mod_zero, nat_mod_zero, true)
 | Zpos pos => helperg1mul pos p
@@ -725,6 +729,7 @@ Lemma discriminant_nonzero : id
    nat_mod_four) *% nat_mod_four) <> nat_mod_zero).
 Proof. unfold id. intro c. field_simplify in c. inversion c. Qed.
 
+(* Proof that fiat-crypto points form a commutative group *)
 Local Notation commutative_group := (@W.commutative_group fp eq nat_mod_zero nat_mod_one nat_mod_neg nat_mod_add nat_mod_sub nat_mod_mul nat_mod_inv nat_mod_div nat_mod_zero nat_mod_four fp_fc_field g1_dec fp_char_ge char_ge_12 discriminant_nonzero).
 
 Lemma fc_assoc : forall p1 p2 p3, (p1 #+# p2) #+# p3 #=# p1 #+# (p2 #+# p3).
@@ -753,6 +758,7 @@ Proof with auto with on_curves.
   - cbn. apply g1double_is_add.
 Qed.
 
+(* Equivalence from helper mul function to fiat-crypto mul *)
 Lemma helperg1muleq4 : forall (n :nat) p, 0 <= Z.of_nat n < scalarmod -> Zhelperg1mul (Z.of_nat n) (g1_from_fc p) ?=? g1_from_fc (g1_fc_mul n p).
 Proof with auto with on_curves. intros. induction n.
   - reflexivity.
@@ -763,7 +769,7 @@ Proof with auto with on_curves. intros. induction n.
       lia.
 Qed.
 
-(* Equivalence *)
+(* Equivalence from g1mul to fiat-crypto mul *)
 Theorem g1_mul_equal : forall n p, 0 <= Z.of_nat n < scalarmod -> g1mul (GZnZ.mkznz _ _ (GZnZ.modz scalarmod (Z.of_nat n))) (g1_from_fc p) ?=? g1_from_fc (g1_fc_mul n p).
 Proof with try lia. intros. pose proof helperg1muleq2. unfold g1mul, nat_mod_bit. unfold g1mul, nat_mod_bit in H0. cbn. cbn in H0. 
 rewrite <- (fthandbck (Z.of_nat n))... rewrite H0. rewrite helperg1muleq3... apply helperg1muleq4...
@@ -1100,7 +1106,7 @@ Proof with try lia.
     apply IHn...
 Qed.
     
-
+(* Equivalence between g1mul and an intermediate mul function *)
 Lemma helperg2muleq2 : forall l p, length l <= 256 -> 0 <= from_listbool_to_Z l < scalarmod -> g2mul (GZnZ.mkznz _ _ (GZnZ.modz scalarmod (from_listbool_to_Z l))) p = helperg2mul' l p inf2.
 Proof with try lia. 
   intros. unfold g2mul, foldi. pose proof helperg2muleq. unfold g2_helperf in H1.
@@ -1111,7 +1117,7 @@ Proof with try lia.
   rewrite H1... reflexivity.
 Qed.
 
-
+(* Point multiplication defined over Z *)
 Definition Zhelperg2mul (z: Z) p := match z with
 | Z0 => inf2
 | Zpos pos => helperg2mul pos p
@@ -1143,36 +1149,9 @@ Proof.
   - lia.
 Qed.
 
-
-(* Proving some facts about g1add and g1double*)
-
-Transparent g2double. Transparent g2add.
-(*
-Lemma g2add_comm : forall p1 p2, g1_on_curve p1 -> g1_on_curve p2 -> p1 ?+? p2 ?=? p2 ?+? p1.
-Proof. intros [[] []] [[] []] onc1 onc2.
-  - reflexivity.
-  - cbn. auto.
-  - cbn. auto.
-  - cbn. destruct ((f, f0, false) =.? (f1, f2, false)) eqn:E.
-    + destruct (f0 =.? nat_mod_zero) eqn:E2.
-      * apply eqb_leibniz in E, E2. inversion E. subst. rewrite g1_eqb_true. rewrite fp_eq_true. reflexivity.
-      * apply eqb_leibniz in E. inversion E. subst. rewrite g1_eqb_true. rewrite E2. reflexivity.
-    + destruct ((f1, f2, false) =.? (f, f0, false)) eqn:E3. apply eqb_leibniz in E3. rewrite E3 in E. rewrite g1_eqb_true in E. discriminate.
-      destruct (f =.? f1) eqn:E1.  
-      * destruct (f0 =.? nat_mod_zero -% f2) eqn:E2.
-        -- apply eqb_leibniz in E1, E2. subst. field_simplify (nat_mod_zero -% (nat_mod_zero -% f2)). repeat rewrite fp_eq_true.
-        reflexivity.
-        -- apply eqb_leibniz in E1. subst.
-        pose proof (symmetrical_x_axis _ _ _ _ onc1 onc2 eq_refl).
-        destruct H.
-          ++ subst. rewrite g1_eqb_true in E. discriminate.
-          ++ subst. field_simplify (nat_mod_zero -% f2) in E2. rewrite fp_eq_true in E2. discriminate.
-      * destruct (f1 =.? f) eqn:E4. apply eqb_leibniz in E4. rewrite E4, fp_eq_true in E1. discriminate.
-        cbn. repeat rewrite exp2ismul.  split; auto; split; rewrite fp_eq_ok; field; split; intro c; rewrite sub_eq_zero_means_same in c; subst; rewrite fp_eq_true in E1; discriminate.
-Qed.      
-     *)   
+(* Proving some facts about g2double and g2add *)
 Lemma g2double_is_add: forall p, g2double p ?=2? p ?+2? p.
-Proof. Opaque g2double. intros [[] []]. 
+Proof. Opaque g2double. Transparent g2add. intros [[] []]. 
   - cbn. rewrite g2_double_inf. reflexivity.
   - cbn. rewrite g2_eqb_true. reflexivity.
   Transparent g1double.
@@ -1259,11 +1238,6 @@ Proof. intros. induction pos.
   - cbn. auto.
 Qed.
 
- 
-Require Import Crypto.Curves.Weierstrass.AffineProofs.
-Require Import Theory.Fields.FieldsUtil.
-
-
 Local Notation fp2four := (fp2three +%2 fp2one). 
 
 Lemma g2_discriminant_nonzero : id
@@ -1280,6 +1254,7 @@ Proof. unfold Ring.char_ge, char_ge. intros.
   do 4 (destruct p; try easy).
 Qed.
 
+(* Proof that fiat-crypto points form a commutative group *)
 Local Notation g2_commutative_group := (@W.commutative_group fp2 eq fp2zero fp2one fp2neg fp2add fp2sub fp2mul fp2inv fp2div fp2zero g2_b fp2_fc_field g2_dec fp2_char_ge fp2_char_ge_12 g2_discriminant_nonzero).
 
 Lemma g2_fc_assoc : forall p1 p2 p3, (p1 #+2# p2) #+2# p3 #=2# p1 #+2# (p2 #+2# p3).
@@ -1310,6 +1285,7 @@ Proof with auto with g2_on_curves.
   - cbn. apply g2double_is_add.
 Qed.
 
+(* Equivalence from helper mul function to fiat-crypto mul *)
 Lemma helperg2muleq4 : forall (n :nat) p, 0 <= Z.of_nat n < scalarmod -> Zhelperg2mul (Z.of_nat n) (g2_from_fc p) ?=2? g2_from_fc (g2_fc_mul n p).
 Proof with auto with g2_on_curves. intros. induction n.
   - reflexivity.
@@ -1320,7 +1296,7 @@ Proof with auto with g2_on_curves. intros. induction n.
       lia.
 Qed.
 
-(* Equivalence *)
+(* Equivalence from g2mul to fiat-crypto mul *)
 Theorem g2_mul_equal : forall n p, 0 <= Z.of_nat n < scalarmod -> g2mul (GZnZ.mkznz _ _ (GZnZ.modz scalarmod (Z.of_nat n))) (g2_from_fc p) ?=2? g2_from_fc (g2_fc_mul n p).
 Proof with try lia. intros. pose proof helperg2muleq2. unfold g2mul, nat_mod_bit. unfold g2mul, nat_mod_bit in H0. cbn. cbn in H0. 
 rewrite <- (fthandbck (Z.of_nat n))... rewrite H0. rewrite helperg2muleq3... apply helperg2muleq4...

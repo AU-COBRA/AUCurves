@@ -1,3 +1,6 @@
+(** This file contains a proof the hacspec specification of the group addition over the bls12-381 curve
+is equivalent to the MontgomeryCurveSpecs gallina specification of the same group addition. **)
+
 Require Import Hacspec.Util.Lib.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Crypto.Curves.Weierstrass.Projective.
@@ -203,7 +206,7 @@ Section G1Equiv.
     Qed.
 
     (* Gallina to hacspec equivalence *)
-    Lemma gallina_hacspec_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_point_from_mont _ _ _ on_curve1) (to_fc_point_from_mont _ _ _ on_curve2)), 
+    Theorem gallina_hacspec_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_point_from_mont _ _ _ on_curve1) (to_fc_point_from_mont _ _ _ on_curve2)), 
         (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz ->
         (to_hacspec_point outx outy outz on_curve_out ?=? g1add (to_hacspec_point X1 Y1 Z1 on_curve1) (to_hacspec_point X2 Y2 Z2 on_curve2))).
     Proof. intros. apply (BLS_gallina_fiat_crypto_equiv' _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 on_curve_out except) in H.
@@ -213,7 +216,7 @@ Section G1Equiv.
     Qed.
 
     (* Hacspec to gallina equivalence *)
-    Lemma gallina_hacspec_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
+    Theorem gallina_hacspec_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
         g1_from_fc (to_affine pout) ?=? g1add (g1_from_fc (to_affine p1)) (g1_from_fc (to_affine p2)) ->
         exists pout', fc_proj_eq pout pout' /\ gallina_spec_from_fc_point p1 p2 pout'.
     Proof.
@@ -267,6 +270,7 @@ Section G2Equiv.
     Lemma three_bi_correct : three_bi = bi + bi + bi.
     Proof. auto. Qed.
 
+    (* Some Notation *)
     Local Notation BLS12_G2_add_Gallina_spec :=
         (@BLS12_G2_add_Gallina_spec m bw n m' 0 0 three_br three_bi).
 
@@ -347,6 +351,7 @@ Section G2Equiv.
     Local Notation not_exceptional := (@Projective.not_exceptional (Fp2) (@eq (Fp2)) (zerop2 m) (onep2 m) (oppp2 m) (addp2 m) (subp2 m) (mulp2 m) (invp2 m) (divp2 m) fp2_a fp2_b fc_p2_field fp2_char_ge_3 fc_fp2_dec).
     Local Notation gallina_G2_spec_from_fc_point := (@gallina_G2_spec_from_fc_point m bw n m' ar ai br bi three_br three_bi ar_small ai_small br_small bi_small).
 
+    (* Proofs that the extension fields are equivalent*)
     Lemma Quad_neg_one : Quad_non_res m = opp m (one m).
     Proof. reflexivity. Qed.
 
@@ -357,18 +362,6 @@ Section G2Equiv.
 
     Lemma same_p2_add : forall x y, x +%2 y = x +m2 y.
     Proof. intros [] []. auto. Qed.
-
-    (* Translation from QuadraticFieldExtesions fp2 to hacspec fp2. Neccesary since the extension fields have been defined differently. *)
-    Program Definition to_hacspec_aff_p2 (x : fc_aff_p2_point) : g2_fc_point := 
-    match W.coordinates x return Fp2 * Fp2 + unit with
-        | inr tt => inr tt
-        | inl (x, y) => inl (x, y)
-    end.
-    Opaque fp2mul.
-    Next Obligation.
-    destruct x as [[[]|[]]]; cbn; auto. repeat rewrite same_p2_add. repeat rewrite same_p2_mul. apply y.
-    Transparent fp2mul.
-    Qed.
     
     Lemma same_p2_dec : forall A x y (a b: A), (if g2_dec x y then a else b) = (if fc_fp2_dec x y then a else b).
     Proof. intros. destruct (g2_dec x y), (fc_fp2_dec x y); easy. Qed.
@@ -436,8 +429,22 @@ Section G2Equiv.
 
     Hint Rewrite same_p2_mul same_p2_add same_p2_div same_p2_dec same_p2_zero same_p2_one same_p2_opp same_p2_sub : same_p2.
 
+    (* Translation from fiat-crypto points over QuadraticFieldExtensions fp2 to fiat-crypto points over hacspec fp2. Neccesary since the extension fields have been defined differently. *)
+    Program Definition to_hacspec_aff_p2 (x : fc_aff_p2_point) : g2_fc_point := 
+    match W.coordinates x return Fp2 * Fp2 + unit with
+        | inr tt => inr tt
+        | inl (x, y) => inl (x, y)
+    end.
+    Opaque fp2mul.
+    Next Obligation.
+    destruct x as [[[]|[]]]; cbn; auto. repeat rewrite same_p2_add. repeat rewrite same_p2_mul. apply y.
+    Transparent fp2mul.
+    Qed.
+
+    (* Translation from Bedrock G2 point to hacspec G2 point through fiat-crypto*)
     Definition to_hacspec_p2_point (X1 Y1 Z1 : (list Z * list Z)) on_curve := g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 (to_fc_p2_point_from_mont X1 Y1 Z1 on_curve))).
 
+    (* Some helper lemmas to go from g2 points to fiat-crypto points over QuadraticFieldExtensions fp2 *)
     Lemma g2_fc_eq: forall x y , g2_from_fc (to_hacspec_aff_p2 x) ?=2? g2_from_fc (to_hacspec_aff_p2 y) <-> fc_aff_p2_eq x y.
     Proof.
         intros [[[] | []]] [[[] | []]]; unfold "?=2?", to_hacspec_aff_p2, fc_aff_p2_eq; cbn; split; auto.
@@ -479,7 +486,7 @@ Section G2Equiv.
         as fc_aff_p2_rel.
 
     (* Gallina to hacspec equivalence *)
-    Lemma gallina_hacspec_p2_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_p2_point_from_mont _ _ _ on_curve1) (to_fc_p2_point_from_mont _ _ _ on_curve2)), 
+    Theorem gallina_hacspec_p2_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out (except: not_exceptional (to_fc_p2_point_from_mont _ _ _ on_curve1) (to_fc_p2_point_from_mont _ _ _ on_curve2)), 
         (BLS12_G2_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz ->
         (to_hacspec_p2_point outx outy outz on_curve_out ?=2? g2add (to_hacspec_p2_point X1 Y1 Z1 on_curve1) (to_hacspec_p2_point X2 Y2 Z2 on_curve2))).
     Proof. intros. apply (BLS_gallina_fiat_crypto_p2_equiv' _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 on_curve_out except) in H.
@@ -489,9 +496,9 @@ Section G2Equiv.
     Qed.
 
     (* Hacspec to gallina equivalence *)
-    Lemma gallina_hacspec_p2_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
-    g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 pout)) ?=2? g2add (g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 p1))) (g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 p2))) ->
-    exists pout', fc_proj_p2_eq pout pout' /\ gallina_G2_spec_from_fc_point p1 p2 pout'.
+    Theorem gallina_hacspec_p2_equiv' : forall p1 p2 pout (except : not_exceptional p1 p2), 
+        g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 pout)) ?=2? g2add (g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 p1))) (g2_from_fc (to_hacspec_aff_p2 (to_affine_p2 p2))) ->
+        exists pout', fc_proj_p2_eq pout pout' /\ gallina_G2_spec_from_fc_point p1 p2 pout'.
     Proof.
         intros. assert (fc_proj_p2_eq pout (fc_proj_p2_add p1 p2 except)).
         { apply fc_p2_eq_iff_Weq. rewrite (to_affine_p2_add). apply g2_fc_eq. rewrite H. 

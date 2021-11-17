@@ -1,3 +1,6 @@
+(** This file contains a proof that the MontgomeryCurveSpecs gallina specification of the group addition 
+over the bls12-381 curve is equivalent to the fiat-crypto specification of said group addition. **)
+
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Crypto.Curves.Weierstrass.Projective.
 Require Import Coq.ZArith.ZArith.
@@ -214,7 +217,7 @@ End G1Equiv.
 Section G2Equiv.
     Open Scope Z_scope.
     Local Coercion Z.of_nat : nat >-> Z.
-
+    (* Some Notation *)
     Context (m : Z)
             (bw : Z)
             (n : nat)

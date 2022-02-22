@@ -33,6 +33,8 @@ src/Hacspec/Curve/Bls.v
 src/Hacspec/Curve/blsprime.v
 src/Hacspec/Curve/BlsProof.v
 src/Hacspec/Curve/EquivToBedrock.v
+src/Hacspec/Curve/Ed25519.v
+src/Hacspec/Curve/Ed25519Prooof.v
 
 
 

@@ -1,3 +1,7 @@
+(* Proving equivalence between the Hacspec implementation of the Ed25519 curve operations
+   and the fiat crypto specification. Addition is finished, but there is missing parts of 
+   multiplication. *)
+
 Require Import Hacspec.Util.Lib.
 Require Import Hacspec.Util.MachineIntegers.
 From Coq Require Import ZArith.
@@ -80,6 +84,8 @@ Proof. intros x H.  Admitted.
 Notation fc_point := (@point ed25519_field_element_t Logic.eq nat_mod_zero nat_mod_add nat_mod_mul a d).
 Notation fc_add := (@m1add ed25519_field_element_t Logic.eq nat_mod_zero nat_mod_one nat_mod_neg nat_mod_add nat_mod_sub nat_mod_mul nat_mod_inv nat_mod_div fc_field ed_char_ge ed_dec
 a d nonzero_a square_a nonsquare_d eq_refl twice_d eq_refl).
+Notation fc_id := (@Basic.zero ed25519_field_element_t Logic.eq nat_mod_zero nat_mod_one nat_mod_neg nat_mod_add nat_mod_sub nat_mod_mul nat_mod_inv nat_mod_div fc_field ed_dec
+a d nonzero_a).
 
 Notation fc_eq := (@eq ed25519_field_element_t Logic.eq nat_mod_zero nat_mod_add nat_mod_mul a d).
 
@@ -195,4 +201,203 @@ Lemma add_spec_equiv': forall (p q : ed_point_t) (oncp : onCurve p) (oncq : onCu
 Proof.
   intros. rewrite <- add_equiv'. rewrite homomorphism. reflexivity.
 Qed.
+
+Notation "x ?=? y" := (ed_eq x y) (at level 90).
+Notation "x ?+? y" := (point_add x y) (at level 60).
+Notation "x #=# y" := (fc_eq x y) (at level 90).
+Notation "x #+# y" := (fc_add x y) (at level 60).
+
+Lemma ed_refl: forall x, x ?=? x.
+Proof. intros [[[]]]. split; reflexivity.
+Qed.
+
+Lemma ed_symm: forall x y, x ?=? y -> y ?=? x.
+Proof.
+  intros [[[]]] [[[]]]. cbn. intros [-> ->]. auto.
+Qed.
+
+Lemma ed_field_refl: forall x: ed25519_field_element_t, x =.? x = true.
+Proof. intros. unfold "=.?", nat_mod_eqdec. apply Z.eqb_refl. Qed.
+
+(* Missing the case for zero, should be possible using fiat-crypto IntegralDomain *)
+Lemma ed_trans: forall x y z, x ?=? y -> y ?=? z -> x ?=? z.
+Proof.
+  intros [[[]]] [[[]]] [[[]]]. cbn. intros [] []. split.
+  - destruct (e5 =.? (nat_mod_zero : ed25519_field_element_t)) eqn:E.
+    + rewrite eqb_leibniz in E. subst. admit.
+    + apply (f_equal (fun x => e9 *% (nat_mod_inv e5) *% x)) in H. field_simplify in H. rewrite H.
+   pose proof ed_field_theory as [[]]. rewrite (Rmul_comm e9). rewrite <- Rmul_assoc. rewrite H1. field. 
+   intro. all: subst; rewrite ed_field_refl in E; discriminate.
+  - destruct (e5 =.? (nat_mod_zero : ed25519_field_element_t)) eqn:E.
+   + rewrite eqb_leibniz in E. subst. admit.
+   + apply (f_equal (fun x => e9 *% (nat_mod_inv e5) *% x)) in H0. field_simplify in H0. rewrite H0.
+  pose proof ed_field_theory as [[]]. rewrite (Rmul_comm e9). rewrite <- Rmul_assoc. rewrite H2. field. 
+  intro. all: subst; rewrite ed_field_refl in E; discriminate.
+Admitted. 
+
+Add Relation ed_point_t ed_eq
+  reflexivity proved by ed_refl
+  symmetry proved by ed_symm
+  transitivity proved by ed_trans
+  as ed_eq_rel.
   
+Lemma ed_add_comm: forall x y, onCurve x -> onCurve y -> x ?+? y ?=? y ?+? x.
+  intros. rewrite (to_and_from _ H). rewrite (to_and_from _ H0). do 2 rewrite -> add_equiv.
+  rewrite fc_eq_equiv. apply commutative.
+Qed.
+
+Lemma ed_add_assoc: forall x y z, onCurve x -> onCurve y -> onCurve z -> x ?+? (y ?+? z) ?=? (x ?+? y) ?+? z.
+Proof. intros. rewrite (to_and_from _ H). rewrite (to_and_from _ H0). rewrite (to_and_from _ H1).
+repeat rewrite add_equiv. rewrite fc_eq_equiv. apply associative.
+Qed. 
+
+Require Import Lia.
+
+Require Import MachineIntegers.
+
+Lemma max_unsigned32 : @max_unsigned WORDSIZE32 = 4294967295.
+Proof. reflexivity. Qed.
+
+Lemma modulus32 : @modulus WORDSIZE32 = 4294967296.
+Proof. reflexivity. Qed.
+
+Lemma foldi_helper: forall A n i f (acc : A), 0 <= i <= 256 -> foldi_ (S n) (repr i) f acc = foldi_ (n) (repr (i +1)) f (f (repr i) acc).
+Proof. intros. assert (@add WORDSIZE32 (repr i) one = repr (i + 1)). {
+    unfold add. rewrite unsigned_one. rewrite unsigned_repr. reflexivity.
+    rewrite max_unsigned32. lia.
+  } 
+  cbn. rewrite H0. reflexivity.
+Qed.
+
+Notation scalarmod := (2^252 + 27742317777372353535851937790883648493).
+
+Definition scalar_from_z (z : Z) : scalar_t := (mkznz _ _ (modz _ z)).
+Definition scalar_from_pos (p : positive) : scalar_t := scalar_from_z (Zpos p).
+
+
+
+Definition helperf (s: scalar_t) := (fun i_69 '(p_67, q_68) =>
+let '(q_68) :=
+  if nat_mod_bit (s) (i_69):bool then (let q_68 :=
+      point_add (q_68) (p_67) in 
+    (q_68)) else ((q_68)) in 
+let p_67 :=
+  point_add (p_67) (p_67) in 
+(p_67, q_68)).
+
+Notation point_double p := (point_add p p).
+
+Fixpoint helpermul1 (n: nat) (z: Z) (acc: ed_point_t * ed_point_t) := 
+  let (acc1, acc2) := acc in match n with
+  | O => acc
+  | S n' => match z with
+    | 0 => helpermul1 n' 0 (point_double acc1, acc2)
+    | Zneg _ => acc
+    | Zpos b => match b with
+      | xH => helpermul1 n' 0 (point_double acc1, point_add acc2 acc1)
+      | xO b => helpermul1 n' (Zpos b) (point_double acc1, acc2)
+      | xI b => helpermul1 n' (Zpos b) (point_double acc1, point_add acc2 acc1)
+      end
+  end
+end.
+
+(* Should be in Hacspec.Lib *)
+Lemma foldi_one_more: forall (A: Type) (lo hi: Z) f (acc: A), foldi (repr lo) (repr (Z.succ hi)) f acc = f (repr hi) (foldi (repr lo) (repr hi) f acc).
+Admitted.
+
+Lemma helpermul1_help: forall n z acc1 acc2, 0 <= z -> helpermul1 (S n) z (acc1, acc2) = 
+  let (acc1', acc2') := helpermul1 n z (acc1, acc2) in
+  (point_double acc1', if Z.testbit z n then point_add acc2' acc1' else acc2').
+Proof. induction n.
+  - intros. cbn. destruct z; cbn.
+    + reflexivity.
+    + destruct p; reflexivity.
+    + lia.
+  - intros. destruct z. 
+    + rewrite nat_N_Z, Nat2Z.inj_succ. cbn. assert (0 = 2 * 0) as -> by reflexivity. rewrite Z.testbit_even_succ.
+    rewrite nat_N_Z in IHn. rewrite <- IHn. reflexivity. lia. lia.
+    + destruct p.
+      * rewrite nat_N_Z, Nat2Z.inj_succ. cbn. assert (Z.pos p~1 = 2 * (Z.pos p) + 1) as -> by reflexivity. rewrite Z.testbit_odd_succ.
+      rewrite nat_N_Z in IHn. rewrite <- IHn. reflexivity. lia. lia.
+      * rewrite nat_N_Z, Nat2Z.inj_succ. cbn. assert (Z.pos p~0 = 2 * (Z.pos p)) as -> by reflexivity. rewrite Z.testbit_even_succ.
+      rewrite nat_N_Z in IHn. rewrite <- IHn. reflexivity. lia. lia.
+      * rewrite nat_N_Z, Nat2Z.inj_succ. cbn. assert (1 = 2 * 0 + 1) as -> by reflexivity. rewrite Z.testbit_odd_succ.
+        rewrite nat_N_Z in IHn. rewrite <- IHn. reflexivity. lia. lia.
+    + lia.
+Qed.
+
+Lemma foldi_is_ok: forall (i: uint_size) (z: Z) acc, 0 <= z < scalarmod -> 
+  foldi (repr 0) i (helperf (scalar_from_z z)) acc = helpermul1 (Z.to_nat (unsigned i)) z acc.
+Proof. intro i. induction_uint_size i.
+  - cbn. destruct acc. reflexivity.
+  - unfold foldi. repeat rewrite unsigned_repr;try rewrite max_unsigned32; try lia. cbn. assert (Pos.to_nat 1 = 1%nat) as -> by reflexivity. cbn.
+  destruct z. 
+    + unfold helperf. cbn. destruct acc. reflexivity.
+    + unfold helperf. cbn. rewrite Zmod_small; try lia. destruct p; cbn; destruct acc; reflexivity.
+    + lia.
+  - rewrite modulus32 in H. rewrite unsigned_repr in H0; try rewrite max_unsigned32; try lia. cbn in H0.
+    rewrite foldi_one_more. rewrite H0; try lia.
+    repeat rewrite unsigned_repr;try rewrite max_unsigned32; try lia. rewrite Z2Nat.inj_succ; try lia. destruct acc. rewrite helpermul1_help.
+    unfold helperf, nat_mod_bit. 
+    assert ((from_uint_size (repr (Z.pos b))) = Z.pos b). {
+    unfold from_uint_size, Z_uint_sizable. apply unsigned_repr. rewrite max_unsigned32. lia. }
+    rewrite H2. rewrite Z_nat_N, Z2N.id. 
+    cbn. rewrite Zmod_small. reflexivity. lia. lia. lia.
+Qed.
+
+Fixpoint helpermul2 (pos: positive) (acc1 acc2 : fc_point) := match pos with
+| xH => fc_add acc2 acc1
+| xO b => helpermul2 b (fc_add acc1 acc1) acc2
+| xI b => helpermul2 b (fc_add acc1 acc1) (fc_add acc2 acc1)
+end.
+
+(* Need equivalence between helpermul1 and helpermul2, Something like this *)
+Lemma one_two_equiv: forall pos n acc1 acc2, Pos.size_nat pos <= n -> snd (helpermul1 n (Zpos pos) (coordinates acc1, coordinates acc2)) = coordinates (helpermul2 pos acc1 acc2).
+Admitted.
+
+Require Export Setoid.
+
+
+Add Morphism helpermul2 : helpermul2_m.
+Proof. induction y; intros.
+  - simpl. rewrite IHy. reflexivity. rewrite H. reflexivity. rewrite H, H0. reflexivity.
+  - simpl. rewrite IHy. reflexivity. rewrite H. reflexivity. apply H0.
+  - simpl.  rewrite H, H0. reflexivity.
+Qed.
+  
+
+
+Lemma helpermul2_helper2: forall pos acc1 acc2 acc3, helpermul2 pos acc1 (acc2 #+# acc3) #=# acc3 #+# (helpermul2 pos acc1 acc2).
+Proof. induction pos; intros.  
+- simpl. rewrite <- associative. rewrite (commutative acc3). rewrite associative. apply IHpos.
+- simpl. apply IHpos.
+-  simpl. rewrite associative. rewrite (commutative acc2). reflexivity.
+Qed.
+
+Notation fc_double x := (fc_add x x).
+Lemma double_add: forall x y, fc_double (x #+# y) #=# fc_double x #+# fc_double y.
+Proof. intros. rewrite associative. rewrite (commutative _ x). rewrite associative. symmetry. apply associative.
+Qed.
+
+Lemma helpermul2_helper: forall pos acc1, helpermul2 pos (fc_double acc1) fc_id #=# fc_double (helpermul2 pos acc1 fc_id).
+Proof. induction pos; intros.
+  - simpl. rewrite helpermul2_helper2. rewrite IHpos. rewrite helpermul2_helper2. symmetry. apply double_add.
+  - simpl. apply IHpos.
+  - simpl. do 2 rewrite left_identity. reflexivity.
+Qed.
+
+Fixpoint helpermul3 (pos : positive) (p : fc_point) : fc_point := match pos with
+| xH => p
+| xO pos' => fc_double (helpermul3 pos' p)
+| xI pos' => (fc_double (helpermul3 pos' p)) #+# p
+end.
+
+Lemma two_three_equiv : forall pos p, helpermul2 pos p fc_id #=# helpermul3 pos p.
+Proof. induction pos; intros.
+- simpl. rewrite helpermul2_helper2. rewrite helpermul2_helper. rewrite IHpos. apply commutative.
+- simpl. rewrite helpermul2_helper. rewrite IHpos. reflexivity.
+- simpl. apply left_identity.
+Qed.
+
+(* Need equivalence between helpermul3 and fiat crypto mul *)
+

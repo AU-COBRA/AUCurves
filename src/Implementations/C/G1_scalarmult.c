@@ -1143,24 +1143,17 @@ void store_zero_G(uintptr_t outx, uintptr_t outy, uintptr_t outz) {
 void shift_scalar(uintptr_t c2, uintptr_t scalar) {
   uintptr_t carry;
   { uint8_t _br2_stackalloc_carry[(uintptr_t)8ULL]; carry = (uintptr_t)&_br2_stackalloc_carry;
-  _br2_store(c2, (uintptr_t)0ULL, sizeof(uintptr_t));
-  _br2_store(carry, (_br2_load(scalar, sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
-  _br2_store(scalar, (_br2_load(scalar, sizeof(uintptr_t)))>>((uintptr_t)1ULL), sizeof(uintptr_t));
-  _br2_store(c2, (_br2_load((scalar)+((uintptr_t)8ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
+  _br2_store(c2, (_br2_load(scalar, sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
+  _br2_store(carry, (_br2_load((scalar)+((uintptr_t)8ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
+  _br2_store(carry, (_br2_load(carry, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
+  _br2_store(scalar, ((_br2_load((scalar), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(carry, sizeof(uintptr_t))), sizeof(uintptr_t));
+  _br2_store(carry, (_br2_load((scalar)+((uintptr_t)16ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
   _br2_store(carry, (_br2_load(carry, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
   _br2_store((scalar)+((uintptr_t)8ULL), ((_br2_load((scalar)+((uintptr_t)8ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(carry, sizeof(uintptr_t))), sizeof(uintptr_t));
-  _br2_store(carry, (_br2_load((scalar)+((uintptr_t)16ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
-  _br2_store(c2, (_br2_load(c2, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
-  _br2_store((scalar)+((uintptr_t)16ULL), ((_br2_load((scalar)+((uintptr_t)16ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(c2, sizeof(uintptr_t))), sizeof(uintptr_t));
-  _br2_store(c2, (_br2_load((scalar)+((uintptr_t)24ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
+  _br2_store(carry, (_br2_load((scalar)+((uintptr_t)24ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
   _br2_store(carry, (_br2_load(carry, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
-  _br2_store((scalar)+((uintptr_t)24ULL), ((_br2_load((scalar)+((uintptr_t)24ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(carry, sizeof(uintptr_t))), sizeof(uintptr_t));
-  _br2_store(carry, (_br2_load((scalar)+((uintptr_t)32ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
-  _br2_store(c2, (_br2_load(c2, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
-  _br2_store((scalar)+((uintptr_t)32ULL), ((_br2_load((scalar)+((uintptr_t)32ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(c2, sizeof(uintptr_t))), sizeof(uintptr_t));
-  _br2_store(c2, (_br2_load((scalar)+((uintptr_t)40ULL), sizeof(uintptr_t)))&((uintptr_t)1ULL), sizeof(uintptr_t));
-  _br2_store(carry, (_br2_load(carry, sizeof(uintptr_t)))<<((uintptr_t)63ULL), sizeof(uintptr_t));
-  _br2_store((scalar)+((uintptr_t)40ULL), ((_br2_load((scalar)+((uintptr_t)40ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(carry, sizeof(uintptr_t))), sizeof(uintptr_t));
+  _br2_store((scalar)+((uintptr_t)16ULL), ((_br2_load((scalar)+((uintptr_t)16ULL), sizeof(uintptr_t)))>>((uintptr_t)1ULL))+(_br2_load(carry, sizeof(uintptr_t))), sizeof(uintptr_t));
+  _br2_store((scalar)+((uintptr_t)24ULL), (_br2_load((scalar)+((uintptr_t)24ULL), sizeof(uintptr_t))>>((uintptr_t)1ULL)), sizeof(uintptr_t));
   }
   return;
 }
@@ -1228,7 +1221,7 @@ void group_cmov(uintptr_t outx, uintptr_t outy, uintptr_t outz, uintptr_t x1, ui
 void loop_body(uintptr_t px, uintptr_t py, uintptr_t pz, uintptr_t outx, uintptr_t outy, uintptr_t outz, uintptr_t pauxx, uintptr_t pauxy, uintptr_t pauxz, uintptr_t pn, uintptr_t pc) {
   store_zero_G(pauxx, pauxy, pauxz);
   shift_scalar(pc, pn);
-  group_cmov(pauxx, pauxy, pauxz, outx, outy, outz, px, py, pz, pc);
+  group_cmov(pauxx, pauxy, pauxz, pauxx, pauxy, pauxz, px, py, pz, pc);
   G1_add_alt(outx, pauxx, outy, pauxy, outz, pauxz, outx, outy, outz);
   G1_add_alt(px, px, py, py, pz, pz, px, py, pz);
   return;
@@ -1256,51 +1249,37 @@ void scalar_mult(uintptr_t px, uintptr_t py, uintptr_t pz, uintptr_t outx, uintp
 }
 
 void main() {
-	printf("output is is: \n");
+	printf("output is: \n");
 	uint64_t ox[6];
 	uint64_t oy[6];
 	uint64_t oz[6];
-	const uint64_t x[6] = {9000203289623549276lu, 7000342082925068282lu, 1000538881605221074lu, 10009550692327388916lu, 10008355200866287827lu, 500084205531694093lu};
-	const uint64_t y[6] = {11671922859260663127lu, 11050707557586042878lu, 284884720401305268lu,
-	       17749945728364010941lu, 8613774818643959860lu, 145621051382923523lu};
-	const uint64_t z[6] = {9794203289623549276lu, 7309342082925068282lu, 1139538881605221074lu,
-	       15659550692327388916lu, 16008355200866287827lu, 582484205531694093lu};
-	const uint64_t n[6] = {0lu, 0lu, 0lu, 0lu, 0lu, 1lu};
+    /* Coordinates of a point in Montgomery form, not sure why it outputs in plain form. */
+	const uint64_t x[6] = {0x5CB38790FD530C16lu, 0x7817FC679976FFF5lu, 0x154F95C7143BA1C1lu, 0xF0AE6ACDF3D0E747lu, 0xEDCE6ECC21DBF440lu, 0x120177419E0BFB75lu};
+	const uint64_t y[6] = {0xBAAC93D50CE72271lu, 0x8C22631A7918FD8Elu, 0xDD595F13570725CElu, 0x51AC582950405194lu, 0x0E1C8C3FAD0059C0lu, 0x0BBC3EFC5008A26Alu};
+	const uint64_t z[6] = {0x760900000002FFFDlu, 0xEBF4000BC40C0002lu, 0x5F48985753C758BAlu, 0x77CE585370525745lu, 0x5C071A97A256EC6Dlu, 0x15F65EC3FA80E493lu};
+	const uint64_t n[4] = {0xFFFFFFFF00000001lu, 0x53BDA402FFFE5BFElu, 0x3339D80809A1D805lu, 0x73EDA753299D7D48lu};
+
+
 	scalar_mult(x, y, z, ox, oy, oz, n);
-	printf("%lu", ox[0]);
-	printf(", ");
-	printf("%lu", ox[1]);
-	printf(", ");
-	printf("%lu", ox[2]);
-	printf(", ");
-	printf("%lu", ox[3]);
-	printf(", ");
-	printf("%lu", ox[4]);
-	printf(", ");
-	printf("%lu", ox[5]);
+	printf("%016lx", ox[5]);
+	printf("%016lx", ox[4]);
+	printf("%016lx", ox[3]);
+	printf("%016lx", ox[2]);
+	printf("%016lx", ox[1]);
+	printf("%016lx", ox[0]);
 	printf("\n");
-	printf("%lu", oy[0]);
-	printf(", ");
-	printf("%lu", oy[1]);
-	printf(", ");
-	printf("%lu", oy[2]);
-	printf(", ");
-	printf("%lu", oy[3]);
-	printf(", ");
-	printf("%lu", oy[4]);
-	printf(", ");
-	printf("%lu", oy[5]);
+	printf("%016lx", oy[5]);
+	printf("%016lx", oy[4]);
+	printf("%016lx", oy[3]);
+	printf("%016lx", oy[2]);
+	printf("%016lx", oy[1]);
+	printf("%016lx", oy[0]);
 	printf("\n");
-	printf("%lu", oz[0]);
-	printf(", ");
-	printf("%lu", oz[1]);
-	printf(", ");
-	printf("%lu", oz[2]);
-	printf(", ");
-	printf("%lu", oz[3]);
-	printf(", ");
-	printf("%lu", oz[4]);
-	printf(", ");
-	printf("%lu", oz[5]);
+	printf("%016lx", oz[5]);
+	printf("%016lx", oz[4]);
+	printf("%016lx", oz[3]);
+	printf("%016lx", oz[2]);
+	printf("%016lx", oz[1]);
+	printf("%016lx", oz[0]);
 	printf("\n");
 }

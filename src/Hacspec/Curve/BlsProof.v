@@ -16,12 +16,11 @@ Require Import Hacspec.Curve.Bls.
 Require Import Crypto.Spec.WeierstrassCurve.
 Require Import Crypto.Algebra.Field Crypto.Algebra.Hierarchy.
 Require Import Crypto.Util.Decidable Crypto.Util.Tactics.DestructHead Crypto.Util.Tactics.BreakMatch.
-Require Import blsprime.
+Require Import Hacspec.Curve.blsprime.
 Require Import Ring.
 Require Export Ring_theory.
 Require Import Setoid.
 Require Import Field.
-
 Require Import Init.Logic.
 
 Local Notation fp' := (nat_mod 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab).
@@ -228,21 +227,22 @@ Theorem g1_addition_equal: forall (p q: g1) on_curve_p on_curve_q, (p ?+? q) ?=?
 Proof. intros [[]] [[]] H H0. unfold g1add, g1_from_fc, g1_to_fc, g1_fc_add, g1_eq. cbn. 
   (generalize fp_field_theory). intros [[]].
   destruct b eqn:E, b0 eqn:E1; auto. 
-  unfold dec. destruct (g1_dec f f1) as [e|e]. 
-  2:{ destruct ((f, f0, false) =.? (f1, f2, false)) eqn:N; [ apply eqb_leibniz in N; inversion N; contradiction |]. 
-    destruct (f =.? f1)eqn:N1; [apply eqb_leibniz in N1; contradiction|]. cbn. rewrite exp2ismul. 
-    split; split; auto; field. }
+  unfold dec. destruct (g1_dec f f1) as [e|e].
   destruct (g1_dec f2 (nat_mod_neg f0)) as [e0 |e0]; subst; cbn; destruct (f0 =.? nat_mod_zero) eqn:k.
   - apply eqb_leibniz in k as ->. field_simplify (@nat_mod_neg prime nat_mod_zero).
     rewrite g1_eqb_true. cbn. auto.
-  - destruct ((f1, f0, false) =.? (f1, nat_mod_neg f0, false)) eqn: eqb; 
-    [apply eqb_leibniz in eqb; inversion eqb; apply negation_eq_implies_zero in H2; subst; rewrite fp_eq_true in k; discriminate|]. 
+  - destruct ((f1, f0, false) =.? (f1, nat_mod_neg f0, false)) eqn: eqb.
+    rewrite eqb_leibniz in eqb. inversion eqb. apply negation_eq_implies_zero in H2; subst; rewrite fp_eq_true in k; discriminate. 
     field_simplify (nat_mod_zero -% nat_mod_neg f0). repeat rewrite fp_eq_true. cbn. reflexivity.
-  - apply eqb_leibniz in k. subst. pose proof (symmetrical_x_axis _ _ _ _ H0 H eq_refl).
-    destruct H1; [ field_simplify (@nat_mod_neg prime nat_mod_zero) in e0; contradiction | contradiction].
+  - rewrite eqb_leibniz in k. subst. pose proof (symmetrical_x_axis _ _ _ _ H0 H eq_refl).
+    destruct H1; [|contradiction].
+    field_simplify (@nat_mod_neg prime nat_mod_zero) in e0. subst. contradiction.
   - pose proof (symmetrical_x_axis _ _ _ _ H0 H eq_refl). destruct H1; [| contradiction].
     subst. rewrite g1_eqb_true. cbn. repeat rewrite exp2ismul. rewrite three_equiv, two_equiv.
     split; split; auto; rewrite fp_eq_ok; field; split; intro c; try (rewrite c in k; rewrite fp_eq_true in k); discriminate.
+  - destruct ((f, f0, false) =.? (f1, f2, false)) eqn:N; [ rewrite eqb_leibniz in N; inversion N; contradiction |]. 
+    destruct (f =.? f1)eqn:N1; [rewrite eqb_leibniz in N1; contradiction|]. cbn. rewrite exp2ismul. 
+    split; split; auto; field.    
 Qed.
 
 (* Equivalence of point multiplication*)
@@ -613,9 +613,12 @@ Proof. intros [[] []] [[] []] onc1 onc2.
   - cbn. auto.
   - cbn. destruct ((f, f0, false) =.? (f1, f2, false)) eqn:E.
     + destruct (f0 =.? nat_mod_zero) eqn:E2.
-      * apply eqb_leibniz in E, E2. inversion E. subst. rewrite g1_eqb_true. rewrite fp_eq_true. reflexivity.
-      * apply eqb_leibniz in E. inversion E. subst. rewrite g1_eqb_true. rewrite E2. reflexivity.
-    + destruct ((f1, f2, false) =.? (f, f0, false)) eqn:E3. apply eqb_leibniz in E3. rewrite E3 in E. rewrite g1_eqb_true in E. discriminate.
+      * rewrite eqb_leibniz in E. rewrite eqb_leibniz in E2. inversion E. subst. 
+        rewrite g1_eqb_true. rewrite fp_eq_true. reflexivity.
+      * rewrite eqb_leibniz in E. inversion E. subst. 
+        rewrite g1_eqb_true. rewrite E2. reflexivity.
+    + destruct ((f1, f2, false) =.? (f, f0, false)) eqn:E3. rewrite eqb_leibniz in E3. 
+      rewrite E3 in E. rewrite g1_eqb_true in E. discriminate.
       destruct (f =.? f1) eqn:E1.  
       * destruct (f0 =.? nat_mod_zero -% f2) eqn:E2.
         -- apply eqb_leibniz in E1, E2. subst. field_simplify (nat_mod_zero -% (nat_mod_zero -% f2)). repeat rewrite fp_eq_true.

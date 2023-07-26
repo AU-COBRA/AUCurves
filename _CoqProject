@@ -1,6 +1,13 @@
 -R src ""
 -Q fiat-crypto/src Crypto
 
+-docroot doc/
+# We should probably get these two from opam
+-Q fiat-crypto/rupicola/bedrock2/deps/coqutil coqutil
+-Q fiat-crypto/coqprime/src/Coqprime Coqprime
+-Q fiat-crypto/rewriter/src/Rewriter Rewriter
+-Q fiat-crypto/rupicola/bedrock2/bedrock2/src/bedrock2 bedrock2
+
 src/Theory/Util/UList.v
 src/Theory/Util/UListUtil.v
 src/Theory/Fields/QuadraticFieldExtensions.v
@@ -9,7 +16,7 @@ src/Theory/Fields/RingsUtil.v
 src/Theory/Fields/FieldsUtil.v
 src/Theory/WordByWordMontgomery/MontgomeryRingTheory.v
 src/Theory/WordByWordMontgomery/wbw_morphisms.v
-src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v
+# src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v
 src/Theory/WordByWordMontgomery/CurveSpecsEquivalence.v
 src/Implementations/SOS/SOSMul.v
 src/Implementations/SOS/SOSReduction.v
@@ -34,7 +41,4 @@ src/Hacspec/Curve/blsprime.v
 src/Hacspec/Curve/BlsProof.v
 src/Hacspec/Curve/EquivToBedrock.v
 src/Hacspec/Curve/Ed25519.v
-src/Hacspec/Curve/Ed25519Prooof.v
-
-
-
+# src/Hacspec/Curve/Ed25519Proof.v

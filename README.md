@@ -1,4 +1,7 @@
 # AUCurves - High Assurance Cryptography by means of code synthesis.
+
+Not all files in the library compile at the moment. See Install.md for partial install instructions.
+
 In this project we aim to develop frameworks for synthesizing formally verified implementations of cryptographic primitives.
 At the moment we are able to produce implementations of groups G1 and G2 of the elliptic curve(s) BLS12-381, as well as the quadratic field extension arithmetic underlying G2.
 

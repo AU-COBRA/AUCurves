@@ -1,0 +1,12 @@
+[package]
+name = "bls12-pairing"
+version = "0.1.0"
+edition = "2021"
+description = "BLS12-381 pairing — mechanically translated from verified bedrock2 C extraction"
+
+[features]
+default = []
+
+[profile.release]
+opt-level = 3
+lto = true

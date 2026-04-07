@@ -32,12 +32,22 @@ Require Import bedrock2.BasicC64Semantics.
 
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
+Require Import Crypto.Arithmetic.Partition.
+Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
 
 Require Import Bedrock.Curve.Secp256k1Curve_G1.
 Require Import Bedrock.Curve.Secp256k1_Wired_Specs.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
+
+Require Import coqutil.Map.Properties.
+Require Import bedrock2.Lift1Prop.
+Require Import Bedrock.Util.Word.
+Require Import Bedrock.Util.Util.
+Require Import Bedrock.Util.Bignum.
+Require Import Bedrock.Util.Tactics.
+Require Import Bedrock.Util.SeparationLogic.
 
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -55,11 +65,13 @@ Section Secp256k1_G1_Add.
 
   Local Notation num_bytes := (Eval compute in (Z.of_nat (((Z.to_nat bw * n) / 8)%nat))).
 
+  (* m' = modinv(-m, 2^bw) — the Montgomery reduction constant *)
+  Local Definition secp_m' := 15580212934572586289%Z.
+
   (* Montgomery-encoded 3b constant for secp256k1 *)
   Definition secp256k1_three_b_mont :=
     Eval vm_compute in
-      (MontgomeryCurveSpecs.three_b_mont_list m bw n
-         (@WordByWordMontgomery.m' m bw) three_b).
+      (MontgomeryCurveSpecs.three_b_mont_list m bw n secp_m' three_b).
 
   (** ** Bedrock2 function definition
 
@@ -152,8 +164,7 @@ Section Secp256k1_G1_Add.
   Local Notation valid := (WordByWordMontgomery.valid bw n m).
   Local Notation eval := (@WordByWordMontgomery.eval bw n).
   Local Notation from_mont :=
-    (@WordByWordMontgomery.from_montgomerymod bw n m
-       (@WordByWordMontgomery.m' m bw)).
+    (@WordByWordMontgomery.from_montgomerymod bw n m secp_m').
   Local Notation evfrom x := (eval (from_mont x)).
   Local Notation toZ x := (List.map Interface.word.unsigned x).
 
@@ -188,22 +199,500 @@ Section Secp256k1_G1_Add.
               (Bignum n poutx woutx) * (Bignum n pouty wouty) *
               (Bignum n poutz woutz) * Rout)%sep m').
 
-  (** ** Proof sketch
+  (** ** Montgomery ring infrastructure *)
 
-      The WP proof follows [G1_add_func_ok] in [BLS12Curve_G1.v] line
-      for line. The custom tactics ([straightline_stackalloc_Bignum],
-      [handle_store], [next_call], [defrag_in_context'], etc.) are
-      reusable from [BLS12Curve_G1.v] without modification.
+  (* Montgomery parameters *)
+  Local Notation r := (2 ^ bw).
+  (* r' = modinv(r, m) — the modular inverse of 2^64 modulo the secp256k1 prime *)
+  Local Definition r' := 97798581649299591516383885342152904135335272353249846763749256112567415731113%Z.
+  Local Notation m' := secp_m'.
+  Local Notation uw := (uweight bw).
+  Local Notation word_size_in_bytes := (Memory.bytes_per_word 64).
 
-      The main difference from BLS12: three_b_mont stores 4 words
-      (offsets 0, 8, 16, 24) instead of 6. The RCB formula is
-      identical (a=0 for both secp256k1 and BLS12-381).
+  (* Correctness lemmas for Montgomery parameters *)
+  Local Lemma a_small : (0 mod m) = (0 mod m) mod m.
+  Proof. auto. Qed.
 
-      The WP proof is the same size (~100 lines) and uses the same
-      ring-based postcondition discharge:
-        [apply pair_equal_spec; split; [apply pair_equal_spec; split; ring| ring].]
+  Local Lemma three_b_small : (21 mod m) = (21 mod m) mod m.
+  Proof. auto. Qed.
 
-      The field-op callees ([secp256k1_mul], etc.) use the wired
-      Bignum-style specs from [Secp256k1_Wired_Specs.v]. *)
+  Local Lemma r'_correct : (2 ^ bw * r') mod m = 1.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Local Lemma m'_correct : (m * m') mod 2 ^ bw = -1 mod 2 ^ bw.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Local Lemma bw_big : 0 < bw.
+  Proof. cbv; auto. Qed.
+
+  Local Lemma m_big : 1 < m.
+  Proof. cbv; auto. Qed.
+
+  Local Lemma n_nz : n <> 0%nat.
+  Proof. cbv; discriminate. Qed.
+
+  Local Lemma m_small : m < (2 ^ bw) ^ Z.of_nat n.
+  Proof. cbv; auto. Qed.
+
+  Local Lemma n_small : Z.of_nat n < 2 ^ bw.
+  Proof. cbv. auto. Qed.
+
+  Ltac wbw_conds :=
+    repeat first [ progress apply r'_correct
+                 | progress apply m'_correct
+                 | progress apply bw_big
+                 | progress apply m_big
+                 | progress apply n_nz
+                 | progress apply m_small ].
+
+  Local Notation from_mont_correct := (@from_mont_correct m bw n r' m' r'_correct m'_correct bw_big n_nz m_big m_small).
+  Local Notation valid_mod := (valid_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_big m_small).
+  Local Notation mont_add := (mont_add m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation mont_sub := (mont_sub m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation mont_mul := (mont_mul m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation valid_valid'_equiv := (valid_valid'_equiv m bw n n_nz m_big).
+  Local Notation evfrom_mod := (evfrom_mod' m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation eval_from_mont_inj := (eval_from_mont_inj m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation mont_zero := (mont_zero m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+  Local Notation toZ_ofZ_eq := (toZ_ofZ_eq n n_nz n_small m).
+
+  Local Lemma num_bytes_correct : num_bytes = Z.of_nat (n * Z.to_nat word_size_in_bytes).
+  Proof. cbv; auto. Qed.
+
+  (* three_b_mont is already defined as secp256k1_three_b_mont *)
+  Local Notation three_b_mont := secp256k1_three_b_mont.
+  Local Notation three_b_list := (MontgomeryCurveSpecs.three_b_list bw n three_b).
+
+  Local Lemma three_b_mont_correct : three_b_mont = (WordByWordMontgomery.to_montgomerymod bw n m m' three_b_list).
+  Proof. vm_compute (WordByWordMontgomery.to_montgomerymod bw n m m' three_b_list). reflexivity. Qed.
+
+  Local Lemma three_b_valid: valid (toZ (List.map (@Interface.word.of_Z 64 (@word BasicC64Semantics.semantics)) three_b_list)).
+  Proof.
+    simpl. repeat rewrite Zmod_small; [apply three_b_list_valid; cbv; auto; intros; discriminate |..]; split; lia.
+  Qed.
+
+  Local Lemma three_b_mont_valid : valid three_b_mont.
+  Proof. unfold secp256k1_three_b_mont. cbv; repeat split; auto; intros; discriminate. Qed.
+
+  Local Lemma a_mont_zero_local : (a_mont m bw n r' m' a a_small
+      r'_correct m'_correct bw_big n_nz m_small m_big) = mont_zero.
+  Proof.
+    apply mont_enc_irr. simpl. cbv [a_mont_list]. apply f_equal. cbv [a_list].
+    assert (a = 0) by (cbv; reflexivity). rewrite H. cbv. auto.
+  Qed.
+
+  (** ** Arithmetic notations *)
+
+  Notation my_mul := (my_mul m).
+  Notation my_add := (my_add m).
+  Notation my_sub := (my_sub m).
+
+  Local Infix "*'" := my_mul (at level 70).
+  Local Infix "+'" := my_add (at level 80).
+  Local Infix "-'" := my_sub (at level 80).
+
+  (** ** Separation logic and WP proof notation *)
+
+  Local Open Scope string_scope.
+  Local Infix "*" := sep : sep_scope.
+  Delimit Scope sep_scope with sep.
+
+  Notation msplit := Interface.map.split.
+
+  Notation montsub a b c :=
+    ((eval (from_mont (a))) mod m =
+        (eval (from_mont (b)) -
+         eval (from_mont (c))) mod m).
+
+  Notation montadd a b c :=
+    ((eval (from_mont (a))) mod m =
+        (eval (from_mont (b)) +
+         eval (from_mont (c))) mod m).
+
+  Notation montmul a b c :=
+    ((eval (from_mont (a))) mod m =
+        (eval (from_mont (b)) *
+         eval (from_mont (c))) mod m).
+
+  Notation S aw := (word.add (word.of_Z word_size_in_bytes) aw).
+
+  Add Ring Mp : (MontgomeryRingTheory.mont_enc_ring m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
+
+  Local Notation wordof_Z := (@word.of_Z 64 (@word BasicC64Semantics.semantics)).
+
+  (** ** Tactics for Bignum/bytes conversion *)
+
+  Ltac unfold_Bignum_list_step H l :=
+    destruct l; [unfold Bignum in H; sepsimpl_hyps; discriminate|].
+
+  Ltac unfold_Bignum_list H l :=
+    repeat unfold_Bignum_list_step H l;
+    assert (Hl : l = []) by ( unfold Bignum in H; sepsimpl_hyps;
+    apply length_nil;
+    match goal with
+    | [H : Datatypes.length _ = n|- _ ]
+      => repeat apply NPeano.Nat.succ_inj in H; auto
+    end); rewrite Hl in H; clear Hl.
+
+  Ltac straightline' :=
+    match goal with
+    | [Hminit : ?mcond (?minit)
+        |- forall (_ : @word.rep _ _)
+                  (_ _ : @Interface.map.rep _ _ _),
+            anybytes _ ?numbytes _ -> msplit _ ?minit _ -> _ ] =>
+        let a := (fresh "a") in
+        let mStack := (fresh "mStack") in
+        let mnew := (fresh "mnew") in
+        let Hany := (fresh "Hany") in
+        let HanyBignum := (fresh "HanyBignum") in
+        let anyval := (fresh "anyval") in
+        let Hsplit := (fresh "Hsplit") in
+        let Hmnew := (fresh "Hmnew") in
+        let R := (fresh "R") in
+        intros a mStack mnew Hany Hsplit; destruct (anybytes_Bignum n num_bytes mStack a num_bytes_correct Hany) as [anyval HanyBignum];
+        destruct (alloc_seps_alt mnew minit mStack mcond (Bignum _ _ _) Hsplit (empty_frame mcond minit Hminit) (empty_frame (Bignum _ _ _) mStack HanyBignum)) as [R Hmnew];
+        clear Hany Hsplit HanyBignum
+    | _ => straightline
+    end.
+
+  Ltac clear_emps_step :=
+  lazymatch goal with
+  | [H' : (_ * _)%sep ?mem |- _] =>
+      let thisH := (fresh "H") in
+      eassert (thisH : (emp _ * _)%sep mem) by ecancel_assumption; clear H'; sepsimpl_hyps
+      end.
+
+  Ltac get_list_from_length l :=
+    (repeat (destruct l; [discriminate| ])); destruct l; [| discriminate].
+
+  Ltac Bignum_to_Scalars l := let Hsep := (fresh "Hsep") in
+  eassert (Hsep : (Bignum n _ l * _)%sep _) by ecancel_assumption;
+  apply Bignum_manyScalars_R in Hsep; sepsimpl_hyps; get_list_from_length l;
+  lazymatch goal with
+  | [H : (many_Scalars n _ _ * _)%sep _ |- _] => let Htemp := (fresh "Htemp") in
+    eassert (Htemp : many_Scalars n _ _ = many_Scalars _ _ _) by (vm_compute n; auto);
+    rewrite Htemp in H; clear Htemp;
+    repeat rewrite many_Scalars_next in H;
+    rewrite many_Scalars_nil in H
+  | _ => fail
+  end.
+
+  (* Clear old separation logic hypotheses that are no longer needed *)
+  Ltac clear_old_seps :=
+    lazymatch goal with
+    | H:sep _ _ ?mem |- context [?mem] =>
+      repeat
+        match goal with
+        | H':sep _ _ ?m |- _ => assert_fails unify m mem; clear H'
+        end
+    end.
+
+  (** ** Tactics for storing constants *)
+
+  Ltac subst_vars :=
+    lazymatch goal with
+    | [|- WeakestPrecondition.store _ _ ?thisa _ _] =>
+      try subst thisa
+    end.
+
+  Ltac handle_store_step :=
+    lazymatch goal with
+      | [ |- ((Scalars.scalar ?thisa _) * _)%sep _ ] =>
+       try subst thisa; repeat (rewrite next_word'; try (rewrite word_add_0)); ecancel_assumption
+    end.
+
+  Ltac handle_store :=
+    repeat (subst_vars; eapply Scalars.store_word_of_sep; [handle_store_step|]; repeat straightline'); clear_old_seps.
+
+  (** ** Stack allocation tactics *)
+
+  Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a0 m0 m1 m2, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m0 m1 m2 -> anybytes a0 n0 m2 -> R m1 -> exists l, (R * (Bignum n a0 l))%sep m0.
+  Proof.
+    intros.
+    pose proof (anybytes_Bignum n m2 n0 a0).
+    apply H3 in H1; [| cbv; auto].
+    destruct H1. exists x. unfold sep. exists m1. exists m2. auto.
+  Qed.
+
+  Ltac alloc_Bignum := lazymatch goal with
+    | Hprec : _ ?mpre |- forall _ _ _, anybytes _ ?n0 _ ->
+      msplit _ ?mpre _ -> _ =>
+      let a0 := (fresh "a") in
+      let mStack := (fresh "mStack") in
+      let mComb := (fresh "mComb") in
+      let Hany := (fresh "Hany") in
+      let Hcomb := (fresh "Hcomb") in
+      let Htemp := (fresh "Htemp") in
+      intros a0 mStack mComb Hany Hcomb;
+      assert (Htemp : n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes)) by (cbv; auto);
+      destruct (alloc_anybytes_Bignum n0 _ a0 mComb mpre mStack Htemp Hcomb Hany Hprec); clear Htemp Hprec Hany
+    | _ => idtac
+    end.
+
+  Ltac straightline_stackalloc_Bignum := try (alloc_Bignum); straightline.
+
+  (** ** Montgomery arithmetic lemmas *)
+
+  Local Lemma valid_toZ_wordofZ_three_b_mont : valid (toZ (List.map wordof_Z three_b_mont)).
+  Proof.
+    simpl. repeat rewrite Zmod_small; [apply three_b_mont_valid|..]; split; lia.
+  Qed.
+
+  Local Notation valid' := (valid' m bw n).
+
+  Lemma montadd_to_Mp x y z (Hx : valid' x) (Hy : valid' y) (Hz : valid' z) :
+    montadd z x y -> (enc_mont m bw n z Hz)
+      = mont_add (enc_mont m bw n x Hx) (enc_mont m bw n y Hy).
+  Proof.
+    intros; apply eval_from_mont_inj; rewrite !mont_enc_val; rewrite mont_add_spec;
+    rewrite evfrom_mod; [| apply valid_valid'_equiv]; auto.
+  Qed.
+
+  Lemma montsub_to_Mp x y z (Hx : valid' x) (Hy : valid' y) (Hz : valid' z) :
+    montsub z x y -> (enc_mont m bw n z Hz)
+      = mont_sub (enc_mont m bw n x Hx) (enc_mont m bw n y Hy).
+  Proof.
+    intros; apply eval_from_mont_inj; rewrite !mont_enc_val; rewrite mont_sub_spec;
+    rewrite evfrom_mod; [| apply valid_valid'_equiv]; auto.
+  Qed.
+
+  Lemma montmul_to_Mp x y z (Hx : valid' x) (Hy : valid' y) (Hz : valid' z) :
+    montmul z x y -> (enc_mont m bw n z Hz)
+      = mont_mul (enc_mont m bw n x Hx) (enc_mont m bw n y Hy).
+  Proof.
+    intros; apply eval_from_mont_inj; rewrite !mont_enc_val; rewrite mont_mul_spec;
+    rewrite evfrom_mod; [| apply valid_valid'_equiv]; auto.
+  Qed.
+
+  Ltac assert_valid' x H' := let H := (fresh "Hvalid") in
+    assert (H : valid' (toZ x)) by (apply H'; assumption).
+
+  Ltac assertvalid' x H :=
+    tryif (assert (H : valid' x) by assumption; clear H) then idtac else (assert (H : valid' x) by (apply valid_valid'_equiv; assumption)).
+
+  Lemma three_b_mont_rewrite (H : valid' (toZ (map wordof_Z three_b_mont))) :
+    ((MontgomeryCurveSpecs.three_b_mont m bw n r' m' three_b
+      three_b_small r'_correct m'_correct bw_big n_nz m_small m_big) = {| val := toZ (map wordof_Z three_b_mont); Hvalid := H |}).
+  Proof.
+    apply mont_enc_irr. rewrite !mont_enc_val. rewrite (toZ_ofZ_eq three_b_mont three_b_mont_valid).
+    cbv [MontgomeryCurveSpecs.three_b_mont]. rewrite mont_enc_val.
+    rewrite three_b_mont_correct. reflexivity.
+  Qed.
+
+  (** ** Tactics for function call handling *)
+
+  (* Normalize callee postconditions to match montmul/montadd/montsub patterns.
+     The wired specs produce ((a mod m) op (b mod m)) mod m;
+     we rewrite to (a op b) mod m. *)
+  Ltac normalize_mont_hyps :=
+    repeat match goal with
+    | [H : _ mod m = ((_ mod m) * (_ mod m)) mod m |- _] =>
+        rewrite <- Zmult_mod in H
+    | [H : _ mod m = ((_ mod m) + (_ mod m)) mod m |- _] =>
+        rewrite <- Zplus_mod in H
+    | [H : _ mod m = ((_ mod m) - (_ mod m)) mod m |- _] =>
+        rewrite <- Zminus_mod in H
+    end.
+
+  (* Extract length from a Bignum sep hypothesis *)
+  Local Lemma Bignum_length_extract :
+    forall nn (px : Interface.word.rep) (ws : list Interface.word.rep)
+           (mm : Interface.map.rep) (R : Interface.map.rep -> Prop),
+    (Bignum nn px ws * R)%sep mm ->
+    Datatypes.length ws = nn.
+  Proof.
+    intros. unfold Bignum in H. sepsimpl_hyps. assumption.
+  Qed.
+
+  (* Solve length goals arising from bignum_binop_spec preconditions.
+     Try direct assumption first; if that fails, extract length from
+     a Bignum sep hypothesis in context. *)
+  Ltac solve_bignum_length :=
+    first
+      [ assumption
+      | match goal with
+        | [HB : (Bignum _ _ ?ws * _)%sep _ |- Datatypes.length ?ws = _] =>
+          exact (Bignum_length_extract _ _ _ _ _ HB)
+        | [HB : (_ * (Bignum _ _ ?ws * _))%sep _ |- Datatypes.length ?ws = _] =>
+          let Htmp := fresh "Htmp" in
+          assert (Htmp : (Bignum _ _ ws * _)%sep _) by ecancel_assumption;
+          exact (Bignum_length_extract _ _ _ _ _ Htmp)
+        | [HB : context[Bignum _ _ ?ws] |- Datatypes.length ?ws = _] =>
+          let Htmp := fresh "Htmp" in
+          assert (Htmp : (Bignum _ _ ws * _)%sep _) by ecancel_assumption;
+          exact (Bignum_length_extract _ _ _ _ _ Htmp)
+        end ].
+
+  (* Adapted for bignum_binop_spec shape: 6 preconditions *)
+  Ltac next_call :=
+    lazymatch goal with
+      | [H' : (_ * _)%sep _ |- _] =>
+        straightline_call;
+        [eauto | eauto | solve_bignum_length
+        | ecancel_assumption | ecancel_assumption | ecancel_assumption | ];
+        repeat straightline'; clear H'; repeat clear_emps_step;
+        normalize_mont_hyps
+      end.
+
+  (** ** Defragmentation tactics *)
+
+  Ltac defrag_in_context := lazymatch goal with
+  | [
+      |- exists (_ _ : @Interface.map.rep _ _ _),
+        (anybytes ?addr _ _) /\ (msplit ?mem _ _) /\ _ ] =>
+        repeat match goal with
+        | [ H : (?Rl * ((Bignum _ addr ?aval) * ?Rr))%sep mem |- _ ] =>
+          let Ha := (fresh "Ha") in
+          let m0 := fresh "m" in
+          let Htemp := fresh "Htemp" in
+          let Htemp' := fresh "Htemp'" in
+          let mStack := fresh "mStack" in
+          assert (Ha : ((Bignum n addr aval) * (Rl * Rr))%sep mem) by ecancel_assumption; clear H;
+          destruct Ha as [mStack [m0 [ Htemp [Htemp' ]]]];
+          exists m0; exists mStack; split; [ eapply Bignum_anybytes; [|eassumption]; cbv; reflexivity | split; [apply Properties.map.split_comm; auto| clear Htemp Htemp']]
+        | [ H : (((Bignum _ addr ?aval) * ?Rr))%sep mem |- _ ] =>
+          let Ha := (fresh "Ha") in
+          let m0 := fresh "m" in
+          let mStack := fresh "mStack" in
+          assert (Ha : ((Bignum n addr aval) * (Rr))%sep mem) by ecancel_assumption; clear H;
+          destruct Ha as [mStack [m0 [Htemp [Htemp' ]]]];
+          exists m0; exists mStack; split; [ eapply Bignum_anybytes; [|eassumption]; cbv; reflexivity | split; [apply Properties.map.split_comm; auto| clear Ha]]
+
+        | [ H : _ mem |- _ ] => apply (sep_assoc_proj2 mem) in H
+        end
+  end.
+
+  Ltac defrag_in_context' := lazymatch goal with
+  | [ |- exists (_ _ : @Interface.map.rep _ _ _),
+        (anybytes ?addr _ _) /\ (msplit ?mem _ _) /\ _ ] =>
+        match goal with
+        | [ H : _ mem |- _ ] => cleanup_hyp H mem
+        end
+      end; defrag_in_context.
+
+  (** ** Return-value tactics *)
+
+  Ltac this_mod' x :=
+    lazymatch goal with
+    | H1 : montsub x ?y ?z |- _ => let Htemp := (fresh "Htemp") in let Htemp' := (fresh "Htemp") in
+    assertvalid' y Htemp;
+    assertvalid' z Htemp';
+    lazymatch goal with | Hy : valid' y |- _ => lazymatch goal with Hz : valid' z |- _ =>
+    rewrite (montsub_to_Mp y z x Hy Hz) end end; [| apply H1]; try (this_mod' y); try (this_mod' z)
+    | H1 : montadd x ?y ?z |- _ => let Htemp := (fresh "Htemp") in let Htemp' := (fresh "Htemp") in
+    assertvalid' y Htemp;
+    assertvalid' z Htemp';
+    lazymatch goal with | Hy : valid' y |- _ => lazymatch goal with Hz : valid' z |- _ =>
+    rewrite (montadd_to_Mp y z x Hy Hz) end end; [| apply H1]; try (this_mod' y); try (this_mod' z)
+    | H1 : montmul x ?y ?z |- _ => let Htemp := (fresh "Htemp") in let Htemp' := (fresh "Htemp") in
+    assertvalid' y Htemp;
+    assertvalid' z Htemp';
+    lazymatch goal with | Hy : valid' y |- _ => lazymatch goal with Hz : valid' z |- _ =>
+    rewrite (montmul_to_Mp y z x Hy Hz) end end; [| apply H1]; try (this_mod' y); try (this_mod' z)
+    | _ => idtac
+    end.
+
+  Ltac remember_mont x := lazymatch goal with
+  | H1 : valid' x |- _ => let p := (fresh "p") in
+    remember {| val := x; Hvalid := H1 |} as p
+  end.
+
+  (** ** WP Proof *)
+
+  Theorem Secp256k1_G1_add_func_ok : program_logic_goal_for_function! Secp256k1_G1_add.
+  Proof.
+    repeat straightline_stackalloc_Bignum.
+    (*initialize proof*)
+
+    repeat straightline'.
+
+    (*Unfolding Bignum-notation in order to store constant into newly allocated memory*)
+    Bignum_to_Scalars x. clear_old_seps.
+
+    (*Store values*)
+    handle_store.
+
+    (*Rephrase hypothesis in terms of Bignum again*)
+    eassert (Hbignum3b : (Bignum n a (List.map wordof_Z three_b_mont) * _)%sep _).
+    {
+      unfold Bignum. sepsimpl; [ cbv; auto|]. unfold array. cbv [three_b_mont secp256k1_three_b_mont map].
+      repeat rewrite (word_add_comm _ (word.of_Z word_size_in_bytes)).
+      match goal with
+      | [ H : (_ * _)%sep _ |- _ ] =>
+        repeat (rewrite next_word' in H; try rewrite word_add_0 in H);
+        ecancel_assumption
+      end.
+    }
+
+    clear_old_seps.
+
+    (*Must be in context to automate function calls*)
+    pose proof valid_toZ_wordofZ_three_b_mont as H3b.
+
+    (*Handle function calls.*)
+    repeat next_call.
+
+    (*Rephrase as single separation hypothesis in context*)
+    repeat defrag_in_context'.
+    repeat straightline.
+
+    (*Postcondition*)
+
+    (*First, trivial subgoals are handled.*)
+    split; [reflexivity| ]. split; [reflexivity| ].
+    do 4 eexists.
+    split; [| ecancel_assumption].
+    split; [| auto].
+
+    (*Gallina specification part of postcondition*)
+    unfold Secp256k1_add_Gallina_spec.
+
+    (*Inputs/Outputs are valid elements of Mp*)
+    pose proof (valid_valid'_equiv) as Hvve.
+    assert_valid' wX1 Hvve.
+    assert_valid' wX2 Hvve.
+    assert_valid' wY1 Hvve.
+    assert_valid' wY2 Hvve.
+    assert_valid' wZ1 Hvve.
+    assert_valid' wZ2 Hvve.
+
+    (* Assert validity for output word lists. *)
+    repeat match goal with
+    | [ H : valid (map Interface.word.unsigned ?w) |- _ ] =>
+      lazymatch goal with
+      | [ _ : valid' (toZ ?w) |- _ ] => fail
+      | _ => assert_valid' w Hvve
+      end
+    end.
+
+    (*Use alternative curve spec for a = 0*)
+    destruct (MontgomeryCurveSpecs.BLS12_add_specs_equiv' m bw n r' m' a three_b a_small three_b_small r'_correct m'_correct bw_big n_nz m_small m_big _ _ _ _ _ _ _ _ _ Hvalid Hvalid0 Hvalid1 Hvalid2 Hvalid3 Hvalid4 Hvalid5 Hvalid6 Hvalid7) as [Heq _].
+    apply Heq; clear Heq.
+
+    (*Use return values from function calls*)
+    match goal with
+    | [ |- BLS12_add_mont_spec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ?ox ?oy ?oz ] =>
+      this_mod' ox; this_mod' oy; this_mod' oz
+    end.
+
+    unfold BLS12_add_mont_spec.
+
+    (*alias each Mp ring element to help ring tactic*)
+    rewrite <- three_b_mont_rewrite.
+    rewrite a_mont_zero_local.
+
+    remember_mont (toZ wX1).
+    remember_mont (toZ wX2).
+    remember_mont (toZ wY1).
+    remember_mont (toZ wY2).
+    remember_mont (toZ wZ1).
+    remember_mont (toZ wZ2).
+    remember (MontgomeryCurveSpecs.three_b_mont m bw n r' m'
+    three_b three_b_small r'_correct m'_correct bw_big n_nz
+    m_small m_big) as pnew.
+
+    (*Equality of each coordinate is solved by ring tactic*)
+    apply pair_equal_spec; split; [apply pair_equal_spec; split; ring| ring].
+  Qed.
 
 End Secp256k1_G1_Add.

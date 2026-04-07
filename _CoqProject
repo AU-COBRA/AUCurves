@@ -72,6 +72,8 @@ src/Bedrock/Curve/VestaCurve_G1_bedrock.v
 # BW6-761 curve integration
 src/Bedrock/Curve/BW6_761Curve_G1.v
 src/Bedrock/Curve/BW6_761CurveSpecsEquiv.v
+src/Bedrock/Field/bw6prime.v
+src/Bedrock/Curve/BW6_761Curve_G1_bedrock.v
 
 # Generic Bignum/FElem bridge (used by P-256 / secp256k1 representation specs)
 src/Theory/WordByWordMontgomery/BignumFElemBridge.v

@@ -178,50 +178,68 @@ Section Secp256k1_Wired_Specs.
      constructed from the Bignum context, then sep-logic transport
      of pre/postconditions. *)
 
-  (* secp256k1_mul: from spec_of_BinOp bin_mul to bignum_binop_spec mul. *)
-  Definition secp256k1_mul_bignum_correct_stmt :=
+  (* Transport lemmas: from FElem-style binop_spec/unop_spec to
+     Bignum-style bignum_binop_spec/bignum_unop_spec.
+
+     Proof sketch (same for all 5 ops):
+       1. Intro hypotheses, unfold bignum_binop_spec
+       2. Extract length witnesses from Bignum sep predicates via Bignum_length
+       3. Construct felem witnesses: felem_of_words wsx Hlenx
+       4. Convert output Bignum to byte array via felem_to_bytearray
+       5. Apply the FElem-style binop_spec hypothesis
+       6. Discharge FElem preconditions via Bignum_to_FElem
+       7. Discharge bounded_by preconditions (reflexivity for WBW)
+       8. On postcondition: unwrap felem, FElem_iff_Bignum, feval_to_Z
+
+     These proofs require interactive tactic development against coqc
+     because the fnspec! macro expansion and $@ notation create complex
+     goal shapes. To complete: run `coqc` on this file with MCP and
+     replace each Admitted with the interactive proof. *)
+
+  Lemma secp256k1_mul_bignum_correct :
     forall functions,
       (forall functions',
           Interface.map.get functions' "secp256k1_mul" =
           Interface.map.get functions "secp256k1_mul" ->
           spec_of_BinOp bin_mul (field_representation:=frep256k1) functions') ->
       spec_of_secp256k1_mul_bignum functions.
+  Proof. Admitted. (* interactive: see proof sketch above *)
 
-  (* secp256k1_add *)
-  Definition secp256k1_add_bignum_correct_stmt :=
+  Lemma secp256k1_add_bignum_correct :
     forall functions,
       (forall functions',
           Interface.map.get functions' "secp256k1_add" =
           Interface.map.get functions "secp256k1_add" ->
           spec_of_BinOp bin_add (field_representation:=frep256k1) functions') ->
       spec_of_secp256k1_add_bignum functions.
+  Proof. Admitted.
 
-  (* secp256k1_sub *)
-  Definition secp256k1_sub_bignum_correct_stmt :=
+  Lemma secp256k1_sub_bignum_correct :
     forall functions,
       (forall functions',
           Interface.map.get functions' "secp256k1_sub" =
           Interface.map.get functions "secp256k1_sub" ->
           spec_of_BinOp bin_sub (field_representation:=frep256k1) functions') ->
       spec_of_secp256k1_sub_bignum functions.
+  Proof. Admitted.
 
-  (* secp256k1_square *)
-  Definition secp256k1_square_bignum_correct_stmt :=
+  Lemma secp256k1_square_bignum_correct :
     forall functions,
       (forall functions',
           Interface.map.get functions' "secp256k1_square" =
           Interface.map.get functions "secp256k1_square" ->
           spec_of_UnOp un_square (field_representation:=frep256k1) functions') ->
       spec_of_secp256k1_square_bignum functions.
+  Proof. Admitted.
 
-  (* secp256k1_opp *)
-  Definition secp256k1_opp_bignum_correct_stmt :=
+  Lemma secp256k1_opp_bignum_correct :
     forall functions,
       (forall functions',
           Interface.map.get functions' "secp256k1_opp" =
           Interface.map.get functions "secp256k1_opp" ->
           spec_of_UnOp un_opp (field_representation:=frep256k1) functions') ->
       spec_of_secp256k1_opp_bignum functions.
+  Proof. Admitted.
 
   (** ** Composition recipe (no new lemmas — just consume the bridges)
 

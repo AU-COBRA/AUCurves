@@ -3,7 +3,7 @@
 
 -docroot doc/
 # We should probably get these two from opam
--Q fiat-crypto/rupicola/bedrock2/deps/coqutil coqutil
+-Q fiat-crypto/rupicola/bedrock2/deps/coqutil/src/coqutil coqutil
 -Q fiat-crypto/coqprime/src/Coqprime Coqprime
 -Q fiat-crypto/rewriter/src/Rewriter Rewriter
 -Q fiat-crypto/rupicola/bedrock2/bedrock2/src/bedrock2 bedrock2
@@ -16,7 +16,7 @@ src/Theory/Fields/RingsUtil.v
 src/Theory/Fields/FieldsUtil.v
 src/Theory/WordByWordMontgomery/MontgomeryRingTheory.v
 src/Theory/WordByWordMontgomery/wbw_morphisms.v
-# src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v
+src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v
 src/Theory/WordByWordMontgomery/CurveSpecsEquivalence.v
 src/Implementations/SOS/SOSMul.v
 src/Implementations/SOS/SOSReduction.v
@@ -42,3 +42,52 @@ src/Hacspec/Curve/BlsProof.v
 src/Hacspec/Curve/EquivToBedrock.v
 src/Hacspec/Curve/Ed25519.v
 # src/Hacspec/Curve/Ed25519Proof.v
+
+# Generic field utilities
+src/Theory/Fields/SmallZMul.v
+
+# P-256 curve integration
+src/Bedrock/Curve/P256Curve_G1.v
+src/Bedrock/Curve/P256CurveSpecsEquiv.v
+
+# secp256k1 curve integration
+src/Bedrock/Curve/Secp256k1_prime_certif.v
+src/Bedrock/Curve/Secp256k1Curve_G1.v
+src/Bedrock/Curve/Secp256k1CurveSpecsEquiv.v
+
+# Pallas curve integration
+src/Bedrock/Curve/Pallas_prime_certif.v
+src/Bedrock/Curve/PallasCurve_G1.v
+src/Bedrock/Curve/PallasCurveSpecsEquiv.v
+src/Bedrock/Field/pallasprime.v
+src/Bedrock/Curve/PallasCurve_G1_bedrock.v
+
+# Vesta curve integration
+src/Bedrock/Curve/Vesta_prime_certif.v
+src/Bedrock/Curve/VestaCurve_G1.v
+src/Bedrock/Curve/VestaCurveSpecsEquiv.v
+src/Bedrock/Field/vestaprime.v
+src/Bedrock/Curve/VestaCurve_G1_bedrock.v
+
+# BW6-761 curve integration
+src/Bedrock/Curve/BW6_761Curve_G1.v
+src/Bedrock/Curve/BW6_761CurveSpecsEquiv.v
+
+# Generic Bignum/FElem bridge (used by P-256 / secp256k1 representation specs)
+src/Theory/WordByWordMontgomery/BignumFElemBridge.v
+
+# Per-curve Bignum/FElem instantiations
+src/Bedrock/Curve/Secp256k1_Bignum_Specs.v
+src/Bedrock/Curve/P256_Bignum_Specs.v
+
+# Wired Bignum-style spec instances for fiat-crypto field ops
+src/Bedrock/Curve/Secp256k1_Wired_Specs.v
+src/Bedrock/Curve/P256_Wired_Specs.v
+
+# Bedrock2 bridge files (fiat-crypto bedrock2 <-> AUCurves Gallina specs)
+src/Bedrock/Curve/P256Curve_G1_bedrock.v
+src/Bedrock/Curve/Secp256k1Curve_G1_bedrock.v
+
+# Full point-add specs + demo
+src/Bedrock/Curve/Secp256k1_G1_Add_Spec.v
+src/Bedrock/Curve/Secp256k1_Demo.v

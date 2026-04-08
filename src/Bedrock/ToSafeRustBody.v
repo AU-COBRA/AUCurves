@@ -1,28 +1,12 @@
-(** * ToSafeRustBody: bedrock2 tower functions → fully safe Rust bodies.
+(** * ToSafeRustBody: bedrock2 tower → fully safe Rust.
  *
- * Translates bedrock2 [cmd] trees for Fp2/Fp6/Fp12 tower functions
- * into safe Rust using [#[repr(C)]] nested structs:
- *
- *   [#[repr(C)]] struct Fp([u64; N]);
- *   [#[repr(C)]] struct Fp2  { c0: Fp,  c1: Fp  }
- *   [#[repr(C)]] struct Fp6  { c0: Fp2, c1: Fp2, c2: Fp2 }
- *   [#[repr(C)]] struct Fp12 { c0: Fp6, c1: Fp6 }
- *
- * Key translations:
- *   ptr + k*felem_size  →  ptr.c<k>  (struct field access)
- *   stackalloc N as v   →  let mut v = T::zero()  (stack local)
- *   call f [dst; args]  →  f(&mut dst_field, &arg1_field, ...)
- *                          with in-place aliasing detected and
- *                          resolved via stack copies.
- *
- * The output contains zero [unsafe] blocks. All pointer arithmetic
- * is replaced by typed struct field access, and the borrow checker
- * verifies non-aliasing at every call site.
+ * Translates bedrock2 cmd trees to safe Rust using #[repr(C)] structs.
+ * Zero [unsafe] in the generated tower code — only leaf Fp wrappers
+ * use [unsafe] for the extern "C" boundary to Jasmin assembly.
  *)
 
 Require Import Coq.Strings.String.
-Require Import Coq.ZArith.BinIntDef.
-Require Import Coq.Numbers.BinNums.
+Require Import Coq.ZArith.ZArith.
 Require Import Coq.Numbers.DecimalString.
 Require Import Coq.Lists.List.
 Require Import bedrock2.Syntax.
@@ -30,329 +14,311 @@ Import ListNotations.
 
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
+(** [=?] resolves to [Z.eqb]. For string comparison, use [seq]. *)
+Local Notation seq := String.eqb.
 
 Definition LF : string :=
-  String (Coq.Strings.Ascii.Ascii false true false true false false false false) "".
+  String (Ascii.Ascii false true false true false false false false) "".
 
-(* ================================================================ *)
-(* Tower type system                                                  *)
-(* ================================================================ *)
+Definition z_str (z : Z) : string :=
+  DecimalString.NilZero.string_of_int (Z.to_int z).
 
-(** A tower type: tracks the nesting level and byte size. *)
-Inductive tower_type :=
-  | TFp
-  | TFp2
-  | TFp6
-  | TFp12.
-
-Definition tt_name (t : tower_type) : string :=
-  match t with TFp => "Fp" | TFp2 => "Fp2" | TFp6 => "Fp6" | TFp12 => "Fp12" end.
-
-(** Byte size of a tower type given the base Fp limb count. *)
-Definition tt_bytes (limbs : Z) (t : tower_type) : Z :=
-  let fp := Z.mul limbs 8 in
-  match t with
-  | TFp => fp
-  | TFp2 => Z.mul 2 fp
-  | TFp6 => Z.mul 6 fp
-  | TFp12 => Z.mul 12 fp
+Fixpoint join (sep : string) (xs : list string) : string :=
+  match xs with
+  | nil => ""
+  | x :: nil => x
+  | x :: rest => x ++ sep ++ join sep rest
   end.
 
-(** Number of components at the immediate sub-level. *)
-Definition tt_ncomps (t : tower_type) : Z :=
-  match t with TFp => 0 | TFp2 => 2 | TFp6 => 3 | TFp12 => 2 end.
-
-(** Type of each component. *)
-Definition tt_comp_type (t : tower_type) : tower_type :=
-  match t with TFp => TFp | TFp2 => TFp | TFp6 => TFp2 | TFp12 => TFp6 end.
-
 (* ================================================================ *)
-(* Offset → field path resolution                                    *)
+(* Tower geometry: field sizes and offset → path resolution          *)
 (* ================================================================ *)
 
-(** Given a byte offset within a tower type, produce the Rust field
-    path suffix (e.g., ".c1.c0" for offset 64 within Fp6 when Fp=32). *)
-(** Resolve a byte offset within a tower type to a field path.
-    Non-recursive: the tower has at most 3 nesting levels. *)
-Definition resolve_field_1 (limbs : Z) (t : tower_type) (off : Z) : string :=
-  match t with
-  | TFp => ""
-  | _ =>
-    let comp_sz := tt_bytes limbs (tt_comp_type t) in
-    ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int (Z.div off comp_sz))
+(** All sizes in bytes, parameterized by Fp limb count [n]. *)
+Definition fp_sz  (n : Z) := n * 8.
+Definition fp2_sz (n : Z) := 2 * n * 8.
+Definition fp6_sz (n : Z) := 6 * n * 8.
+Definition fp12_sz (n : Z) := 12 * n * 8.
+
+(** Map a stackalloc byte count to a type name. *)
+Definition type_of_bytes (n : Z) (b : Z) : string :=
+  if b =? fp_sz n then "Fp"
+  else if b =? fp2_sz n then "Fp2"
+  else if b =? fp6_sz n then "Fp6"
+  else if b =? fp12_sz n then "Fp12"
+  else if b =? 8 then "u64"
+  else "Fp".
+
+(** Resolve a byte offset within a parent type to a field path.
+    Non-recursive, max 3 levels (Fp12 → Fp6 → Fp2 → Fp). *)
+Definition field_path (n : Z) (parent : string) (off : Z) : string :=
+  if off =? 0 then ""
+  else if seq parent "Fp2" then
+    ".c" ++ z_str (off / fp_sz n)
+  else if seq parent "Fp6" then
+    let i := off / fp2_sz n in
+    let r := off mod fp2_sz n in
+    ".c" ++ z_str i ++
+    (if r =? 0 then "" else ".c" ++ z_str (r / fp_sz n))
+  else if seq parent "Fp12" then
+    let i := off / fp6_sz n in
+    let r := off mod fp6_sz n in
+    let j := r / fp2_sz n in
+    let r2 := r mod fp2_sz n in
+    ".c" ++ z_str i ++
+    (if r =? 0 then "" else
+     ".c" ++ z_str j ++
+     (if r2 =? 0 then "" else ".c" ++ z_str (r2 / fp_sz n)))
+  else "".
+
+(* ================================================================ *)
+(* Type ranking for drill-down                                       *)
+(* ================================================================ *)
+
+Definition type_rank (t : string) : Z :=
+  if seq t "Fp12" then 4 else if seq t "Fp6" then 3
+  else if seq t "Fp2" then 2 else 1.
+
+(** When a variable of type [vt] is passed to a callee expecting [ct],
+    add .c0 suffixes to drill down if [vt] is strictly larger. *)
+Definition drill (vt ct : string) : string :=
+  if type_rank vt <=? type_rank ct then ""
+  else if seq vt "Fp2" then ".c0"
+  else if andb (seq vt "Fp6") (seq ct "Fp2") then ".c0"
+  else if andb (seq vt "Fp6") (seq ct "Fp") then ".c0.c0"
+  else if andb (seq vt "Fp12") (seq ct "Fp6") then ".c0"
+  else if andb (seq vt "Fp12") (seq ct "Fp2") then ".c0.c0"
+  else if andb (seq vt "Fp12") (seq ct "Fp") then ".c0.c0.c0"
+  else "".
+
+(** Descend [depth] levels in the tower type hierarchy. *)
+Fixpoint descend (t : string) (depth : nat) : string :=
+  match depth with
+  | O => t
+  | S d =>
+    if seq t "Fp12" then descend "Fp6" d
+    else if seq t "Fp6" then descend "Fp2" d
+    else if seq t "Fp2" then descend "Fp" d
+    else t
   end.
 
-Definition resolve_field (limbs : Z) (t : tower_type) (off : Z) : string :=
-  match t with
-  | TFp => ""
-  | TFp2 =>
-    let fp := Z.mul limbs 8 in
-    ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int (Z.div off fp))
-  | TFp6 =>
-    let fp2 := Z.mul 2 (Z.mul limbs 8) in
-    let idx := Z.div off fp2 in
-    let rem := Z.modulo off fp2 in
-    ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int idx) ++
-    resolve_field_1 limbs TFp2 rem
-  | TFp12 =>
-    let fp6 := Z.mul 6 (Z.mul limbs 8) in
-    let fp2 := Z.mul 2 (Z.mul limbs 8) in
-    let idx := Z.div off fp6 in
-    let rem := Z.modulo off fp6 in
-    let idx2 := Z.div rem fp2 in
-    let rem2 := Z.modulo rem fp2 in
-    ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int idx) ++
-    ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int idx2) ++
-    resolve_field_1 limbs TFp2 rem2
-  end.
+(** Count '.' in a field path to determine depth. *)
+Definition dot_char : Ascii.ascii := Ascii.Ascii false true true true false true false false.
 
-(** Map a byte size to the tower type it represents. *)
-Definition size_to_type (limbs : Z) (nbytes : Z) : tower_type :=
-  let fp := Z.mul limbs 8 in
-  if Z.eqb nbytes fp then TFp
-  else if Z.eqb nbytes (Z.mul 2 fp) then TFp2
-  else if Z.eqb nbytes (Z.mul 6 fp) then TFp6
-  else if Z.eqb nbytes (Z.mul 12 fp) then TFp12
-  else TFp. (* fallback *)
+Definition path_depth (p : string) : nat :=
+  List.length (List.filter (Ascii.eqb dot_char) (list_ascii_of_string p)).
 
 (* ================================================================ *)
-(* Expression → Rust field-access translation                        *)
+(* Variable context                                                  *)
 (* ================================================================ *)
 
-(** A resolved argument: variable name + field path + tower type. *)
-Record resolved_arg := {
-  ra_var : string;
-  ra_path : string;    (* e.g. ".c1.c0" *)
-  ra_type : tower_type;
-}.
+Definition ctx := list (string * string).
 
-Definition rust_var (x : string) : string :=
-  if String.eqb x "in" then "in_"
-  else if String.eqb x "fn" then "fn_"
-  else if String.eqb x "let" then "let_"
-  else if String.eqb x "type" then "type_"
-  else if String.eqb x "loop" then "loop_"
-  else if String.eqb x "self" then "self_"
-  else if String.eqb x "use" then "use_"
-  else if String.eqb x "mod" then "mod_"
-  else x.
+Definition ctx_get (c : ctx) (x : string) : string :=
+  match List.find (fun '(k,_) => seq k x) c with
+  | Some (_,t) => t | None => "Fp" end.
 
-(** Resolve a bedrock2 expression to a variable + field path.
-    Handles: [expr.var x], [expr.op add (expr.var x) (expr.literal k)],
-    and nested adds. *)
-Fixpoint resolve_expr (limbs : Z) (ctx_type : tower_type)
-    (e : expr.expr) : resolved_arg :=
+(* ================================================================ *)
+(* Expression resolution                                             *)
+(* ================================================================ *)
+
+Definition esc (x : string) : string :=
+  if seq x "in" then "in_" else if seq x "fn" then "fn_"
+  else if seq x "type" then "type_" else if seq x "loop" then "loop_"
+  else if seq x "self" then "self_" else if seq x "use" then "use_"
+  else if seq x "mod" then "mod_" else x.
+
+(** Resolve expr to (var_name, byte_offset). Returns (name, -1) for literals. *)
+Fixpoint expr_var_off (e : expr.expr) : string * Z :=
   match e with
-  | expr.var x =>
-      {| ra_var := rust_var x; ra_path := ""; ra_type := ctx_type |}
+  | expr.var x => (esc x, 0)
+  | expr.literal z => (z_str z ++ "u64", -1)
   | expr.op bopname.add e1 (expr.literal k) =>
-      let base := resolve_expr limbs ctx_type e1 in
-      let total_off := k in (* e1 already resolved; k is additional offset *)
-      {| ra_var := ra_var base;
-         ra_path := ra_path base ++ resolve_field limbs ctx_type total_off;
-         ra_type := size_to_type limbs (tt_bytes limbs ctx_type - total_off) |}
+      let '(v, o) := expr_var_off e1 in (v, o + k)
   | expr.op bopname.add (expr.literal k) e2 =>
-      resolve_expr limbs ctx_type (expr.op bopname.add e2 (expr.literal k))
-  | _ =>
-      {| ra_var := "/*unsupported*/"; ra_path := ""; ra_type := TFp |}
+      let '(v, o) := expr_var_off e2 in (v, o + k)
+  | _ => ("/*expr*/", 0)
   end.
 
-(** Smarter resolve: given a base variable and its known tower type,
-    resolve an expression that is [base + literal_offset]. *)
-Definition resolve_with_base (limbs : Z) (base_var : string)
-    (base_type : tower_type) (e : expr.expr) : resolved_arg :=
+(** Resolve an expr in context: produce "var.field_path" string and resolved type. *)
+Definition resolve (n : Z) (c : ctx) (e : expr.expr) : string * string :=
+  let '(v, off) := expr_var_off e in
+  if off =? -1 then (v, "literal")
+  else
+    let vt := ctx_get c v in
+    if off =? 0 then (v, vt)
+    else (v ++ field_path n vt off,
+          descend vt (path_depth (field_path n vt off))).
+
+(* ================================================================ *)
+(* Per-function parameter type table                                 *)
+(* ================================================================ *)
+
+Definition param_table : list (string * list string) := [
+  ("bn254_add", ["Fp";"Fp";"Fp"]); ("bn254_sub", ["Fp";"Fp";"Fp"]);
+  ("bn254_mul", ["Fp";"Fp";"Fp"]); ("bn254_square", ["Fp";"Fp"]);
+  ("bn254_opp", ["Fp";"Fp"]); ("bn254_felem_copy", ["Fp";"Fp"]);
+  ("bn254_from_word", ["Fp"]); ("bn254_select_znz", ["Fp";"Fp";"Fp";"Fp"]);
+  ("bn254_Fp2_felem_copy", ["Fp2";"Fp2"]); ("bn254_Fp2_add", ["Fp2";"Fp2";"Fp2"]);
+  ("bn254_Fp2_sub", ["Fp2";"Fp2";"Fp2"]); ("bn254_Fp2_mul", ["Fp2";"Fp2";"Fp2"]);
+  ("bn254_Fp2_square", ["Fp2";"Fp2"]); ("bn254_Fp2_mul_xi", ["Fp2";"Fp2"]);
+  ("bn254_Fp2_conjugate", ["Fp2";"Fp2"]); ("bn254_Fp2_mul_fp", ["Fp2";"Fp2";"Fp"]);
+  ("bn254_Fp2_opp", ["Fp2";"Fp2"]); ("bn254_Fp2_inv", ["Fp2";"Fp2"]);
+  ("bn254_Fp6_felem_copy", ["Fp6";"Fp6"]); ("bn254_Fp6_add", ["Fp6";"Fp6";"Fp6"]);
+  ("bn254_Fp6_sub", ["Fp6";"Fp6";"Fp6"]); ("bn254_Fp6_opp", ["Fp6";"Fp6"]);
+  ("bn254_Fp6_mul", ["Fp6";"Fp6";"Fp6"]); ("bn254_Fp6_square", ["Fp6";"Fp6"]);
+  ("bn254_Fp6_inv", ["Fp6";"Fp6"]); ("bn254_Fp6_add_nocopy", ["Fp6";"Fp6";"Fp6"]);
+  ("bn254_Fp6_sub_nocopy", ["Fp6";"Fp6";"Fp6"]); ("bn254_Fp6_mul_by_v", ["Fp6";"Fp6"]);
+  ("bn254_Fp6_mul_fp2", ["Fp6";"Fp6";"Fp2"]);
+  ("bn254_Fp6_frobenius", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bn254_Fp6_frobenius_p2", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bn254_Fp12_felem_copy", ["Fp12";"Fp12"]); ("bn254_Fp12_add", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_sub", ["Fp12";"Fp12";"Fp12"]); ("bn254_Fp12_opp", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_mul", ["Fp12";"Fp12";"Fp12"]); ("bn254_Fp12_square", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_inv", ["Fp12";"Fp12"]); ("bn254_Fp12_conjugate", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_mul_by_w", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_frobenius", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_Fp12_frobenius_p2", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_make_line", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bn254_load_gamma1_p2", ["Fp2"]); ("bn254_load_gamma2_p2", ["Fp2"]);
+  ("bn254_load_w_frob_p2_c1", ["Fp2"]); ("bn254_load_gamma1", ["Fp2"]);
+  ("bn254_load_gamma2", ["Fp2"]); ("bn254_load_w_frob_c1", ["Fp2"]);
+  ("bn254_Fp12_pow_u", ["Fp12";"Fp12"]); ("bn254_final_exp_hard_dsd", ["Fp12";"Fp12"]);
+  ("bn254_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"])
+].
+
+Definition callee_types (f : string) (nargs : nat) : list string :=
+  match List.find (fun '(k,_) => seq k f) param_table with
+  | Some (_, ts) => ts
+  | None => List.repeat "Fp" nargs
+  end.
+
+(* ================================================================ *)
+(* In-place aliasing check                                           *)
+(* ================================================================ *)
+
+Fixpoint uses_var (x : string) (e : expr.expr) : bool :=
   match e with
-  | expr.var x =>
-      {| ra_var := rust_var x; ra_path := ""; ra_type := base_type |}
-  | expr.op bopname.add (expr.var x) (expr.literal k) =>
-      if String.eqb x base_var then
-        let comp_type := tt_comp_type base_type in
-        let comp_sz := tt_bytes limbs comp_type in
-        let idx := Z.div k comp_sz in
-        let rem := Z.modulo k comp_sz in
-        {| ra_var := rust_var x;
-           ra_path := ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int idx) ++
-                      resolve_field limbs comp_type rem;
-           ra_type := comp_type |}
-      else
-        {| ra_var := rust_var x; ra_path := "/*unknown_offset*/"; ra_type := TFp |}
-  | _ =>
-      resolve_expr limbs base_type e
-  end.
-
-(* ================================================================ *)
-(* Variable context: track types of all in-scope variables           *)
-(* ================================================================ *)
-
-Definition var_ctx := list (string * tower_type).
-
-Definition ctx_lookup (ctx : var_ctx) (x : string) : tower_type :=
-  match List.find (fun '(n, _) => String.eqb n x) ctx with
-  | Some (_, t) => t
-  | None => TFp (* default *)
-  end.
-
-Definition ctx_add (ctx : var_ctx) (x : string) (t : tower_type) : var_ctx :=
-  (x, t) :: ctx.
-
-(* ================================================================ *)
-(* In-place aliasing detection                                       *)
-(* ================================================================ *)
-
-(** Check whether an expression [e] references the same base variable
-    as [dest_var] (possibly at a different offset). *)
-Fixpoint expr_uses_var (x : string) (e : expr.expr) : bool :=
-  match e with
-  | expr.var y => String.eqb x y
-  | expr.op _ e1 e2 => expr_uses_var x e1 || expr_uses_var x e2
-  | expr.literal _ => false
+  | expr.var y => seq (esc y) x
+  | expr.op _ e1 e2 => uses_var x e1 || uses_var x e2
   | _ => false
   end.
 
-(** Check if any of the source arguments (args after the first, which is
-    the destination) reference [dest_var]. *)
-Definition has_aliasing (dest_var : string) (src_args : list expr.expr) : bool :=
-  List.existsb (expr_uses_var dest_var) src_args.
+Definition any_uses_var (x : string) (es : list expr.expr) : bool :=
+  List.existsb (uses_var x) es.
 
 (* ================================================================ *)
-(* Command → safe Rust translation                                   *)
+(* Command → safe Rust                                               *)
 (* ================================================================ *)
 
-(** Map a function name to its safe Rust wrapper name.
-    Convention: bn254_add → fp_add, bn254_Fp2_mul → fp2_mul, etc. *)
-Definition safe_fn_name (f : string) : string := f.
-  (* For now, use the same name. The safe module can re-export. *)
+(** Format a source argument with appropriate drill-down. *)
+Definition fmt_src (n : Z) (c : ctx) (ct : string) (e : expr.expr) : string :=
+  let '(path, rt) := resolve n c e in
+  if seq rt "literal" then path (* literal: emit as-is *)
+  else "&" ++ path ++ drill rt ct.
 
-(** Resolve an argument in the context of a function call.
-    Uses the variable context to determine the base type. *)
-Definition resolve_call_arg (limbs : Z) (ctx : var_ctx) (e : expr.expr)
-    : resolved_arg :=
-  match e with
-  | expr.var x => {| ra_var := rust_var x; ra_path := ""; ra_type := ctx_lookup ctx x |}
-  | expr.op bopname.add (expr.var x) (expr.literal k) =>
-      let base_type := ctx_lookup ctx x in
-      let comp_type := tt_comp_type base_type in
-      let comp_sz := tt_bytes limbs comp_type in
-      let idx := k / comp_sz in
-      let rem := k mod comp_sz in
-      {| ra_var := rust_var x;
-         ra_path := ".c" ++ DecimalString.NilZero.string_of_int (Z.to_int idx) ++
-                    resolve_field limbs comp_type rem;
-         ra_type := comp_type |}
-  | _ => {| ra_var := "/*expr*/"; ra_path := ""; ra_type := TFp |}
-  end.
-
-Definition pp_arg_ref (a : resolved_arg) : string :=
-  "&" ++ ra_var a ++ ra_path a.
-
-Definition pp_arg_mut (a : resolved_arg) : string :=
-  "&mut " ++ ra_var a ++ ra_path a.
-
-(** Fresh variable name for alias copies. *)
-Definition alias_copy_name (n : nat) : string :=
-  "__ac" ++ DecimalString.NilZero.string_of_int (Nat.to_int n).
-
-Fixpoint safe_cmd (indent : string) (limbs : Z) (ctx : var_ctx)
-    (copy_idx : nat) (c : Syntax.cmd.cmd)
-    : string * var_ctx * nat :=
-  match c with
-  | cmd.skip => ("", ctx, copy_idx)
+Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
+    (cmd : Syntax.cmd.cmd) : string * ctx * nat :=
+  match cmd with
+  | cmd.skip => ("", c, ci)
   | cmd.seq c1 c2 =>
-      let '(s1, ctx1, ci1) := safe_cmd indent limbs ctx copy_idx c1 in
-      let '(s2, ctx2, ci2) := safe_cmd indent limbs ctx1 ci1 c2 in
-      (s1 ++ s2, ctx2, ci2)
+      let '(s1, cx1, ci1) := safe_cmd ind n c ci c1 in
+      let '(s2, cx2, ci2) := safe_cmd ind n cx1 ci1 c2 in
+      (s1 ++ s2, cx2, ci2)
+
   | cmd.stackalloc x nbytes body =>
-      let t := size_to_type limbs nbytes in
-      let decl := indent ++ "let mut " ++ rust_var x ++ " = " ++ tt_name t ++ "::zero();" ++ LF in
-      let ctx' := ctx_add ctx x t in
-      let '(body_s, ctx'', ci) := safe_cmd indent limbs ctx' copy_idx body in
-      (decl ++ body_s, ctx'', ci)
+      let xn := esc x in
+      let t := type_of_bytes n nbytes in
+      let init := if seq t "u64" then "0u64" else t ++ "::zero()" in
+      let decl := ind ++ "let mut " ++ xn ++ ": " ++ t ++ " = " ++ init ++ ";" ++ LF in
+      let '(body_s, cx, ci') := safe_cmd ind n ((xn, t) :: c) ci body in
+      (decl ++ body_s, cx, ci')
+
   | cmd.call nil f args =>
-      match args with
-      | dest_e :: src_es =>
-        let dest := resolve_call_arg limbs ctx dest_e in
-        let srcs := List.map (resolve_call_arg limbs ctx) src_es in
-        let dest_var := ra_var dest in
-        (* Check for in-place aliasing *)
-        if has_aliasing dest_var src_es then
-          (* Need to copy aliased sources to temporaries *)
-          let copy_name := alias_copy_name copy_idx in
-          let copy_decl := indent ++ "let " ++ copy_name ++ " = " ++
-                           dest_var ++ ra_path dest ++ ";" ++ LF in
-          (* Replace references to dest_var in srcs with copy_name *)
-          let fix_src (a : resolved_arg) : resolved_arg :=
-            if String.eqb (ra_var a) dest_var
-            then {| ra_var := copy_name;
-                    ra_path := (* strip the matching prefix and keep the rest *)
-                      ra_path a; (* TODO: adjust path relative to copy *)
-                    ra_type := ra_type a |}
-            else a in
-          let srcs' := List.map fix_src srcs in
-          let call_s := indent ++ safe_fn_name f ++ "(" ++
-            pp_arg_mut dest ++
-            String.concat "" (List.map (fun a => ", " ++ pp_arg_ref a) srcs') ++
-            ");" ++ LF in
-          (copy_decl ++ call_s, ctx, S copy_idx)
+      let fname := f in
+      let nargs := List.length args in
+      let cts := callee_types fname nargs in
+      match args, cts with
+      | dest_e :: src_es, dest_ct :: src_cts =>
+        let '(dpath, drt) := resolve n c dest_e in
+        let dd := drill drt dest_ct in
+        let dest_full := dpath ++ dd in
+        let '(dv, _) := expr_var_off dest_e in
+        if any_uses_var dv src_es then
+          (* In-place aliasing: clone the dest *)
+          let cn := "__ac" ++ z_str (Z.of_nat ci) in
+          let copy := ind ++ "let " ++ cn ++ " = " ++ dest_full ++ ".clone();" ++ LF in
+          let fix fmt_srcs (cts : list string) (es : list expr.expr) : list string :=
+            match cts, es with
+            | ct :: cts', e :: es' =>
+                let '(sp, srt) := resolve n c e in
+                let s := if seq (sp ++ drill srt ct) dest_full
+                         then "&" ++ cn
+                         else fmt_src n c ct e in
+                s :: fmt_srcs cts' es'
+            | _, _ => nil
+            end in
+          let srcs := fmt_srcs src_cts src_es in
+          let call := ind ++ fname ++ "(&mut " ++ dest_full ++ ", " ++
+                      join ", " srcs ++ ");" ++ LF in
+          (copy ++ call, c, S ci)
         else
-          let call_s := indent ++ safe_fn_name f ++ "(" ++
-            pp_arg_mut dest ++
-            String.concat "" (List.map (fun a => ", " ++ pp_arg_ref a) srcs) ++
-            ");" ++ LF in
-          (call_s, ctx, copy_idx)
-      | _ =>
-        let call_s := indent ++ safe_fn_name f ++ "();" ++ LF in
-        (call_s, ctx, copy_idx)
+          let srcs := List.map (fun '(ct, e) => fmt_src n c ct e) (List.combine src_cts src_es) in
+          let call := ind ++ fname ++ "(&mut " ++ dest_full ++ ", " ++
+                      join ", " srcs ++ ");" ++ LF in
+          (call, c, ci)
+      | _, _ =>
+        (ind ++ fname ++ "();" ++ LF, c, ci)
       end
-  | cmd.set x e =>
-      let s := indent ++ rust_var x ++ " = /* set */ 0;" ++ LF in
-      (s, ctx, copy_idx)
-  | cmd.cond e ct cf =>
-      let '(st, ctx1, ci1) := safe_cmd ("  " ++ indent) limbs ctx copy_idx ct in
-      let '(sf, ctx2, ci2) := safe_cmd ("  " ++ indent) limbs ctx ci1 cf in
-      (indent ++ "if /* cond */ {" ++ LF ++ st ++ indent ++ "} else {" ++ LF ++ sf ++ indent ++ "}" ++ LF,
-       ctx2, ci2)
-  | _ => ("", ctx, copy_idx)
+
+  | cmd.set x _ => (ind ++ "/* set " ++ esc x ++ " */" ++ LF, c, ci)
+  | cmd.cond _ ct cf =>
+      let '(st, _, ci1) := safe_cmd ("    " ++ ind) n c ci ct in
+      let '(sf, _, ci2) := safe_cmd ("    " ++ ind) n c ci1 cf in
+      (ind ++ "if /* cond */ {" ++ LF ++ st ++ ind ++ "} else {" ++ LF ++ sf ++ ind ++ "}" ++ LF, c, ci2)
+  | _ => ("", c, ci)
   end.
 
-(** Generate a safe Rust function from a bedrock2 function. *)
-Definition safe_rust_func (limbs : Z) (param_types : list tower_type)
-    '((name, (args, rets, body)) : string * (list string * list string * Syntax.cmd.cmd))
-    : string :=
-  (* Build parameter list with types *)
-  let params := List.combine args param_types in
-  let param_strs :=
-    match params with
+(** Generate a complete safe Rust function. *)
+Definition safe_rust_fn (n : Z) (ptypes : list string)
+    (func : string * (list string * list string * Syntax.cmd.cmd)) : string :=
+  let '(name, (args, _, body)) := func in
+  let params := List.combine args ptypes in
+  let param_strs := match params with
     | (a, t) :: rest =>
-        (rust_var a ++ ": &mut " ++ tt_name t) ::
-        List.map (fun '(a, t) => rust_var a ++ ": &" ++ tt_name t) rest
+        ("mut " ++ esc a ++ ": &mut " ++ t) ::
+        List.map (fun '(a, t) => esc a ++ ": &" ++ t) rest
     | nil => nil
     end in
-  let ctx : var_ctx := List.map (fun '(a, t) => (a, t)) params in
-  let '(body_s, _, _) := safe_cmd "    " limbs ctx 0 body in
+  let init_ctx : ctx := List.map (fun '(a, t) => (esc a, t)) params in
+  let '(body_s, _, _) := safe_cmd "    " n init_ctx 0 body in
   "#[inline]" ++ LF ++
-  "pub fn " ++ name ++ "(" ++ String.concat ", " param_strs ++ ") {" ++ LF ++
+  "pub fn " ++ name ++ "(" ++ join ", " param_strs ++ ") {" ++ LF ++
   body_s ++
   "}" ++ LF.
 
-(* ================================================================ *)
-(* Struct type declarations                                          *)
-(* ================================================================ *)
-
-Definition safe_type_decls (limbs : Z) : string :=
-  let n := DecimalString.NilZero.string_of_int (Z.to_int limbs) in
-  "#[repr(C)]" ++ LF ++
-  "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct Fp(pub [u64; " ++ n ++ "]);" ++ LF ++
-  "impl Fp { #[inline] pub const fn zero() -> Self { Fp([0u64; " ++ n ++ "]) } }" ++ LF ++ LF ++
-  "#[repr(C)]" ++ LF ++
-  "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+(** Type declarations for BN254. *)
+Definition type_decls (n : Z) : string :=
+  let ns := z_str n in
+  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+  "pub struct Fp(pub [u64; " ++ ns ++ "]);" ++ LF ++
+  "impl Fp { #[inline] pub const fn zero() -> Self { Fp([0u64; " ++ ns ++ "]) } }" ++ LF ++ LF ++
+  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
   "pub struct Fp2 { pub c0: Fp, pub c1: Fp }" ++ LF ++
   "impl Fp2 { #[inline] pub const fn zero() -> Self { Fp2 { c0: Fp::zero(), c1: Fp::zero() } } }" ++ LF ++ LF ++
-  "#[repr(C)]" ++ LF ++
-  "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
   "pub struct Fp6 { pub c0: Fp2, pub c1: Fp2, pub c2: Fp2 }" ++ LF ++
   "impl Fp6 { #[inline] pub const fn zero() -> Self { Fp6 { c0: Fp2::zero(), c1: Fp2::zero(), c2: Fp2::zero() } } }" ++ LF ++ LF ++
-  "#[repr(C)]" ++ LF ++
-  "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
   "pub struct Fp12 { pub c0: Fp6, pub c1: Fp6 }" ++ LF ++
-  "impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }" ++ LF ++ LF.
+  "impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }" ++ LF.
+
+(** Generate safe Rust for a list of tower functions. *)
+Definition safe_rust_module (n : Z)
+    (funcs : list (string * (list string * list string * Syntax.cmd.cmd))) : string :=
+  join LF (List.map (fun '((name, (args, _, _)) as f) =>
+    let ptypes := callee_types name (List.length args) in
+    safe_rust_fn n ptypes f
+  ) funcs).

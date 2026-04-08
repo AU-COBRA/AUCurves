@@ -81,46 +81,31 @@ Section P256_Wired_Specs.
 
   Lemma p256_mul_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "p256_mul" =
-          Interface.map.get functions "p256_mul" ->
-          spec_of_BinOp bin_mul (field_representation:=p256_frep) functions') ->
+      spec_of_BinOp bin_mul (field_representation:=p256_frep) functions ->
       spec_of_p256_mul_bignum functions.
   Proof. Admitted.
 
   Lemma p256_add_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "p256_add" =
-          Interface.map.get functions "p256_add" ->
-          spec_of_BinOp bin_add (field_representation:=p256_frep) functions') ->
+      spec_of_BinOp bin_add (field_representation:=p256_frep) functions ->
       spec_of_p256_add_bignum functions.
   Proof. Admitted.
 
   Lemma p256_sub_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "p256_sub" =
-          Interface.map.get functions "p256_sub" ->
-          spec_of_BinOp bin_sub (field_representation:=p256_frep) functions') ->
+      spec_of_BinOp bin_sub (field_representation:=p256_frep) functions ->
       spec_of_p256_sub_bignum functions.
   Proof. Admitted.
 
   Lemma p256_square_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "p256_square" =
-          Interface.map.get functions "p256_square" ->
-          spec_of_UnOp un_square (field_representation:=p256_frep) functions') ->
+      spec_of_UnOp un_square (field_representation:=p256_frep) functions ->
       spec_of_p256_square_bignum functions.
   Proof. Admitted.
 
   Lemma p256_opp_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "p256_opp" =
-          Interface.map.get functions "p256_opp" ->
-          spec_of_UnOp un_opp (field_representation:=p256_frep) functions') ->
+      spec_of_UnOp un_opp (field_representation:=p256_frep) functions ->
       spec_of_p256_opp_bignum functions.
   Proof. Admitted.
 

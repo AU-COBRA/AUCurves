@@ -31,6 +31,7 @@ Require Import bedrock2.WeakestPrecondition.
 Require Import bedrock2.Syntax.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Bitwidth64.
+Require Import coqutil.Map.Interface.
 
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Bedrock.Specs.Field.
@@ -198,46 +199,31 @@ Section Secp256k1_Wired_Specs.
 
   Lemma secp256k1_mul_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "secp256k1_mul" =
-          Interface.map.get functions "secp256k1_mul" ->
-          spec_of_BinOp bin_mul (field_representation:=frep256k1) functions') ->
+      spec_of_BinOp bin_mul (field_representation:=frep256k1) functions ->
       spec_of_secp256k1_mul_bignum functions.
   Proof. Admitted. (* interactive: see proof sketch above *)
 
   Lemma secp256k1_add_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "secp256k1_add" =
-          Interface.map.get functions "secp256k1_add" ->
-          spec_of_BinOp bin_add (field_representation:=frep256k1) functions') ->
+      spec_of_BinOp bin_add (field_representation:=frep256k1) functions ->
       spec_of_secp256k1_add_bignum functions.
   Proof. Admitted.
 
   Lemma secp256k1_sub_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "secp256k1_sub" =
-          Interface.map.get functions "secp256k1_sub" ->
-          spec_of_BinOp bin_sub (field_representation:=frep256k1) functions') ->
+      spec_of_BinOp bin_sub (field_representation:=frep256k1) functions ->
       spec_of_secp256k1_sub_bignum functions.
   Proof. Admitted.
 
   Lemma secp256k1_square_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "secp256k1_square" =
-          Interface.map.get functions "secp256k1_square" ->
-          spec_of_UnOp un_square (field_representation:=frep256k1) functions') ->
+      spec_of_UnOp un_square (field_representation:=frep256k1) functions ->
       spec_of_secp256k1_square_bignum functions.
   Proof. Admitted.
 
   Lemma secp256k1_opp_bignum_correct :
     forall functions,
-      (forall functions',
-          Interface.map.get functions' "secp256k1_opp" =
-          Interface.map.get functions "secp256k1_opp" ->
-          spec_of_UnOp un_opp (field_representation:=frep256k1) functions') ->
+      spec_of_UnOp un_opp (field_representation:=frep256k1) functions ->
       spec_of_secp256k1_opp_bignum functions.
   Proof. Admitted.
 

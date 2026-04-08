@@ -1,0 +1,14 @@
+[package]
+name = "bn254-safe-rust"
+version = "0.1.0"
+edition = "2021"
+description = "BN254 pairing extracted from verified bedrock2, with safe Rust API"
+license = "Apache-2.0"
+
+[lib]
+name = "bn254"
+path = "src/lib.rs"
+
+[[example]]
+name = "pairing_test"
+path = "examples/pairing_test.rs"

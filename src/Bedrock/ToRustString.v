@@ -166,7 +166,7 @@ Definition rust_call (args : list string) (f : string) (es : list string) :=
   | cmd.store s ea ev
     => indent ++ rust_store_ptr_expr ea ++ rust_expr ev ++ ");" ++ LF
   | cmd.stackalloc x n body =>
-    indent ++ "let mut " ++ rust_var x ++ "_arr = [0u64; " ++ rust_lit (bytes_to_words n) ++ "];" ++ LF ++
+    indent ++ "let mut " ++ rust_var x ++ "_arr = [0u64; " ++ DecimalString.NilZero.string_of_int (BinInt.Z.to_int (bytes_to_words n)) ++ "];" ++ LF ++
     indent ++ "let " ++ rust_var x ++ " = " ++ rust_var x ++ "_arr.as_mut_ptr() as u64;" ++ LF ++
     rust_cmd indent body
   | cmd.set x ev =>

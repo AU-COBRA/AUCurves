@@ -101,3 +101,6 @@ src/Bedrock/SafeRustReflection_bls12.v
 # Inner unsafe-Rust pretty printer + extraction driver (Path B)
 src/Bedrock/ToRustString.v
 src/Bedrock/ExtractSafeRust.v
+
+# Safe-Rust body printer (Path B, zero unsafe in tower)
+src/Bedrock/ToSafeRustBody.v

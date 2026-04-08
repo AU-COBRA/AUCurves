@@ -158,7 +158,7 @@ Definition param_table : list (string * list string) := [
   ("bn254_add", ["Fp";"Fp";"Fp"]); ("bn254_sub", ["Fp";"Fp";"Fp"]);
   ("bn254_mul", ["Fp";"Fp";"Fp"]); ("bn254_square", ["Fp";"Fp"]);
   ("bn254_opp", ["Fp";"Fp"]); ("bn254_felem_copy", ["Fp";"Fp"]);
-  ("bn254_from_word", ["Fp"]); ("bn254_select_znz", ["Fp";"Fp";"Fp";"Fp"]);
+  ("bn254_from_word", ["Fp";"Fp"]); ("bn254_select_znz", ["Fp";"Fp";"Fp";"Fp"]);
   ("bn254_Fp2_felem_copy", ["Fp2";"Fp2"]); ("bn254_Fp2_add", ["Fp2";"Fp2";"Fp2"]);
   ("bn254_Fp2_sub", ["Fp2";"Fp2";"Fp2"]); ("bn254_Fp2_mul", ["Fp2";"Fp2";"Fp2"]);
   ("bn254_Fp2_square", ["Fp2";"Fp2"]); ("bn254_Fp2_mul_xi", ["Fp2";"Fp2"]);
@@ -173,12 +173,18 @@ Definition param_table : list (string * list string) := [
   ("bn254_Fp6_frobenius", ["Fp6";"Fp6";"Fp2";"Fp2"]);
   ("bn254_Fp6_frobenius_p2", ["Fp6";"Fp6";"Fp2";"Fp2"]);
   ("bn254_Fp12_felem_copy", ["Fp12";"Fp12"]); ("bn254_Fp12_add", ["Fp12";"Fp12";"Fp12"]);
-  ("bn254_Fp12_sub", ["Fp12";"Fp12";"Fp12"]); ("bn254_Fp12_opp", ["Fp12";"Fp12"]);
-  ("bn254_Fp12_mul", ["Fp12";"Fp12";"Fp12"]); ("bn254_Fp12_square", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_add_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_sub", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_sub_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_opp", ["Fp12";"Fp12"]);
+  ("bn254_Fp12_mul", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_mul_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bn254_Fp12_square", ["Fp12";"Fp12"]);
   ("bn254_Fp12_inv", ["Fp12";"Fp12"]); ("bn254_Fp12_conjugate", ["Fp12";"Fp12"]);
   ("bn254_Fp12_mul_by_w", ["Fp12";"Fp12"]);
   ("bn254_Fp12_frobenius", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn254_Fp12_frobenius_p2", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_Fp12_frobenius_p3", ["Fp12";"Fp12"]);
   ("bn254_make_line", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
   ("bn254_load_gamma1_p2", ["Fp2"]); ("bn254_load_gamma2_p2", ["Fp2"]);
   ("bn254_load_w_frob_p2_c1", ["Fp2"]); ("bn254_load_gamma1", ["Fp2"]);
@@ -189,10 +195,24 @@ Definition param_table : list (string * list string) := [
   ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"])
 ].
 
+(** Look up callee parameter types. If the table entry is shorter than
+    the actual arg count, pad with the function's base tower type
+    (inferred from the name prefix). This handles functions like
+    frobenius_p3 which take extra gamma parameters. *)
+Definition base_type_of_name (f : string) : string :=
+  if seq (substring 6 4 f) "Fp12" then "Fp12"
+  else if seq (substring 6 3 f) "Fp6" then "Fp6"
+  else if seq (substring 6 3 f) "Fp2" then "Fp2"
+  else "Fp".
+
 Definition callee_types (f : string) (nargs : nat) : list string :=
+  let base := base_type_of_name f in
   match List.find (fun '(k,_) => seq k f) param_table with
-  | Some (_, ts) => ts
-  | None => List.repeat "Fp" nargs
+  | Some (_, ts) =>
+      let n := List.length ts in
+      if Nat.leb nargs n then ts
+      else ts ++ List.repeat base (nargs - n)
+  | None => List.repeat base nargs
   end.
 
 (* ================================================================ *)

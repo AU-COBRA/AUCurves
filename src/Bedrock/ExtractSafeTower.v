@@ -40,7 +40,7 @@ Definition leaf_wrappers : string :=
   "#[inline] pub fn bn254_from_word(o: &mut Fp, w: u64) { unsafe { _bn254_from_word(o.0.as_mut_ptr(), w) } }" ++ LF ++
   "#[inline] pub fn bn254_select_znz(o: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(o.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }" ++ LF ++
   "#[inline] pub fn bn254_Fp2_opp(o: &mut Fp2, x: &Fp2) { bn254_opp(&mut o.c0, &x.c0); bn254_opp(&mut o.c1, &x.c1); }" ++ LF ++
-  "#[inline] pub fn bn254_Fp2_inv(o: &mut Fp2, x: &Fp2) { let mut n = Fp::zero(); bn254_square(&mut n, &x.c0); let mut t = Fp::zero(); bn254_square(&mut t, &x.c1); bn254_add(&mut n, &n.clone(), &t); /* inv via Fermat omitted — use stub or link */ }" ++ LF ++ LF.
+  "#[inline] pub fn bn254_Fp2_inv(o: &mut Fp2, x: &Fp2) { let mut n = Fp::zero(); bn254_square(&mut n, &x.c0); let mut t = Fp::zero(); bn254_square(&mut t, &x.c1); let n_copy = n; bn254_add(&mut n, &n_copy, &t); /* inv via Fermat omitted — link with leaf */ }" ++ LF ++ LF.
 
 Definition bn254_safe_tower_rs : string :=
   Eval vm_compute in

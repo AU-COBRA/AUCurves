@@ -2,11 +2,7 @@
 -Q fiat-crypto/src Crypto
 
 -docroot doc/
-# We should probably get these two from opam
--Q fiat-crypto/rupicola/bedrock2/deps/coqutil/src/coqutil coqutil
--Q fiat-crypto/coqprime/src/Coqprime Coqprime
--Q fiat-crypto/rewriter/src/Rewriter Rewriter
--Q fiat-crypto/rupicola/bedrock2/bedrock2/src/bedrock2 bedrock2
+# bedrock2, coqutil, Coqprime, Rewriter all from opam
 
 src/Theory/Util/UList.v
 src/Theory/Util/UListUtil.v
@@ -93,3 +89,11 @@ src/Bedrock/Curve/Secp256k1Curve_G1_bedrock.v
 # Full point-add specs + demo
 src/Bedrock/Curve/Secp256k1_G1_Add_Spec.v
 src/Bedrock/Curve/Secp256k1_Demo.v
+
+# Safe Rust wrapper generator + bedrock2 spec_of reflection
+src/Bedrock/ToSafeRustString.v
+src/Bedrock/SafeRustReflection.v
+src/Bedrock/SafeRustReflection_walker.v
+src/Bedrock/SafeRustReflection_specof.v
+src/Bedrock/SafeRustReflection_real.v
+src/Bedrock/SafeRustReflection_bls12.v

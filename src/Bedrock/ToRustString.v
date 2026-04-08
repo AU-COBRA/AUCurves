@@ -1,4 +1,4 @@
-(*Rust Backend for Bedrock2 project. We mirror the approach og Bedrock2/src/Bedrock22/ToCString.v*)
+(*Rust Backend for Bedrock2 project. We mirror the approach of Bedrock2/src/bedrock2/ToCString.v*)
 Require Import bedrock2.Syntax bedrock2.Variables. Import bopname.
 Require Import coqutil.Datatypes.ListSet.
 Require Import Coq.ZArith.BinIntDef Coq.Numbers.BinNums Coq.Numbers.DecimalString.
@@ -6,38 +6,51 @@ Require Import Coq.Strings.String. Local Open Scope string_scope.
 
 Definition LF : string := String (Coq.Strings.Ascii.Ascii false true false true false false false false) "".
 
-Definition rust_var := @id string.
+(** Escape bedrock2 variable names that collide with Rust keywords. *)
+Definition rust_var (x : string) : string :=
+  if String.eqb x "in" then "in_"
+  else if String.eqb x "fn" then "fn_"
+  else if String.eqb x "let" then "let_"
+  else if String.eqb x "mut" then "mut_"
+  else if String.eqb x "ref" then "ref_"
+  else if String.eqb x "type" then "type_"
+  else if String.eqb x "match" then "match_"
+  else if String.eqb x "loop" then "loop_"
+  else if String.eqb x "move" then "move_"
+  else if String.eqb x "self" then "self_"
+  else if String.eqb x "use" then "use_"
+  else if String.eqb x "mod" then "mod_"
+  else if String.eqb x "box" then "box_"
+  else x.
+
 Definition rust_fun := @id string.
 
-Definition rust_lit' w := DecimalString.NilZero.string_of_int (BinInt.Z.to_int w) ++ "usize".
+Definition rust_lit' w := DecimalString.NilZero.string_of_int (BinInt.Z.to_int w) ++ "u64".
 
 Definition rust_lit w :=
-  match w with 
+  match w with
     | Z.pos _ => rust_lit' w
-    | Z.neg _ => "usize::MAX"
+    | Z.neg p => "(0u64.wrapping_sub(" ++ rust_lit' (Z.pos p) ++ "))"
     | _ => rust_lit' w
   end.
 
 Definition rust_bop e1 op e2 :=
   match op with
-  | add => e1++".wrapping_add" ++ e2
-  | sub => e1++".wrapping_sub" ++ e2
-  | mul => e1++".wrapping_mul" ++ e2
-  (*For now, only 64-bit implementations are supported.*)
-  | mulhuu => "((" ++ e1 ++ " as u128).wrapping_mul(" ++ e2 ++ " as u128) >> 64) as usize"
-  (*Not needed for BLS12*)
-  (* | divu => e1++"/"++e2 *)
-  (* | remu => e1++"%"++e2 *)
-  | and => e1++"&"++e2
-  | or => e1++"|"++e2
-  | xor => e1++"^"++e2
-  | sru => e1++">>"++e2
-  | slu => e1++"<<"++e2
-  (* | srs => "(intptr_t)"++e1++">>"++e2 *)
-  (* | lts => "(intptr_t)"++e1++"<"++"(intptr_t)"++e2 *)
-  | ltu => "(" ++ e1 ++ "<" ++ e2 ++ ") as usize"
-  | eq => "(" ++ e1 ++ "==" ++ e2 ++ ") as usize"
-  | _ => "" (*Todo: implement missing operations; for now only operations necessary for Fp2 arithmetic is supported*)
+  | add => e1++".wrapping_add("++ e2 ++")"
+  | sub => e1++".wrapping_sub("++ e2 ++")"
+  | mul => e1++".wrapping_mul("++ e2 ++")"
+  | mulhuu => "((" ++ e1 ++ " as u128).wrapping_mul(" ++ e2 ++ " as u128) >> 64) as u64"
+  | divu => e1++" / "++e2
+  | remu => e1++" % "++e2
+  | and => e1++" & "++e2
+  | or => e1++" | "++e2
+  | xor => e1++" ^ "++e2
+  | sru => e1++" >> "++e2
+  | slu => e1++" << "++e2
+  | srs => "((" ++ e1 ++ " as i64) >> " ++ e2 ++ ") as u64"
+  | ltu => "if " ++ e1 ++ " < " ++ e2 ++ " { 1u64 } else { 0u64 }"
+  | lts => "if (" ++ e1 ++ " as i64) < (" ++ e2 ++ " as i64) { 1u64 } else { 0u64 }"
+  | eq => "if " ++ e1 ++ " == " ++ e2 ++ " { 1u64 } else { 0u64 }"
   end%string.
 
   Definition rust_size (s : access_size) : string :=
@@ -45,7 +58,15 @@ Definition rust_bop e1 op e2 :=
   | access_size.one => "1"
   | access_size.two => "2"
   | access_size.four => "4"
-  | access_size.word => "8" (*For now, only 64-bit is supported*)
+  | access_size.word => "8" (* 64-bit targets *)
+  end.
+
+  Definition rust_size_type (s : access_size) : string :=
+  match s with
+  | access_size.one => "u8"
+  | access_size.two => "u16"
+  | access_size.four => "u32"
+  | access_size.word => "u64"
   end.
 
 (*Idea: use Vec instead of unsafe pointer arithmetic?*)
@@ -61,13 +82,13 @@ Definition rust_ptr_varlit (e : expr) : string :=
 
 Definition rust_ptr_op e1 op e2 : string :=
   match op with
-  | add => "_br2_load((" ++ rust_ptr_varlit e1 ++ " as *const u8).wrapping_add(" ++ rust_ptr_varlit e2 ++ ") as *const usize)"
+  | add => "_br2_load((" ++ rust_ptr_varlit e1 ++ " as *const u8).wrapping_add((" ++ rust_ptr_varlit e2 ++ ") as usize) as *const usize)"
   | _ => ""
   end.
 
   Definition rust_store_ptr_op e1 op e2 : string :=
   match op with
-  | add => "_br2_store((" ++ rust_ptr_varlit e1 ++ " as *const u8).wrapping_add(" ++ rust_ptr_varlit e2 ++ ") as *mut usize, "
+  | add => "_br2_store((" ++ rust_ptr_varlit e1 ++ " as *const u8).wrapping_add((" ++ rust_ptr_varlit e2 ++ ") as usize) as *mut usize, "
   | _ => ""
   end.
   Definition rust_store_ptr_expr (e : expr) : string :=
@@ -83,12 +104,20 @@ match e with
 | expr.literal v => rust_lit v
 | expr.var x => rust_var x
 | expr.load s ea =>  rust_store_ptr_expr ea
+| expr.inlinetable _ _ _ => "/*inlinetable: unsupported*/"
 | expr.op op e1 e2 => rust_bop ("(" ++ rust_store_expr e1 ++ ")") op ("(" ++ rust_store_expr e2 ++ ")")
+| expr.op1 op e =>
+    match op with
+    | op1.opp => "(0u64.wrapping_sub(" ++ rust_store_expr e ++ "))"
+    | op1.not => "(!(" ++ rust_store_expr e ++ "))"
+    end
+| expr.ite _ _ _ => "/*ite: unsupported*/"
 end.
 
 Definition rust_ptr_expr (e : expr) : string :=
   match e with
   | expr.op op e1 e2 => rust_ptr_op e1 op e2
+  | expr.var x => "_br2_load(" ++ rust_var x ++ " as *const usize)"
   | _ => ""
   end.
 
@@ -98,7 +127,14 @@ match e with
 | expr.literal v => rust_lit v
 | expr.var x => rust_var x
 | expr.load s ea =>  rust_ptr_expr ea
+| expr.inlinetable _ _ _ => "/*inlinetable: unsupported*/"
 | expr.op op e1 e2 => rust_bop ("(" ++ rust_expr e1 ++ ")") op ("(" ++ rust_expr e2 ++ ")")
+| expr.op1 op e =>
+    match op with
+    | op1.opp => "(0u64.wrapping_sub(" ++ rust_expr e ++ "))"
+    | op1.not => "(!(" ++ rust_expr e ++ "))"
+    end
+| expr.ite _ _ _ => "/*ite: unsupported*/"
 end.
 
 Fixpoint List_uniq {A} (eqb : A -> A -> bool) (l : list A) :=
@@ -130,23 +166,21 @@ Definition rust_call (args : list string) (f : string) (es : list string) :=
   | cmd.store s ea ev
     => indent ++ rust_store_ptr_expr ea ++ rust_expr ev ++ ");" ++ LF
   | cmd.stackalloc x n body =>
-    indent ++ "let " ++ rust_var x ++ "_arr = [0usize; " ++ rust_lit (bytes_to_words n) ++ "];" ++ LF ++
-    indent ++ "let " ++ rust_var x ++ " = " ++ rust_var x ++ "_arr.as_ptr();" ++ LF ++
-    rust_cmd indent body 
+    indent ++ "let mut " ++ rust_var x ++ "_arr = [0u64; " ++ rust_lit (bytes_to_words n) ++ "];" ++ LF ++
+    indent ++ "let " ++ rust_var x ++ " = " ++ rust_var x ++ "_arr.as_mut_ptr() as u64;" ++ LF ++
+    rust_cmd indent body
   | cmd.set x ev =>
     indent ++ rust_var x ++ " = " ++ rust_expr ev ++ ";" ++ LF
-  (* | cmd.unset x =>
-    indent ++ "// unset " ++ c_var x ++ LF
   | cmd.cond eb t f =>
-    indent ++ "if (" ++ c_expr eb ++ ") {" ++ LF ++
-      c_cmd ("  "++indent) t ++
+    indent ++ "if (" ++ rust_expr eb ++ ") != 0 {" ++ LF ++
+      rust_cmd ("  "++indent) t ++
     indent ++ "} else {" ++ LF ++
-      c_cmd ("  "++indent) f ++
-    indent ++ "}" ++ LF *)
-  (* | cmd.while eb c =>
-    indent ++ "while (" ++ c_expr eb ++ ") {" ++ LF ++
-      c_cmd ("  "++indent) c ++
-    indent ++ "}" ++ LF *)
+      rust_cmd ("  "++indent) f ++
+    indent ++ "}" ++ LF
+  | cmd.while eb body =>
+    indent ++ "while (" ++ rust_expr eb ++ ") != 0 {" ++ LF ++
+      rust_cmd ("  "++indent) body ++
+    indent ++ "}" ++ LF
   | cmd.seq c1 c2 =>
     rust_cmd indent c1 ++
     rust_cmd indent c2
@@ -154,16 +188,22 @@ Definition rust_call (args : list string) (f : string) (es : list string) :=
     indent ++ "/*skip*/" ++ LF
   | cmd.call args f es =>
     indent ++ rust_call (List.map rust_var args) (rust_fun f) (List.map rust_expr es)
-  (* | cmd.interact binds action es =>
-    indent ++ c_act binds action (List.map c_expr es) *)
   | _ => ""
   end.
 
+  Definition DQUOTE : string :=
+    String (Coq.Strings.Ascii.Ascii false true false false false true false false) "".
+
   Definition fmt_c_decl (rett : string) (args : list String.string) (name : String.string) (retptrs : list String.string) : string :=
-    ("pub unsafe fn " ++ rust_fun name ++ "(" ++ concat ", " (
-                    List.map (fun a => rust_var a ++ " : *const usize") args ++
-                    List.map (fun r => rust_var r ++ " : *const usize") retptrs) ++
-                  ") -> ()").
+    ("#[no_mangle]" ++ LF ++
+     "pub unsafe extern " ++ DQUOTE ++ "C" ++ DQUOTE ++ " fn " ++ rust_fun name ++ "(" ++ concat ", " (
+                    List.map (fun a => rust_var a ++ " : u64") args ++
+                    List.map (fun r => rust_var r ++ " : &mut u64") retptrs) ++
+                  ")" ++
+     match rett with
+     | "void" => ""
+     | _ => " -> u64"
+     end).
 
 Definition c_decl (f : String.string * (list String.string * list String.string * cmd)) :=
   let '(name, (args, rets, body)) := f in
@@ -192,8 +232,8 @@ Definition c_decl (f : String.string * (list String.string * list String.string 
 Definition variable_declaration indent  (local_vars : list String.string) : String.string := indent ++ "".
   (* indent ++ "let " ++ (concat (" : usize;" ++ LF ++ indent ++ "let ") local_vars) ++ " : usize;" ++ LF. *)
 
-  Definition variable_declaration' indent  (local_vars : list String.string) : String.string := 
-  indent ++ "let " ++ (concat (" : usize;" ++ LF ++ indent ++ "let ") local_vars) ++ " : usize;" ++ LF.
+  Definition variable_declaration' indent  (local_vars : list String.string) : String.string :=
+  indent ++ "let mut " ++ (concat (" : u64;" ++ LF ++ indent ++ "let mut ") local_vars) ++ " : u64;" ++ LF.
 
 Definition rust_func '(name, (args, rets, body)) :=
   let decl_retvar_retrenames : string * option String.string * list (String.string * String.string) :=
@@ -243,7 +283,38 @@ Definition rust_func_no_decl '(name, (args, rets, body)) :=
     indent ++ "return" ++ (match retvar with None => "" | Some rv => " "++ rust_var rv end) ++ ";" ++ LF ++
     "}" ++ LF.
 
-Definition rust_var_decl '(name, (args, rets, body)) := 
+(** Concatenate the unsafe Rust source for a list of bedrock2 functions
+    into one module body. The caller is expected to wrap this in any
+    needed prelude (e.g. the [_br2_load]/[_br2_store] helpers). *)
+Definition rust_module
+    (fs : list (String.string * (list String.string * list String.string * cmd)))
+    : string :=
+  concat LF (List.map rust_func fs).
+
+(** Standard prelude that defines the runtime helpers used by the
+    pretty-printed code: 64-bit pointer load/store via raw pointer
+    casts. The pretty-printer emits calls of the form
+      [_br2_load((p as *const u8).wrapping_add(off) as *const usize)]
+    so the helpers must take [*const usize] / [*mut usize] arguments. *)
+Definition rust_prelude : string :=
+  "//! Auto-generated unsafe Rust from bedrock2." ++ LF ++
+  "//! Memory accesses go through [_br2_load]/[_br2_store] helpers." ++ LF ++
+  "#![allow(non_snake_case)]" ++ LF ++
+  "#![allow(unused_assignments)]" ++ LF ++
+  "#![allow(unused_variables)]" ++ LF ++
+  "#![allow(unused_mut)]" ++ LF ++
+  "#![allow(unused_parens)]" ++ LF ++
+  "#![allow(dead_code)]" ++ LF ++ LF ++
+  "#[inline(always)]" ++ LF ++
+  "pub unsafe fn _br2_load(p: *const usize) -> u64 {" ++ LF ++
+  "    *p as u64" ++ LF ++
+  "}" ++ LF ++ LF ++
+  "#[inline(always)]" ++ LF ++
+  "pub unsafe fn _br2_store(p: *mut usize, v: u64) {" ++ LF ++
+  "    *p = v as usize;" ++ LF ++
+  "}" ++ LF ++ LF.
+
+Definition rust_var_decl '(name, (args, rets, body)) :=
   let decl_retvar_retrenames : string * option String.string * list (String.string * String.string) :=
   match rets with
   | nil => (fmt_c_decl "void" args name nil, None, nil)

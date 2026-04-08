@@ -97,3 +97,7 @@ src/Bedrock/SafeRustReflection_walker.v
 src/Bedrock/SafeRustReflection_specof.v
 src/Bedrock/SafeRustReflection_real.v
 src/Bedrock/SafeRustReflection_bls12.v
+
+# Inner unsafe-Rust pretty printer + extraction driver (Path B)
+src/Bedrock/ToRustString.v
+src/Bedrock/ExtractSafeRust.v

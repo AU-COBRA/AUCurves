@@ -230,6 +230,45 @@ Definition any_uses_var (x : string) (es : list expr.expr) : bool :=
   List.existsb (uses_var x) es.
 
 (* ================================================================ *)
+(* Scalar expression printing (for cmd.set, cmd.cond, cmd.while)     *)
+(* ================================================================ *)
+
+(** Print a bedrock2 binary operator. *)
+Definition rust_bop (op : bopname) (a b : string) : string :=
+  match op with
+  | bopname.add => a ++ ".wrapping_add(" ++ b ++ ")"
+  | bopname.sub => a ++ ".wrapping_sub(" ++ b ++ ")"
+  | bopname.mul => a ++ ".wrapping_mul(" ++ b ++ ")"
+  | bopname.and => "(" ++ a ++ " & " ++ b ++ ")"
+  | bopname.or  => "(" ++ a ++ " | " ++ b ++ ")"
+  | bopname.xor => "(" ++ a ++ " ^ " ++ b ++ ")"
+  | bopname.sru => "(" ++ a ++ " >> (" ++ b ++ " & 63))"
+  | bopname.slu => "(" ++ a ++ " << (" ++ b ++ " & 63))"
+  | bopname.ltu => "if " ++ a ++ " < " ++ b ++ " { 1u64 } else { 0u64 }"
+  | bopname.eq  => "if " ++ a ++ " == " ++ b ++ " { 1u64 } else { 0u64 }"
+  | bopname.mulhuu => "((" ++ a ++ " as u128).wrapping_mul(" ++ b ++ " as u128) >> 64) as u64"
+  | _ => a ++ " /* unknown_bop */ " ++ b
+  end.
+
+(** Print a scalar expression (u64-valued). Used for cmd.set RHS,
+    cmd.cond test, cmd.while test. *)
+Fixpoint scalar_expr (e : expr.expr) : string :=
+  match e with
+  | expr.var x => esc x
+  | expr.literal z => z_str z ++ "u64"
+  | expr.op op e1 e2 => rust_bop op (scalar_expr e1) (scalar_expr e2)
+  | expr.load _ addr =>
+      (* In the safe tower, loads from stackalloc'd u64 vars are just var reads *)
+      match addr with
+      | expr.var x => esc x  (* simple load: just read the variable *)
+      | _ => "unsafe { *(" ++ scalar_expr addr ++ " as *const u64) }"
+      end
+  | expr.ite c t f =>
+      "if " ++ scalar_expr c ++ " != 0 { " ++ scalar_expr t ++ " } else { " ++ scalar_expr f ++ " }"
+  | _ => "0u64 /* unsupported_expr */"
+  end.
+
+(* ================================================================ *)
 (* Command → safe Rust                                               *)
 (* ================================================================ *)
 
@@ -293,11 +332,49 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
         (ind ++ fname ++ "();" ++ LF, c, ci)
       end
 
-  | cmd.set x _ => (ind ++ "/* set " ++ esc x ++ " */" ++ LF, c, ci)
-  | cmd.cond _ ct cf =>
+  | cmd.set x ev =>
+      let xn := esc x in
+      (* If x is not in context yet, declare it as a mutable u64 local *)
+      let is_new := negb (List.existsb (fun '(k,_) => seq k xn) c) in
+      let decl := if is_new then ind ++ "let mut " ++ xn ++ ": u64;" ++ LF else "" in
+      let s := ind ++ xn ++ " = " ++ scalar_expr ev ++ ";" ++ LF in
+      let c' := if is_new then (xn, "u64") :: c else c in
+      (decl ++ s, c', ci)
+
+  | cmd.cond test ct cf =>
       let '(st, _, ci1) := safe_cmd ("    " ++ ind) n c ci ct in
       let '(sf, _, ci2) := safe_cmd ("    " ++ ind) n c ci1 cf in
-      (ind ++ "if /* cond */ {" ++ LF ++ st ++ ind ++ "} else {" ++ LF ++ sf ++ ind ++ "}" ++ LF, c, ci2)
+      let cond_s := scalar_expr test in
+      (ind ++ "if " ++ cond_s ++ " != 0 {" ++ LF ++
+       st ++ ind ++ "} else {" ++ LF ++ sf ++ ind ++ "}" ++ LF, c, ci2)
+
+  | cmd.while test body =>
+      let '(body_s, _, ci') := safe_cmd ("    " ++ ind) n c ci body in
+      let test_s := scalar_expr test in
+      (ind ++ "while " ++ test_s ++ " != 0 {" ++ LF ++
+       body_s ++ ind ++ "}" ++ LF, c, ci')
+
+  | cmd.store _ addr val =>
+      (* cmd.store writes a single u64 word at a byte address.
+         Resolve to struct_field.0[limb_index]. *)
+      let '(vname, off) := expr_var_off addr in
+      let vt := ctx_get c vname in
+      let fp_bytes := fp_sz n in
+      (* Find which Fp element contains this limb *)
+      let fp_aligned := (off / fp_bytes) * fp_bytes in
+      let limb_idx := (off - fp_aligned) / 8 in
+      (* Drill all the way down to the Fp that contains this limb *)
+      let fp_field := field_path n vt fp_aligned in
+      let fp_field' := fp_field ++ drill (descend vt (path_depth fp_field)) "Fp" in
+      let fp_path := vname ++ fp_field' in
+      let val_s := scalar_expr val in
+      if seq vt "u64" then
+        (* Scalar store: just assign *)
+        (ind ++ vname ++ " = " ++ val_s ++ ";" ++ LF, c, ci)
+      else
+        (ind ++ fp_path ++ ".0[" ++ z_str limb_idx ++ "] = " ++ val_s ++ ";" ++ LF, c, ci)
+
+  | cmd.unset _ => ("", c, ci)
   | _ => ("", c, ci)
   end.
 

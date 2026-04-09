@@ -32,7 +32,33 @@ extern "C" {
 #[inline] pub fn bn254_from_word(o: &mut Fp, w: u64) { unsafe { _bn254_from_word(o.0.as_mut_ptr(), w) } }
 #[inline] pub fn bn254_select_znz(o: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(o.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
 #[inline] pub fn bn254_Fp2_opp(o: &mut Fp2, x: &Fp2) { bn254_opp(&mut o.c0, &x.c0); bn254_opp(&mut o.c1, &x.c1); }
-#[inline] pub fn bn254_Fp2_inv(o: &mut Fp2, x: &Fp2) { let mut n = Fp::zero(); bn254_square(&mut n, &x.c0); let mut t = Fp::zero(); bn254_square(&mut t, &x.c1); let n_copy = n; bn254_add(&mut n, &n_copy, &t); /* inv via Fermat omitted — link with leaf */ }
+#[inline]
+pub fn bn254_Fp2_inv(out: &mut Fp2, x: &Fp2) {
+    let mut asq = Fp::zero();
+    let mut bsq = Fp::zero();
+    let mut norm = Fp::zero();
+    bn254_square(&mut asq, &x.c0);
+    bn254_square(&mut bsq, &x.c1);
+    bn254_add(&mut norm, &asq, &bsq);
+    // Fp inversion via Fermat: norm^(p-2)
+    let p_minus_2: [u64; 4] = [0x3c208c16d87cfd45, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029];
+    let mut base = norm;
+    // Montgomery 1 = R mod p
+    let mut result = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+    for limb_idx in 0..4 {
+        let mut bits = p_minus_2[limb_idx];
+        for _ in 0..64 {
+            if bits & 1 == 1 { let r = result; bn254_mul(&mut result, &r, &base); }
+            let b = base; bn254_square(&mut base, &b);
+            bits >>= 1;
+        }
+    }
+    norm = result;
+    bn254_mul(&mut out.c0, &x.c0, &norm);
+    let mut neg_b = Fp::zero();
+    bn254_opp(&mut neg_b, &x.c1);
+    bn254_mul(&mut out.c1, &neg_b, &norm);
+}
 
 #[inline]
 pub fn bn254_Fp2_felem_copy(mut out: &mut Fp2, x: &Fp2) {

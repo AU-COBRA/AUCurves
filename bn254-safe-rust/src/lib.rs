@@ -54,3 +54,28 @@ mod tests {
         let _ = out;
     }
 }
+
+#[cfg(test)]
+mod arithmetic_tests {
+    use super::*;
+
+    #[test]
+    fn test_fp_mul_3x5() {
+        let a = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
+        let b = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
+        let mut c = Fp::zero();
+        fp_mul(&mut c, &a, &b);
+        assert_eq!(c.0, [0x71f4c4f3316dd717, 0x3f101d20c4e27e6a, 0x1f3a7cae0915bb1e, 0x110bca8c81af9320],
+            "3 * 5 = 15 in Montgomery form");
+    }
+
+    #[test]
+    fn test_fp_add_mont() {
+        let a = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
+        let b = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
+        let mut c = Fp::zero();
+        fp_add(&mut c, &a, &b);
+        assert_eq!(c.0, [0x22a904407b7e725a, 0x24c48424dd54c4d4, 0xc2d4900ec0c780a5, 0x0f8b21270ddbb927],
+            "3 + 5 = 8 in Montgomery form");
+    }
+}

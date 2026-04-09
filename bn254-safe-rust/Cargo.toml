@@ -12,3 +12,12 @@ path = "src/lib.rs"
 [[example]]
 name = "pairing_test"
 path = "examples/pairing_test.rs"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3

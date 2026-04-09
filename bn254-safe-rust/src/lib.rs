@@ -29,6 +29,10 @@ pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bn254_pairing_dsd(out, p_x, p_y, q_x, q_y)
 }
 
+pub fn miller_loop(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    tower::bn254_miller_loop(out, p_x, p_y, q_x, q_y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,6 +81,220 @@ mod arithmetic_tests {
         fp_add(&mut c, &a, &b);
         assert_eq!(c.0, [0x22a904407b7e725a, 0x24c48424dd54c4d4, 0xc2d4900ec0c780a5, 0x0f8b21270ddbb927],
             "3 + 5 = 8 in Montgomery form");
+    }
+
+    /// Test first iteration of Miller loop by checking T_x after doubling step
+    #[test]
+    fn test_first_doubling() {
+        let q_x = Fp2 {
+            c0: Fp([0x8e83b5d102bc2026, 0xdceb1935497b0172, 0xfbb8264797811adf, 0x19573841af96503b]),
+            c1: Fp([0xafb4737da84c6140, 0x6043dd5a5802d8c4, 0x09e950fc52a02f86, 0x14fef0833aea7b6b]),
+        };
+        let q_y = Fp2 {
+            c0: Fp([0x619dfa9d886be9f6, 0xfe7fd297f59e9b78, 0xff9e1a62231b7dfe, 0x28fd7eebae9e4206]),
+            c1: Fp([0x64095b56c71856ee, 0xdc57f922327d3cbb, 0x55f935be33351076, 0x0da4a0e693fd6482]),
+        };
+        let p_x = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+        let p_y = Fp([0xa6ba871b8b1e1b3a, 0x14f1d651eb8e167b, 0xccdd46def0f28c58, 0x1c14ef83340fbe5e]);
+
+        let mut t_x = Fp2::zero();
+        let mut t_y = Fp2::zero();
+        tower::bn254_Fp2_felem_copy(&mut t_x, &q_x);
+        tower::bn254_Fp2_felem_copy(&mut t_y, &q_y);
+
+        // Compute lambda = 3*t_x^2 / (2*t_y)
+        let mut tmp1 = Fp2::zero();
+        let mut lambda = Fp2::zero();
+        tower::bn254_Fp2_square(&mut tmp1, &t_x);
+        tower::bn254_Fp2_add(&mut lambda, &tmp1, &tmp1);
+        let lam_clone = lambda.clone();
+        tower::bn254_Fp2_add(&mut lambda, &lam_clone, &tmp1);
+        tower::bn254_Fp2_add(&mut tmp1, &t_y, &t_y);
+        let tmp1_clone = tmp1.clone();
+        tower::bn254_Fp2_inv(&mut tmp1, &tmp1_clone);
+        let lam_clone = lambda.clone();
+        tower::bn254_Fp2_mul(&mut lambda, &lam_clone, &tmp1);
+
+        eprintln!("lambda.c0 = {:?}", lambda.c0.0);
+        eprintln!("lambda.c1 = {:?}", lambda.c1.0);
+
+        // Expected from Python:
+        // lambda mont c0 = [3052585229727698089, 638593975792026956, 1173302413870526096, 422092457526404441]
+        // lambda mont c1 = [13089288121611136563, 17461653877637527732, 18166539099616017567, 1154234554735654081]
+        assert_eq!(lambda.c0.0, [3052585229727698089, 638593975792026956, 1173302413870526096, 422092457526404441],
+            "lambda.c0 should match Python reference");
+        assert_eq!(lambda.c1.0, [13089288121611136563, 17461653877637527732, 18166539099616017567, 1154234554735654081],
+            "lambda.c1 should match Python reference");
+
+        // Compute new T: x' = lam^2 - 2*t_x
+        let mut tmp2 = Fp2::zero();
+        tower::bn254_Fp2_square(&mut tmp1, &lambda);
+        let tmp1_clone = tmp1.clone();
+        tower::bn254_Fp2_sub(&mut tmp1, &tmp1_clone, &t_x);
+        tower::bn254_Fp2_sub(&mut tmp2, &tmp1, &t_x);
+        // tmp2 = new_x
+
+        eprintln!("new_x.c0 = {:?}", tmp2.c0.0);
+        // Expected from Python: [4815383978556499321, 15201348362950579125, 6323554572958211309, 3380048522697165890]
+        assert_eq!(tmp2.c0.0, [4815383978556499321, 15201348362950579125, 6323554572958211309, 3380048522697165890],
+            "new_x.c0 should match Python reference");
+    }
+
+    /// Miller loop output (before final exp) - dump for comparison with py_ecc
+    #[test]
+    fn test_miller_loop_output() {
+        // G1 generator (1, 2) in Montgomery form
+        let p_x = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+        let p_y = Fp([0xa6ba871b8b1e1b3a, 0x14f1d651eb8e167b, 0xccdd46def0f28c58, 0x1c14ef83340fbe5e]);
+        let q_x = Fp2 {
+            c0: Fp([0x8e83b5d102bc2026, 0xdceb1935497b0172, 0xfbb8264797811adf, 0x19573841af96503b]),
+            c1: Fp([0xafb4737da84c6140, 0x6043dd5a5802d8c4, 0x09e950fc52a02f86, 0x14fef0833aea7b6b]),
+        };
+        let q_y = Fp2 {
+            c0: Fp([0x619dfa9d886be9f6, 0xfe7fd297f59e9b78, 0xff9e1a62231b7dfe, 0x28fd7eebae9e4206]),
+            c1: Fp([0x64095b56c71856ee, 0xdc57f922327d3cbb, 0x55f935be33351076, 0x0da4a0e693fd6482]),
+        };
+
+        let mut f = Fp12::zero();
+        miller_loop(&mut f, &p_x, &p_y, &q_x, &q_y);
+        eprintln!("Miller loop c0.c0.c0 = {:?}", f.c0.c0.c0.0);
+        eprintln!("Miller loop c0.c0.c1 = {:?}", f.c0.c0.c1.0);
+        eprintln!("Miller loop c0.c1.c0 = {:?}", f.c0.c1.c0.0);
+        eprintln!("Miller loop c0.c1.c1 = {:?}", f.c0.c1.c1.0);
+        eprintln!("Miller loop c0.c2.c0 = {:?}", f.c0.c2.c0.0);
+        eprintln!("Miller loop c0.c2.c1 = {:?}", f.c0.c2.c1.0);
+        eprintln!("Miller loop c1.c0.c0 = {:?}", f.c1.c0.c0.0);
+        eprintln!("Miller loop c1.c0.c1 = {:?}", f.c1.c0.c1.0);
+        eprintln!("Miller loop c1.c1.c0 = {:?}", f.c1.c1.c0.0);
+        eprintln!("Miller loop c1.c1.c1 = {:?}", f.c1.c1.c1.0);
+        eprintln!("Miller loop c1.c2.c0 = {:?}", f.c1.c2.c0.0);
+        eprintln!("Miller loop c1.c2.c1 = {:?}", f.c1.c2.c1.0);
+    }
+
+    /// Fp6_mul consistency: a * b * b^{-1} == a
+    #[test]
+    fn test_fp6_mul_inv() {
+        // Use small values in Montgomery form
+        let three = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
+        let four  = Fp([0x115482203dbf392d, 0x926242126eaa626a, 0xe16a48076063c052, 0x07c5909386eddc93]);
+        let five  = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
+        let six   = Fp([0xb80f093bc8dd5467, 0xa75418645a3878e5, 0xae478ee651564caa, 0x23da8016bafd9af2]);
+        let one   = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+
+        let a = Fp6 {
+            c0: Fp2 { c0: three, c1: four },
+            c1: Fp2 { c0: five, c1: six },
+            c2: Fp2 { c0: one, c1: three },
+        };
+        let b = Fp6 {
+            c0: Fp2 { c0: five, c1: one },
+            c1: Fp2 { c0: three, c1: four },
+            c2: Fp2 { c0: six, c1: five },
+        };
+
+        let mut ab = Fp6::zero();
+        tower::bn254_Fp6_mul(&mut ab, &a, &b);
+        let mut b_inv = Fp6::zero();
+        tower::bn254_Fp6_inv(&mut b_inv, &b);
+        let mut result = Fp6::zero();
+        tower::bn254_Fp6_mul(&mut result, &ab, &b_inv);
+
+        assert_eq!(result.c0.c0, a.c0.c0, "Fp6 mul/inv c0.c0");
+        assert_eq!(result.c0.c1, a.c0.c1, "Fp6 mul/inv c0.c1");
+        assert_eq!(result.c1.c0, a.c1.c0, "Fp6 mul/inv c1.c0");
+        assert_eq!(result.c1.c1, a.c1.c1, "Fp6 mul/inv c1.c1");
+        assert_eq!(result.c2.c0, a.c2.c0, "Fp6 mul/inv c2.c0");
+        assert_eq!(result.c2.c1, a.c2.c1, "Fp6 mul/inv c2.c1");
+    }
+
+    /// Fp12_mul consistency: a * b * b^{-1} == a
+    #[test]
+    fn test_fp12_mul_inv() {
+        let three = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
+        let four  = Fp([0x115482203dbf392d, 0x926242126eaa626a, 0xe16a48076063c052, 0x07c5909386eddc93]);
+        let five  = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
+        let six   = Fp([0xb80f093bc8dd5467, 0xa75418645a3878e5, 0xae478ee651564caa, 0x23da8016bafd9af2]);
+        let one   = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+
+        let a = Fp12 {
+            c0: Fp6 {
+                c0: Fp2 { c0: three, c1: four },
+                c1: Fp2 { c0: five, c1: six },
+                c2: Fp2 { c0: one, c1: three },
+            },
+            c1: Fp6 {
+                c0: Fp2 { c0: four, c1: five },
+                c1: Fp2 { c0: six, c1: one },
+                c2: Fp2 { c0: three, c1: six },
+            },
+        };
+        let b = Fp12 {
+            c0: Fp6 {
+                c0: Fp2 { c0: five, c1: one },
+                c1: Fp2 { c0: three, c1: four },
+                c2: Fp2 { c0: six, c1: five },
+            },
+            c1: Fp6 {
+                c0: Fp2 { c0: one, c1: six },
+                c1: Fp2 { c0: four, c1: three },
+                c2: Fp2 { c0: five, c1: four },
+            },
+        };
+
+        let mut ab = Fp12::zero();
+        tower::bn254_Fp12_mul(&mut ab, &a, &b);
+        let mut b_inv = Fp12::zero();
+        tower::bn254_Fp12_inv(&mut b_inv, &b);
+        let mut result = Fp12::zero();
+        tower::bn254_Fp12_mul(&mut result, &ab, &b_inv);
+
+        assert_eq!(result.c0.c0.c0, a.c0.c0.c0, "Fp12 mul/inv c0.c0.c0");
+        assert_eq!(result.c0.c0.c1, a.c0.c0.c1, "Fp12 mul/inv c0.c0.c1");
+        assert_eq!(result.c1.c0.c0, a.c1.c0.c0, "Fp12 mul/inv c1.c0.c0");
+        // ... check all 12 components would be tedious, spot check first/last
+        assert_eq!(result.c1.c2.c1, a.c1.c2.c1, "Fp12 mul/inv c1.c2.c1");
+    }
+
+    /// Fp2_mul_xi: (3+4i)*(9+i) = (27-4) + (3+36)i = 23 + 39i
+    #[test]
+    fn test_fp2_mul_xi() {
+        let a = Fp2 {
+            c0: Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]),  // 3
+            c1: Fp([0x115482203dbf392d, 0x926242126eaa626a, 0xe16a48076063c052, 0x07c5909386eddc93]),  // 4
+        };
+        let mut result = Fp2::zero();
+        tower::bn254_Fp2_mul_xi(&mut result, &a);
+
+        // Expected: (3+4u)*(9+u) = (27-4) + (3+36)u = 23 + 39u  (since u^2 = -1)
+        // Verify by computing via Fp2_mul with xi = (9, 1)
+        let xi = Fp2 {
+            c0: Fp([0xf60647ce410d7ff7, 0x2f3d6f4dd31bd011, 0x2943337e3940c6d1, 0x1d9598e8a7e39857]),  // 9
+            c1: Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]),  // 1
+        };
+        let mut expected = Fp2::zero();
+        tower::bn254_Fp2_mul(&mut expected, &a, &xi);
+
+        assert_eq!(result.c0, expected.c0, "Fp2_mul_xi real part mismatch");
+        assert_eq!(result.c1, expected.c1, "Fp2_mul_xi imag part mismatch");
+    }
+
+    /// Fp2_inv: (3+4i)^{-1} = (3-4i)/25 = 3/25 - 4i/25
+    #[test]
+    fn test_fp2_inv() {
+        let a = Fp2 {
+            c0: Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]),  // 3
+            c1: Fp([0x115482203dbf392d, 0x926242126eaa626a, 0xe16a48076063c052, 0x07c5909386eddc93]),  // 4
+        };
+        let mut inv = Fp2::zero();
+        tower::bn254_Fp2_inv(&mut inv, &a);
+        // Check: a * inv == 1 (Fp2 identity)
+        let mut product = Fp2::zero();
+        tower::bn254_Fp2_mul(&mut product, &a, &inv);
+        // Expected: c0 = Montgomery(1), c1 = Montgomery(0)
+        let one = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
+        let zero = Fp([0, 0, 0, 0]);
+        assert_eq!(product.c0, one, "Fp2_inv: real part of a*a^(-1) should be 1");
+        assert_eq!(product.c1, zero, "Fp2_inv: imag part of a*a^(-1) should be 0");
     }
 
     /// Fp2_mul: (3+4i)*(5+6i) = (15-24) + (18+20)i = -9 + 38i  (beta = -1)

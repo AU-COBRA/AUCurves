@@ -78,4 +78,25 @@ mod arithmetic_tests {
         assert_eq!(c.0, [0x22a904407b7e725a, 0x24c48424dd54c4d4, 0xc2d4900ec0c780a5, 0x0f8b21270ddbb927],
             "3 + 5 = 8 in Montgomery form");
     }
+
+    /// Fp2_mul: (3+4i)*(5+6i) = (15-24) + (18+20)i = -9 + 38i  (beta = -1)
+    #[test]
+    fn test_fp2_mul() {
+        let a = Fp2 {
+            c0: Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]),  // 3
+            c1: Fp([0x115482203dbf392d, 0x926242126eaa626a, 0xe16a48076063c052, 0x07c5909386eddc93]),  // 4
+        };
+        let b = Fp2 {
+            c0: Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]),  // 5
+            c1: Fp([0xb80f093bc8dd5467, 0xa75418645a3878e5, 0xae478ee651564caa, 0x23da8016bafd9af2]),  // 6
+        };
+        let mut c = Fp2::zero();
+        tower::bn254_Fp2_mul(&mut c, &a, &b);
+
+        let expected_c0 = Fp([0x461a4448976f7d50, 0x6843fb439555fa7b, 0x8f0d12384840918c, 0x12ceb58a394e07d2]);  // -9
+        let expected_c1 = Fp([0xca72021005dd2341, 0x0b6353d4fea7f71b, 0x48f943b451719e84, 0x013e67cd30093f3e]);  // 38
+
+        assert_eq!(c.c0.0, expected_c0.0, "Fp2_mul real part: expected -9 in Montgomery form");
+        assert_eq!(c.c1.0, expected_c1.0, "Fp2_mul imag part: expected 38 in Montgomery form");
+    }
 }

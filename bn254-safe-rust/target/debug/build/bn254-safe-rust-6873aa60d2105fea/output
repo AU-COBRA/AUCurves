@@ -1,0 +1,2 @@
+cargo:rerun-if-changed=generated/bn254_leaves.jazz
+cargo:rerun-if-changed=build.rs

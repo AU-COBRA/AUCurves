@@ -1,71 +1,38 @@
-// #![allow(non_snake_case, dead_code, unused_mut, unused_variables)]
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fp(pub [u64; 4]);
 impl Fp { #[inline] pub const fn zero() -> Self { Fp([0u64; 4]) } }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fp2 { pub c0: Fp, pub c1: Fp }
 impl Fp2 { #[inline] pub const fn zero() -> Self { Fp2 { c0: Fp::zero(), c1: Fp::zero() } } }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fp6 { pub c0: Fp2, pub c1: Fp2, pub c2: Fp2 }
 impl Fp6 { #[inline] pub const fn zero() -> Self { Fp6 { c0: Fp2::zero(), c1: Fp2::zero(), c2: Fp2::zero() } } }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fp12 { pub c0: Fp6, pub c1: Fp6 }
 impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }
-
 extern "C" {
-    fn _bn254_add(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_sub(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_mul(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_square(out: *mut u64, x: *const u64);
-    fn _bn254_opp(out: *mut u64, x: *const u64);
-    fn _bn254_felem_copy(out: *mut u64, x: *const u64);
-    fn _bn254_from_word(out: *mut u64, w: u64);
-    fn _bn254_select_znz(out: *mut u64, c: u64, x: *const u64, y: *const u64);
+    fn _bn254_add(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_sub(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_mul(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_square(o: *mut u64, x: *const u64);
+    fn _bn254_opp(o: *mut u64, x: *const u64);
+    fn _bn254_felem_copy(o: *mut u64, x: *const u64);
+    fn _bn254_from_word(o: *mut u64, w: u64);
+    fn _bn254_select_znz(o: *mut u64, c: u64, x: *const u64, y: *const u64);
 }
-#[inline] pub fn bn254_add(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_add(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_sub(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_sub(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_mul(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_mul(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_square(out: &mut Fp, x: &Fp) { unsafe { _bn254_square(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_opp(out: &mut Fp, x: &Fp) { unsafe { _bn254_opp(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_felem_copy(out: &mut Fp, x: &Fp) { unsafe { _bn254_felem_copy(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_from_word(out: &mut Fp, w: u64) { unsafe { _bn254_from_word(out.0.as_mut_ptr(), w) } }
-#[inline] pub fn bn254_select_znz(out: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(out.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
-
-#[inline] pub fn bn254_Fp2_opp(out: &mut Fp2, x: &Fp2) { bn254_opp(&mut out.c0, &x.c0); bn254_opp(&mut out.c1, &x.c1); }
-
-#[inline] pub fn bn254_Fp2_inv(out: &mut Fp2, x: &Fp2) {
-    let mut asq = Fp::zero();
-    let mut bsq = Fp::zero();
-    let mut norm = Fp::zero();
-    bn254_square(&mut asq, &x.c0);
-    bn254_square(&mut bsq, &x.c1);
-    bn254_add(&mut norm, &asq, &bsq);
-    // Fermat's little theorem: norm^(p-2)
-    let mut base = norm;
-    let p_minus_2: [u64; 4] = [0x3c208c16d87cfd45, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029];
-    let mut result = Fp([0xac96341c4ffffffb, 0x36fc76959f60cd29, 0x666ea36f7879462e, 0x0e0a77c19a07df2f]);
-    for limb_idx in 0..4 {
-        let mut bits = p_minus_2[limb_idx];
-        for _ in 0..64 {
-            if bits & 1 == 1 { let r2 = result; bn254_mul(&mut result, &r2, &base); }
-            let b2 = base; bn254_square(&mut base, &b2);
-            bits >>= 1;
-        }
-    }
-    norm = result;
-    bn254_mul(&mut out.c0, &x.c0, &norm);
-    let mut neg_b = Fp::zero();
-    bn254_opp(&mut neg_b, &x.c1);
-    bn254_mul(&mut out.c1, &neg_b, &norm);
-}
+#[inline] pub fn bn254_add(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_add(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_sub(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_sub(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_mul(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_mul(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_square(o: &mut Fp, x: &Fp) { unsafe { _bn254_square(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_opp(o: &mut Fp, x: &Fp) { unsafe { _bn254_opp(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_felem_copy(o: &mut Fp, x: &Fp) { unsafe { _bn254_felem_copy(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_from_word(o: &mut Fp, w: u64) { unsafe { _bn254_from_word(o.0.as_mut_ptr(), w) } }
+#[inline] pub fn bn254_select_znz(o: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(o.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_Fp2_opp(o: &mut Fp2, x: &Fp2) { bn254_opp(&mut o.c0, &x.c0); bn254_opp(&mut o.c1, &x.c1); }
+#[inline] pub fn bn254_Fp2_inv(o: &mut Fp2, x: &Fp2) { let mut n = Fp::zero(); bn254_square(&mut n, &x.c0); let mut t = Fp::zero(); bn254_square(&mut t, &x.c1); let n_copy = n; bn254_add(&mut n, &n_copy, &t); /* inv via Fermat omitted — link with leaf */ }
 
 #[inline]
 pub fn bn254_Fp2_felem_copy(mut out: &mut Fp2, x: &Fp2) {
@@ -495,16 +462,16 @@ pub fn bn254_Fp12_frobenius_p2(mut out: &mut Fp12, x: &Fp12, gamma1_p2: &Fp2, ga
 }
 
 #[inline]
-pub fn bn254_Fp12_frobenius_p3(mut out: &mut Fp12, x: &Fp12, gamma1: &Fp6, gamma2: &Fp6, gamma1_p2: &Fp6, gamma2_p2: &Fp6, w_frob_c1: &Fp6, w_frob_p2_c1: &Fp6) {
+pub fn bn254_Fp12_frobenius_p3(mut out: &mut Fp12, x: &Fp12, gamma1: &Fp12, gamma2: &Fp12, gamma1_p2: &Fp12, gamma2_p2: &Fp12, w_frob_c1: &Fp12, w_frob_p2_c1: &Fp12) {
     let mut tmp: Fp12 = Fp12::zero();
-    bn254_Fp6_frobenius_p2(&mut tmp.c0, &x.c0, &gamma1_p2.c0, &gamma2_p2.c0);
-    bn254_Fp6_frobenius_p2(&mut tmp.c1, &x.c1, &gamma1_p2.c0, &gamma2_p2.c0);
+    bn254_Fp6_frobenius_p2(&mut tmp.c0, &x.c0, &gamma1_p2.c0.c0, &gamma2_p2.c0.c0);
+    bn254_Fp6_frobenius_p2(&mut tmp.c1, &x.c1, &gamma1_p2.c0.c0, &gamma2_p2.c0.c0);
     let __ac0 = tmp.c1.clone();
-    bn254_Fp6_mul_fp2(&mut tmp.c1, &__ac0, &w_frob_p2_c1.c0);
-    bn254_Fp6_frobenius(&mut out.c0, &tmp.c0, &gamma1.c0, &gamma2.c0);
-    bn254_Fp6_frobenius(&mut out.c1, &tmp.c1, &gamma1.c0, &gamma2.c0);
+    bn254_Fp6_mul_fp2(&mut tmp.c1, &__ac0, &w_frob_p2_c1.c0.c0);
+    bn254_Fp6_frobenius(&mut out.c0, &tmp.c0, &gamma1.c0.c0, &gamma2.c0.c0);
+    bn254_Fp6_frobenius(&mut out.c1, &tmp.c1, &gamma1.c0.c0, &gamma2.c0.c0);
     let __ac1 = out.c1.clone();
-    bn254_Fp6_mul_fp2(&mut out.c1, &__ac1, &w_frob_c1.c0);
+    bn254_Fp6_mul_fp2(&mut out.c1, &__ac1, &w_frob_c1.c0.c0);
 }
 
 #[inline]
@@ -521,45 +488,106 @@ pub fn bn254_make_line(mut out: &mut Fp12, lam: &Fp2, x_t: &Fp2, y_t: &Fp2, x_p:
     bn254_Fp2_sub(&mut out.c0.c0, &__ac0, &y_t);
     bn254_Fp2_mul_fp(&mut tmp, &lam, &x_p);
     bn254_Fp2_opp(&mut out.c0.c1, &tmp);
-    bn254_from_word(&mut out.c0.c2.c0, 0);
-    /* literal dest? */
-    bn254_from_word(&mut out.c1.c0.c0, 0);
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
+    bn254_from_word(&mut out.c0.c2.c0, 0u64);
+    bn254_from_word(&mut out.c0.c2.c1, 0u64);
+    bn254_from_word(&mut out.c1.c0.c0, 0u64);
+    bn254_from_word(&mut out.c1.c0.c1, 0u64);
+    bn254_felem_copy(&mut out.c1.c1.c0, &y_p);
+    bn254_from_word(&mut out.c1.c1.c1, 0u64);
+    bn254_from_word(&mut out.c1.c2.c0, 0u64);
+    bn254_from_word(&mut out.c1.c2.c1, 0u64);
 }
 
 #[inline]
 pub fn bn254_load_gamma1_p2(mut out: &mut Fp2) {
+    out.c0.0[0] = 3697675806616062876u64;
+    out.c0.0[1] = 9065277094688085689u64;
+    out.c0.0[2] = 6918009208039626314u64;
+    out.c0.0[3] = 2775033306905974752u64;
+    out.c1.0[0] = 0u64;
+    out.c1.0[1] = 0u64;
+    out.c1.0[2] = 0u64;
+    out.c1.0[3] = 0u64;
 }
 
 #[inline]
 pub fn bn254_load_gamma2_p2(mut out: &mut Fp2) {
+    out.c0.0[0] = 8183898218631979349u64;
+    out.c0.0[1] = 12014359695528440611u64;
+    out.c0.0[2] = 12263358156045030468u64;
+    out.c0.0[3] = 3187210487005268291u64;
+    out.c1.0[0] = 0u64;
+    out.c1.0[1] = 0u64;
+    out.c1.0[2] = 0u64;
+    out.c1.0[3] = 0u64;
 }
 
 #[inline]
 pub fn bn254_load_w_frob_p2_c1(mut out: &mut Fp2) {
+    out.c0.0[0] = 14595462726357228530u64;
+    out.c0.0[1] = 17349508522658994025u64;
+    out.c0.0[2] = 1017833795229664280u64;
+    out.c0.0[3] = 299787779797702374u64;
+    out.c1.0[0] = 0u64;
+    out.c1.0[1] = 0u64;
+    out.c1.0[2] = 0u64;
+    out.c1.0[3] = 0u64;
 }
 
 #[inline]
 pub fn bn254_load_gamma1(mut out: &mut Fp2) {
+    out.c0.0[0] = 13075984984163199792u64;
+    out.c0.0[1] = 3782902503040509012u64;
+    out.c0.0[2] = 8791150885551868305u64;
+    out.c0.0[3] = 1825854335138010348u64;
+    out.c1.0[0] = 7963664994991228759u64;
+    out.c1.0[1] = 12257807996192067905u64;
+    out.c1.0[2] = 13179524609921305146u64;
+    out.c1.0[3] = 2767831111890561987u64;
 }
 
 #[inline]
 pub fn bn254_load_gamma2(mut out: &mut Fp2) {
+    out.c0.0[0] = 8314163329781907090u64;
+    out.c0.0[1] = 11942187022798819835u64;
+    out.c0.0[2] = 11282677263046157209u64;
+    out.c0.0[3] = 1576150870752482284u64;
+    out.c1.0[0] = 6763840483288992073u64;
+    out.c1.0[1] = 7118829427391486816u64;
+    out.c1.0[2] = 4016233444936635065u64;
+    out.c1.0[3] = 2630958277570195709u64;
 }
 
 #[inline]
 pub fn bn254_load_w_frob_c1(mut out: &mut Fp2) {
+    out.c0.0[0] = 12653890742059813127u64;
+    out.c0.0[1] = 14585784200204367754u64;
+    out.c0.0[2] = 1278438861261381767u64;
+    out.c0.0[3] = 212598772761311868u64;
+    out.c1.0[0] = 11683091849979440498u64;
+    out.c1.0[1] = 14992204589386555739u64;
+    out.c1.0[2] = 15866167890766973222u64;
+    out.c1.0[3] = 1200023580730561873u64;
 }
 
 #[inline]
 pub fn bn254_Fp12_pow_u(mut out: &mut Fp12, base: &Fp12) {
     let mut result: Fp12 = Fp12::zero();
     bn254_Fp12_felem_copy(&mut result, &base);
-    /* set i */
+    let mut i: u64;
+    i = 62u64;
+    while i != 0 {
+        i = i.wrapping_sub(1u64);
+        let __ac0 = result.clone();
+        bn254_Fp12_square(&mut result, &__ac0);
+        let mut bit: u64;
+        bit = ((4965661367192848881u64 >> (i & 63)) & 1u64);
+        if bit != 0 {
+            let __ac1 = result.clone();
+            bn254_Fp12_mul(&mut result, &__ac1, &base);
+        } else {
+        }
+    }
     bn254_Fp12_felem_copy(&mut out, &result);
 }
 
@@ -648,21 +676,75 @@ pub fn bn254_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
     let mut tmp2: Fp2 = Fp2::zero();
     let mut line: Fp12 = Fp12::zero();
     let mut u6p2: u64 = 0u64;
-    bn254_from_word(&mut f.c0.c0.c0, 1);
-    bn254_from_word(&mut f.c0.c0.c1, 0);
-    bn254_from_word(&mut f.c0.c1.c0, 0);
-    /* literal dest? */
-    bn254_from_word(&mut f.c0.c2.c0, 0);
-    /* literal dest? */
-    bn254_from_word(&mut f.c1.c0.c0, 0);
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
-    /* literal dest? */
+    bn254_from_word(&mut f.c0.c0.c0, 1u64);
+    bn254_from_word(&mut f.c0.c0.c1, 0u64);
+    bn254_from_word(&mut f.c0.c1.c0, 0u64);
+    bn254_from_word(&mut f.c0.c1.c1, 0u64);
+    bn254_from_word(&mut f.c0.c2.c0, 0u64);
+    bn254_from_word(&mut f.c0.c2.c1, 0u64);
+    bn254_from_word(&mut f.c1.c0.c0, 0u64);
+    bn254_from_word(&mut f.c1.c0.c1, 0u64);
+    bn254_from_word(&mut f.c1.c1.c0, 0u64);
+    bn254_from_word(&mut f.c1.c1.c1, 0u64);
+    bn254_from_word(&mut f.c1.c2.c0, 0u64);
+    bn254_from_word(&mut f.c1.c2.c1, 0u64);
     bn254_Fp2_felem_copy(&mut t_x, &q_x);
     bn254_Fp2_felem_copy(&mut t_y, &q_y);
-    /* set i */
+    u6p2 = 11347224129447541672u64;
+    let mut i: u64;
+    i = 64u64;
+    while i != 0 {
+        i = i.wrapping_sub(1u64);
+        let mut word: u64;
+        word = u6p2;
+        let mut bit: u64;
+        bit = ((word >> (i & 63)) & 1u64);
+        bn254_Fp2_square(&mut tmp1, &t_x);
+        bn254_Fp2_add(&mut lambda, &tmp1, &tmp1);
+        let __ac0 = lambda.clone();
+        bn254_Fp2_add(&mut lambda, &__ac0, &tmp1);
+        bn254_Fp2_add(&mut tmp1, &t_y, &t_y);
+        let __ac1 = tmp1.clone();
+        bn254_Fp2_inv(&mut tmp1, &__ac1);
+        let __ac2 = lambda.clone();
+        bn254_Fp2_mul(&mut lambda, &__ac2, &tmp1);
+        bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+        let __ac3 = f.clone();
+        bn254_Fp12_square(&mut f, &__ac3);
+        let __ac4 = f.clone();
+        bn254_Fp12_mul(&mut f, &__ac4, &line);
+        bn254_Fp2_square(&mut tmp1, &lambda);
+        let __ac5 = tmp1.clone();
+        bn254_Fp2_sub(&mut tmp1, &__ac5, &t_x);
+        bn254_Fp2_sub(&mut tmp2, &tmp1, &t_x);
+        bn254_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+        let __ac6 = tmp1.clone();
+        bn254_Fp2_mul(&mut tmp1, &lambda, &__ac6);
+        let __ac7 = t_y.clone();
+        bn254_Fp2_sub(&mut t_y, &tmp1, &__ac7);
+        bn254_Fp2_felem_copy(&mut t_x, &tmp2);
+        if bit != 0 {
+            bn254_Fp2_sub(&mut tmp1, &q_y, &t_y);
+            bn254_Fp2_sub(&mut tmp2, &q_x, &t_x);
+            let __ac8 = tmp2.clone();
+            bn254_Fp2_inv(&mut tmp2, &__ac8);
+            bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+            bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+            let __ac9 = f.clone();
+            bn254_Fp12_mul(&mut f, &__ac9, &line);
+            bn254_Fp2_square(&mut tmp1, &lambda);
+            let __ac10 = tmp1.clone();
+            bn254_Fp2_sub(&mut tmp1, &__ac10, &t_x);
+            bn254_Fp2_sub(&mut tmp2, &tmp1, &q_x);
+            bn254_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+            let __ac11 = tmp1.clone();
+            bn254_Fp2_mul(&mut tmp1, &lambda, &__ac11);
+            let __ac12 = t_y.clone();
+            bn254_Fp2_sub(&mut t_y, &tmp1, &__ac12);
+            bn254_Fp2_felem_copy(&mut t_x, &tmp2);
+        } else {
+        }
+    }
     bn254_Fp12_felem_copy(&mut out, &f);
 }
 
@@ -678,4 +760,3 @@ pub fn bn254_pairing_dsd(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
     bn254_miller_loop(&mut tmp, &p_x, &p_y, &q_x, &q_y);
     bn254_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
 }
-

@@ -104,3 +104,7 @@ src/Bedrock/ExtractSafeRust.v
 
 # Safe-Rust body printer (Path B, zero unsafe in tower)
 src/Bedrock/ToSafeRustBody.v
+
+# Simulation theorem for the safe-Rust printer (Admitted: structural induction
+# pending instantiation of bedrock2.Semantics for the equivalence relation)
+src/Bedrock/SafeRustSimulation.v

@@ -694,6 +694,82 @@ Lemma fp12_eval_pair : forall c0 c1,
   fp12_eval (VFp12 c0 c1) = (fp6_eval c0, fp6_eval c1).
 Proof. reflexivity. Qed.
 
+(* ================================================================ *)
+(* §10d. Tower multiplication: Fp6 mul_by_v and componentwise ops    *)
+(* ================================================================ *)
+
+(** Projection helpers for Fp6 values. *)
+Definition fp6_c0 (v : rust_val TFp6) : rust_val TFp2 :=
+  match v with VFp6 a _ _ => a end.
+Definition fp6_c1 (v : rust_val TFp6) : rust_val TFp2 :=
+  match v with VFp6 _ b _ => b end.
+Definition fp6_c2 (v : rust_val TFp6) : rust_val TFp2 :=
+  match v with VFp6 _ _ c => c end.
+
+Lemma fp6_c0_eval : forall a b c, fp2_eval (fp6_c0 (VFp6 a b c)) = fp2_eval a.
+Proof. reflexivity. Qed.
+Lemma fp6_c1_eval : forall a b c, fp2_eval (fp6_c1 (VFp6 a b c)) = fp2_eval b.
+Proof. reflexivity. Qed.
+Lemma fp6_c2_eval : forall a b c, fp2_eval (fp6_c2 (VFp6 a b c)) = fp2_eval c.
+Proof. reflexivity. Qed.
+
+(** Fp12 projection helpers. *)
+Definition fp12_c0 (v : rust_val TFp12) : rust_val TFp6 :=
+  match v with VFp12 a _ => a end.
+Definition fp12_c1 (v : rust_val TFp12) : rust_val TFp6 :=
+  match v with VFp12 _ b => b end.
+
+(** [mul_by_v] in Fp6: multiply by the generator [v] of Fp6[v]/(v³-ξ).
+    Given (a0 + a1·v + a2·v²), the product with v is
+      a0·v + a1·v² + a2·v³ = ξ·a2 + a0·v + a1·v²
+    so the result is (ξ·a2, a0, a1). *)
+Definition fp6_mul_by_v (x : rust_val TFp6) : rust_val TFp6 :=
+  let a0 := fp6_c0 x in
+  let a1 := fp6_c1 x in
+  let a2 := fp6_c2 x in
+  (* new_c0 = ξ·a2 = mul_xi a2. Per fp2_mul_xi: (9·re - im, re + 9·im) *)
+  let a2_re := fp2_re a2 in
+  let a2_im := fp2_im a2 in
+  let a2_mulxi := VFp2 (sub_impl (fp_mul9 a2_re) a2_im)
+                        (add_impl a2_re (fp_mul9 a2_im)) in
+  VFp6 a2_mulxi a0 a1.
+
+(** Sanity check: the result's eval matches the (ξ·a2, a0, a1) layout. *)
+Lemma fp6_mul_by_v_eval_structure : forall x,
+  fp6_eval (fp6_mul_by_v x) =
+    (fp2_eval (VFp2 (sub_impl (fp_mul9 (fp2_re (fp6_c2 x))) (fp2_im (fp6_c2 x)))
+                     (add_impl (fp2_re (fp6_c2 x)) (fp_mul9 (fp2_im (fp6_c2 x))))),
+     fp2_eval (fp6_c0 x),
+     fp2_eval (fp6_c1 x)).
+Proof.
+  intros x. unfold fp6_mul_by_v, fp6_eval. reflexivity.
+Qed.
+
+(** [fp12_conjugate]: (c0, c1) → (c0, -c1) via componentwise Fp6 opp. *)
+(** Fp6 opp: negate each component. *)
+Definition fp6_neg (x : rust_val TFp6) : rust_val TFp6 :=
+  VFp6 (VFp2 (opp_impl (fp2_re (fp6_c0 x))) (opp_impl (fp2_im (fp6_c0 x))))
+       (VFp2 (opp_impl (fp2_re (fp6_c1 x))) (opp_impl (fp2_im (fp6_c1 x))))
+       (VFp2 (opp_impl (fp2_re (fp6_c2 x))) (opp_impl (fp2_im (fp6_c2 x)))).
+
+Lemma fp6_neg_eval : forall x,
+  fp6_eval (fp6_neg x) =
+    ((fp2_eval (VFp2 (opp_impl (fp2_re (fp6_c0 x)))
+                      (opp_impl (fp2_im (fp6_c0 x))))),
+     (fp2_eval (VFp2 (opp_impl (fp2_re (fp6_c1 x)))
+                      (opp_impl (fp2_im (fp6_c1 x))))),
+     (fp2_eval (VFp2 (opp_impl (fp2_re (fp6_c2 x)))
+                      (opp_impl (fp2_im (fp6_c2 x)))))).
+Proof. reflexivity. Qed.
+
+(** Fp12 conjugate: conjugation in Fp12/Fp6 is (c0, c1) ↦ (c0, -c1). *)
+Definition fp12_conjugate (x : rust_val TFp12) : rust_val TFp12 :=
+  VFp12 (fp12_c0 x) (fp6_neg (fp12_c1 x)).
+
+Lemma fp12_conjugate_structure : forall x,
+  fp12_eval (fp12_conjugate x) = (fp6_eval (fp12_c0 x), fp6_eval (fp6_neg (fp12_c1 x))).
+Proof. reflexivity. Qed.
+
 End ConcreteLeafSpec.
 
 (* ================================================================ *)

@@ -1,0 +1,12 @@
+(include_subdirs qualified)
+
+(coq.theory
+ (name Bedrock)
+ (mode vo)
+ (modules
+  (:standard
+   \ ExtractSafeRust
+     ExtractSafeTower
+     ExtractSafeTowerBLS12
+     TestSafeBody))
+ (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

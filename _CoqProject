@@ -1,8 +1,12 @@
 -R src ""
+-R _build/default/src ""
 -Q fiat-crypto/src Crypto
+-Q fiat-crypto/_build/default/src Crypto
 
 -docroot doc/
 # bedrock2, coqutil, Coqprime, Rewriter all from opam
+# _build/default/ paths added so MCP/coq-lsp can find dune-built .vo files
+# fiat-crypto is a nested dune sub-project, its _build lives inside fiat-crypto/
 
 src/Theory/Util/UList.v
 src/Theory/Util/UListUtil.v
@@ -105,6 +109,23 @@ src/Bedrock/ExtractSafeRust.v
 # Safe-Rust body printer (Path B, zero unsafe in tower)
 src/Bedrock/ToSafeRustBody.v
 
-# Simulation theorem for the safe-Rust printer (Admitted: structural induction
-# pending instantiation of bedrock2.Semantics for the equivalence relation)
+# Simulation theorem for the safe-Rust printer (Qed, 0 axioms)
 src/Bedrock/SafeRustSimulation.v
+
+# Per-leaf refinement: concrete BN254 leaf_spec + correctness properties
+src/Bedrock/SafeRustLeafRefinement.v
+
+# Bridge to real bedrock2 WP semantics (parametric over FElem)
+src/Bedrock/SafeRustBedrockBridge.v
+
+# Concrete BN254 instantiation: real fiat-crypto field representation
+src/Bedrock/SafeRustBN254Instance.v
+
+# Parametric WBW concrete wrapper (curve-agnostic)
+src/Bedrock/SafeRustWBWConcrete.v
+
+# Concrete BN254 instantiation of WBW wrapper
+src/Bedrock/SafeRustBN254Concrete.v
+
+# Concrete BLS12-381 instantiation of WBW wrapper
+src/Bedrock/SafeRustBLS12Concrete.v

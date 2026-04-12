@@ -508,18 +508,26 @@ pub fn bn254_Fp2_mul_fp(mut out: &mut Fp2, x: &Fp2, s: &Fp) {
 
 #[inline]
 pub fn bn254_make_line(mut out: &mut Fp12, lam: &Fp2, x_t: &Fp2, y_t: &Fp2, x_p: &Fp, y_p: &Fp) {
+    // D-twist layout: c0.c0 = (Py, 0), c1.c0 = -lam*Px, c1.c1 = lam*Tx - Ty
+    // (FIX for Task #21: was M-twist layout before)
     let mut tmp: Fp2 = Fp2::zero();
-    bn254_Fp2_mul(&mut out.c0.c0, &lam, &x_t);
-    let __ac0 = out.c0.c0.clone();
-    bn254_Fp2_sub(&mut out.c0.c0, &__ac0, &y_t);
-    bn254_Fp2_mul_fp(&mut tmp, &lam, &x_p);
-    bn254_Fp2_opp(&mut out.c0.c1, &tmp);
+    // c0.c0 = (Py, 0)
+    bn254_felem_copy(&mut out.c0.c0.c0, &y_p);
+    bn254_from_word(&mut out.c0.c0.c1, 0u64);
+    // c0.c1 = 0
+    bn254_from_word(&mut out.c0.c1.c0, 0u64);
+    bn254_from_word(&mut out.c0.c1.c1, 0u64);
+    // c0.c2 = 0
     bn254_from_word(&mut out.c0.c2.c0, 0u64);
     bn254_from_word(&mut out.c0.c2.c1, 0u64);
-    bn254_from_word(&mut out.c1.c0.c0, 0u64);
-    bn254_from_word(&mut out.c1.c0.c1, 0u64);
-    bn254_felem_copy(&mut out.c1.c1.c0, &y_p);
-    bn254_from_word(&mut out.c1.c1.c1, 0u64);
+    // c1.c0 = -lam * Px
+    bn254_Fp2_mul_fp(&mut tmp, &lam, &x_p);
+    bn254_Fp2_opp(&mut out.c1.c0, &tmp);
+    // c1.c1 = lam * Tx - Ty
+    bn254_Fp2_mul(&mut out.c1.c1, &lam, &x_t);
+    let __ac0 = out.c1.c1.clone();
+    bn254_Fp2_sub(&mut out.c1.c1, &__ac0, &y_t);
+    // c1.c2 = 0
     bn254_from_word(&mut out.c1.c2.c0, 0u64);
     bn254_from_word(&mut out.c1.c2.c1, 0u64);
 }

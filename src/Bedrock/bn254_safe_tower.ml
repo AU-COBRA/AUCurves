@@ -98,6 +98,8 @@ let explicit_param_types_early = [
   ("bn254_load_gamma2",["Fp2"]); ("bn254_load_w_frob_c1",["Fp2"]);
   ("bn254_Fp12_pow_u",["Fp12";"Fp12"]); ("bn254_final_exp_hard_dsd",["Fp12";"Fp12"]);
   ("bn254_final_exp_dsd",["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_make_line_corrected",["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bn254_load_q1_y_const",["Fp2"]);
   ("bn254_miller_loop",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_miller_loop_optimal",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
@@ -238,14 +240,62 @@ let safe_body ctx0 buf ind cmd =
             end
           | Lit _ -> Buffer.add_string buf (ind ^ "/* literal dest? */\n"))
        | [] -> Buffer.add_string buf (ind ^ fn ^ "();\n"))
-    | Coq_cmd.Coq_set (x, _) ->
-      Buffer.add_string buf (ind ^ Printf.sprintf "/* set %s */\n" (escape_var x))
-    | Coq_cmd.Coq_cond (_, ct, cf) ->
-      Buffer.add_string buf (ind ^ "if /* cond */ {\n");
+    | Coq_cmd.Coq_set (x, e) ->
+      let xn = escape_var x in
+      (* Track which scalar vars have been declared. First occurrence uses
+         "let mut", subsequent uses plain assignment (avoids shadowing in loops). *)
+      let is_new = not (Stdlib.List.mem_assoc xn !ctx) in
+      if is_new then ctx := (xn, "u64") :: !ctx;
+      let decl = if is_new then "let mut " else "" in
+      let ty = if is_new then ": u64" else "" in
+      let emit_expr_str () =
+        match e with
+        | Coq_expr.Coq_literal z -> string_of_int (z_to_int z)
+        | Coq_expr.Coq_op (Coq_bopname.Coq_sub, e1, e2) ->
+          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          Printf.sprintf "%s.wrapping_sub(%s)" s1 s2
+        | Coq_expr.Coq_op (Coq_bopname.Coq_and, e1, e2) ->
+          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          Printf.sprintf "(%s & %s)" s1 s2
+        | Coq_expr.Coq_op (Coq_bopname.Coq_sru, e1, e2) ->
+          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          Printf.sprintf "(%s >> %s)" s1 s2
+        | Coq_expr.Coq_load (_, addr) ->
+          let sa = match resolve_with_ctx !ctx addr with Lit n -> string_of_int n | Ref (v,p) -> v^p in
+          Printf.sprintf "%s /* load */" sa
+        | _ ->
+          match resolve_with_ctx !ctx e with Lit n -> string_of_int n | Ref (v,p) -> v^p
+      in
+      Buffer.add_string buf (ind ^ Printf.sprintf "%s%s%s = %s;\n" decl xn ty (emit_expr_str ()))
+    | Coq_cmd.Coq_cond (e, ct, cf) ->
+      let cond_str = match resolve_with_ctx !ctx e with
+        | Lit n -> Printf.sprintf "%d != 0" n
+        | Ref (v, p) -> Printf.sprintf "%s%s != 0" v p in
+      Buffer.add_string buf (ind ^ Printf.sprintf "if %s {\n" cond_str);
       go (ind ^ "    ") ct;
       Buffer.add_string buf (ind ^ "} else {\n");
       go (ind ^ "    ") cf;
       Buffer.add_string buf (ind ^ "}\n")
+    | Coq_cmd.Coq_while (e, body) ->
+      let cond_str = match resolve_with_ctx !ctx e with
+        | Lit n -> Printf.sprintf "%d != 0" n
+        | Ref (v, p) -> Printf.sprintf "%s%s != 0" v p in
+      Buffer.add_string buf (ind ^ Printf.sprintf "while %s {\n" cond_str);
+      go (ind ^ "    ") body;
+      Buffer.add_string buf (ind ^ "}\n")
+    | Coq_cmd.Coq_store (_, ea, ev) ->
+      (* Store: *addr = value. For u64 scalars (u6p2), this is direct assignment.
+         For field elements, stores go through function calls instead. *)
+      let addr = resolve_with_ctx !ctx ea in
+      let value = resolve_with_ctx !ctx ev in
+      let val_str = match value with Lit n -> Printf.sprintf "%du64" n | Ref (v,p) -> v ^ p in
+      (match addr with
+       | Ref (v, "") -> Buffer.add_string buf (ind ^ Printf.sprintf "%s = %s;\n" v val_str)
+       | _ -> Buffer.add_string buf (ind ^ Printf.sprintf "/* store %s */\n" val_str))
+    | Coq_cmd.Coq_unset _ -> ()
     | _ -> ()
   in go ind cmd
 
@@ -439,6 +489,8 @@ let explicit_param_types = [
   ("bn254_Fp12_pow_u", ["Fp12";"Fp12"]);
   ("bn254_final_exp_hard_dsd", ["Fp12";"Fp12"]);
   ("bn254_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bn254_make_line_corrected", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bn254_load_q1_y_const", ["Fp2"]);
   ("bn254_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_miller_loop_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);

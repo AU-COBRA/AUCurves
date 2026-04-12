@@ -24,6 +24,8 @@ pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_add(out, x, y) }
 pub fn fp_sub(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_sub(out, x, y) }
 pub fn fp_mul(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_mul(out, x, y) }
 pub fn fp_square(out: &mut Fp, x: &Fp) { tower::bn254_square(out, x) }
+pub fn fp12_square(out: &mut Fp12, x: &Fp12) { tower::bn254_Fp12_square(out, x) }
+pub fn fp12_mul(out: &mut Fp12, x: &Fp12, y: &Fp12) { tower::bn254_Fp12_mul(out, x, y) }
 
 pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bn254_pairing_dsd(out, p_x, p_y, q_x, q_y)
@@ -32,6 +34,26 @@ pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
 pub fn miller_loop(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bn254_miller_loop(out, p_x, p_y, q_x, q_y)
 }
+
+// === Optimal-ate variants (after Frobenius corrections fix) ===
+//
+// These wrap the new bn254_miller_loop_optimal / bn254_pairing_dsd_optimal
+// functions added to fiat-crypto/src/Bedrock/Field/Synthesis/Examples/BN254_Pairing.v
+// (Task 2, 2026-04-11). Activate after re-running the extraction pipeline:
+//
+//   cd fiat-crypto && dune build src/Bedrock/Field/Synthesis/Examples/BN254_Pairing.vo
+//   # then re-run safe-rust extraction (extract_safe_tower OCaml main)
+//
+// Once generated/bn254_safe_tower.rs contains bn254_miller_loop_optimal and
+// bn254_pairing_dsd_optimal, uncomment the block below.
+//
+// pub fn miller_loop_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+//     tower::bn254_miller_loop_optimal(out, p_x, p_y, q_x, q_y)
+// }
+//
+// pub fn pairing_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+//     tower::bn254_pairing_dsd_optimal(out, p_x, p_y, q_x, q_y)
+// }
 
 #[cfg(test)]
 mod tests {
@@ -44,6 +66,45 @@ mod tests {
         let mut c = Fp::zero();
         fp_add(&mut c, &a, &b);
         assert_eq!(c.0, [6, 8, 10, 12]);
+    }
+
+    #[test]
+    fn test_mont_mul_3_times_5_is_15() {
+        unsafe extern "C" {
+            fn _bn254_from_word(o: *mut u64, w: u64);
+            fn _bn254_mul(o: *mut u64, x: *const u64, y: *const u64);
+        }
+        unsafe {
+            let mut three = [0u64; 4];
+            let mut five = [0u64; 4];
+            let mut fifteen_expected = [0u64; 4];
+            let mut fifteen_actual = [0u64; 4];
+            _bn254_from_word(three.as_mut_ptr(), 3);
+            _bn254_from_word(five.as_mut_ptr(), 5);
+            _bn254_from_word(fifteen_expected.as_mut_ptr(), 15);
+            _bn254_mul(fifteen_actual.as_mut_ptr(), three.as_ptr(), five.as_ptr());
+            assert_eq!(
+                fifteen_expected, fifteen_actual,
+                "3*5 in Montgomery form should equal 15 in Montgomery form"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fp2_mul_one_one_is_one() {
+        // (1, 0) * (1, 0) should be (1, 0) in Fp2 = Fp[u]/(u^2+1)
+        let mut one = Fp::zero();
+        unsafe {
+            unsafe extern "C" {
+                fn _bn254_from_word(o: *mut u64, w: u64);
+            }
+            _bn254_from_word(one.0.as_mut_ptr(), 1);
+        }
+        let one_fp2 = Fp2 { c0: one, c1: Fp::zero() };
+        let mut out = Fp2::zero();
+        tower::bn254_Fp2_mul(&mut out, &one_fp2, &one_fp2);
+        assert_eq!(out.c0, one, "Fp2 (1, 0) * (1, 0) should give c0 = 1");
+        assert_eq!(out.c1, Fp::zero(), "Fp2 (1, 0) * (1, 0) should give c1 = 0");
     }
 
     #[test]

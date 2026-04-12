@@ -99,7 +99,9 @@ let explicit_param_types_early = [
   ("bn254_Fp12_pow_u",["Fp12";"Fp12"]); ("bn254_final_exp_hard_dsd",["Fp12";"Fp12"]);
   ("bn254_final_exp_dsd",["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn254_miller_loop",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_miller_loop_optimal",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_pairing_dsd_optimal",["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   (* Leaf ops *)
   ("bn254_add",["Fp";"Fp";"Fp"]); ("bn254_sub",["Fp";"Fp";"Fp"]);
   ("bn254_mul",["Fp";"Fp";"Fp"]); ("bn254_square",["Fp";"Fp"]);
@@ -438,7 +440,9 @@ let explicit_param_types = [
   ("bn254_final_exp_hard_dsd", ["Fp12";"Fp12"]);
   ("bn254_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn254_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_miller_loop_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_pairing_dsd_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
 ]
 
 let infer_param_types fname args body =

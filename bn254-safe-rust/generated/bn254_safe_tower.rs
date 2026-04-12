@@ -23,6 +23,7 @@ extern "C" {
     fn _bn254_felem_copy(out: *mut u64, x: *const u64);
     fn _bn254_from_word(out: *mut u64, w: u64);
     fn _bn254_select_znz(out: *mut u64, c: u64, x: *const u64, y: *const u64);
+    fn _bn254_inv(out: *mut u64, x: *const u64);
 }
 #[inline] pub fn bn254_add(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_add(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
 #[inline] pub fn bn254_sub(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_sub(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
@@ -32,34 +33,7 @@ extern "C" {
 #[inline] pub fn bn254_felem_copy(out: &mut Fp, x: &Fp) { unsafe { _bn254_felem_copy(out.0.as_mut_ptr(), x.0.as_ptr()) } }
 #[inline] pub fn bn254_from_word(out: &mut Fp, w: u64) { unsafe { _bn254_from_word(out.0.as_mut_ptr(), w) } }
 #[inline] pub fn bn254_select_znz(out: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(out.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
-
-#[inline] pub fn bn254_Fp2_opp(out: &mut Fp2, x: &Fp2) { bn254_opp(&mut out.c0, &x.c0); bn254_opp(&mut out.c1, &x.c1); }
-
-#[inline] pub fn bn254_Fp2_inv(out: &mut Fp2, x: &Fp2) {
-    let mut asq = Fp::zero();
-    let mut bsq = Fp::zero();
-    let mut norm = Fp::zero();
-    bn254_square(&mut asq, &x.c0);
-    bn254_square(&mut bsq, &x.c1);
-    bn254_add(&mut norm, &asq, &bsq);
-    let mut base = norm;
-    let p_minus_2: [u64; 4] = [0x3c208c16d87cfd45, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029];
-    // Montgomery 1 = R mod p = 2^256 mod p (verified via Python)
-    let mut result = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
-    for limb_idx in 0..4 {
-        let mut bits = p_minus_2[limb_idx];
-        for _ in 0..64 {
-            if bits & 1 == 1 { let r = result; bn254_mul(&mut result, &r, &base); }
-            let b = base; bn254_square(&mut base, &b);
-            bits >>= 1;
-        }
-    }
-    norm = result;
-    bn254_mul(&mut out.c0, &x.c0, &norm);
-    let mut neg_b = Fp::zero();
-    bn254_opp(&mut neg_b, &x.c1);
-    bn254_mul(&mut out.c1, &neg_b, &norm);
-}
+#[inline] pub fn bn254_inv(out: &mut Fp, x: &Fp) { unsafe { _bn254_inv(out.0.as_mut_ptr(), x.0.as_ptr()) } }
 
 
 #[inline]
@@ -108,6 +82,27 @@ pub fn bn254_Fp2_square(mut out: &mut Fp2, inx: &Fp2) {
     let __ac0 = out.c1.clone();
     bn254_add(&mut out.c1, &__ac0, &__ac0);
     bn254_sub(&mut out.c0, &v0, &v1);
+}
+
+#[inline]
+pub fn bn254_Fp2_inv(mut out: &mut Fp2, inx: &Fp2) {
+    let mut asq: Fp = Fp::zero();
+    let mut bsq: Fp = Fp::zero();
+    let mut norm: Fp = Fp::zero();
+    bn254_square(&mut asq, &inx.c0);
+    bn254_square(&mut bsq, &inx.c1);
+    bn254_add(&mut norm, &asq, &bsq);
+    let __ac0 = norm.clone();
+    bn254_inv(&mut norm, &__ac0);
+    bn254_mul(&mut out.c0, &inx.c0, &norm);
+    bn254_opp(&mut asq, &inx.c1);
+    bn254_mul(&mut out.c1, &asq, &norm);
+}
+
+#[inline]
+pub fn bn254_Fp2_opp(mut out: &mut Fp2, x: &Fp2) {
+    bn254_opp(&mut out.c0, &x.c0);
+    bn254_opp(&mut out.c1, &x.c1);
 }
 
 #[inline]

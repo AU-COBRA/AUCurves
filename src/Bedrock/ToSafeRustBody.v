@@ -195,6 +195,8 @@ Definition param_table : list (string * list string) := [
   ("bn254_miller_loop_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn254_pairing_dsd_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_inv", ["Fp";"Fp"]);
+  ("bn254_Fp2_inv", ["Fp2";"Fp2"]);
   ("bn254_make_line_corrected", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
   ("bn254_load_q1_y_const", ["Fp2"]);
 

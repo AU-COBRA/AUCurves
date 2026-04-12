@@ -53,15 +53,27 @@ Definition bn254_leaf_funcs : list function_t :=
     (which call [bn254_from_word] — never synthesized in [bn254_prime.v]).
     [vm_compute] resolves all Module Fp12 references to ground terms,
     so the [Extraction] command sees no nested modules. *)
-(** [Fp2_inv] is excluded: it calls [bn254_inv] which is never
-    synthesized in [bn254_prime.v]. The pairing pipeline does NOT use
-    Fp2 inversion — [Fp12_inv] uses a conjugate/norm approach that
-    avoids it.  [bn254_opp] and [bn254_Fp2_opp] are provided as
-    small Rust implementations in [rust_prelude_opp] below. *)
+(** [Fp2_inv] calls [bn254_inv] which is not synthesized by fiat-crypto
+    but is provided as [_bn254_inv] in [stubs.rs] (Fermat inversion).
+    [Fp2_opp] calls [bn254_opp] (a leaf op). Both are now included
+    so [btranslate] generates their safe Rust bodies automatically,
+    eliminating them from the TCB. *)
+(** Fp2_opp: negate both components. Defined inline because
+    GenericQuadratic.QE_opp requires instantiation boilerplate.
+    Offset 32 = 4 limbs × 8 bytes = felem_size_in_bytes for BN254. *)
+Definition Fp2_opp : string * Syntax.func :=
+  ("bn254_Fp2_opp", (["out"; "x"], []:list String.string,
+    (Syntax.cmd.seq
+      (Syntax.cmd.call [] "bn254_opp"
+        [Syntax.expr.var "out"; Syntax.expr.var "x"])
+      (Syntax.cmd.call [] "bn254_opp"
+        [Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "out") (Syntax.expr.literal (BinInt.Z.of_nat 32));
+         Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "x") (Syntax.expr.literal (BinInt.Z.of_nat 32))])))).
+
 Definition bn254_all_funcs_raw : list function_t :=
   bn254_leaf_funcs ++
   [ Fp2_felem_copy; Fp2_add; Fp2_sub;
-    Fp2_mul; Fp2_sqr ] ++
+    Fp2_mul; Fp2_sqr; Fp2_inv; Fp2_opp ] ++
   BN254_Pairing.bn254_all_pairing_funcs.
 
 Definition bn254_all_funcs : list function_t :=

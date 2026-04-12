@@ -160,5 +160,8 @@ From Stdlib Require Export ExtrOcamlString.
 Extraction Language OCaml.
 Global Set Warnings Append "-extraction-opaque-accessed".
 
+Require Import Bedrock.ToSafeRustBody.
+
 Extraction "src/Bedrock/bn254_rust_extracted"
-  bn254_leaf_funcs bn254_all_funcs rust_func rust_prelude bn254_opp_prelude.
+  bn254_leaf_funcs bn254_all_funcs rust_func rust_prelude bn254_opp_prelude
+  safe_rust_module type_decls.

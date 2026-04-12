@@ -192,7 +192,55 @@ Definition param_table : list (string * list string) := [
   ("bn254_Fp12_pow_u", ["Fp12";"Fp12"]); ("bn254_final_exp_hard_dsd", ["Fp12";"Fp12"]);
   ("bn254_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn254_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
-  ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"])
+  ("bn254_miller_loop_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_pairing_dsd_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn254_make_line_corrected", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bn254_load_q1_y_const", ["Fp2"]);
+
+  (* === BLS12-381 entries (mirror of bn254 entries plus BLS12-specific funcs) === *)
+  ("bls12_add", ["Fp";"Fp";"Fp"]); ("bls12_sub", ["Fp";"Fp";"Fp"]);
+  ("bls12_mul", ["Fp";"Fp";"Fp"]); ("bls12_square", ["Fp";"Fp"]);
+  ("bls12_opp", ["Fp";"Fp"]); ("bls12_felem_copy", ["Fp";"Fp"]);
+  ("bls12_from_word", ["Fp";"Fp"]); ("bls12_select_znz", ["Fp";"Fp";"Fp";"Fp"]);
+  ("bls12_Fp2_felem_copy", ["Fp2";"Fp2"]); ("bls12_Fp2_add", ["Fp2";"Fp2";"Fp2"]);
+  ("bls12_Fp2_sub", ["Fp2";"Fp2";"Fp2"]); ("bls12_Fp2_mul", ["Fp2";"Fp2";"Fp2"]);
+  ("bls12_Fp2_square", ["Fp2";"Fp2"]); ("bls12_Fp2_mul_xi", ["Fp2";"Fp2"]);
+  ("bls12_Fp2_conjugate", ["Fp2";"Fp2"]); ("bls12_Fp2_mul_fp", ["Fp2";"Fp2";"Fp"]);
+  ("bls12_Fp2_opp", ["Fp2";"Fp2"]); ("bls12_Fp2_inv", ["Fp2";"Fp2"]);
+  ("bls12_Fp6_felem_copy", ["Fp6";"Fp6"]); ("bls12_Fp6_add", ["Fp6";"Fp6";"Fp6"]);
+  ("bls12_Fp6_sub", ["Fp6";"Fp6";"Fp6"]); ("bls12_Fp6_opp", ["Fp6";"Fp6"]);
+  ("bls12_Fp6_mul", ["Fp6";"Fp6";"Fp6"]); ("bls12_Fp6_square", ["Fp6";"Fp6"]);
+  ("bls12_Fp6_inv", ["Fp6";"Fp6"]); ("bls12_Fp6_add_nocopy", ["Fp6";"Fp6";"Fp6"]);
+  ("bls12_Fp6_sub_nocopy", ["Fp6";"Fp6";"Fp6"]); ("bls12_Fp6_mul_by_v", ["Fp6";"Fp6"]);
+  ("bls12_Fp6_mul_fp2", ["Fp6";"Fp6";"Fp2"]);
+  ("bls12_Fp6_frobenius", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bls12_Fp6_frobenius_p2", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bls12_Fp12_felem_copy", ["Fp12";"Fp12"]); ("bls12_Fp12_add", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_add_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_sub", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_sub_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_opp", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_mul", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_mul_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls12_Fp12_square", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_inv", ["Fp12";"Fp12"]); ("bls12_Fp12_conjugate", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_mul_by_w", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_mul_by_024", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls12_Fp12_frobenius", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls12_Fp12_frobenius_p2", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls12_Fp12_frobenius_p3", ["Fp12";"Fp12"]);
+  ("bls12_make_line", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bls12_load_gamma1_p2", ["Fp2"]); ("bls12_load_gamma2_p2", ["Fp2"]);
+  ("bls12_load_w_frob_p2_c1", ["Fp2"]); ("bls12_load_gamma1", ["Fp2"]);
+  ("bls12_load_gamma2", ["Fp2"]); ("bls12_load_w_frob_c1", ["Fp2"]);
+  ("bls12_load_w_frob_p3_c1", ["Fp2"]);
+  ("bls12_Fp12_pow_x", ["Fp12";"Fp12"]);
+  ("bls12_final_exp_hard_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls12_final_exp", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls12_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bls12_miller_loop_proj", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bls12_pairing", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"])
 ].
 
 (** Look up callee parameter types. If the table entry is shorter than

@@ -31,9 +31,24 @@ let () =
   Printf.eprintf "[verified_safe_tower] %d tower functions\n" n_tower;
   let decls = ocaml_string (type_decls n) in
   let bodies = ocaml_string (safe_rust_module n tower) in
-  (* Leaf wrappers (extern "C" + safe wrappers) from the old generator.
-     These are thin unsafe wrappers around assembly — not part of the
-     verified tower but needed by the Rust crate. *)
+  (* LEAF WRAPPERS — the only hand-written Rust in this driver.
+     These are NOT part of the verified tower (btranslate generates the
+     51 tower functions above). They provide the interface to assembly
+     leaves (Jasmin or fiat-crypto synthesized).
+
+     TCB analysis:
+     - 8 extern "C" decls: zero logic, just FFI name binding
+     - 8 safe fn wrappers: zero logic, just pointer cast
+     - bn254_Fp2_opp: 2 calls to bn254_opp — trivially correct
+     - bn254_Fp2_inv: Fermat's Little Theorem with:
+       * p-2 constant: derived from BN254 prime (verified)
+       * Montgomery 1 = R mod p = 0xd35d438dc58f0d9d... (verified via Python)
+       * Algorithm: standard norm-then-invert for Fp2 with beta=-1
+
+     To eliminate: add bn254_Fp2_opp and bn254_Fp2_inv to the bedrock2
+     function list (bn254_all_funcs_raw in ExtractSafeRust.v). Blocked
+     on bn254_inv not being a synthesized leaf (fiat-crypto doesn't
+     generate modular inversion). *)
   let leaf_wrappers = {|extern "C" {
     fn _bn254_add(out: *mut u64, x: *const u64, y: *const u64);
     fn _bn254_sub(out: *mut u64, x: *const u64, y: *const u64);

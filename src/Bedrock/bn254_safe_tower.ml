@@ -33,6 +33,22 @@ let rec z_to_int = function
 and pos_to_int = function
   | XI p -> 2 * pos_to_int p + 1 | XO p -> 2 * pos_to_int p | XH -> 1
 
+(* Convert Z to unsigned 64-bit Rust literal string, handling the full
+   0..2^64-1 range. Bedrock2 encodes word-sized values as Z which may
+   be negative (for values >= 2^63) or exceed OCaml's int range.
+   Uses Int64 to stay in 64-bit range without depending on Zarith. *)
+let rec pos_to_int64 = function
+  | XI p -> Int64.add (Int64.mul 2L (pos_to_int64 p)) 1L
+  | XO p -> Int64.mul 2L (pos_to_int64 p)
+  | XH -> 1L
+
+let z_to_u64_str z =
+  let v = match z with
+    | Z0 -> 0L
+    | Zpos p -> pos_to_int64 p
+    | Zneg p -> Int64.neg (pos_to_int64 p) in
+  Printf.sprintf "0x%016Lx" v
+
 let esc s = if s = "in" then "in_" else if s = "fn" then "fn_"
   else if s = "type" then "type_" else if s = "loop" then "loop_"
   else if s = "self" then "self_" else s
@@ -162,6 +178,23 @@ let fmt_src_arg ctx ct a =
     let dd = if p = "" then drill_down vt ct else "" in
     Printf.sprintf "&%s%s%s" v p dd
 
+(* Recursive bedrock2 expression -> Rust expression string *)
+let rec expr_to_rust ctx e =
+  match e with
+  | Coq_expr.Coq_literal z -> z_to_u64_str z
+  | Coq_expr.Coq_var x -> escape_var x
+  | Coq_expr.Coq_op (Coq_bopname.Coq_sub, e1, e2) ->
+    Printf.sprintf "%s.wrapping_sub(%s)" (expr_to_rust ctx e1) (expr_to_rust ctx e2)
+  | Coq_expr.Coq_op (Coq_bopname.Coq_add, e1, e2) ->
+    Printf.sprintf "%s.wrapping_add(%s)" (expr_to_rust ctx e1) (expr_to_rust ctx e2)
+  | Coq_expr.Coq_op (Coq_bopname.Coq_and, e1, e2) ->
+    Printf.sprintf "(%s & %s)" (expr_to_rust ctx e1) (expr_to_rust ctx e2)
+  | Coq_expr.Coq_op (Coq_bopname.Coq_sru, e1, e2) ->
+    Printf.sprintf "(%s >> %s)" (expr_to_rust ctx e1) (expr_to_rust ctx e2)
+  | Coq_expr.Coq_load (_, addr) -> expr_to_rust ctx addr
+  | _ ->
+    match resolve_with_ctx ctx e with Lit n -> string_of_int n | Ref (v,p) -> v^p
+
 let safe_body ctx0 buf ind cmd =
   let ci = ref 0 in
   let ctx = ref ctx0 in
@@ -248,51 +281,28 @@ let safe_body ctx0 buf ind cmd =
       if is_new then ctx := (xn, "u64") :: !ctx;
       let decl = if is_new then "let mut " else "" in
       let ty = if is_new then ": u64" else "" in
-      let emit_expr_str () =
-        match e with
-        | Coq_expr.Coq_literal z -> string_of_int (z_to_int z)
-        | Coq_expr.Coq_op (Coq_bopname.Coq_sub, e1, e2) ->
-          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          Printf.sprintf "%s.wrapping_sub(%s)" s1 s2
-        | Coq_expr.Coq_op (Coq_bopname.Coq_and, e1, e2) ->
-          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          Printf.sprintf "(%s & %s)" s1 s2
-        | Coq_expr.Coq_op (Coq_bopname.Coq_sru, e1, e2) ->
-          let s1 = match resolve_with_ctx !ctx e1 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          let s2 = match resolve_with_ctx !ctx e2 with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          Printf.sprintf "(%s >> %s)" s1 s2
-        | Coq_expr.Coq_load (_, addr) ->
-          let sa = match resolve_with_ctx !ctx addr with Lit n -> string_of_int n | Ref (v,p) -> v^p in
-          Printf.sprintf "%s /* load */" sa
-        | _ ->
-          match resolve_with_ctx !ctx e with Lit n -> string_of_int n | Ref (v,p) -> v^p
-      in
+      let emit_expr_str () = expr_to_rust !ctx e in
       Buffer.add_string buf (ind ^ Printf.sprintf "%s%s%s = %s;\n" decl xn ty (emit_expr_str ()))
     | Coq_cmd.Coq_cond (e, ct, cf) ->
-      let cond_str = match resolve_with_ctx !ctx e with
-        | Lit n -> Printf.sprintf "%d != 0" n
-        | Ref (v, p) -> Printf.sprintf "%s%s != 0" v p in
+      let cond_str = Printf.sprintf "%s != 0" (expr_to_rust !ctx e) in
       Buffer.add_string buf (ind ^ Printf.sprintf "if %s {\n" cond_str);
       go (ind ^ "    ") ct;
       Buffer.add_string buf (ind ^ "} else {\n");
       go (ind ^ "    ") cf;
       Buffer.add_string buf (ind ^ "}\n")
     | Coq_cmd.Coq_while (e, body) ->
-      let cond_str = match resolve_with_ctx !ctx e with
-        | Lit n -> Printf.sprintf "%d != 0" n
-        | Ref (v, p) -> Printf.sprintf "%s%s != 0" v p in
+      let cond_str = Printf.sprintf "%s != 0" (expr_to_rust !ctx e) in
       Buffer.add_string buf (ind ^ Printf.sprintf "while %s {\n" cond_str);
       go (ind ^ "    ") body;
       Buffer.add_string buf (ind ^ "}\n")
     | Coq_cmd.Coq_store (_, ea, ev) ->
-      (* Store: *addr = value. For u64 scalars (u6p2), this is direct assignment.
-         For field elements, stores go through function calls instead. *)
-      let addr = resolve_with_ctx !ctx ea in
-      let value = resolve_with_ctx !ctx ev in
-      let val_str = match value with Lit n -> Printf.sprintf "%du64" n | Ref (v,p) -> v ^ p in
-      (match addr with
+      (* Store: *addr = value. For u64 scalars (u6p2), direct assignment.
+         Uses z_to_u64_str for literals to handle the full u64 range. *)
+      let val_str = match ev with
+        | Coq_expr.Coq_literal z -> z_to_u64_str z ^ "u64"
+        | _ -> (match resolve_with_ctx !ctx ev with Lit n -> string_of_int n | Ref (v,p) -> v^p)
+      in
+      (match resolve_with_ctx !ctx ea with
        | Ref (v, "") -> Buffer.add_string buf (ind ^ Printf.sprintf "%s = %s;\n" v val_str)
        | _ -> Buffer.add_string buf (ind ^ Printf.sprintf "/* store %s */\n" val_str))
     | Coq_cmd.Coq_unset _ -> ()

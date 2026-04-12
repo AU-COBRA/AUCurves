@@ -64,6 +64,7 @@ let () =
     bn254_add(&mut norm, &asq, &bsq);
     let mut base = norm;
     let p_minus_2: [u64; 4] = [0x3c208c16d87cfd45, 0x97816a916871ca8d, 0xb85045b68181585d, 0x30644e72e131a029];
+    // Montgomery 1 = R mod p = 2^256 mod p (verified via Python)
     let mut result = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
     for limb_idx in 0..4 {
         let mut bits = p_minus_2[limb_idx];

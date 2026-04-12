@@ -786,3 +786,129 @@ pub fn bn254_pairing_dsd(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
     bn254_miller_loop(&mut tmp, &p_x, &p_y, &q_x, &q_y);
     bn254_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
 }
+
+#[inline]
+pub fn bn254_load_q1_y_const(mut out: &mut Fp2) {
+    out.c0 = Fp([0xe4bbdd0c2936b629, 0xbb30f162e133bacb, 0x31a9d1b6f9645366, 0x253570bea500f8dd]);
+    out.c1 = Fp([0xa1d77ce45ffe77c7, 0x07affd117826d1db, 0x6d16bd27bb7edc6b, 0x2c87200285defecc]);
+}
+
+/// Optimal-ate Miller loop: calls bn254_miller_loop then applies corrections.
+/// NOTE: This doesn't work because bn254_miller_loop doesn't return t_x/t_y.
+/// We need the running point T after the loop for the Frob line evaluations.
+/// Inline version below duplicates the loop to keep T accessible.
+///
+/// For now: INLINE the bare loop + corrections together to avoid the
+/// separate-function issue.
+#[inline(never)]
+pub fn bn254_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    // We need f, t_x, t_y after the loop for corrections.
+    // Call the bare loop inline.
+    let mut f: Fp12 = Fp12::zero();
+    let mut t_x: Fp2 = Fp2::zero();
+    let mut t_y: Fp2 = Fp2::zero();
+    let mut lambda: Fp2 = Fp2::zero();
+    let mut tmp1: Fp2 = Fp2::zero();
+    let mut tmp2: Fp2 = Fp2::zero();
+    let mut line: Fp12 = Fp12::zero();
+    let mut q1_x: Fp2 = Fp2::zero();
+    let mut q1_y: Fp2 = Fp2::zero();
+    let mut nq2_x: Fp2 = Fp2::zero();
+    let mut const_g1: Fp2 = Fp2::zero();
+    let mut const_g_y: Fp2 = Fp2::zero();
+    let mut const_g1p2: Fp2 = Fp2::zero();
+    bn254_from_word(&mut f.c0.c0.c0, 1u64);
+    bn254_from_word(&mut f.c0.c0.c1, 0u64);
+    bn254_from_word(&mut f.c0.c1.c0, 0u64);
+    bn254_from_word(&mut f.c0.c1.c1, 0u64);
+    bn254_from_word(&mut f.c0.c2.c0, 0u64);
+    bn254_from_word(&mut f.c0.c2.c1, 0u64);
+    bn254_from_word(&mut f.c1.c0.c0, 0u64);
+    bn254_from_word(&mut f.c1.c0.c1, 0u64);
+    bn254_from_word(&mut f.c1.c1.c0, 0u64);
+    bn254_from_word(&mut f.c1.c1.c1, 0u64);
+    bn254_from_word(&mut f.c1.c2.c0, 0u64);
+    bn254_from_word(&mut f.c1.c2.c1, 0u64);
+    bn254_Fp2_felem_copy(&mut t_x, &q_x);
+    bn254_Fp2_felem_copy(&mut t_y, &q_y);
+    let u6p2: u64 = 11347224129447541672u64;
+    let mut i: u64 = 64u64;
+    while i != 0 {
+        i = i.wrapping_sub(1u64);
+        let word: u64 = u6p2;
+        let bit: u64 = ((word >> (i & 63)) & 1u64);
+        bn254_Fp2_square(&mut tmp1, &t_x);
+        bn254_Fp2_add(&mut lambda, &tmp1, &tmp1);
+        let a0 = lambda.clone(); bn254_Fp2_add(&mut lambda, &a0, &tmp1);
+        bn254_Fp2_add(&mut tmp1, &t_y, &t_y);
+        let a1 = tmp1.clone(); bn254_Fp2_inv(&mut tmp1, &a1);
+        let a2 = lambda.clone(); bn254_Fp2_mul(&mut lambda, &a2, &tmp1);
+        bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+        let a3 = f.clone(); bn254_Fp12_square(&mut f, &a3);
+        let a4 = f.clone(); bn254_Fp12_mul(&mut f, &a4, &line);
+        bn254_Fp2_square(&mut tmp1, &lambda);
+        let a5 = tmp1.clone(); bn254_Fp2_sub(&mut tmp1, &a5, &t_x);
+        bn254_Fp2_sub(&mut tmp2, &tmp1, &t_x);
+        bn254_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+        let a6 = tmp1.clone(); bn254_Fp2_mul(&mut tmp1, &lambda, &a6);
+        let a7 = t_y.clone(); bn254_Fp2_sub(&mut t_y, &tmp1, &a7);
+        bn254_Fp2_felem_copy(&mut t_x, &tmp2);
+        if bit != 0 {
+            bn254_Fp2_sub(&mut tmp1, &q_y, &t_y);
+            bn254_Fp2_sub(&mut tmp2, &q_x, &t_x);
+            let a8 = tmp2.clone(); bn254_Fp2_inv(&mut tmp2, &a8);
+            bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+            bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+            let a9 = f.clone(); bn254_Fp12_mul(&mut f, &a9, &line);
+            bn254_Fp2_square(&mut tmp1, &lambda);
+            let a10 = tmp1.clone(); bn254_Fp2_sub(&mut tmp1, &a10, &t_x);
+            bn254_Fp2_sub(&mut tmp2, &tmp1, &q_x);
+            bn254_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+            let a11 = tmp1.clone(); bn254_Fp2_mul(&mut tmp1, &lambda, &a11);
+            let a12 = t_y.clone(); bn254_Fp2_sub(&mut t_y, &tmp1, &a12);
+            bn254_Fp2_felem_copy(&mut t_x, &tmp2);
+        }
+    }
+    // Frobenius corrections
+    bn254_load_gamma1(&mut const_g1, );
+    bn254_load_q1_y_const(&mut const_g_y, );
+    bn254_load_gamma1_p2(&mut const_g1p2, );
+    bn254_Fp2_conjugate(&mut tmp1, &q_x);
+    bn254_Fp2_mul(&mut q1_x, &tmp1, &const_g1);
+    bn254_Fp2_conjugate(&mut tmp1, &q_y);
+    bn254_Fp2_mul(&mut q1_y, &tmp1, &const_g_y);
+    bn254_Fp2_sub(&mut tmp1, &q1_y, &t_y);
+    bn254_Fp2_sub(&mut tmp2, &q1_x, &t_x);
+    let b0 = tmp2.clone(); bn254_Fp2_inv(&mut tmp2, &b0);
+    bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+    let b1 = f.clone(); bn254_Fp12_mul(&mut f, &b1, &line);
+    bn254_Fp2_square(&mut tmp1, &lambda);
+    let b2 = tmp1.clone(); bn254_Fp2_sub(&mut tmp1, &b2, &t_x);
+    bn254_Fp2_sub(&mut tmp2, &tmp1, &q1_x);
+    bn254_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+    let b3 = tmp1.clone(); bn254_Fp2_mul(&mut tmp1, &lambda, &b3);
+    let b4 = t_y.clone(); bn254_Fp2_sub(&mut t_y, &tmp1, &b4);
+    bn254_Fp2_felem_copy(&mut t_x, &tmp2);
+    bn254_Fp2_mul_fp(&mut nq2_x, &q_x, &const_g1p2.c0);
+    bn254_Fp2_sub(&mut tmp1, &q_y, &t_y);
+    bn254_Fp2_sub(&mut tmp2, &nq2_x, &t_x);
+    let b5 = tmp2.clone(); bn254_Fp2_inv(&mut tmp2, &b5);
+    bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn254_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+    let b6 = f.clone(); bn254_Fp12_mul(&mut f, &b6, &line);
+    bn254_Fp12_felem_copy(&mut out, &f);
+}
+
+#[inline]
+pub fn bn254_pairing_dsd_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    let mut tmp: Fp12 = Fp12::zero();
+    let mut gamma1_p2: Fp2 = Fp2::zero();
+    let mut gamma2_p2: Fp2 = Fp2::zero();
+    let mut w_frob_p2_c1: Fp2 = Fp2::zero();
+    bn254_load_gamma1_p2(&mut gamma1_p2, );
+    bn254_load_gamma2_p2(&mut gamma2_p2, );
+    bn254_load_w_frob_p2_c1(&mut w_frob_p2_c1, );
+    bn254_miller_loop_optimal(&mut tmp, &p_x, &p_y, &q_x, &q_y);
+    bn254_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
+}

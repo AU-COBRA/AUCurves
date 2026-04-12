@@ -35,6 +35,7 @@ Require Import Crypto.Arithmetic.WordByWordMontgomery.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
+Require Import Crypto.Bedrock.Field.Common.Tactics.
 
 Require Import Bedrock.Curve.Secp256k1Curve_G1.
 Require Import Bedrock.Curve.Secp256k1_Wired_Specs.
@@ -48,12 +49,63 @@ Require Import Bedrock.Util.Util.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Tactics.
 Require Import Bedrock.Util.SeparationLogic.
+Require Import coqutil.Tactics.ltac_list_ops.
+Require Import coqutil.Tactics.rdelta.
+Require Import coqutil.Tactics.syntactic_unify.
 
 Import ListNotations.
 Local Open Scope Z_scope.
 Local Open Scope string_scope.
 
 Section Secp256k1_G1_Add.
+
+  (* O(n) sep frame inference instead of O(n!) permutation search.
+     Inlined from BLS12_GLV_ScalarMultBedrock.v / WPTactics.v *)
+  Local Ltac cancel_impl_step :=
+    let RHS := lazymatch goal with
+               | |- Lift1Prop.impl1 (seps _) (seps ?RHS) => RHS end in
+    let jy := index_and_element_of RHS in
+    let j := lazymatch jy with (?i, _) => i end in
+    let y := lazymatch jy with (_, ?y) => y end in
+    assert_fails (idtac; let y := rdelta_var y in is_evar y);
+    let LHS := lazymatch goal with
+               | |- Lift1Prop.impl1 (seps ?LHS) _ => LHS end in
+    let i := find_syntactic_unify_deltavar LHS y in
+    cancel_seps_at_indices_by_implication i j;
+    [exact (impl1_refl _)|].
+
+  Local Ltac ecancel_fast :=
+    cancel;
+    lazymatch goal with
+    | |- Lift1Prop.impl1 _ _ =>
+      repeat cancel_impl_step;
+      repeat ecancel_step_by_implication;
+      cbv [seps]; exact impl1_refl
+    | |- Lift1Prop.iff1 _ _ =>
+      ecancel_steps_at O;
+      ecancel_done
+    end.
+
+  Local Ltac ecancel_assumption_fast :=
+    multimatch goal with
+    | |- ?PG ?m1 =>
+      multimatch goal with
+      | H: _ ?m2 |- _ =>
+        syntactic_unify_deltavar m1 m2;
+        let H' := fresh "Hcopy" in
+        pose proof H as H';
+        cbv beta iota zeta in H';
+        lazymatch type of H' with
+        | (_ * _)%sep _ =>
+          refine (Morphisms.subrelation_refl
+                    Lift1Prop.impl1 _ _ _ _ H');
+          clear H';
+          ecancel_fast
+        end
+      end
+    end.
+
+  Local Ltac ecancel_assumption ::= ecancel_assumption_fast.
 
   Local Notation m := (2^256 - 2^32 - 977)%Z.
   Local Notation n := 4%nat.
@@ -63,7 +115,8 @@ Section Secp256k1_G1_Add.
   Local Notation b := (7 mod m).
   Local Notation three_b := (21 mod m).
 
-  Local Notation num_bytes := (Eval compute in (Z.of_nat (((Z.to_nat bw * n) / 8)%nat))).
+  Local Notation num_bytes := 32%Z (only parsing).
+  Local Definition num_bytes_def : Z := 32%Z.
 
   (* m' = modinv(-m, 2^bw) — the Montgomery reduction constant *)
   Local Definition secp_m' := 15580212934572586289%Z.
@@ -80,7 +133,7 @@ Section Secp256k1_G1_Add.
       - Prefix "secp256k1_" for field op names
       - Function name "Secp256k1_G1_add" *)
 
-  Definition Secp256k1_G1_add : Syntax.func :=
+  Definition Secp256k1_G1_add : Syntax.func := Eval cbv in (
     let outx := "outx" in
     let outy := "outy" in
     let outz := "outz" in
@@ -100,62 +153,55 @@ Section Secp256k1_G1_Add.
     let add := (append prefix "add") in
     let mul := (append prefix "mul") in
     let sub := (append prefix "sub") in
-    ("Secp256k1_G1_add", (
+    (
       [outx; outy; outz; X1; Y1; Z1; X2; Y2; Z2], [],
       bedrock_func_body:(
-      stackalloc num_bytes as three_b{
-        stackalloc num_bytes as t0 {
-          stackalloc num_bytes as t1 {
-            stackalloc num_bytes as t2 {
-              stackalloc num_bytes as t3 {
-                stackalloc num_bytes as t4 {
-                  stackalloc num_bytes as t5 {
-                      (* Store Montgomery-encoded 3b constant (4 limbs) *)
-                      store(three_b, (coq:(nth 0 secp256k1_three_b_mont 0)));
-                      store(three_b + coq:(8), coq:(nth 1 secp256k1_three_b_mont 0));
-                      store(three_b + coq:(16), coq:(nth 2 secp256k1_three_b_mont 0));
-                      store(three_b + coq:(24), coq:(nth 3 secp256k1_three_b_mont 0));
-                      (* RCB complete addition formula (a=0) *)
-                      mul (t0, X1, X2);
-                      mul (t1, Y1, Y2);
-                      mul (t2, Z1, Z2);
-                      add (t3, X1, Y1);
-                      add (t4, X2, Y2);
-                      mul (t3, t3, t4);
-                      add (t4, t0, t1);
-                      sub (t3, t3, t4);
-                      add (t4, X1, Z1);
-                      add (t5, X2, Z2);
-                      mul (t4, t4, t5);
-                      add (t5, t0, t2);
-                      sub (t4, t4, t5);
-                      add (t5, Y1, Z1);
-                      add (outx, Y2, Z2);
-                      mul (t5, t5, outx);
-                      add (outx, t1, t2);
-                      sub (t5, t5, outx);
-                      mul (outz, three_b, t2);
-                      sub (outx, t1, outz);
-                      add (outz, outz, t1);
-                      mul (outy, outx, outz);
-                      add (t1, t0, t0);
-                      add (t1, t1, t0);
-                      mul (t4, three_b, t4);
-                      mul (t0, t1, t4);
-                      add (outy, outy, t0);
-                      mul (t0, t5, t4);
-                      mul (outx, t3, outx);
-                      sub (outx, outx, t0);
-                      mul (t0, t3, t1);
-                      mul (outz, t5, outz);
-                      add (outz, outz, t0)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      stackalloc num_bytes as three_b;
+      stackalloc num_bytes as t0;
+      stackalloc num_bytes as t1;
+      stackalloc num_bytes as t2;
+      stackalloc num_bytes as t3;
+      stackalloc num_bytes as t4;
+      stackalloc num_bytes as t5;
+      (* Store Montgomery-encoded 3b constant (4 limbs) *)
+      store(three_b, (coq:(nth 0 secp256k1_three_b_mont 0)));
+      store(three_b + coq:(8), coq:(nth 1 secp256k1_three_b_mont 0));
+      store(three_b + coq:(16), coq:(nth 2 secp256k1_three_b_mont 0));
+      store(three_b + coq:(24), coq:(nth 3 secp256k1_three_b_mont 0));
+      (* RCB complete addition formula (a=0) *)
+      $mul (t0, X1, X2);
+      $mul (t1, Y1, Y2);
+      $mul (t2, Z1, Z2);
+      $add (t3, X1, Y1);
+      $add (t4, X2, Y2);
+      $mul (t3, t3, t4);
+      $add (t4, t0, t1);
+      $sub (t3, t3, t4);
+      $add (t4, X1, Z1);
+      $add (t5, X2, Z2);
+      $mul (t4, t4, t5);
+      $add (t5, t0, t2);
+      $sub (t4, t4, t5);
+      $add (t5, Y1, Z1);
+      $add (outx, Y2, Z2);
+      $mul (t5, t5, outx);
+      $add (outx, t1, t2);
+      $sub (t5, t5, outx);
+      $mul (outz, three_b, t2);
+      $sub (outx, t1, outz);
+      $add (outz, outz, t1);
+      $mul (outy, outx, outz);
+      $add (t1, t0, t0);
+      $add (t1, t1, t0);
+      $mul (t4, three_b, t4);
+      $mul (t0, t1, t4);
+      $add (outy, outy, t0);
+      $mul (t0, t5, t4);
+      $mul (outx, t3, outx);
+      $sub (outx, outx, t0);
+      $mul (t0, t3, t1);
+      $mul (outz, t5, outz);
+      $add (outz, outz, t0)
       )
     )).
 
@@ -266,9 +312,9 @@ Section Secp256k1_G1_Add.
   Local Lemma three_b_mont_correct : three_b_mont = (WordByWordMontgomery.to_montgomerymod bw n m m' three_b_list).
   Proof. vm_compute (WordByWordMontgomery.to_montgomerymod bw n m m' three_b_list). reflexivity. Qed.
 
-  Local Lemma three_b_valid: valid (toZ (List.map (@Interface.word.of_Z 64 (@word BasicC64Semantics.semantics)) three_b_list)).
+  Local Lemma three_b_valid: valid (toZ (List.map (@Interface.word.of_Z 64 BasicC64Semantics.word) three_b_list)).
   Proof.
-    simpl. repeat rewrite Zmod_small; [apply three_b_list_valid; cbv; auto; intros; discriminate |..]; split; lia.
+    vm_compute; repeat split; auto; intros; discriminate.
   Qed.
 
   Local Lemma three_b_mont_valid : valid three_b_mont.
@@ -277,8 +323,7 @@ Section Secp256k1_G1_Add.
   Local Lemma a_mont_zero_local : (a_mont m bw n r' m' a a_small
       r'_correct m'_correct bw_big n_nz m_small m_big) = mont_zero.
   Proof.
-    apply mont_enc_irr. simpl. cbv [a_mont_list]. apply f_equal. cbv [a_list].
-    assert (a = 0) by (cbv; reflexivity). rewrite H. cbv. auto.
+    apply mont_enc_irr. vm_compute. reflexivity.
   Qed.
 
   (** ** Arithmetic notations *)
@@ -318,7 +363,7 @@ Section Secp256k1_G1_Add.
 
   Add Ring Mp : (MontgomeryRingTheory.mont_enc_ring m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
 
-  Local Notation wordof_Z := (@word.of_Z 64 (@word BasicC64Semantics.semantics)).
+  Local Notation wordof_Z := (@word.of_Z 64 BasicC64Semantics.word).
 
   (** ** Tactics for Bignum/bytes conversion *)
 
@@ -331,7 +376,7 @@ Section Secp256k1_G1_Add.
     apply length_nil;
     match goal with
     | [H : Datatypes.length _ = n|- _ ]
-      => repeat apply NPeano.Nat.succ_inj in H; auto
+      => repeat apply Nat.succ_inj in H; auto
     end); rewrite Hl in H; clear Hl.
 
   Ltac straightline' :=
@@ -406,7 +451,7 @@ Section Secp256k1_G1_Add.
 
   (** ** Stack allocation tactics *)
 
-  Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a0 m0 m1 m2, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m0 m1 m2 -> anybytes a0 n0 m2 -> R m1 -> exists l, (R * (Bignum n a0 l))%sep m0.
+  Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a0 m0 m1 m2, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m0 m1 m2 -> anybytes a0 n0 m2 -> R m1 -> exists (l : list BasicC64Semantics.word), (R * (Bignum n a0 l))%sep m0.
   Proof.
     intros.
     pose proof (anybytes_Bignum n m2 n0 a0).
@@ -496,7 +541,7 @@ Section Secp256k1_G1_Add.
 
   (* Extract length from a Bignum sep hypothesis *)
   Local Lemma Bignum_length_extract :
-    forall nn (px : Interface.word.rep) (ws : list Interface.word.rep)
+    forall nn (px : BasicC64Semantics.word) (ws : list BasicC64Semantics.word)
            (mm : Interface.map.rep) (R : Interface.map.rep -> Prop),
     (Bignum nn px ws * R)%sep mm ->
     Datatypes.length ws = nn.
@@ -597,10 +642,235 @@ Section Secp256k1_G1_Add.
     remember {| val := x; Hvalid := H1 |} as p
   end.
 
-  (** ** WP Proof *)
+  (** ** WP Proof
+
+      Partial port to the new opam bedrock2.  The prologue below:
+        - unfolds the function header using [start_func];
+        - steps through all 7 [stackalloc] commands via the new
+          [straightline] (which introduces byte-array hypotheses
+          [stack..stack5] rather than pre-allocated Bignums);
+        - bulk-converts the 7 byte arrays into [Bignum 4 _ _]
+          sep-chain facts using [Bignum_of_bytes];
+        - cleans up the partial-memory hypotheses left behind by
+          intermediate stackallocs;
+        - destructures the [three_b] Bignum into 4 concrete word
+          scalars [r; r0; r1; r2] in preparation for the 4 [store]
+          commands that write the Montgomery-encoded 3b constant.
+
+      The remainder of the proof — 4 word-stores, 30 field-op
+      function calls, 7 stackalloc deallocations, and the ring-based
+      Gallina postcondition proof — is still Admitted pending a full
+      port of the old custom tactics ([handle_store], [next_call],
+      [defrag_in_context]) to the new bedrock2 WP shape. *)
 
   Theorem Secp256k1_G1_add_func_ok : program_logic_goal_for_function! Secp256k1_G1_add.
   Proof.
+    cbv [program_logic_goal_for spec_of_Secp256k1_G1_add].
+    intros.
+    eapply WeakestPreconditionProperties.start_func; [exact EnvContains | clear EnvContains].
+    cbv match beta delta [WeakestPrecondition.func Secp256k1_G1_add].
+    repeat straightline.
+    (* Use match-in-goal to discover stack addresses and byte arrays as
+       fresh bindings, since the Local Notation [a := 0 mod m] shadows
+       the [a] hypothesis introduced by straightline_stackalloc. *)
+    (* Apply Bignum_of_bytes to each byte array in turn, matching by
+       hypothesis structure. *)
+    repeat
+      (lazymatch goal with
+       | Hmem : context[array ptsto _ ?ptr ?bs] |- _ =>
+         lazymatch goal with
+         | _ : context[Bignum 4 ptr _] |- _ => fail
+         | _ =>
+           let Hiff := fresh "Hiff" in
+           assert (Hiff : Lift1Prop.iff1
+                   (array ptsto (@word.of_Z 64 BasicC64Semantics.word 1) ptr bs)
+                   (Bignum 4 ptr (ArrayCasts.bs2ws (Z.to_nat word_size_in_bytes) bs)))
+           by (apply Bignum_of_bytes;
+               match goal with
+               | Hl : Datatypes.length bs = Z.to_nat 32 |- _ =>
+                 rewrite Hl; reflexivity
+               end);
+           seprewrite_in Hiff Hmem; clear Hiff
+         end
+       end).
+    (* Clear intermediate separation facts for the partial memories *)
+    repeat match goal with
+    | H : (_ * _)%sep ?mem |- _ =>
+      lazymatch goal with
+      | |- WeakestPrecondition.store _ ?m _ _ _ => assert_fails unify m mem; clear H
+      | |- WeakestPrecondition.cmd _ _ _ ?m _ _ => assert_fails unify m mem; clear H
+      | _ => fail
+      end
+    end.
+    (* Destructure first Bignum (three_b) into 4 concrete scalars. The
+       first Bignum in the sep chain corresponds to [stack] at the
+       [three_b] stackalloc. We locate it via goal match on the store
+       target. *)
+    lazymatch goal with
+    | |- WeakestPrecondition.store _ _ ?p _ _ =>
+      lazymatch goal with
+      | Hmem : context[Bignum 4 p ?wsl] |- _ =>
+        let len_lem := fresh "Hlen_tb" in
+        assert (len_lem : Datatypes.length wsl = 4%nat)
+          by (match goal with
+              | Hbs : Datatypes.length ?bs = Z.to_nat 32 |- _ =>
+                lazymatch wsl with
+                | ArrayCasts.bs2ws _ bs =>
+                  rewrite ArrayCasts.bs2ws_length;
+                    [rewrite Hbs; cbv; reflexivity
+                    |cbv; discriminate
+                    |rewrite Hbs; cbv; reflexivity]
+                end
+              end);
+        let r0 := fresh "r" in
+        let r1 := fresh "r" in
+        let r2 := fresh "r" in
+        let r3 := fresh "r" in
+        let wsl_eq := fresh "wsl_eq" in
+        let wsl' := fresh "wsl'" in
+        remember wsl as wsl' eqn:wsl_eq;
+        destruct wsl' as [|r0 [|r1 [|r2 [|r3 [|]]]]];
+          try (simpl in len_lem; discriminate);
+        clear len_lem wsl_eq
+      end
+    end.
+    (* Phase 1: Unfold the three_b Bignum into scalars.
+       We locate the three_b Bignum via its concrete list [r;r0;r1;r2]. *)
+    lazymatch goal with
+    | H : context[Bignum 4 ?p [r; r0; r1; r2]] |- _ =>
+      let Hiff := fresh "Hiff" in
+      pose proof (Bignum_n_Scalar 4%nat p [r; r0; r1; r2]) as Hiff;
+      cbn [many_Scalars hd tl] in Hiff;
+      seprewrite_in Hiff H; clear Hiff
+    end.
+    (* Now perform the 4 word stores.
+       The store target addresses are [a], [a+8], [a+16], [a+24].
+       The scalar hypotheses are at [a], [S a], [S (S a)], [S (S (S a))].
+       We use next_word' to rewrite offsets into the nested [S] form. *)
+    repeat (eapply Scalars.store_word_of_sep;
+            [ repeat match goal with
+              | |- ((Scalars.scalar ?addr _) * _)%sep _ =>
+                subst addr
+              | _ => idtac
+              end;
+              repeat (rewrite next_word'; try rewrite word_add_0);
+              ecancel_assumption
+            | intros ? ?; repeat straightline ]).
+    (* Substitute all let-bindings so scalar addresses and values become explicit *)
+    repeat match reverse goal with
+    | x := _ |- _ => subst x
+    end.
+    (* Rebuild the three_b Bignum from the 4 individual scalars *)
+    eassert (Hbignum3b : (Bignum 4 a (List.map wordof_Z secp256k1_three_b_mont) * _)%sep _).
+    { unfold Bignum; sepsimpl; [cbv; reflexivity|];
+      unfold array; cbv [secp256k1_three_b_mont List.map];
+      repeat rewrite (word_add_comm _ (word.of_Z word_size_in_bytes));
+      match goal with
+      | [ H : (_ * _)%sep _ |- _ ] =>
+        repeat (rewrite next_word' in H; try rewrite word_add_0 in H);
+        ecancel_assumption
+      end. }
+    clear_old_seps.
+    pose proof valid_toZ_wordofZ_three_b_mont as H3b.
+    (* Phase 2: Handle one binop function call.
+       Precondition goals: valid/valid/length/Bignum/Bignum/Bignum
+       Order: we defer valid/length until after Bignum ecancels
+       unify the evars. *)
+    Ltac do_binop_call :=
+      straightline_call;
+      [ (* valid x *)
+      | (* valid y *)
+      | (* length old_out *)
+      | ecancel_assumption
+      | ecancel_assumption
+      | ecancel_assumption
+      | (* continuation *)
+      ];
+      [ eassumption | eassumption | solve_bignum_length
+      | repeat straightline'; normalize_mont_hyps ].
+    Ltac do_unop_call :=
+      straightline_call;
+      [
+      |
+      | ecancel_assumption
+      | ecancel_assumption
+      | ];
+      [ eassumption | solve_bignum_length
+      | repeat straightline'; normalize_mont_hyps ].
+    repeat (do_binop_call; repeat straightline).
+    (* Phase 3: Postcondition - defragment memory and prove Gallina spec *)
+    repeat defrag_in_context'.
+    repeat straightline.
+    do 4 eexists.
+    split; [| ecancel_assumption].
+    split; [| auto].
+    (* Gallina spec *)
+    unfold Secp256k1_add_Gallina_spec.
+    (* Validity for inputs *)
+    pose proof (valid_valid'_equiv) as Hvve.
+    assert_valid' wX1 Hvve.
+    assert_valid' wX2 Hvve.
+    assert_valid' wY1 Hvve.
+    assert_valid' wY2 Hvve.
+    assert_valid' wZ1 Hvve.
+    assert_valid' wZ2 Hvve.
+    (* Extract output word lists and assert their validity first.
+       These become Hvalid5, Hvalid6, Hvalid7 used for the output
+       coordinates in the Gallina spec. *)
+    lazymatch goal with
+    | H : (_ * _)%sep _ |- _ =>
+      lazymatch type of H with
+      | context[Bignum _ poutx ?wo_x] =>
+        lazymatch type of H with
+        | context[Bignum _ pouty ?wo_y] =>
+          lazymatch type of H with
+          | context[Bignum _ poutz ?wo_z] =>
+            assert_valid' wo_x Hvve;
+            assert_valid' wo_y Hvve;
+            assert_valid' wo_z Hvve
+          end
+        end
+      end
+    end.
+    (* Then assert valid' for all remaining valid hypotheses *)
+    repeat match goal with
+    | [ H : valid ?wz |- _ ] =>
+      lazymatch wz with
+      | map Interface.word.unsigned ?w =>
+        lazymatch goal with
+        | [ _ : valid' (toZ w) |- _ ] => fail
+        | _ => assert_valid' w Hvve
+        end
+      | List.map Interface.word.unsigned ?w =>
+        lazymatch goal with
+        | [ _ : valid' (toZ w) |- _ ] => fail
+        | _ => assert_valid' w Hvve
+        end
+      end
+    end.
+    (* Use alternative curve spec for a = 0.
+       [a] is shadowed by the three_b pointer, so use fully-qualified names. *)
+    destruct (MontgomeryCurveSpecs.BLS12_add_specs_equiv'
+                m bw n r' m'
+                (0 mod m)%Z three_b a_small three_b_small
+                r'_correct m'_correct bw_big n_nz m_small m_big
+                _ _ _ _ _ _ _ _ _
+                Hvalid Hvalid0 Hvalid1 Hvalid2 Hvalid3 Hvalid4
+                Hvalid5 Hvalid6 Hvalid7)
+      as [Heq _].
+    apply Heq; clear Heq.
+    (* Phase 3: polynomial identity over the mont_enc ring. *)
+    match goal with
+    | [ |- context[BLS12_add_mont_spec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ?ox ?oy ?oz] ] =>
+      this_mod' ox; this_mod' oy; this_mod' oz
+    end.
+    Opaque MontgomeryRingTheory.mont_mul MontgomeryRingTheory.mont_add
+           MontgomeryRingTheory.mont_sub.
+    unfold BLS12_add_mont_spec. cbv zeta.
+    apply pair_equal_spec; split; [apply pair_equal_spec; split |];
+      apply mont_enc_irr; reflexivity.
+  Qed.
+  (* Original proof for reference:
     repeat straightline_stackalloc_Bignum.
     (*initialize proof*)
 
@@ -693,6 +963,6 @@ Section Secp256k1_G1_Add.
 
     (*Equality of each coordinate is solved by ring tactic*)
     apply pair_equal_spec; split; [apply pair_equal_spec; split; ring| ring].
-  Qed.
+  Qed. *)
 
 End Secp256k1_G1_Add.

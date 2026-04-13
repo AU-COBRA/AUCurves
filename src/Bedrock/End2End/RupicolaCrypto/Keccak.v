@@ -292,8 +292,8 @@ Definition keccak_f := func! (state) {
     Since state is stored as u64 lanes, byte i is in lane i/8,
     bit position (i%8)*8. *)
 Definition xor_byte_into_state := func! (state, byte_val, offset) {
-  store(state + (offset & coq:(expr.literal (Z.ones 3 * (-8) land (2^64 - 1)))) (* align to 8 *),
-    load(state + (offset & coq:(expr.literal (Z.ones 3 * (-8) land (2^64 - 1))))) ^
+  store(state + (offset & coq:(expr.literal (Z.land (Z.ones 3 * (-8)) (2^64 - 1)))) (* align to 8 *),
+    load(state + (offset & coq:(expr.literal (Z.land (Z.ones 3 * (-8)) (2^64 - 1))))) ^
     (byte_val << ((offset & $7) << $3)))
 }.
 
@@ -388,20 +388,111 @@ Definition shake256_64 := func! (out, msg, msg_len) {
   shake256_squeeze_64(out, state)
 }.
 
-(** * Specification + WP proof
+(** * WP Proofs *)
 
-    The specification links to Keccak.keccak_sponge:
-      shake256_64(out, msg, msg_len) computes
-      out[0..63] = keccak_sponge(136, Byte.x1f, msg[0..msg_len-1], 64)
+Require Import bedrock2.WeakestPrecondition bedrock2.Semantics bedrock2.ProgramLogic.
+Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
+Require Import bedrock2.Array bedrock2.Scalars.
+Require Import coqutil.Word.Bitwidth32.
+Require Import coqutil.Word.Interface.
+Require Import coqutil.Word.Naive.
+Import ProgramLogic.Coercions.
+Local Notation "m =* P" := ((P%sep) m) (at level 70, only parsing).
+Local Notation "xs $@ a" := (Array.array ptsto (word.of_Z 1) a xs) (at level 10, format "xs $@ a").
 
-    The WP proof requires showing:
-    1. keccak_f implements Keccak.keccak_f (24 rounds of theta+rho+pi+chi+iota)
-    2. shake256_absorb implements Keccak.absorb with pad10*1
-    3. shake256_squeeze_64 implements first 64 bytes of Keccak.squeeze
+Local Existing Instances SortedListString.map SortedListWord.map coqutil.Word.Naive.word.
 
-    Each step follows the straightline pattern:
-    - Load from memory → apply pure function → store result
-    - Sep-logic tracks disjointness of state, C, D, B, T arrays
+(** Keccak state: 200 bytes (25 × u64).
+    We represent it as a list of 200 bytes for sep-logic. *)
 
-    Estimated WP proof: ~500 lines for keccak_f + ~200 for absorb/squeeze.
-    The straightline automation handles most of the mechanical work. *)
+(** spec_of for shake256_64: the top-level function.
+    Computes SHAKE-256 with 64-byte output. *)
+Global Instance spec_of_shake256_64 : spec_of "shake256_64" :=
+  fnspec! "shake256_64" out msg msg_len /
+    (out_bytes msg_bytes : list Byte.byte) (R : _ -> Prop),
+  { requires t m :=
+      m =* out_bytes$@out * msg_bytes$@msg * R /\
+      length out_bytes = 64%nat /\
+      length msg_bytes = Z.to_nat (word.unsigned msg_len);
+    ensures t' m :=
+      t = t' /\
+      exists result : list Byte.byte,
+        m =* result$@out * msg_bytes$@msg * R /\
+        length result = 64%nat
+        (* Functional correctness:
+           result = Keccak.keccak_sponge 136 Byte.x1f msg_bytes 64 *)
+  }.
+
+(** spec_of for keccak_f: the 24-round permutation.
+    Transforms 200 bytes of state in-place. *)
+Global Instance spec_of_keccak_f : spec_of "keccak_f" :=
+  fnspec! "keccak_f" state /
+    (state_bytes : list Byte.byte) (R : _ -> Prop),
+  { requires t m :=
+      m =* state_bytes$@state * R /\
+      length state_bytes = 200%nat;
+    ensures t' m :=
+      t = t' /\
+      exists state_bytes' : list Byte.byte,
+        m =* state_bytes'$@state * R /\
+        length state_bytes' = 200%nat
+        (* Functional correctness:
+           state_bytes' = Keccak.keccak_f applied to state_bytes *)
+  }.
+
+(** spec_of for squeeze: copies first 64 bytes from state to out. *)
+Global Instance spec_of_shake256_squeeze_64 : spec_of "shake256_squeeze_64" :=
+  fnspec! "shake256_squeeze_64" out state /
+    (out_bytes state_bytes : list Byte.byte) (R : _ -> Prop),
+  { requires t m :=
+      m =* out_bytes$@out * state_bytes$@state * R /\
+      length out_bytes = 64%nat /\
+      length state_bytes = 200%nat;
+    ensures t' m :=
+      t = t' /\
+      exists result : list Byte.byte,
+        m =* result$@out * state_bytes$@state * R /\
+        length result = 64%nat /\
+        result = firstn 64 state_bytes
+  }.
+
+(** WP proof for shake256_squeeze_64: 8 word loads + stores.
+    This is the simplest proof — straight-line, no loops. *)
+Lemma shake256_squeeze_64_ok :
+  program_logic_goal_for_function! shake256_squeeze_64.
+Proof.
+  (* 8 load-store pairs: straightline handles each one *)
+  repeat straightline.
+  (* Sep-logic: the output region contains the first 64 bytes of state *)
+  (* TODO: prove the 8 stores produce firstn 64 state_bytes *)
+Admitted.
+
+(** WP proof for keccak_f: 24 calls to keccak_round.
+    Each call transforms the state; the composition is keccak_f. *)
+Lemma keccak_f_ok : program_logic_goal_for_function! keccak_f.
+Proof.
+  (* 24 straightline_call invocations *)
+  repeat straightline.
+  (* Each keccak_round call preserves state length = 200 *)
+Admitted.
+
+(** WP proof for shake256_64: zero state + absorb + squeeze. *)
+Lemma shake256_64_ok : program_logic_goal_for_function! shake256_64.
+Proof.
+  repeat straightline.
+  (* 1. 25 zero-stores initialize state *)
+  (* 2. straightline_call shake256_absorb *)
+  (* 3. straightline_call shake256_squeeze_64 *)
+Admitted.
+
+(** The full WP proof chain:
+    shake256_64_ok
+      → shake256_absorb_ok (loop invariant: processed bytes)
+        → keccak_f_ok
+          → keccak_round_ok × 24
+            → keccak_theta_ok + keccak_rho_pi_ok + keccak_chi_ok + keccak_iota_ok
+      → shake256_squeeze_64_ok (8 stores, straightline)
+
+    Each leaf proof (theta, rho_pi, chi, iota) is ~50-100 lines of
+    straightline. The loop proofs (absorb, edwards_scalarmult) need
+    explicit loop invariants. Total: ~800 lines across all functions. *)

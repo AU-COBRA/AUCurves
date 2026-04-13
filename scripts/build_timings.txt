@@ -1,0 +1,33 @@
+# AUCurves Build Timings (2026-04-13, updated end of session)
+# Measured on 14GB RAM, Rocq 9.0, rocq-native opam switch
+# Format: wall_time  peak_RSS  file  notes
+#
+# === AUCurves src/ files — HEAVY (>5 min) ===
+  70+min   717MB  src/Bedrock/Curve/Secp256k1Curve_G1_bedrock.v  NOT slow itself — uncached dep CoZ.vo
+  ~9min    2.1GB  src/Bedrock/Curve/Secp256k1_G1_Add_Spec.v      WP proof, ecancel match error
+  ~8min    1.0GB  src/Bedrock/Curve/Secp256k1Curve_G1.v          FIXED: ring via change+remember
+  ~7min    451MB  src/Bedrock/Curve/BW6_761Curve_G1.v            FIXED: ring + precomputed r'/m'
+  ~5min    2.1GB  src/Bedrock/Curve/P256_G1_Add_Spec.v           ecancel match error
+  20+min   700MB  src/Theory/WordByWordMontgomery/MontgomeryCurveSpecs.v  585 lines, pull_Zmod+ring
+#
+# === AUCurves src/ files — FAST (<2 min) ===
+  <30s     758MB  src/Bedrock/Curve/Secp256k1_Wired_Specs.v      clean
+  <10s           src/Implementations/SOS/SOSMul.v                FIXED: Rocq 9 compat
+  <3s            src/Bedrock/Curve/PallasCurve_G1.v              FIXED: ring via change+remember
+  <3s            src/Bedrock/Curve/VestaCurve_G1.v               FIXED: ring via change+remember
+#
+# === fiat-crypto files ===
+    3s      12KB  fiat-crypto/.../MakeLineBridge.v                FIXED: was 10min/6GB (divergent !Zmult_mod)
+  ~2min    1.4GB  fiat-crypto/.../CubicFieldExtensions.v         clean
+  ~1min    1.4GB  fiat-crypto/.../bn254_prime.v                  clean
+#
+# === Known heavy fiat-crypto (not rebuilt, cached) ===
+# 60+min   1.8GB  fiat-crypto/.../BN254_MillerLoopOptimal.v     structural, 48 mcall
+# 30+min   2.5GB  fiat-crypto/.../LoadStoreList.v               upstream Translation infra
+# 17+min   3.5GB  fiat-crypto/.../Specs/Field.v                 upstream infra
+#  ~4GB          fiat-crypto/.../BignumShift.v                  known heavy
+#
+# === Build summary ===
+# 53/115 AUCurves files build (was 41 at session start)
+# 9 remaining errors: 3 SpecsEquiv, 2 P256, 1 bedrock, 3 bedrock2Examples
+# Full @src/all: ~10 min (with cached fiat-crypto .vo)

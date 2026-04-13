@@ -25,7 +25,7 @@ Local Coercion Z.of_nat : nat >-> Z.
 Section P256_Equiv.
 
   (* P-256 parameters *)
-  Local Definition m := Eval vm_compute in P256.p256.
+  Local Definition m := Eval vm_compute in (Z.pos P256.p256).
   Local Definition bw := 64.
   Local Definition n := 4%nat.
   Local Definition a := Eval vm_compute in ((-3) mod m)%Z.
@@ -34,8 +34,9 @@ Section P256_Equiv.
   Local Definition three_b := Eval vm_compute in (3 * b mod m)%Z.
 
   Local Notation r := (MontgomeryRingTheory.r bw).
-  Local Notation r' := (WordByWordMontgomery.r' m bw).
-  Local Notation m' := (@WordByWordMontgomery.m' m bw).
+  (* r' and m' precomputed — WordByWordMontgomery.r'/m' removed in fiat-crypto *)
+  Local Definition r' := 6277101733925179126845168871924920046849447032244165148672%Z.
+  Local Definition m' := 1%Z.
 
   (* Parameter correctness proofs *)
   Lemma a_small : a = a mod m. Proof. vm_compute. reflexivity. Qed.
@@ -54,7 +55,7 @@ Section P256_Equiv.
 
   Lemma m_prime : prime m.
   Proof.
-    change m with P256.p256.
+    change m with (Z.pos P256.p256).
     exact P256.prime_p256.
   Qed.
 

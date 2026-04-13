@@ -48,7 +48,25 @@ Definition edwards_scalarmult := func! (p_out, scalar, p_point) {
   stackalloc 40 as d_fe;
   (* d = -121665/121666 — stored as field element for to_cached *)
   (* For now: d loaded from a precomputed constant *)
-  fe25519_from_word(d_fe, $0); (* placeholder: need actual d constant *)
+  (* d = -121665/121666 mod p = 0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3 *)
+  (* Load d as a field element. For bedrock2 with 10×32-bit limbs,
+     we'd need fe25519_from_bytes with the 32-byte LE encoding.
+     For simplicity, load via from_word with the low limb and
+     successive multiplies — or use a precomputed constant in memory.
+     Here we use from_bytes with the known encoding. *)
+  stackalloc 32 as d_bytes;
+  store1(d_bytes,    $0xa3); store1(d_bytes+$1,  $0x78); store1(d_bytes+$2,  $0x59);
+  store1(d_bytes+$3, $0x13); store1(d_bytes+$4,  $0xca); store1(d_bytes+$5,  $0x4d);
+  store1(d_bytes+$6, $0xeb); store1(d_bytes+$7,  $0x75); store1(d_bytes+$8,  $0xab);
+  store1(d_bytes+$9, $0xd8); store1(d_bytes+$10, $0x41); store1(d_bytes+$11, $0x41);
+  store1(d_bytes+$12,$0x4d); store1(d_bytes+$13, $0x0a); store1(d_bytes+$14, $0x70);
+  store1(d_bytes+$15,$0x00); store1(d_bytes+$16, $0x98); store1(d_bytes+$17, $0xe8);
+  store1(d_bytes+$18,$0x79); store1(d_bytes+$19, $0x77); store1(d_bytes+$20, $0x79);
+  store1(d_bytes+$21,$0x40); store1(d_bytes+$22, $0xc7); store1(d_bytes+$23, $0x8c);
+  store1(d_bytes+$24,$0x73); store1(d_bytes+$25, $0xfe); store1(d_bytes+$26, $0x6f);
+  store1(d_bytes+$27,$0x2b); store1(d_bytes+$28, $0xee); store1(d_bytes+$29, $0x6c);
+  store1(d_bytes+$30,$0x03); store1(d_bytes+$31, $0x52);
+  fe25519_from_bytes(d_fe, d_bytes)
   to_cached(p_cached, p_point, d_fe);
 
   (* Initialize result = identity = (0, 1, 1, 0, 0) in projective XYZT *)
@@ -205,7 +223,20 @@ Definition edwards_decompress := func! (p_out, encoding) {
   (* d is hardcoded: -121665/121666 as a field element *)
   (* For bedrock2: load from constant or compute *)
   stackalloc 40 as d_fe;
-  fe25519_from_word(d_fe, $0); (* placeholder: need d constant *)
+  (* d = -121665/121666 — load from bytes (same encoding as above) *)
+  stackalloc 32 as d_enc;
+  store1(d_enc,    $0xa3); store1(d_enc+$1,  $0x78); store1(d_enc+$2,  $0x59);
+  store1(d_enc+$3, $0x13); store1(d_enc+$4,  $0xca); store1(d_enc+$5,  $0x4d);
+  store1(d_enc+$6, $0xeb); store1(d_enc+$7,  $0x75); store1(d_enc+$8,  $0xab);
+  store1(d_enc+$9, $0xd8); store1(d_enc+$10, $0x41); store1(d_enc+$11, $0x41);
+  store1(d_enc+$12,$0x4d); store1(d_enc+$13, $0x0a); store1(d_enc+$14, $0x70);
+  store1(d_enc+$15,$0x00); store1(d_enc+$16, $0x98); store1(d_enc+$17, $0xe8);
+  store1(d_enc+$18,$0x79); store1(d_enc+$19, $0x77); store1(d_enc+$20, $0x79);
+  store1(d_enc+$21,$0x40); store1(d_enc+$22, $0xc7); store1(d_enc+$23, $0x8c);
+  store1(d_enc+$24,$0x73); store1(d_enc+$25, $0xfe); store1(d_enc+$26, $0x6f);
+  store1(d_enc+$27,$0x2b); store1(d_enc+$28, $0xee); store1(d_enc+$29, $0x6c);
+  store1(d_enc+$30,$0x03); store1(d_enc+$31, $0x52);
+  fe25519_from_bytes(d_fe, d_enc)
   stackalloc 40 as dy2;
   fe25519_mul(dy2, d_fe, y2);
   stackalloc 40 as denom;
@@ -272,12 +303,39 @@ Definition xeddsa_verify := func! (result, pubkey, sig, msg, msg_len) {
   (* 5. Compute s·G via Edwards scalar mul with basepoint *)
   (* Basepoint in Edwards XYZT: (x_base, y_base, 1, x_base, y_base) *)
   stackalloc 200 as G_ed;
-  (* The Edwards basepoint x,y coordinates are known constants *)
-  fe25519_from_word(G_ed, $0);           (* placeholder: x_base *)
-  fe25519_from_word(G_ed + $40, $0);     (* placeholder: y_base *)
-  fe25519_from_word(G_ed + $80, $1);     (* Z = 1 *)
-  fe25519_from_word(G_ed + $120, $0);    (* Ta *)
-  fe25519_from_word(G_ed + $160, $0);    (* Tb *)
+  (* Edwards25519 basepoint:
+     x = 0x216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a
+     y = 0x6666666666666666666666666666666666666666666666666666666666666658 *)
+  stackalloc 32 as x_base_bytes;
+  store1(x_base_bytes,    $0x1a); store1(x_base_bytes+$1,  $0xd5); store1(x_base_bytes+$2,  $0x25);
+  store1(x_base_bytes+$3, $0x8f); store1(x_base_bytes+$4,  $0x60); store1(x_base_bytes+$5,  $0x2d);
+  store1(x_base_bytes+$6, $0x56); store1(x_base_bytes+$7,  $0xc9); store1(x_base_bytes+$8,  $0xb2);
+  store1(x_base_bytes+$9, $0xa7); store1(x_base_bytes+$10, $0x25); store1(x_base_bytes+$11, $0x95);
+  store1(x_base_bytes+$12,$0x60); store1(x_base_bytes+$13, $0xc7); store1(x_base_bytes+$14, $0x2c);
+  store1(x_base_bytes+$15,$0x69); store1(x_base_bytes+$16, $0x5c); store1(x_base_bytes+$17, $0xdc);
+  store1(x_base_bytes+$18,$0xd6); store1(x_base_bytes+$19, $0xfd); store1(x_base_bytes+$20, $0x31);
+  store1(x_base_bytes+$21,$0xe2); store1(x_base_bytes+$22, $0xa4); store1(x_base_bytes+$23, $0xc0);
+  store1(x_base_bytes+$24,$0xfe); store1(x_base_bytes+$25, $0x53); store1(x_base_bytes+$26, $0x6e);
+  store1(x_base_bytes+$27,$0xcd); store1(x_base_bytes+$28, $0xd3); store1(x_base_bytes+$29, $0x36);
+  store1(x_base_bytes+$30,$0x69); store1(x_base_bytes+$31, $0x21);
+  fe25519_from_bytes(G_ed, x_base_bytes);            (* X = x_base *)
+
+  stackalloc 32 as y_base_bytes;
+  store1(y_base_bytes,    $0x58); store1(y_base_bytes+$1,  $0x66); store1(y_base_bytes+$2,  $0x66);
+  store1(y_base_bytes+$3, $0x66); store1(y_base_bytes+$4,  $0x66); store1(y_base_bytes+$5,  $0x66);
+  store1(y_base_bytes+$6, $0x66); store1(y_base_bytes+$7,  $0x66); store1(y_base_bytes+$8,  $0x66);
+  store1(y_base_bytes+$9, $0x66); store1(y_base_bytes+$10, $0x66); store1(y_base_bytes+$11, $0x66);
+  store1(y_base_bytes+$12,$0x66); store1(y_base_bytes+$13, $0x66); store1(y_base_bytes+$14, $0x66);
+  store1(y_base_bytes+$15,$0x66); store1(y_base_bytes+$16, $0x66); store1(y_base_bytes+$17, $0x66);
+  store1(y_base_bytes+$18,$0x66); store1(y_base_bytes+$19, $0x66); store1(y_base_bytes+$20, $0x66);
+  store1(y_base_bytes+$21,$0x66); store1(y_base_bytes+$22, $0x66); store1(y_base_bytes+$23, $0x66);
+  store1(y_base_bytes+$24,$0x66); store1(y_base_bytes+$25, $0x66); store1(y_base_bytes+$26, $0x66);
+  store1(y_base_bytes+$27,$0x66); store1(y_base_bytes+$28, $0x66); store1(y_base_bytes+$29, $0x66);
+  store1(y_base_bytes+$30,$0x66); store1(y_base_bytes+$31, $0x66);
+  fe25519_from_bytes(G_ed + $40, y_base_bytes);      (* Y = y_base *)
+  fe25519_from_word(G_ed + $80, $1);                 (* Z = 1 *)
+  memmove(G_ed + $120, G_ed, $40);                   (* Ta = X *)
+  memmove(G_ed + $160, G_ed + $40, $40)              (* Tb = Y *)
 
   stackalloc 200 as sG_ed;
   edwards_scalarmult(sG_ed, sig + $32, G_ed);

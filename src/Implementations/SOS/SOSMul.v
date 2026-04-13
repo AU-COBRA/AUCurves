@@ -168,11 +168,16 @@ Module WordByWordMontgomery.
           Proof using lgr_big. clear -lgr_big; subst r. auto with zarith. Qed.
           Local Notation wprops := (@uwprops lgr lgr_big).
 
-          Local Hint Immediate (wprops) : core.
-          Local Hint Immediate (weight_0 wprops) : core.
-          Local Hint Immediate (weight_positive wprops) : core.
-          Local Hint Immediate (weight_multiples wprops) : core.
-          Local Hint Immediate (weight_divides wprops) : core.
+          Local Definition wprops_inst := wprops.
+          Local Definition weight_0_inst := weight_0 wprops.
+          Local Definition weight_positive_inst := weight_positive wprops.
+          Local Definition weight_multiples_inst := weight_multiples wprops.
+          Local Definition weight_divides_inst := weight_divides wprops.
+          Local Hint Immediate wprops_inst : core.
+          Local Hint Immediate weight_0_inst : core.
+          Local Hint Immediate weight_positive_inst : core.
+          Local Hint Immediate weight_multiples_inst : core.
+          Local Hint Immediate weight_divides_inst : core.
           Local Hint Immediate r_big : core.
 
           Lemma length_small {n v} : @small n v -> length v = n.
@@ -343,8 +348,6 @@ Module WordByWordMontgomery.
             { rewrite (surjective_pairing (Rows.mul _ _ _ _ _ _)).
               rewrite Rows.mul_partitions by (try rewrite Hsmall; auto using length_partition, Positional.length_extend_to_length with lia).
               autorewrite with push_eval.
-              rewrite Positional.eval_cons by reflexivity.
-              rewrite weight_0 by auto.
               autorewrite with push_eval zsimplify_fast.
               split; [reflexivity | ].
               rewrite uweight_S, uweight_eq_alt by lia.
@@ -569,7 +572,7 @@ Module WordByWordMontgomery.
           rewrite H2. rewrite app_nil_r. auto.
         - intros x l H2. unfold eval. rewrite app_length. simpl. rewrite Nat.add_1_r.
           assert (H3: v1 ++ l ++ [x] = (v1 ++ l) ++ [x]) by apply app_assoc. rewrite H3.
-          rewrite NPeano.Nat.add_succ_r. rewrite Positional.eval_snoc_S; [| rewrite app_length; auto]. rewrite Positional.eval_snoc_S; auto.
+          rewrite Nat.add_succ_r. rewrite Positional.eval_snoc_S; [| rewrite app_length; auto]. rewrite Positional.eval_snoc_S; auto.
           simpl. unfold eval in H2. rewrite H2. simpl.
           rewrite Z.mul_add_distr_l. rewrite Z.mul_assoc. rewrite uweight_sum_indices; auto with zarith.
           rewrite uweight_eq_alt; auto with zarith.
@@ -652,7 +655,7 @@ Local Open Scope Z_scope.
         Proof. pose proof a_small; unfold x1, S2_x1, S1; reduce_eval. Qed.
 
         Lemma S2_x1_invariant : x1 + r * eval S2 = eval S + a * eval B.
-        Proof. rewrite eval_S2_eq, eval_x1_eq. rewrite Z_div_mod_eq with (b := r); auto with zarith. Qed.
+        Proof. rewrite eval_S2_eq, eval_x1_eq. rewrite Z.div_mod with (b := r); auto with zarith. Qed.
 
     End mul_iteration_proofs.
 
@@ -785,7 +788,7 @@ Local Open Scope Z_scope.
         Proof.
             intros n1 n2. induction n2.
               - simpl; assert (H: n1 + 0 = n1) by auto with zarith; rewrite H; auto.
-              - intros l; rewrite NPeano.Nat.add_succ_r; destruct l.
+              - intros l; rewrite Nat.add_succ_r; destruct l.
                 + repeat rewrite skipn_nil; auto.
                 + simpl; auto.
         Qed.
@@ -905,7 +908,7 @@ Local Open Scope Z_scope.
 
        Lemma nat_sub: forall x y, (S x <= y)%nat -> S (y - S x) = (y - x)%nat.
        Proof.
-          intros. rewrite <- Nat.sub_succ_l. rewrite NPeano.Nat.sub_succ; auto. auto. Qed.
+          intros. rewrite <- Nat.sub_succ_l. rewrite Nat.sub_succ; auto. auto. Qed.
 
         Lemma nat_sub_0: forall y : nat, (y - 0)%nat = y.
         Proof. auto with zarith. Qed.
@@ -932,7 +935,7 @@ Local Open Scope Z_scope.
         Lemma length_fst_fst_mul_body: forall x n n1 n2, length (fst (fst x)) = n -> length (fst (fst (@mul_body n1 n2 x))) = (n - 1)%nat.
         Proof.
           intros x n n1 n2 H. destruct x, p. simpl. rewrite length_div.
-          rewrite pred_of_minus. simpl in H. auto.
+          rewrite <- Nat.sub_1_r. simpl in H. auto.
         Qed. 
           
         Lemma length_fst_fst_mul_loop_inv: forall count x, length (fst (fst x)) = R_numlimbs
@@ -1133,7 +1136,7 @@ Local Open Scope Z_scope.
         rewrite Z.add_assoc. rewrite Z.add_assoc. simpl in Heqx.
         assert (H2: forall y, Init.Nat.add O y = y) by auto with zarith. repeat rewrite H2.
         Local Close Scope Z_scope. assert (H3: forall y, ((S y) <= R_numlimbs) -> S (Init.Nat.sub R_numlimbs (S y)) = Init.Nat.sub R_numlimbs y).
-        intros. rewrite <- NPeano.Nat.sub_succ_l. 
+        intros. rewrite <- Nat.sub_succ_l. 
          rewrite Nat.sub_succ. auto. auto.
          rewrite H3. rewrite <- H'.
          rewrite <- mul_loop_next. rewrite mul_body_correct_snd_fst with (A_init := A).
@@ -1314,7 +1317,7 @@ Local Open Scope Z_scope.
       eval_loop 0 R_numlimbs (mul_loop 0 R_numlimbs (A, [], Positional.zeros (S R_numlimbs)))
         = eval (A) * eval B.
         Proof. intros H.
-            pose proof (mul_loop_eval_first A R_numlimbs) as H0. rewrite NPeano.Nat.sub_diag in H0. rewrite H0; auto.
+            pose proof (mul_loop_eval_first A R_numlimbs) as H0. rewrite Nat.sub_diag in H0. rewrite H0; auto.
             auto. pose proof length_small H as H1. rewrite <- H1. unfold first_n. rewrite List.firstn_all. auto.
         Qed.
 

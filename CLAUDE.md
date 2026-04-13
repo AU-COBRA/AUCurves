@@ -8,7 +8,7 @@
    ```
    Only ONE `dune build` can hold the `_build/.lock` at a time. Multiple builds serialize and waste time waiting.
 
-2. **Use `-j 1` for heavy files.** BignumShift (4GB), MakeLineBridge (6GB), Secp256k1_G1_Add_Spec (5GB) etc. cannot coexist with `-j 2` on 14GB RAM.
+2. **Use `-j 1` for heavy files.** BignumShift (4GB), Secp256k1_G1_Add_Spec (5GB) etc. cannot coexist with `-j 2` on 14GB RAM. MakeLineBridge is now 3 seconds (was 6GB — fixed divergent `!Zmult_mod`).
 
 3. **Kill orphan workers** from killed builds:
    ```bash

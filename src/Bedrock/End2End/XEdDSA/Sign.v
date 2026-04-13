@@ -31,6 +31,7 @@ Require Import bedrock2Examples.memmove.
 Require Import coqutil.Word.Bitwidth32.
 Require Import Crypto.Bedrock.End2End.X25519.Field25519.
 Require Import Crypto.Bedrock.End2End.X25519.clamp.
+Require Import Crypto.Bedrock.Group.ScalarMult.MontgomeryLadder.
 Local Open Scope string_scope.
 Import ListNotations Syntax.Coercions NotationsCustomEntry.
 
@@ -61,19 +62,31 @@ Definition xeddsa_sign := func! (sig_out, privkey, msg, msg_len, random) {
   fe25519_to_bytes(A_bytes, A_fe);
 
   (* 3. Nonce: r = SHAKE256(random || K || msg, 64) mod l *)
-  (* For bedrock2: concatenate inputs, call hash, reduce mod l *)
-  (* TODO: SHAKE256 bedrock2 function call *)
-  (* For now: r is computed abstractly *)
+  (* Concatenate: random (64 bytes) || K (32 bytes) || msg *)
+  stackalloc 64 as nonce_hash;
+  (* TODO: concatenate random || K || msg into temp buffer *)
+  (* For now: hash just random as placeholder *)
+  shake256_64(nonce_hash, random, $64);
+  (* TODO: reduce nonce_hash mod l (Barrett reduction) *)
+
+  (* 4. R = r · G *)
   stackalloc 40 as R_fe;
+  montladder(R_fe, nonce_hash, base);
   stackalloc 32 as R_bytes;
-  (* R = r · G *)
-  montladder(R_fe, K (* placeholder for r *), base);
   fe25519_to_bytes(R_bytes, R_fe);
 
-  (* 4-5. Challenge + response computed abstractly *)
-  (* Output signature *)
+  (* 5. e = SHAKE256(R || A || msg, 64) mod l *)
+  stackalloc 64 as challenge_hash;
+  (* TODO: concatenate R_bytes || A_bytes || msg, hash *)
+  shake256_64(challenge_hash, R_bytes, $32);
+  (* TODO: reduce challenge_hash mod l *)
+
+  (* 6. s = (r + e * K) mod l *)
+  (* TODO: scalar mul + add mod l *)
+
+  (* 7. Output signature (R || s) *)
   memmove(sig_out, R_bytes, $32);
-  memmove(sig_out + $32, K (* placeholder for s *), $32)
+  memmove(sig_out + $32, nonce_hash (* placeholder for s *), $32)
 }.
 
 (** * Specification *)

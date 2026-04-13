@@ -307,8 +307,21 @@ Definition shake256_absorb := func! (state, msg, msg_len) {
   coq:(cmd.set "i" (expr.literal 0));
   coq:(cmd.set "pos" (expr.literal 0));
   while (coq:(expr.op bopname.ltu (expr.var "i") (expr.var "msg_len"))) {
-    (* XOR msg[i] into state[pos] *)
-    coq:(cmd.seq cmd.skip cmd.skip) (* placeholder: load byte, XOR into lane *)
+    (* XOR msg[i] into state at byte position pos.
+       Lane index = pos / 8, byte shift = (pos % 8) * 8.
+       We XOR the byte (zero-extended to u64, shifted) into the lane. *)
+    coq:(cmd.set "lane_off" (expr.op bopname.and (expr.var "pos") (expr.literal (Z.lnot 7))));
+    coq:(cmd.set "byte_shift" (expr.op bopname.slu
+           (expr.op bopname.and (expr.var "pos") (expr.literal 7))
+           (expr.literal 3)));
+    coq:(cmd.set "msg_byte" (expr.load access_size.one
+           (expr.op bopname.add (expr.var "msg") (expr.var "i"))));
+    coq:(cmd.store access_size.word
+           (expr.op bopname.add (expr.var "state") (expr.var "lane_off"))
+           (expr.op bopname.xor
+              (expr.load access_size.word
+                 (expr.op bopname.add (expr.var "state") (expr.var "lane_off")))
+              (expr.op bopname.slu (expr.var "msg_byte") (expr.var "byte_shift"))))
     ;
     coq:(cmd.set "pos" (expr.op bopname.add (expr.var "pos") (expr.literal 1)));
     coq:(cmd.set "i" (expr.op bopname.add (expr.var "i") (expr.literal 1)));
@@ -319,11 +332,26 @@ Definition shake256_absorb := func! (state, msg, msg_len) {
       coq:(cmd.skip)
     }
   };
-  (* Padding: state[pos] ^= dsep (0x1F for SHAKE) *)
-  coq:(cmd.seq cmd.skip cmd.skip) (* placeholder: XOR dsep byte *)
-  ;
-  (* state[rate-1] ^= 0x80 (pad10*1 final bit) *)
-  coq:(cmd.seq cmd.skip cmd.skip) (* placeholder: XOR 0x80 *)
+  (* Padding: XOR dsep (0x1F for SHAKE-256) at byte position pos *)
+  coq:(cmd.set "lane_off" (expr.op bopname.and (expr.var "pos") (expr.literal (Z.lnot 7))));
+  coq:(cmd.set "byte_shift" (expr.op bopname.slu
+         (expr.op bopname.and (expr.var "pos") (expr.literal 7))
+         (expr.literal 3)));
+  coq:(cmd.store access_size.word
+         (expr.op bopname.add (expr.var "state") (expr.var "lane_off"))
+         (expr.op bopname.xor
+            (expr.load access_size.word
+               (expr.op bopname.add (expr.var "state") (expr.var "lane_off")))
+            (expr.op bopname.slu (expr.literal 0x1F) (expr.var "byte_shift"))));
+
+  (* XOR 0x80 at byte position rate-1 = 135 *)
+  (* Lane 135/8 = 16, byte 135%8 = 7, shift = 56 *)
+  coq:(cmd.store access_size.word
+         (expr.op bopname.add (expr.var "state") (expr.literal 128))
+         (expr.op bopname.xor
+            (expr.load access_size.word
+               (expr.op bopname.add (expr.var "state") (expr.literal 128)))
+            (expr.literal (0x80 * 2^56)))) (* 0x80 << 56 *)
   ;
   keccak_f(state)
 }.

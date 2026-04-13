@@ -53,7 +53,10 @@ Definition xeddsa_verify := func! (result, pubkey, sig, msg, msg_len) {
   fe25519_from_bytes(A_fe, pubkey);
 
   (* 2. e = SHAKE256(R || A || msg, 64) mod l *)
-  (* TODO: SHAKE256 bedrock2 call + scalar reduction *)
+  stackalloc 64 as challenge_hash;
+  (* TODO: concatenate R || A || msg into temp, hash it *)
+  shake256_64(challenge_hash, sig, $32); (* placeholder: hashes just R *)
+  (* TODO: reduce challenge_hash mod l (Barrett reduction) *)
 
   (* 3. Compute s·G *)
   stackalloc 40 as base;

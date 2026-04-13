@@ -24,7 +24,8 @@ Definition aff := "_64".
 Definition num_limbs := 6%nat.
 
 (*Rest of file should not be changed.*)
-Definition felem_copy_m : Syntax.func := (felem_copy aff num_limbs).
+Definition felem_copy_m : Syntax.func :=
+  snd (felem_copy (width:=64) aff num_limbs).
 
 Instance spec_of_felem_copy_m: spec_of felem_copy_m :=
 fun functions : list (string * (list string * list string * Syntax.cmd)) =>

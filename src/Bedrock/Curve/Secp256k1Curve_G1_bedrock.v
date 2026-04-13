@@ -67,7 +67,7 @@ Section Secp256k1_Algorithm_Equiv.
   (* Field instance for F secp_prime *)
   Local Instance secp_field :
     @field (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
-    := PrimeFieldTheorems.F.field_modulo secp_prime_is_prime.
+    := @PrimeFieldTheorems.F.field_modulo secp_prime secp_prime_is_prime.
 
   Local Instance secp_char_ge_3 :
     @Ring.char_ge (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul 3.

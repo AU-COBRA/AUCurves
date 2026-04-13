@@ -64,14 +64,16 @@ Section Pallas_Equiv.
      For Pallas: 4*0^3 + 27*5^2 = 675, which is nonzero mod p. *)
   Local Notation fp_a := (mkznz m a a_small).
   Local Notation fp_b := (mkznz m b b_small).
-  Local Notation four := (one m +m one m +m one m +m one m)%Z.
-  Local Notation twenty7 := (four *m four +m four +m four +m one m +m one m +m one m)%Z.
+  Local Infix "+m" := (add m) (at level 50).
+  Local Infix "*m" := (mul m) (at level 40).
+  Local Notation four := (one m +m one m +m one m +m one m).
+  Local Notation twenty7 := (four *m four +m four +m four +m one m +m one m +m one m).
 
   Lemma discriminant_nonzero :
     id ((four *m fp_a *m fp_a *m fp_a +m twenty7 *m fp_b *m fp_b) <> zero m).
   Proof.
-    unfold id. intro H. inversion H.
-    vm_compute in H0. discriminate.
+    unfold id. intro H.
+    apply (f_equal (@val m)) in H. vm_compute in H. discriminate.
   Qed.
 
   (* All hypotheses of CurveSpecsEquivalence.G1Equiv are satisfied.

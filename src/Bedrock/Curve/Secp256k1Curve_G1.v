@@ -78,7 +78,7 @@ Qed.
 
 Lemma secp256k1_three_b_mont_valid : WordByWordMontgomery.valid bw n m secp256k1_three_b_mont.
 Proof.
-  unfold secp256k1_three_b_mont. vm_compute. repeat split; lia.
+  unfold secp256k1_three_b_mont. cbv; repeat split; auto; intros; discriminate.
 Qed.
 
 Lemma secp256k1_a_list_valid : WordByWordMontgomery.valid bw n m secp256k1_a_list.
@@ -160,13 +160,15 @@ Proof.
   intros X1 X2 Y1 Y2 Z1 Z2 outx outy outz.
   unfold Secp256k1_add_Gallina_spec, MontgomeryCurveSpecs.BLS12_add_Gallina_spec.
   unfold Secp256k1_add_Gallina_spec_a_0.
-  assert (H0 : eval (a_list bw n a) = 0) by auto. rewrite H0.
+  assert (H0 : eval (a_list bw n a) = 0) by (cbv; reflexivity).
+  rewrite H0.
   remember (evfrom X1) as x1.
   remember (evfrom X2) as x2.
   remember (evfrom Y1) as y1.
   remember (evfrom Y2) as y2.
   remember (evfrom Z1) as z1.
   remember (evfrom Z2) as z2.
+  change (three_b_list bw n three_b) with secp256k1_three_b_list.
   remember (eval secp256k1_three_b_list) as tb.
   unfold my_mul, my_add, my_sub.
   pull_Zmod.

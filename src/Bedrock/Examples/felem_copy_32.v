@@ -24,9 +24,10 @@ Definition aff := "_32".
 Definition num_limbs := 12%nat.
 
 (*Rest of file should not be changed.*)
-Definition felem_copy_m : Syntax.func := (felem_copy aff num_limbs).
+Definition felem_copy_pair := felem_copy (width:=32) aff num_limbs.
+Definition felem_copy_m : Syntax.func := snd felem_copy_pair.
 
-Instance spec_of_felem_copy_m: spec_of felem_copy_m :=
+Instance spec_of_felem_copy_m: spec_of (fst felem_copy_pair) :=
 fun functions : list (string * (list string * list string * Syntax.cmd)) =>
     forall (welem : list Interface.word.rep)
     (pout pelem: Interface.word.rep)

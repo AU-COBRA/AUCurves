@@ -17,7 +17,24 @@ path = "examples/pairing_test.rs"
 name = "bench"
 path = "examples/bench.rs"
 
+[[example]]
+name = "multilin_test"
+path = "examples/multilin_test.rs"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
 opt-level = 3
+
+[[example]]
+name = "multilin_test_optimal"
+path = "examples/multilin_test_optimal.rs"
+[[example]]
+name = "ml_compare"
+path = "examples/ml_compare.rs"
+[[example]]
+name = "debug_test"
+path = "examples/debug_test.rs"
+[[example]]
+name = "debug2"
+path = "examples/debug2.rs"

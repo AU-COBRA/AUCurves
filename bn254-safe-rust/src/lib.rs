@@ -24,8 +24,21 @@ pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_add(out, x, y) }
 pub fn fp_sub(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_sub(out, x, y) }
 pub fn fp_mul(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_mul(out, x, y) }
 pub fn fp_square(out: &mut Fp, x: &Fp) { tower::bn254_square(out, x) }
+pub fn fp_opp(out: &mut Fp, x: &Fp) { tower::bn254_opp(out, x) }
+pub fn fp_inv(out: &mut Fp, x: &Fp) { tower::bn254_inv(out, x) }
+pub fn fp_from_word(out: &mut Fp, w: u64) { tower::bn254_from_word(out, w) }
+pub fn fp_copy(out: &mut Fp, x: &Fp) { tower::bn254_felem_copy(out, x) }
+
+pub fn fp2_add(out: &mut Fp2, x: &Fp2, y: &Fp2) { tower::bn254_Fp2_add(out, x, y) }
+pub fn fp2_sub(out: &mut Fp2, x: &Fp2, y: &Fp2) { tower::bn254_Fp2_sub(out, x, y) }
+pub fn fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) { tower::bn254_Fp2_mul(out, x, y) }
+pub fn fp2_square(out: &mut Fp2, x: &Fp2) { tower::bn254_Fp2_square(out, x) }
+pub fn fp2_inv(out: &mut Fp2, x: &Fp2) { tower::bn254_Fp2_inv(out, x) }
+pub fn fp2_opp(out: &mut Fp2, x: &Fp2) { tower::bn254_Fp2_opp(out, x) }
+
 pub fn fp12_square(out: &mut Fp12, x: &Fp12) { tower::bn254_Fp12_square(out, x) }
 pub fn fp12_mul(out: &mut Fp12, x: &Fp12, y: &Fp12) { tower::bn254_Fp12_mul(out, x, y) }
+pub fn fp12_inv(out: &mut Fp12, x: &Fp12) { tower::bn254_Fp12_inv(out, x) }
 
 pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bn254_pairing_dsd(out, p_x, p_y, q_x, q_y)
@@ -47,13 +60,13 @@ pub fn miller_loop(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
 // Once generated/bn254_safe_tower.rs contains bn254_miller_loop_optimal and
 // bn254_pairing_dsd_optimal, uncomment the block below.
 //
-// pub fn miller_loop_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
-//     tower::bn254_miller_loop_optimal(out, p_x, p_y, q_x, q_y)
-// }
-//
-// pub fn pairing_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
-//     tower::bn254_pairing_dsd_optimal(out, p_x, p_y, q_x, q_y)
-// }
+pub fn miller_loop_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    tower::bn254_miller_loop_optimal(out, p_x, p_y, q_x, q_y)
+}
+
+pub fn pairing_optimal(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    tower::bn254_pairing_dsd_optimal(out, p_x, p_y, q_x, q_y)
+}
 
 #[cfg(test)]
 mod tests {

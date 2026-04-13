@@ -136,3 +136,23 @@ Ltac rpull_Zmod_l :=
 (** Combined: try both forms *)
 Ltac rpull_Zmod_auto :=
   first [ rpull_Zmod | rpull_Zmod_l ].
+
+(** Debug: just reify and print, don't apply theorem *)
+Ltac rpull_Zmod_debug :=
+  lazymatch goal with
+  | |- ?lhs mod ?m = ?rhs mod ?m =>
+    let env := collect m lhs (@nil Z) in
+    let env := collect m rhs env in
+    let rl := reify m env lhs in
+    let rr := reify m env rhs in
+    let sl := eval compute in (strip_mod rl) in
+    let sr := eval compute in (strip_mod rr) in
+    idtac "ENV:" env;
+    idtac "LHS reified:" rl;
+    idtac "RHS reified:" rr;
+    idtac "LHS stripped:" sl;
+    idtac "RHS stripped:" sr;
+    let eq := eval compute in (zm_eqb sl sr) in
+    idtac "Equal:" eq
+  | |- ?g => idtac "Goal shape:" g
+  end.

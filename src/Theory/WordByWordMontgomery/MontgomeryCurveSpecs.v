@@ -7,6 +7,8 @@ Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Coq.micromega.Lia.
 Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Theory.WordByWordMontgomery.wbw_morphisms.
+Require Import Theory.Fields.ReflectiveZmod.
+Require Import Theory.Fields.ReflectiveZmodTac.
 
 Section G1Specs.
     Open Scope Z_scope.
@@ -232,7 +234,7 @@ Section G1Specs.
                 rewrite H, H0, H1.
                 apply pair_equal_spec; split.
                 apply pair_equal_spec; split.
-                all: unfold my_mul, my_add, my_sub; pull_Zmod; rewrite ev_three_b; rewrite ev_a; reflexivity.
+                all: unfold my_mul, my_add, my_sub; rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
                 - unfold BLS12_add_mont_spec.
                 destruct outx as [x Hx], outy as [y Hy], outz as [z Hz].
                 rewrite !mont_enc_val in H.
@@ -241,9 +243,9 @@ Section G1Specs.
                 apply pair_equal_spec in H; destruct H as [H H0].
                 apply pair_equal_spec; split.
                 apply pair_equal_spec; split.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H. push_mont. pull_Zmod. rewrite ev_three_b. rewrite ev_a. reflexivity.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H0. push_mont. pull_Zmod. rewrite ev_three_b. rewrite ev_a. reflexivity.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H1. push_mont. pull_Zmod. rewrite ev_three_b. rewrite ev_a. reflexivity.
+                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
+                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H0. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
+                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H1. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
     Qed.
 
     Lemma BLS12_add_specs_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz

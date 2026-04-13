@@ -63,49 +63,68 @@ Definition xeddsa_verify := func! (result, pubkey, sig, msg, msg_len) {
   stackalloc 40 as eA;
   montladder(eA, e_scalar, A_fe);   (* e · A *)
 
-  (* 5. Check: x(s·G) == x(R + e·A) ?
+  (* 5. Verification via Edwards arithmetic.
 
-     On the Montgomery curve, we only have x-coordinates from the ladder.
-     The verification equation s·G = R + e·A requires point addition,
-     which can't be done with x-coordinates alone (need Edwards form).
+     Since the Montgomery ladder only gives x-coordinates, and
+     point addition needs both coordinates, we use the identity:
 
-     Two approaches:
-     a) Convert to Edwards, do addition, compare (full correctness)
-     b) Use the Montgomery x-coordinate trick:
-        Compute x(s·G - R) and check it equals x(e·A)
-        This works because if s·G = R + e·A, then s·G - R = e·A.
-        But subtraction also needs the full point...
+       s·G = R + e·A  ⟺  s·G - e·A = R
 
-     For the x-coordinate-only approach, we use the equivalence:
-       s·G = R + e·A  ⟺  (s-e·a)·G = R  (where a = private key)
-     But the verifier doesn't know a.
+     Equivalently: compute s·G and e·A on the Montgomery curve
+     (x-coordinates only via ladder), then verify using the
+     relationship between x-coordinates under addition.
 
-     The CORRECT approach uses EdwardsXYZT coordinates:
-     1. Decompress R and A to Edwards XYZT points
-     2. Compute s·G in Edwards (fixed-base with precomputed table)
-     3. Compute e·A in Edwards (variable-base, double-and-add)
-     4. Compute R + e·A in Edwards (point addition from XYZT/Basic.v)
-     5. Compare s·G == R + e·A
+     For Curve25519/XEdDSA, the standard verification approach:
+       1. Compute negated_eA = (-e)·A = (l - e)·A (ladder)
+       2. Compute check = s·G + (-e)·A  (needs Edwards addition)
+       3. Compare check with R
 
-     For now: compare x-coordinates as approximation.
-     Full Edwards implementation requires importing EdwardsXYZT.v
-     operations into bedrock2 (add_precomputed_ok, double_ok — Qed). *)
+     Since we don't have Edwards addition wired yet, we use
+     the ALTERNATIVE verification:
+       Compute R' = (s - e·a_priv)·G where a_priv is unknown.
+       The verifier can't do this.
 
-  stackalloc 32 as sG_bytes;
-  fe25519_to_bytes(sG_bytes, sG);
+     CORRECT approach using only the public equation:
+       Rewrite as: s·G - R = e·A
+       Compute x(s·G) via ladder (already done: sG)
+       Compute x(e·A) via ladder (already done: eA)
+       Compute x(R) from the signature (already done: R_fe)
 
-  (* Compare x(s·G) with x(R) XOR x(e·A) — NOT correct verification!
-     This is a placeholder. Proper verification needs Edwards addition. *)
+       For Montgomery curves, there's a formula to check
+       whether x(P+Q) = x_R given x(P), x(Q), x(P-Q):
+         x(P+Q) = x_{P-Q} · ((x_P·x_Q - 1)^2) / ((x_P - x_Q)^2)
+       This is Montgomery's differential addition.
+
+       Here: P = s·G, Q = (-e)·A, so P+Q should = R if valid.
+       P-Q = s·G - (-e)·A = s·G + e·A = R + 2·e·A (wrong).
+
+       Actually the right approach: we know P-Q for the ladder step.
+       The Montgomery ladder computes x([k]P) given x(P).
+       We need: does x(s·G) = x(R + e·A)?
+
+       The simplest CORRECT method without full Edwards:
+       Negate e, compute (l-e)·A via ladder, then check
+       x(s·G + (l-e)·A) against x(R). But this still needs
+       the differential addition formula.
+
+     For this implementation: use fe25519 subtraction as an
+     APPROXIMATE check (comparing x-coordinates). A full
+     implementation would wire EdwardsXYZT.v's proven
+     add_precomputed_ok. *)
+
+  (* Compute s·G - e·A in field (x-coordinate approximation) *)
   stackalloc 40 as check;
-  (* check = fe(sG) - fe(R) - fe(eA) ... simplified *)
-  fe25519_sub(check, sG, R_fe);
-  fe25519_sub(check, check, eA);
+  fe25519_sub(check, sG, eA);
 
-  (* Check if result is zero (all limbs = 0) *)
+  (* Compare check with R: should be zero if s·G - e·A = R
+     (only works in specific cases — not generally correct for
+     x-coordinate-only verification) *)
+  fe25519_sub(check, check, R_fe);
+
+  (* Zero-test: OR all limbs *)
   stackalloc 32 as check_bytes;
   fe25519_to_bytes(check_bytes, check);
 
-  (* OR all bytes together — if zero, signature is valid *)
   coq:(cmd.set "acc" (expr.literal 0));
   coq:(cmd.set "acc" (expr.op bopname.or (expr.var "acc")
          (expr.load access_size.word (expr.var "check_bytes"))));
@@ -124,6 +143,21 @@ Definition xeddsa_verify := func! (result, pubkey, sig, msg, msg_len) {
   } else {
     store1(result, $0)  (* invalid *)
   }
+
+  (* NOTE: The x-coordinate subtraction check above is NOT the correct
+     XEdDSA verification. The correct implementation requires Edwards
+     point addition:
+       1. Decompress R, A to Edwards XYZT (using sqrt + sign bit)
+       2. Compute e·A via double-and-add in XYZT (already proved)
+       3. Add R + e·A via m1add (add_precomputed_ok, Qed)
+       4. Compute s·G via fixed-base scalar mul with precomputed table
+       5. Compare in Edwards: X1*Z2 == X2*Z1 AND Y1*Z2 == Y2*Z1
+
+     All components are proved in fiat-crypto (EdwardsXYZT.v):
+       - to_affine_m1add (Qed)
+       - m1double_correct (Qed)
+       - isomorphic_commutative_group_m1 (Qed)
+     Wiring requires fnspec! + straightline for each operation. *)
 }.
 
 (** * Scalar reduction (same as Sign.v) *)

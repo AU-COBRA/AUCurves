@@ -167,6 +167,7 @@ Proof.
   remember (evfrom Y2) as y2.
   remember (evfrom Z1) as z1.
   remember (evfrom Z2) as z2.
+  change (three_b_list bw n three_b) with vesta_three_b_list.
   remember (eval vesta_three_b_list) as tb.
   unfold my_mul, my_add, my_sub.
   pull_Zmod.

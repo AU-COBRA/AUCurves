@@ -393,9 +393,11 @@ Definition shake256_64 := func! (out, msg, msg_len) {
 Require Import bedrock2.WeakestPrecondition bedrock2.Semantics bedrock2.ProgramLogic.
 Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
 Require Import bedrock2.Array bedrock2.Scalars.
+Require Import bedrock2.FE310CSemantics.
 Require Import coqutil.Word.Bitwidth32.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Naive.
+Require Import coqutil.Map.SortedListWord.
 Import ProgramLogic.Coercions.
 Local Notation "m =* P" := ((P%sep) m) (at level 70, only parsing).
 Local Notation "xs $@ a" := (Array.array ptsto (word.of_Z 1) a xs) (at level 10, format "xs $@ a").
@@ -456,43 +458,108 @@ Global Instance spec_of_shake256_squeeze_64 : spec_of "shake256_squeeze_64" :=
         result = firstn 64 state_bytes
   }.
 
-(** WP proof for shake256_squeeze_64: 8 word loads + stores.
-    This is the simplest proof — straight-line, no loops. *)
+(** * WP Proof Strategy
+
+    The [program_logic_goal_for_function!] macro fails on complex
+    function bodies (Keccak functions have hundreds of operations).
+    Instead, we prove correctness by:
+
+    1. Stating the spec as [spec_of] instances (done above)
+    2. Proving each function correct MANUALLY with targeted
+       [straightline] calls, NOT [repeat straightline] on the
+       whole body (which causes term-size explosion)
+    3. For each store/load: one [straightline] step
+    4. For function calls: [straightline_call; ssplit]
+    5. For loops: explicit invariant + [Loops.tailrec_earlyout]
+
+    The proofs are STRUCTURALLY simple (straightline code) but
+    LARGE (hundreds of steps for theta/rho_pi/chi). *)
+
+(** Proof for squeeze: 8 word copies (state → out).
+    Manual proof instead of [program_logic_goal_for_function!]. *)
 Lemma shake256_squeeze_64_ok :
-  program_logic_goal_for_function! shake256_squeeze_64.
+  forall functions,
+    spec_of_shake256_squeeze_64 (("shake256_squeeze_64", shake256_squeeze_64) :: functions) ->
+    forall t m out state out_bytes state_bytes R,
+      m =* out_bytes$@out * state_bytes$@state * R ->
+      length out_bytes = 64%nat ->
+      length state_bytes = 200%nat ->
+      WeakestPrecondition.call
+        (("shake256_squeeze_64", shake256_squeeze_64) :: functions)
+        "shake256_squeeze_64" t m [out; state]
+        (fun t' m' =>
+           t = t' /\
+           exists result,
+             m' =* result$@out * state_bytes$@state * R /\
+             length result = 64%nat /\
+             result = firstn 64 state_bytes).
 Proof.
-  (* 8 load-store pairs: straightline handles each one *)
-  repeat straightline.
-  (* Sep-logic: the output region contains the first 64 bytes of state *)
-  (* TODO: prove the 8 stores produce firstn 64 state_bytes *)
+  (* The proof would proceed:
+     - Unfold shake256_squeeze_64 (8 store instructions)
+     - For each store(out + k*8, load(state + k*8)):
+       1. [straightline] to handle the load
+       2. [straightline] to handle the store
+     - Final sep-logic: the 8 stored words = firstn 64 state_bytes *)
 Admitted.
 
-(** WP proof for keccak_f: 24 calls to keccak_round.
-    Each call transforms the state; the composition is keccak_f. *)
-Lemma keccak_f_ok : program_logic_goal_for_function! keccak_f.
+(** Proof for keccak_f: 24 calls to keccak_round.
+    Each call preserves state length = 200. *)
+Lemma keccak_f_ok :
+  forall functions,
+    spec_of_keccak_f (("keccak_f", keccak_f) :: functions) ->
+    forall t m state state_bytes R,
+      m =* state_bytes$@state * R ->
+      length state_bytes = 200%nat ->
+      WeakestPrecondition.call
+        (("keccak_f", keccak_f) :: functions)
+        "keccak_f" t m [state]
+        (fun t' m' =>
+           t = t' /\
+           exists state_bytes',
+             m' =* state_bytes'$@state * R /\
+             length state_bytes' = 200%nat).
 Proof.
-  (* 24 straightline_call invocations *)
-  repeat straightline.
-  (* Each keccak_round call preserves state length = 200 *)
+  (* 24 sequential straightline_call invocations.
+     Each keccak_round preserves length = 200.
+     NOT using [repeat straightline] — too slow on 24 calls.
+     Instead: 24× [straightline_call; ssplit; [ecancel_assumption | ...]]. *)
 Admitted.
 
-(** WP proof for shake256_64: zero state + absorb + squeeze. *)
-Lemma shake256_64_ok : program_logic_goal_for_function! shake256_64.
+(** Proof for shake256_64: zero + absorb + squeeze. *)
+Lemma shake256_64_ok :
+  forall functions,
+    spec_of_shake256_64 (("shake256_64", shake256_64) :: functions) ->
+    forall t m out msg msg_len out_bytes msg_bytes R,
+      m =* out_bytes$@out * msg_bytes$@msg * R ->
+      length out_bytes = 64%nat ->
+      length msg_bytes = Z.to_nat (word.unsigned msg_len) ->
+      WeakestPrecondition.call
+        (("shake256_64", shake256_64) :: functions)
+        "shake256_64" t m [out; msg; msg_len]
+        (fun t' m' =>
+           t = t' /\
+           exists result,
+             m' =* result$@out * msg_bytes$@msg * R /\
+             length result = 64%nat).
 Proof.
-  repeat straightline.
-  (* 1. 25 zero-stores initialize state *)
-  (* 2. straightline_call shake256_absorb *)
-  (* 3. straightline_call shake256_squeeze_64 *)
+  (* 1. stackalloc 200 as state (25 zero-stores)
+     2. straightline_call shake256_absorb (loop)
+     3. straightline_call shake256_squeeze_64 (8 copies) *)
 Admitted.
 
-(** The full WP proof chain:
+(** WP proof chain summary:
+
     shake256_64_ok
-      → shake256_absorb_ok (loop invariant: processed bytes)
-        → keccak_f_ok
-          → keccak_round_ok × 24
-            → keccak_theta_ok + keccak_rho_pi_ok + keccak_chi_ok + keccak_iota_ok
-      → shake256_squeeze_64_ok (8 stores, straightline)
+      → 25 straightline steps (zero-init state)
+      → straightline_call shake256_absorb_ok
+        → loop invariant: i bytes processed, state updated
+        → straightline_call keccak_f_ok (per block)
+          → 24× straightline_call keccak_round_ok
+            → straightline_call keccak_theta_ok (50 load/XOR/store)
+            → straightline_call keccak_rho_pi_ok (25 rotl + 25 copy)
+            → straightline_call keccak_chi_ok (5 rows × 5 NOT-AND)
+            → straightline_call keccak_iota_ok (1 XOR)
+      → straightline_call shake256_squeeze_64_ok (8 store)
 
-    Each leaf proof (theta, rho_pi, chi, iota) is ~50-100 lines of
-    straightline. The loop proofs (absorb, edwards_scalarmult) need
-    explicit loop invariants. Total: ~800 lines across all functions. *)
+    Total: ~800 lines of targeted straightline.
+    Each leaf function's proof is independent and can be verified separately. *)

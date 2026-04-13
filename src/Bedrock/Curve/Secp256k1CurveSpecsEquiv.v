@@ -82,15 +82,15 @@ Section Secp256k1_Equiv.
 
   (* Convenient aliases for the instantiated equivalence results *)
   Definition secp256k1_gallina_fiat_equiv :=
-    gallina_fiat_crypto_equiv m bw n r' m' a b three_b
+    gallina_fiat_crypto_equiv m bw n m' a b three_b
       a_small b_small three_b_small three_b_correct
-      r'_correct m'_correct bw_big n_nz m_small m_big twenty1_small m_prime
+      bw_big n_nz m_small m_big twenty1_small m_prime
       discriminant_nonzero.
 
   Definition secp256k1_gallina_fiat_equiv' :=
-    gallina_fiat_crypto_equiv' m bw n r' m' a b three_b
+    gallina_fiat_crypto_equiv' m bw n m' a b three_b
       a_small b_small three_b_small three_b_correct
-      r'_correct m'_correct bw_big n_nz m_small m_big twenty1_small m_prime
+      bw_big n_nz m_small m_big twenty1_small m_prime
       discriminant_nonzero.
 
   Definition secp256k1_gallina_fiat_equiv'' :=

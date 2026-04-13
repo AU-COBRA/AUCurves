@@ -86,7 +86,30 @@ Local Notation "xs $@ a" := (Array.array ptsto (word.of_Z 1) a xs) (at level 10,
 
 Local Existing Instance field_parameters.
 
-(* TODO: full spec_of linking to Spec/XEdDSA.v verify equation.
-   Requires: scalar arithmetic mod l, SHAKE-256, point addition.
-   The Montgomery ladder gives x-coordinates only; full verification
-   needs Edwards coordinates (from EdwardsXYZT.v, already proved). *)
+Local Existing Instance field_parameters.
+
+(** Specification: XEdDSA signature verification.
+    Checks s·G == R + e·A where e = SHAKE256(R || A || msg, 64) mod l. *)
+
+Definition xeddsa_verify_spec (pubkey sig msg : list Byte.byte) : bool :=
+  (* The functional spec:
+       A_ed = Montgomery_to_Edwards(pubkey)
+       R = decompress(sig[0..32])
+       s = decode_scalar(sig[32..64])
+       e = SHAKE256(R || A_ed || msg, 64) mod l
+       check: s · G == R + e · A_ed
+     For now abstract. *)
+  true. (* placeholder *)
+
+(** The WP proof requires:
+    1. Edwards point decompression (from EdwardsXYZT.v, proved)
+    2. Montgomery→Edwards conversion (EdwardsMontgomeryIsomorphism, proved)
+    3. SHAKE-256 bedrock2 call (blocked on bedrock2 Keccak)
+    4. Edwards point addition for R + e·A (from EdwardsXYZT.v, proved)
+    5. Double scalar multiplication (Straus, variable-time OK)
+
+    Components 1, 2, 4 have Rocq proofs. Component 3 is blocked.
+    Component 5 is standard (sum of two scalar muls). *)
+
+(* TODO: Lemma xeddsa_verify_ok : program_logic_goal_for_function! xeddsa_verify.
+   Blocked on: bedrock2 SHAKE-256 + Edwards point addition wiring. *)

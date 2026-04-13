@@ -91,9 +91,36 @@ Local Existing Instance field_parameters.
 (** XEdDSA signature = (R_bytes, s_bytes), 64 bytes total.
     Spec links to XEdDSA.v's functional definition. *)
 
-(* TODO: full spec_of linking to Spec/XEdDSA.v
-   The spec requires:
-   - Scalar arithmetic mod l (for r, e, s)
-   - SHAKE-256 hash function (for nonce and challenge)
-   - Basepoint multiplication (for R = r·G, A = K·G)
-   All components are available; assembly is needed. *)
+Local Existing Instance field_parameters.
+
+(** Specification: XEdDSA signature generation.
+    Links to the functional spec in Spec/XEdDSA.v. *)
+
+Definition xeddsa_sign_spec (privkey msg random : list Byte.byte) :
+  list Byte.byte (* 64-byte signature (R || s) *) :=
+  (* The functional spec computes:
+       K = clamp(privkey)
+       A = K · G
+       r = SHAKE256(random || K || msg, 64) mod l
+       R = r · G
+       e = SHAKE256(R_bytes || A_bytes || msg, 64) mod l
+       s = (r + e · K) mod l
+       output = R_bytes || s_bytes *)
+  (* For now, this is abstract — the concrete computation uses
+     bedrock2 field ops + SHAKE-256 (verified Keccak). *)
+  List.repeat Byte.x00 64. (* placeholder *)
+
+(** The WP proof requires a bedrock2 implementation of SHAKE-256.
+    The Keccak permutation is verified in Rocq (Keccak.v), but the
+    bedrock2 C-level implementation (absorb/squeeze loop) is not yet
+    written. Once available, the proof follows straightline + sep-logic.
+
+    For the scalar arithmetic (mod l reduction), we need:
+    - Barrett reduction or similar for 512-bit → 253-bit reduction
+    - This can reuse fiat-crypto's scalar field synthesis
+
+    The WP proof structure mirrors x25519_ok exactly:
+    repeat straightline → straightline_call per function → ecancel. *)
+
+(* TODO: Lemma xeddsa_sign_ok : program_logic_goal_for_function! xeddsa_sign.
+   Blocked on: bedrock2 SHAKE-256 implementation. *)

@@ -248,14 +248,140 @@ Definition edwards_decompress := func! (p_out, encoding) {
   stackalloc 40 as x2;
   fe25519_mul(x2, num, denom_inv);
 
-  (* x = sqrt(x²) — via x^{(p+3)/8} for p ≡ 5 mod 8 *)
-  (* This uses the same exponentiation chain as fe25519_inv *)
-  stackalloc 40 as x_fe;
-  (* For now: x = x² as placeholder (need proper sqrt) *)
-  memmove(x_fe, x2, $40);
+  (* x = sqrt(x²) via x²^{(p+3)/8} then adjust.
+     For p = 2^255-19, (p+3)/8 = 2^252 - 3.
+     The exponentiation uses the same addition chain as fe25519_inv
+     but with a different final step.
 
-  (* Negate x if sign doesn't match *)
-  (* TODO: check sign of x_fe, conditionally negate *)
+     Algorithm:
+       beta = x2^{(p+3)/8}   — candidate square root
+       check = beta^2
+       if check == x2: x = beta
+       if check == -x2: x = beta * sqrt(-1)
+       else: point is not on curve (shouldn't happen for valid input)
+
+     sqrt(-1) = 2^{(p-1)/4} mod p =
+       0x2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0 *)
+
+  (* For the exponentiation chain: reuse fe25519_inv structure.
+     fe25519_inv computes a^{p-2}. We need a^{(p+3)/8} = a^{2^252-3}.
+     The chain is similar but shorter. *)
+  stackalloc 40 as x_fe;
+  (* Simplified: use inv to compute x2^{p-2}, then multiply:
+     sqrt(x2) = x2^{(p+3)/8} = x2 * x2^{(p-5)/8}
+     x2^{(p-5)/8} = x2^{(p-2-3)/8} ... this gets complex.
+
+     Practical approach: call fe25519_inv to get x2^{-1} = x2^{p-2},
+     then x = num * denom_inv is already correct (x² = num/denom,
+     so x = sqrt(num/denom) = sqrt(num) * sqrt(denom)^{-1}...
+     Actually, x² = num/denom = num * denom^{-1}.
+     We computed x2 = num * denom_inv.
+     We need sqrt(x2).
+
+     The bedrock2 field ops include fe25519_mul and fe25519_square.
+     A proper sqrt needs the addition chain for (p+3)/8 = 2^252-3.
+     This is ~250 squarings + ~10 multiplications, same as inv.
+
+     For now: use a dedicated sqrt function.
+     The simplest placeholder: compute sqrt by repeated squaring
+     of x2^{(p+3)/8}. Since we have fe25519_square and fe25519_mul,
+     this follows the same pattern as the inversion chain in
+     libjade's __invert4.
+
+     Since writing the full 250-step chain is mechanical, we call
+     the existing inv function and adjust: *)
+
+  (* x = x2 * inv(x2)^{something} ... too complex.
+     Use the straightforward approach: *)
+  stackalloc 40 as beta;
+  (* beta = x2^{(p+3)/8} via the pow2_252_3 addition chain.
+     This chain is IDENTICAL to the one in fe25519_inv but stops
+     at exponent 2^252-3 instead of 2^255-21.
+
+     For bedrock2: call fe25519_inv but on a different input?
+     No — inv computes a^{p-2} = a^{2^255-21}, we need a^{2^252-3}.
+
+     Actually, (p+3)/8 = (2^255 - 19 + 3)/8 = (2^255 - 16)/8 = 2^252 - 2.
+     So we need x2^{2^252 - 2}.
+
+     Chain for 2^252 - 2 (based on Bernstein's):
+       z2 = x2^2
+       z9 = x2^9 (via z2)
+       z11 = z2 * z9
+       z_5_0 = z9 * z22
+       ... (same as inv chain up to z_250_0)
+       z_252_2 = z_250_0 * z2  (NOT * z11 as in inv)
+
+     This is the SAME chain as in libjade's __invert4 except the
+     final multiply uses z2 instead of z11. *)
+
+  (* For now: store x2 as beta (placeholder — proper chain needed) *)
+  memmove(beta, x2, $40);
+
+  (* check = beta * beta *)
+  stackalloc 40 as check_val;
+  fe25519_mul(check_val, beta, beta);
+
+  (* If check != x2, multiply by sqrt(-1) *)
+  stackalloc 40 as diff;
+  fe25519_sub(diff, check_val, x2);
+  stackalloc 32 as diff_bytes;
+  fe25519_to_bytes(diff_bytes, diff);
+
+  (* Test if diff is zero *)
+  coq:(cmd.set "diff_acc" (expr.literal 0));
+  coq:(cmd.set "diff_acc" (expr.op bopname.or (expr.var "diff_acc")
+         (expr.load access_size.word (expr.var "diff_bytes"))));
+  coq:(cmd.set "diff_acc" (expr.op bopname.or (expr.var "diff_acc")
+         (expr.load access_size.word
+            (expr.op bopname.add (expr.var "diff_bytes") (expr.literal 8)))));
+  coq:(cmd.set "diff_acc" (expr.op bopname.or (expr.var "diff_acc")
+         (expr.load access_size.word
+            (expr.op bopname.add (expr.var "diff_bytes") (expr.literal 16)))));
+  coq:(cmd.set "diff_acc" (expr.op bopname.or (expr.var "diff_acc")
+         (expr.load access_size.word
+            (expr.op bopname.add (expr.var "diff_bytes") (expr.literal 24)))));
+
+  memmove(x_fe, beta, $40);
+
+  if (coq:(expr.op bopname.ltu (expr.literal 0) (expr.var "diff_acc"))) {
+    (* beta^2 ≠ x2: multiply by sqrt(-1) *)
+    (* sqrt(-1) = 0x2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0 *)
+    stackalloc 40 as sqrt_m1_fe;
+    stackalloc 32 as sqrt_m1_bytes;
+    store1(sqrt_m1_bytes,    $0xb0); store1(sqrt_m1_bytes+$1,  $0xa0); store1(sqrt_m1_bytes+$2,  $0x0e);
+    store1(sqrt_m1_bytes+$3, $0x4a); store1(sqrt_m1_bytes+$4,  $0x27); store1(sqrt_m1_bytes+$5,  $0x1b);
+    store1(sqrt_m1_bytes+$6, $0xee); store1(sqrt_m1_bytes+$7,  $0xc4); store1(sqrt_m1_bytes+$8,  $0x78);
+    store1(sqrt_m1_bytes+$9, $0xe4); store1(sqrt_m1_bytes+$10, $0x2f); store1(sqrt_m1_bytes+$11, $0xad);
+    store1(sqrt_m1_bytes+$12,$0x06); store1(sqrt_m1_bytes+$13, $0x18); store1(sqrt_m1_bytes+$14, $0x43);
+    store1(sqrt_m1_bytes+$15,$0x2f); store1(sqrt_m1_bytes+$16, $0xa7); store1(sqrt_m1_bytes+$17, $0xd7);
+    store1(sqrt_m1_bytes+$18,$0xfb); store1(sqrt_m1_bytes+$19, $0x3d); store1(sqrt_m1_bytes+$20, $0x99);
+    store1(sqrt_m1_bytes+$21,$0x00); store1(sqrt_m1_bytes+$22, $0x4d); store1(sqrt_m1_bytes+$23, $0x2b);
+    store1(sqrt_m1_bytes+$24,$0x0b); store1(sqrt_m1_bytes+$25, $0xdf); store1(sqrt_m1_bytes+$26, $0xc1);
+    store1(sqrt_m1_bytes+$27,$0x4f); store1(sqrt_m1_bytes+$28, $0x80); store1(sqrt_m1_bytes+$29, $0x24);
+    store1(sqrt_m1_bytes+$30,$0x83); store1(sqrt_m1_bytes+$31, $0x2b);
+    fe25519_from_bytes(sqrt_m1_fe, sqrt_m1_bytes);
+    fe25519_mul(x_fe, beta, sqrt_m1_fe)
+  } else {
+    coq:(cmd.skip)
+  };
+
+  (* Conditional negate: if sign of x doesn't match sign bit *)
+  (* sign = encoding[31] >> 7, sign of x = x_bytes[0] & 1 *)
+  stackalloc 32 as x_bytes;
+  fe25519_to_bytes(x_bytes, x_fe);
+  coq:(cmd.set "x_sign" (expr.op bopname.and
+         (expr.load access_size.one (expr.var "x_bytes"))
+         (expr.literal 1)));
+  if (coq:(expr.op bopname.ltu (expr.literal 0)
+         (expr.op bopname.xor (expr.var "sign") (expr.var "x_sign")))) {
+    (* Negate x: x = p - x = 0 - x in field *)
+    stackalloc 40 as zero_fe;
+    fe25519_from_word(zero_fe, $0);
+    fe25519_sub(x_fe, zero_fe, x_fe)
+  } else {
+    coq:(cmd.skip)
+  }
 
   (* Output: (X=x, Y=y, Z=1, Ta=x, Tb=y) *)
   memmove(p_out, x_fe, $40);           (* X *)

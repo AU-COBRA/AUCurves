@@ -440,7 +440,7 @@ Module WordByWordMontgomery.
 
     Lemma length_addT: forall n1 v1 v2, length v1 = n1 -> length v2 = n1 -> length (@addT n1 v1 v2) = S (length v1).
     Proof.
-      intros n1 v1 v2 H H0. simpl. unfold addT. destruct (Rows.add weight n1 v1 v2) eqn:eq1. simpl in eq1. rewrite app_length.
+      intros n1 v1 v2 H H0. simpl. unfold addT. destruct (Rows.add weight n1 v1 v2) eqn:eq1. simpl in eq1. rewrite length_app.
       simpl. apply (f_equal (fun y => fst y)) in eq1.
       rewrite Rows.add_partitions in eq1; auto. simpl in eq1; apply (f_equal (fun y : list Z => length y)) in eq1.
       rewrite <- eq1. rewrite Partition.length_partition; auto with zarith.
@@ -529,7 +529,7 @@ Module WordByWordMontgomery.
     Proof. intros; unfold sc_small; rewrite eval_mod; auto with zarith. Qed.
 
     Lemma length_T_app: forall n v sc, length (@T_app n v sc) = S (length v).
-    Proof. intros; unfold T_app; rewrite app_length; simpl; auto with zarith. Qed.
+    Proof. intros; unfold T_app; rewrite length_app; simpl; auto with zarith. Qed.
 
     Lemma weight_S: forall i, weight (S i) = r * (weight i).
     Proof. intros. rewrite uweight_S; auto with zarith. Qed.
@@ -542,9 +542,9 @@ Module WordByWordMontgomery.
       intros v sc. generalize dependent v. pose proof (@rev_ind Z (eval_hyp sc)). apply H.
         - unfold eval_hyp. unfold eval. rewrite Positional.eval_nil. unfold Positional.eval, Associational.eval, Positional.to_associational.
           simpl; pose proof wprops as H0; destruct H0; auto with zarith.
-        - intros x l H0. unfold eval_hyp. unfold eval_hyp in H0. unfold eval. rewrite Positional.eval_snoc with (n := length (l)); auto; [| rewrite app_length; simpl; auto with zarith].
-          assert (H1: sc :: l ++ [x] = (sc :: l) ++ [x]) by auto. rewrite H1. rewrite Positional.eval_snoc with (n := length (l ++ [x])); auto; [| rewrite app_length; simpl; auto with zarith].
-          simpl. unfold eval in H0. assert (H2: length (l ++ [x]) = length (sc :: l)) by (simpl; rewrite app_length; simpl; auto with zarith).
+        - intros x l H0. unfold eval_hyp. unfold eval_hyp in H0. unfold eval. rewrite Positional.eval_snoc with (n := length (l)); auto; [| rewrite length_app; simpl; auto with zarith].
+          assert (H1: sc :: l ++ [x] = (sc :: l) ++ [x]) by auto. rewrite H1. rewrite Positional.eval_snoc with (n := length (l ++ [x])); auto; [| rewrite length_app; simpl; auto with zarith].
+          simpl. unfold eval in H0. assert (H2: length (l ++ [x]) = length (sc :: l)) by (simpl; rewrite length_app; simpl; auto with zarith).
           simpl in H2. rewrite H2. rewrite H0. simpl.
           rewrite Z.mul_add_distr_l. rewrite Z.mul_assoc.
           pose proof wprops as H3. destruct H3. rewrite (weight_S (length l)). unfold r. simpl.
@@ -570,9 +570,9 @@ Module WordByWordMontgomery.
         - unfold eval. rewrite Positional.eval_nil. rewrite Z.mul_0_r. simpl.
           repeat rewrite Z.add_0_r. Local Close Scope Z_scope. assert (H2: length v1 + 0 = length v1) by auto.
           rewrite H2. rewrite app_nil_r. auto.
-        - intros x l H2. unfold eval. rewrite app_length. simpl. rewrite Nat.add_1_r.
+        - intros x l H2. unfold eval. rewrite length_app. simpl. rewrite Nat.add_1_r.
           assert (H3: v1 ++ l ++ [x] = (v1 ++ l) ++ [x]) by apply app_assoc. rewrite H3.
-          rewrite Nat.add_succ_r. rewrite Positional.eval_snoc_S; [| rewrite app_length; auto]. rewrite Positional.eval_snoc_S; auto.
+          rewrite Nat.add_succ_r. rewrite Positional.eval_snoc_S; [| rewrite length_app; auto]. rewrite Positional.eval_snoc_S; auto.
           simpl. unfold eval in H2. rewrite H2. simpl.
           rewrite Z.mul_add_distr_l. rewrite Z.mul_assoc. rewrite uweight_sum_indices; auto with zarith.
           rewrite uweight_eq_alt; auto with zarith.
@@ -810,7 +810,7 @@ Local Open Scope Z_scope.
 
         Lemma firstn_S: forall n (l : list Z) sc l', length l = n -> firstn (S n) (l ++ [sc] ++ l') = l ++ [sc].
         Proof.
-          intros n l sc l' H. assert (H0: S n = length (l ++ [sc])) by (rewrite app_length; simpl; auto with zarith).
+          intros n l sc l' H. assert (H0: S n = length (l ++ [sc])) by (rewrite length_app; simpl; auto with zarith).
           rewrite H0. assert (length (l ++ [sc]) = length (l ++ [sc]) + 0) by auto. rewrite H1. rewrite app_assoc.
           rewrite firstn_app_2. simpl. rewrite app_nil_r. auto.
         Qed.
@@ -830,7 +830,7 @@ Local Open Scope Z_scope.
         Lemma mul_body_inv: @eval (pred_x_numlimbs + S (R_numlimbs)) (x ++ Sp) = @eval (length (firstn pred_x_numlimbs A_init)) (firstn pred_x_numlimbs A_init) * eval B ->
             @eval (S pred_x_numlimbs + S (R_numlimbs)) (snd (fst (mul_body A_x_S)) ++ snd (mul_body A_x_S)) = @eval (length (firstn (S pred_x_numlimbs) A_init)) (firstn (S pred_x_numlimbs) A_init) * eval B.
           Proof.
-            intros H. rewrite a_A'_correct. rewrite <- mul_body_correct; auto. rewrite app_length. rewrite eval_app; auto.
+            intros H. rewrite a_A'_correct. rewrite <- mul_body_correct; auto. rewrite length_app. rewrite eval_app; auto.
             simpl. rewrite length_firstn_A_init. rewrite eval_sc. rewrite Z.mul_add_distr_r. rewrite length_firstn_A_init in H. rewrite <- H.
             rewrite eval_app; ( try rewrite x_len; auto with zarith).
         Qed. 
@@ -1270,14 +1270,16 @@ Local Open Scope Z_scope.
       Proof.
         intros count H H0. assert (Alen: length A = R_numlimbs) by (apply length_small; auto). induction count.
         - pose proof (mul_body_correct (R_numlimbs - 1) 0 (A, [], (Positional.zeros (S R_numlimbs))) A) as H1. unfold mul_body in H1. unfold eval_loop. simpl in H1.
-          assert (Init.Nat.sub R_numlimbs O = R_numlimbs) as H2 by auto with zarith. simpl. rewrite <- H1; try auto. rewrite eval_zero. simpl.
+          assert (Init.Nat.sub R_numlimbs O = R_numlimbs) as H2 by auto with zarith. simpl.
+          rewrite repeat_length in H1. replace (S (R_numlimbs - 1)) with R_numlimbs in H1 by lia.
+          rewrite <- H1; try auto. rewrite eval_zero. simpl.
           rewrite (@nth_0_divmod (Init.Nat.sub R_numlimbs (S O)) A). rewrite Z.add_0_r. destruct (snd (divmod A)) eqn:eq1; auto with zarith.
           destruct (p * eval B); auto. destruct (Z.neg p * eval B); auto.
-          + rewrite nat_sub; auto. rewrite nat_sub_0. auto.
-          + reflexivity.
-          + rewrite repeat_length; auto.
-          + auto with zarith.
-          + auto with zarith.
+          all: try solve [rewrite nat_sub; [| lia]; rewrite nat_sub_0; auto
+                         | rewrite repeat_length; auto
+                         | reflexivity
+                         | lia
+                         | auto with zarith].
         - apply mul_loop_inv; auto. apply IHcount. lia.
       Qed.
 
@@ -1287,7 +1289,7 @@ Local Open Scope Z_scope.
 
       Lemma first_n_length: forall n A, (n <= length A)%nat -> length (first_n n A) = n.
       Proof.
-        intros. rewrite firstn_length. lia.
+        intros. rewrite length_firstn. lia.
       Qed.
 
       Lemma first_n_S: forall n n1 (A : T (n1)), (n < length A)%nat -> first_n (S n) A = (first_n n A) ++ [nth n A 0].

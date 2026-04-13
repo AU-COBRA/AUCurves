@@ -78,7 +78,7 @@ Qed.
 
 Lemma vesta_three_b_mont_valid : WordByWordMontgomery.valid bw n m vesta_three_b_mont.
 Proof.
-  unfold vesta_three_b_mont. vm_compute. repeat split; lia.
+  unfold vesta_three_b_mont. vm_compute. repeat split; try reflexivity; try discriminate; try lia.
 Qed.
 
 Lemma vesta_a_list_valid : WordByWordMontgomery.valid bw n m vesta_a_list.

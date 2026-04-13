@@ -27,9 +27,10 @@ Local Definition three_b := Eval vm_compute in (m - 3)%Z.
 (* Montgomery parameters -- r = 2^bw *)
 Local Notation r := (MontgomeryRingTheory.r bw).
 (* r' = modinv(r, m) satisfying (r * r') mod m = 1 *)
-Local Definition r' := Eval vm_compute in (WordByWordMontgomery.r' bw m).
+Local Definition r' :=
+  278195992567361066568563458972574736701713232822027552315673506402999277538985050533694479664088607114623548036015176152000788647378136227791728174552491099876088556381437741553050283251005005806807344525557381511790481901451195%Z.
 (* m' = modinv(-m, r) satisfying (m * m') mod r = (-1) mod r *)
-Local Definition m' := Eval vm_compute in (WordByWordMontgomery.m' bw m).
+Local Definition m' := 744663313386281181%Z.
 
 (* Correctness lemmas for Montgomery parameters *)
 Lemma a_small : a = a mod m.
@@ -77,7 +78,7 @@ Qed.
 
 Lemma bw6_761_three_b_mont_valid : WordByWordMontgomery.valid bw n m bw6_761_three_b_mont.
 Proof.
-  unfold bw6_761_three_b_mont. vm_compute. repeat split; lia.
+  unfold bw6_761_three_b_mont. vm_compute. repeat split; try reflexivity; try discriminate; try lia.
 Qed.
 
 Lemma bw6_761_a_list_valid : WordByWordMontgomery.valid bw n m bw6_761_a_list.

@@ -78,7 +78,7 @@ Qed.
 
 Lemma pallas_three_b_mont_valid : WordByWordMontgomery.valid bw n m pallas_three_b_mont.
 Proof.
-  unfold pallas_three_b_mont. vm_compute. repeat split; lia.
+  unfold pallas_three_b_mont. vm_compute. repeat split; try reflexivity; try discriminate; try lia.
 Qed.
 
 Lemma pallas_a_list_valid : WordByWordMontgomery.valid bw n m pallas_a_list.

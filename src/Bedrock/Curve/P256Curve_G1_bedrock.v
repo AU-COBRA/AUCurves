@@ -28,6 +28,7 @@ Require Import Coq.micromega.Lia.
 Require Import Crypto.Spec.WeierstrassCurve.
 Require Import Crypto.Curves.Weierstrass.Projective.
 Require Import Crypto.Curves.Weierstrass.Jacobian.Jacobian.
+Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Curves.Weierstrass.P256.
 
 Local Open Scope Z_scope.

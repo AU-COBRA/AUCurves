@@ -26,8 +26,11 @@ Local Definition three_b := Eval vm_compute in (3 * b_coeff mod m)%Z.
 
 (* Montgomery parameters — computed from fiat-crypto *)
 Local Notation r := (MontgomeryRingTheory.r bw).
-Local Notation r' := (WordByWordMontgomery.r' m bw).
-Local Notation m' := (@WordByWordMontgomery.m' m bw).
+(* m' = modinv(-m, 2^64).  For P-256: m ≡ -1 mod 2^64, so -m ≡ 1, modinv(1, 2^64) = 1. *)
+Local Definition m' : Z := 1.
+(* r' = modinv(2^64, m). *)
+Local Definition r' : Z :=
+  6277101733925179126845168871924920046849447032244165148672.
 
 (* Correctness lemmas for Montgomery parameters *)
 Lemma a_small : a = a mod m.
@@ -43,7 +46,7 @@ Lemma m'_correct : (m * m') mod r = (-1) mod r.
 Proof. vm_compute. reflexivity. Qed.
 
 Lemma bw_big : 0 < bw.
-Proof. cbv. lia. Qed.
+Proof. unfold bw. lia. Qed.
 
 Lemma n_nz : n <> 0%nat.
 Proof. cbv. discriminate. Qed.
@@ -52,7 +55,7 @@ Lemma m_small : m < r ^ (Z.of_nat n).
 Proof. vm_compute. reflexivity. Qed.
 
 Lemma m_big : 1 < m.
-Proof. vm_compute. lia. Qed.
+Proof. unfold m. vm_compute. reflexivity. Qed.
 
 (* Instantiate Montgomery curve specs for P-256 *)
 Definition p256_three_b_list := MontgomeryCurveSpecs.three_b_list bw n three_b.
@@ -75,7 +78,7 @@ Qed.
 
 Lemma p256_three_b_mont_valid : WordByWordMontgomery.valid bw n m p256_three_b_mont.
 Proof.
-  unfold p256_three_b_mont. vm_compute. repeat split; lia.
+  unfold p256_three_b_mont. cbv; repeat split; auto; intros; discriminate.
 Qed.
 
 Lemma p256_a_list_valid : WordByWordMontgomery.valid bw n m p256_a_list.

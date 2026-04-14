@@ -167,6 +167,26 @@ Theorem reflective_pull_Zmod_l : forall env m lhs rhs,
   zm_eval env m lhs mod m = (zm_eval env m rhs) mod m.
 Proof. exact reflective_pull_Zmod. Qed.
 
+(** * Main theorem (push direction): if add_mod(strip_mod(LHS)) = add_mod(strip_mod(RHS))
+    syntactically, then LHS mod m = RHS mod m.
+
+    This is the push_Zmod analogue of reflective_pull_Zmod. We first strip any
+    existing inner mods (so both sides are normalized to a mod-free core) and
+    then push mods inward to every sub-operation. This makes the check succeed
+    regardless of which side has explicit inner mods. *)
+Theorem reflective_push_Zmod : forall env m lhs rhs,
+  zm_eqb (add_mod (strip_mod lhs)) (add_mod (strip_mod rhs)) = true ->
+  zm_eval env m lhs mod m = zm_eval env m rhs mod m.
+Proof.
+  intros env m lhs rhs H.
+  apply zm_eqb_eq in H.
+  rewrite <- (strip_mod_sound env m lhs).
+  rewrite <- (strip_mod_sound env m rhs).
+  rewrite <- (add_mod_sound env m (strip_mod lhs)).
+  rewrite <- (add_mod_sound env m (strip_mod rhs)).
+  rewrite H. reflexivity.
+Qed.
+
 (** Corollary: if RHS is already of the form [_ mod m], strip the outer mod *)
 Corollary reflective_pull_Zmod_rmod : forall env m lhs inner_rhs,
   zm_eqb (strip_mod lhs) (strip_mod inner_rhs) = true ->

@@ -74,3 +74,57 @@ Lemma test_point_add (x1 x2 y1 y2 z1 z2 tb a m : Z) :
    + (a mod m * ((x1 mod m + y1 mod m) mod m * (x2 mod m + y2 mod m) mod m) mod m) mod m) mod m
   = ((x1 * x2 - y1 * y2) * tb + z1 * z2 + a * ((x1 + y1) * (x2 + y2))) mod m.
 Proof. rpull_Zmod. Qed.
+
+(** * Tests for rpush_Zmod (push direction) *)
+
+Lemma test_push_simple (a b m : Z) :
+  (a + b) mod m = ((a mod m) + (b mod m)) mod m.
+Proof. rpush_Zmod. Qed.
+
+Lemma test_push_mul (a b c m : Z) :
+  (a * (b + c)) mod m = ((a mod m) * ((b mod m) + (c mod m)) mod m) mod m.
+Proof. rpush_Zmod. Qed.
+
+(** * Tests for push_mont-style compound atoms *)
+
+(** Post-push_mont style atom: [eval (from_mont (val x))] occurring multiple
+    times.  This mimics the atom shape produced by [evfrom_val_{add,sub,mul}]
+    rewrites in [MontgomeryCurveSpecs].  Identical compound atoms must be
+    identified by the reifier even when they contain function applications. *)
+Lemma test_evfrom_atoms
+    (m : Z) (val : Z -> Z) (eval : Z -> Z) (from_mont : Z -> Z) (x y : Z) :
+  ((eval (from_mont (val x)) mod m) * (eval (from_mont (val y)) mod m)) mod m
+  = (eval (from_mont (val x)) * eval (from_mont (val y))) mod m.
+Proof. rpull_Zmod. Qed.
+
+(** Deeper post-push_mont goal: same compound atom appears multiple times on
+    both sides, mixed with arithmetic, like the point-addition goals
+    produced after [push_mont] in MontgomeryCurveSpecs. *)
+Lemma test_evfrom_atoms_deep
+    (m : Z) (val : Z -> Z) (eval : Z -> Z) (from_mont : Z -> Z)
+    (x y z : Z) :
+  (((eval (from_mont (val x)) mod m * eval (from_mont (val y)) mod m) mod m
+      + eval (from_mont (val z)) mod m) mod m
+   - (eval (from_mont (val x)) mod m * eval (from_mont (val x)) mod m) mod m) mod m
+  = (eval (from_mont (val x)) * eval (from_mont (val y))
+     + eval (from_mont (val z))
+     - eval (from_mont (val x)) * eval (from_mont (val x))) mod m.
+Proof. rpull_Zmod. Qed.
+
+(** Simulate the exact [+m/-m/*m] reification: atom form with [val (x +m y)]
+    compound.  A compound atom [eval (from_mont (val (op x y)))] should reify
+    as a single variable whenever it reappears. *)
+Section EvFromCompound.
+  Variable m : Z.
+  Variable val : Z -> Z.
+  Variable eval : Z -> Z.
+  Variable from_mont : Z -> Z.
+  Variable addm : Z -> Z -> Z.  (* stands in for [+m] *)
+
+  Lemma test_evfrom_compound_atom (x y : Z) :
+    ((eval (from_mont (val (addm x y))) mod m)
+       * (eval (from_mont (val (addm x y))) mod m)) mod m
+    = (eval (from_mont (val (addm x y)))
+       * eval (from_mont (val (addm x y)))) mod m.
+  Proof. rpull_Zmod. Qed.
+End EvFromCompound.

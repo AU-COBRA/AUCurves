@@ -1,0 +1,11 @@
+(include_subdirs qualified)
+
+(coq.theory
+ (name Theory)
+ (mode vo)
+ ; Theory has no native_compute calls — disable native to skip the
+ ; on-demand ocamlopt cascade that triggers when fiat-crypto/Rewriter-heavy
+ ; deps are imported. See feedback_never_dune_clean.md for context.
+ ; Bedrock/Curve/*_prime_certif.v keep native (use native_cast_no_check).
+ (flags -native-compiler off)
+ (theories Stdlib Crypto Coqprime))

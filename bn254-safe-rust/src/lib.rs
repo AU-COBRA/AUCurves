@@ -18,6 +18,9 @@ mod tower {
 // When not, stubs provide all ops.
 mod stubs;
 
+// Hand-coded projective Miller loop (UNVERIFIED, benchmark-only).
+pub mod projective;
+
 pub use tower::{Fp, Fp2, Fp6, Fp12};
 
 pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp) { tower::bn254_add(out, x, y) }

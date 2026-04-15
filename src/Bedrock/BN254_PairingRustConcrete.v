@@ -221,6 +221,58 @@ Definition extract_at (loc : located) (t : tower_type) (rs : rust_state)
   | right _ => None
   end.
 
+(** Foundational disjointness lemma: setting a tower variable [x] in
+    [rs] doesn't affect [extract_at loc t rs] when [loc_var loc <> x].
+    Used to show that 4 stackallocs (binding fresh names) preserve all
+    user-location lookups, and that one callee's writeback to [dest]
+    preserves all lookups at locations with different variable names. *)
+Lemma lookup_t_update_in_place_other :
+  forall env x v y,
+    String.eqb y x = false ->
+    lookup_t (update_in_place env x v) y = lookup_t env y.
+Proof.
+  induction env as [| [k w] env IH]; intros x v y Hneq; simpl.
+  - rewrite Hneq; reflexivity.
+  - destruct (String.eqb k x) eqn:Heqkx.
+    + simpl. apply String.eqb_eq in Heqkx; subst k.
+      rewrite Hneq. reflexivity.
+    + simpl. destruct (String.eqb y k) eqn:Heqyk.
+      * reflexivity.
+      * apply IH; assumption.
+Qed.
+
+Lemma extract_at_set_other :
+  forall loc t rs x v,
+    loc_var loc <> x ->
+    extract_at loc t (rs_set_tower rs x v) = extract_at loc t rs.
+Proof.
+  intros loc t rs x v Hneq.
+  unfold extract_at, located_lookup, rs_set_tower; simpl.
+  rewrite lookup_t_update_in_place_other.
+  - reflexivity.
+  - apply String.eqb_neq. exact Hneq.
+Qed.
+
+(** Writeback to [dest] preserves [extract_at] at locations whose
+    variable name differs from [dest]'s.  [located_update] (defined in
+    [SafeRustSimulation]) updates only the variable [loc_var dest]
+    via [rs_set_tower], so lookups at disjoint variable names are
+    invariant. *)
+Lemma extract_at_writeback_other :
+  forall loc t rs dest v rs',
+    loc_var loc <> loc_var dest ->
+    located_update rs dest v = Some rs' ->
+    extract_at loc t rs' = extract_at loc t rs.
+Proof.
+  intros loc t rs dest v rs' Hneq Hupd.
+  unfold located_update in Hupd.
+  destruct (lookup_t (rs_tower rs) (loc_var dest)) as [[t' v']|] eqn:Hlk;
+    [|discriminate Hupd].
+  destruct (tower_type_eq_dec t' (loc_src dest)) as [Heq_t|]; [|discriminate Hupd].
+  injection Hupd as <-.
+  apply extract_at_set_other; assumption.
+Qed.
+
 (* ================================================================ *)
 (* §5. Concrete predicates                                           *)
 (* ================================================================ *)

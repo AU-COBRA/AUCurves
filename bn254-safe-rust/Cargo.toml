@@ -47,6 +47,10 @@ path = "examples/bench_vs_production.rs"
 name = "bench_breakdown"
 path = "examples/bench_breakdown.rs"
 
+[[example]]
+name = "bench_inv_cost"
+path = "examples/bench_inv_cost.rs"
+
 [dev-dependencies]
 ark-bn254 = "0.5"
 ark-ec    = "0.5"

@@ -38,3 +38,13 @@ path = "examples/debug_test.rs"
 [[example]]
 name = "debug2"
 path = "examples/debug2.rs"
+
+[[example]]
+name = "bench_vs_production"
+path = "examples/bench_vs_production.rs"
+
+[dev-dependencies]
+ark-bn254 = "0.5"
+ark-ec    = "0.5"
+ark-ff    = "0.5"
+ark-std   = "0.5"

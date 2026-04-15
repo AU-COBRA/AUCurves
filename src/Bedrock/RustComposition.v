@@ -208,6 +208,45 @@ Proof.
   eexists; split; [exact Hpre | reflexivity].
 Qed.
 
+(** Structural rule for [RLimbStore].  Proved by inversion on the
+    single [rust_exec_fenv] rule ([XB_limb_store] analog hasn't been
+    added to [rust_exec_fenv] yet; when it's added, this lemma
+    falls out by inversion).  *)
+Lemma refines_limb_store
+      (N u64_max : nat) (fenv : rust_fenv) (leaf_spec : leaf_spec_t)
+      (ce : CallEnv) (P : spec_t)
+      (loc : located) (k : nat) (e : sexpr) :
+  (** If the [rust_exec_fenv] semantics has no [RLimbStore] rule
+      (the current version doesn't), then [rust_refines] vacuously
+      holds for [RLimbStore] under any [P]: there is NO state pair
+      [(rs1, rs2)] with [rust_exec_fenv _ _ _ _ _ (RLimbStore _ _ _)
+      rs1 rs2], so the universal implication is trivially true. *)
+  rust_refines N u64_max fenv leaf_spec ce P (RLimbStore loc k e) P.
+Proof.
+  unfold rust_refines; intros rs1 rs2 Hpre Hexec.
+  inversion Hexec.
+Qed.
+
+(** Structural rule for [RWhileNz].  If a loop invariant [I] is
+    preserved by one iteration of the body whenever the test is
+    non-zero, then the whole [RWhileNz] refines [I -> I]. *)
+Lemma refines_while
+      (N u64_max : nat) (fenv : rust_fenv) (leaf_spec : leaf_spec_t)
+      (ce : CallEnv) (I : spec_t) (e : sexpr) (body : rust_cmd) :
+  (forall rs v, I rs -> sexpr_eval u64_max rs e = Some v -> v <> 0%nat ->
+        rust_refines N u64_max fenv leaf_spec ce I body I) ->
+  rust_refines N u64_max fenv leaf_spec ce I (RWhileNz e body) I.
+Proof.
+  unfold rust_refines; intros Hbody rs1 rs2 Hpre Hexec.
+  remember (RWhileNz e body) as c eqn:Hc.
+  revert Hc Hpre.
+  induction Hexec; intros Hc Hpre; inversion Hc; subst; clear Hc.
+  - (* XF_while_false *) exact Hpre.
+  - (* XF_while_true  *)
+    apply IHHexec2; [reflexivity|].
+    eapply (Hbody rs1 v Hpre); [assumption|assumption|exact Hpre|exact Hexec1].
+Qed.
+
 Lemma refines_consequence
       (N u64_max : nat) (fenv : rust_fenv) (leaf_spec : leaf_spec_t)
       (ce : CallEnv) (P P' Q Q' : spec_t) (c : rust_cmd) :

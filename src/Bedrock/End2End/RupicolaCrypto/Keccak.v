@@ -397,7 +397,7 @@ Require Import bedrock2.FE310CSemantics.
 Require Import coqutil.Word.Bitwidth32.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Naive.
-Require Import coqutil.Map.SortedListWord.
+Require Import coqutil.Map.Interface coqutil.Map.SortedListWord.
 Import ProgramLogic.Coercions.
 Local Notation "m =* P" := ((P%sep) m) (at level 70, only parsing).
 Local Notation "xs $@ a" := (Array.array ptsto (word.of_Z 1) a xs) (at level 10, format "xs $@ a").
@@ -479,13 +479,13 @@ Global Instance spec_of_shake256_squeeze_64 : spec_of "shake256_squeeze_64" :=
     Manual proof instead of [program_logic_goal_for_function!]. *)
 Lemma shake256_squeeze_64_ok :
   forall functions,
-    spec_of_shake256_squeeze_64 (("shake256_squeeze_64", shake256_squeeze_64) :: functions) ->
+    spec_of_shake256_squeeze_64 (map.of_list (("shake256_squeeze_64", shake256_squeeze_64) :: functions)) ->
     forall t m out state out_bytes state_bytes R,
       m =* out_bytes$@out * state_bytes$@state * R ->
       length out_bytes = 64%nat ->
       length state_bytes = 200%nat ->
       WeakestPrecondition.call
-        (("shake256_squeeze_64", shake256_squeeze_64) :: functions)
+        (map.of_list (("shake256_squeeze_64", shake256_squeeze_64) :: functions))
         "shake256_squeeze_64" t m [out; state]
         (fun t' m' =>
            t = t' /\
@@ -506,12 +506,12 @@ Admitted.
     Each call preserves state length = 200. *)
 Lemma keccak_f_ok :
   forall functions,
-    spec_of_keccak_f (("keccak_f", keccak_f) :: functions) ->
+    spec_of_keccak_f (map.of_list (("keccak_f", keccak_f) :: functions)) ->
     forall t m state state_bytes R,
       m =* state_bytes$@state * R ->
       length state_bytes = 200%nat ->
       WeakestPrecondition.call
-        (("keccak_f", keccak_f) :: functions)
+        (map.of_list (("keccak_f", keccak_f) :: functions))
         "keccak_f" t m [state]
         (fun t' m' =>
            t = t' /\
@@ -528,13 +528,13 @@ Admitted.
 (** Proof for shake256_64: zero + absorb + squeeze. *)
 Lemma shake256_64_ok :
   forall functions,
-    spec_of_shake256_64 (("shake256_64", shake256_64) :: functions) ->
+    spec_of_shake256_64 (map.of_list (("shake256_64", shake256_64) :: functions)) ->
     forall t m out msg msg_len out_bytes msg_bytes R,
       m =* out_bytes$@out * msg_bytes$@msg * R ->
       length out_bytes = 64%nat ->
       length msg_bytes = Z.to_nat (word.unsigned msg_len) ->
       WeakestPrecondition.call
-        (("shake256_64", shake256_64) :: functions)
+        (map.of_list (("shake256_64", shake256_64) :: functions))
         "shake256_64" t m [out; msg; msg_len]
         (fun t' m' =>
            t = t' /\

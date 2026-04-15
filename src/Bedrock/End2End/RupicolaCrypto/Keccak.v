@@ -487,7 +487,7 @@ Lemma shake256_squeeze_64_ok :
       WeakestPrecondition.call
         (map.of_list (("shake256_squeeze_64", shake256_squeeze_64) :: functions))
         "shake256_squeeze_64" t m [out; state]
-        (fun t' m' =>
+        (fun t' m' _rets =>
            t = t' /\
            exists result,
              m' =* result$@out * state_bytes$@state * R /\
@@ -513,7 +513,7 @@ Lemma keccak_f_ok :
       WeakestPrecondition.call
         (map.of_list (("keccak_f", keccak_f) :: functions))
         "keccak_f" t m [state]
-        (fun t' m' =>
+        (fun t' m' _rets =>
            t = t' /\
            exists state_bytes',
              m' =* state_bytes'$@state * R /\
@@ -536,7 +536,7 @@ Lemma shake256_64_ok :
       WeakestPrecondition.call
         (map.of_list (("shake256_64", shake256_64) :: functions))
         "shake256_64" t m [out; msg; msg_len]
-        (fun t' m' =>
+        (fun t' m' _rets =>
            t = t' /\
            exists result,
              m' =* result$@out * msg_bytes$@msg * R /\

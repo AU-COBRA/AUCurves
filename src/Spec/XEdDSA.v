@@ -115,10 +115,38 @@ Module XEdDSA.
 
         This holds by linearity of scalar multiplication. *)
 
-    (* TODO: State and prove correctness assuming scalar_mul distributes
-       over scalar addition:
-         (a + b) · G = a·G ⊕ b·G
-       This is [Hierarchy.Group.homomorphism] in fiat-crypto. *)
+    (** Assumptions for correctness: scalar-multiplication is a
+        homomorphism from the scalar ring to the point group. *)
+    Context
+      (scalar_mul_add :
+         forall n m P, point_eq (scalar_mul (Sadd n m) P)
+                                (point_add (scalar_mul n P) (scalar_mul m P)))
+      (scalar_mul_compose :
+         forall n m P, point_eq (scalar_mul (Smul n m) P)
+                                (scalar_mul n (scalar_mul m P)))
+      (point_eq_refl : forall P, point_eq P P)
+      (point_eq_sym : forall P Q, point_eq P Q -> point_eq Q P)
+      (point_eq_trans : forall P Q R, point_eq P Q -> point_eq Q R -> point_eq P R)
+      (point_eq_cong_add :
+         forall P Q R S,
+           point_eq P Q -> point_eq R S -> point_eq (point_add P R) (point_add Q S))
+      (scalar_mul_cong :
+         forall n P Q, point_eq P Q -> point_eq (scalar_mul n P) (scalar_mul n Q)).
+
+    Theorem sign_verify_correct :
+      forall (a r : S) (A : Point) (M : Msg),
+        point_eq A (scalar_mul a G) ->
+        verify A M (sign a A r M).
+    Proof.
+      intros a r A M HA.
+      unfold verify, sign. simpl sig_R. simpl sig_s.
+      set (e := hash_to_scalar (r · G) A M).
+      (* s · G = (r + e*a) · G ≡ r·G ⊕ (e*a)·G ≡ R ⊕ e·(a·G) ≡ R ⊕ e·A *)
+      eapply point_eq_trans; [apply scalar_mul_add|].
+      apply point_eq_cong_add; [apply point_eq_refl|].
+      eapply point_eq_trans; [apply scalar_mul_compose|].
+      apply scalar_mul_cong. apply point_eq_sym. exact HA.
+    Qed.
 
   End WithParams.
 End XEdDSA.

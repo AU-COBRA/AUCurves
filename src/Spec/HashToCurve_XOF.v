@@ -15,7 +15,7 @@ Import ListNotations.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Spec.SHA256_axiom.
 Require Import Spec.SHAKE128_axiom.
-Require Import Crypto.Spec.HashToCurve.
+Require Import Spec.HashToCurve.
 
 Local Open Scope Z_scope.
 

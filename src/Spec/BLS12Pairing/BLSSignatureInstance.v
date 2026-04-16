@@ -22,7 +22,7 @@ Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Spec.BLS12Pairing.Pairing.
 Require Import Crypto.Spec.BLS12Pairing.Bilinearity.
 Require Import Crypto.Spec.BLS12Pairing.BLSSignature.
-Require Import Crypto.Spec.HashToCurve.
+Require Import Spec.HashToCurve.
 
 Local Notation byte := Byte.byte.
 

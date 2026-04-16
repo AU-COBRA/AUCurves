@@ -54,3 +54,14 @@ rocq_mcp_cache_*.v
 # Top-level .coq-native temp cache (not under src/; see memory)
 /.coq-native/
 
+
+
+# OCaml-extraction outputs from our pipeline (large .ml, .mli, executables)
+src/Bedrock/*.ml
+src/Bedrock/*.mli
+src/Bedrock/bls12_*_main
+src/Bedrock/bn254_*_main
+src/Bedrock/bn254_*_verified
+src/Bedrock/bn254_safe_tower
+src/Bedrock/bls12_safe_tower_main
+src/Bedrock/libbn254_leaves_inner.rlib

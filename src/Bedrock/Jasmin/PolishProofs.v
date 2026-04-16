@@ -1324,4 +1324,26 @@ Section WithWordCmd.
     - inversion H; subst. apply jeval_decl. apply IHc; auto.
   Qed.
 
+  (* =================================================================== *)
+  (* End-to-end demo at the cmd level: zero-conjecture soundness for a   *)
+  (* concrete [jasmin_cmd] program containing a MUL/MULHUU pair.         *)
+  (* =================================================================== *)
+
+  (** The cmd-level analog of [MulxSoundness.demo_lower_sound]: same
+      concrete program, but stated against [jeval] and [lower_mulx_pairs_cmd]
+      rather than the list-level forms.  Proved without any conjectures
+      by composing [demo_strong_check] with [scan_mulx_pairs_valid_strong]
+      and [lower_mulx_pairs_cmd_correct_via_scan_check]. *)
+  Theorem demo_cmd_lower_sound :
+    forall env1 env2,
+      jeval env1 MulxSoundness.demo_body env2 ->
+      jeval env1 (lower_mulx_pairs_cmd MulxSoundness.demo_body) env2.
+  Proof.
+    intros env1 env2 H.
+    apply lower_mulx_pairs_cmd_correct_via_scan_check; [|exact H].
+    cbn [scan_output_valid_cmd MulxSoundness.demo_body cmd_to_list app].
+    apply MulxSoundness.scan_mulx_pairs_valid_strong.
+    apply MulxSoundness.demo_strong_check.
+  Qed.
+
 End WithWordCmd.

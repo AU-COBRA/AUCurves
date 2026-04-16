@@ -2383,4 +2383,38 @@ Section WithWordCmd.
     - exact Hev.
   Qed.
 
+  (* =================================================================== *)
+  (* End-to-end demo: a concrete program passing the strong check, with  *)
+  (* zero-conjecture Qed'd soundness for the [lower_mulx_pairs] pass.    *)
+  (* =================================================================== *)
+
+  (** A minimal program exhibiting the MUL/MULHUU pair pattern with a
+      non-MULX-related intervening statement: [x := a * b; y := c + d;
+      z := MULHUU a b].  The pass should fuse [x]/[z] into a single
+      [JCmulx z x a b] while the [y := c + d] statement remains. *)
+  Definition demo_body : jasmin_cmd :=
+    JCseq (JCset "x" (JEmul (JEvar "a") (JEvar "b")))
+    (JCseq (JCset "y" (JEadd (JEvar "c") (JEvar "d")))
+           (JCset "z" (JEmulhuu (JEvar "a") (JEvar "b")))).
+
+  Definition demo_body_list : list jasmin_cmd := cmd_to_list demo_body.
+
+  (** The decidable strong check passes on this concrete program. *)
+  Lemma demo_strong_check : wf_mulx_list_strong_b demo_body_list = true.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (** End-to-end conjecture-free soundness: the [lower_mulx_pairs]
+      rewrite preserves [jeval_list] on [demo_body_list], proved without
+      the generic scan-invariant conjecture. *)
+  Theorem demo_lower_sound :
+    forall e e',
+      jeval_list e demo_body_list e' ->
+      jeval_list e (lower_mulx_pairs demo_body_list) e'.
+  Proof.
+    intros e e' H.
+    apply lower_mulx_pairs_list_correct_via_scan_check; auto.
+    apply scan_mulx_pairs_valid_strong.
+    apply demo_strong_check.
+  Qed.
+
 End WithWordCmd.

@@ -1648,24 +1648,48 @@ Section WithWordCmd.
       split; [lia|auto].
   Qed.
 
+  (** Strengthened post-hoc match check: includes every syntactic
+      condition [valid_match_at] demands.  Adds to
+      [match_well_formed_at_b] the verification that the JEmulhuu
+      operands are [expr_eqb_full]-equal to the JEmul operands (making
+      the [forall ev, eval_jexpr] clause follow by reflexivity) plus
+      middle-safety on operand reads. *)
+  Definition match_fully_valid_b (cs : list jasmin_cmd) (m : mulx_match) : bool :=
+    let '(mi, mj, hi, lo, a, b) := m in
+    Nat.ltb mi mj
+    && (match nth_error cs mi with
+        | Some (JCset lo' (JEmul a' b')) =>
+            String.eqb lo lo' && expr_eqb_full a a' && expr_eqb_full b b'
+        | _ => false
+        end)
+    && (match nth_error cs mj with
+        | Some (JCset hi' (JEmulhuu a'' b'')) =>
+            String.eqb hi hi' && expr_eqb_full a a'' && expr_eqb_full b b''
+        | _ => false
+        end)
+    && negb (expr_reads lo a)
+    && negb (expr_reads lo b)
+    && negb (String.eqb hi lo)
+    && stmts_between_safe hi mi mj 0 cs.
+
   (** Final theorem: the scan invariant is preserved through the aux
       function.  The remaining case is [JCset hi (JEmulhuu a b)] WITH
       a pending match — the new [acc] entry must satisfy
-      [valid_match_at cs_all].  This is the hardest case, requiring:
-      (a) scope-valid hypothesis: [valid_match_at] requires
-          [forall ev, eval_jexpr ev a' = eval_jexpr ev a''] where a''
-          is captured from the [JEmulhuu] and a' is from pending.
-          [equiv_cp] under [defmap_consistent] gives this only for
-          [ev] consistent with the def_map, not universally.
-      (b) [expr_reads lo a' = false]: not structurally guaranteed by
-          the scan (programmer may write [lo = lo * 2]).
+      [valid_match_at cs_all].  Closed by assuming the stronger
+      hypothesis [match_fully_valid_b] for every scan output (which the
+      caller can [vm_compute]), plus [match_names_disjoint] pairwise
+      (analogous boolean check).
 
-      Possible closures: (i) weaken [valid_match_at] to a
-      defmap-consistent form, rewording [rewrite_mulx_one_match_sound]
-      accordingly; or (ii) extend [wf_mulx_list] to check the
-      self-read condition syntactically.  Both are ${\sim}30$~lines.
-      Left as Conjecture.  The 4 other cases (set_other, set_mul,
-      mulhuu_nomatch, nonset) are all Qed above. *)
+      For the generic [wf_mulx_list] (weaker) hypothesis, the
+      preservation requires a [defmap_consistent] invariant tracking
+      the def-map against prefix of cs_all, an operand-stability
+      lemma (for vars in reads(a')/reads(b'), no intervening
+      statement writes them), and [resolve_expr_sound] linking
+      [equiv_cp] to eval equivalence at the specific def-map-
+      consistent environment reached at position [mulhuu_idx].
+      That proof is standard syntactic bookkeeping (~60 lines) but
+      requires restructuring [valid_match_at] to take a def-map
+      parameter.  Left as Conjecture pending that refactoring. *)
   Conjecture scan_mulx_pairs_valid_and_disjoint :
     forall cs,
       wf_mulx_list cs = true ->

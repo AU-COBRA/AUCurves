@@ -1889,22 +1889,54 @@ Section WithWordCmd.
   Lemma expr_reads_all_safe_implies :
     forall hi1 lo1 a1 b1 op,
       expr_reads_all_safe hi1 lo1 a1 b1 op = true ->
-      forall x, expr_reads x op = true ->
-      x <> hi1 /\ x <> lo1 /\ expr_reads x a1 = false /\ expr_reads x b1 = false.
+      forall y, expr_reads y op = true ->
+      y <> hi1 /\ y <> lo1 /\ expr_reads y a1 = false /\ expr_reads y b1 = false.
   Proof.
-    intros hi1 lo1 a1 b1 op. induction op; intros H y Hre; simpl in *;
-      try discriminate;
-      try (apply Bool.orb_true_iff in Hre as [Ha|Hb];
-           apply andb_prop in H as [Ha' Hb'];
-           [apply IHop1; auto | apply IHop2; auto]).
-    - apply String.eqb_eq in Hre. subst.
-      apply andb_prop in H as [H Hy_b1].
-      apply andb_prop in H as [H Hy_a1].
-      apply andb_prop in H as [Hy_hi1 Hy_lo1].
-      apply negb_true_iff in Hy_hi1, Hy_lo1, Hy_a1, Hy_b1.
-      apply String.eqb_neq in Hy_hi1, Hy_lo1.
+    intros hi1 lo1 a1 b1 op.
+    induction op; intros H y Hry; simpl in H, Hry.
+    - (* JEvar x *)
+      apply String.eqb_eq in Hry. subst y.
+      apply andb_prop in H as [H Hb].
+      apply andb_prop in H as [H Ha].
+      apply andb_prop in H as [Hhi Hlo].
+      apply negb_true_iff in Hhi, Hlo, Ha, Hb.
+      apply String.eqb_neq in Hhi, Hlo.
       repeat split; auto.
-    - apply IHop; auto.
+    - (* JElit *) discriminate.
+    - (* JEadd *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEsub *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEmul *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEmulhuu *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEand *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEor *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JExor *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEshr *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEshl *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEltu *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEeq *)
+      apply andb_prop in H as [Hu Hv]. apply orb_prop in Hry as [Hry|Hry];
+        [apply IHop1 | apply IHop2]; auto.
+    - (* JEload *) apply IHop; auto.
   Qed.
 
   (** Helper: pair_names_disjoint_b implies match_names_disjoint. *)

@@ -29,10 +29,10 @@ Local Open Scope Z_scope.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
-Require Import Crypto.Bedrock.Group.CurveAdd.CurveAdd.
-Require Import Crypto.Bedrock.Group.CurveAdd.PointDouble.
-Require Import Crypto.Bedrock.Group.CurveAdd.PointNegate.
-Require Import Crypto.Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
+Require Import Bedrock.Group.CurveAdd.CurveAdd.
+Require Import Bedrock.Group.CurveAdd.PointDouble.
+Require Import Bedrock.Group.CurveAdd.PointNegate.
+Require Import Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
 
 Local Notation function_t :=
   (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.

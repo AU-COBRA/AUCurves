@@ -30,9 +30,9 @@ Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.Core.
 Require Import Crypto.Arithmetic.UniformWeight.
-Require Import Crypto.Bedrock.Group.CurveAdd.StoreZero.
-Require Import Crypto.Bedrock.Group.CurveAdd.CondMoveGroup.
-Require Import Crypto.Bedrock.Group.CurveAdd.CurveAdd.
+Require Import Bedrock.Group.CurveAdd.StoreZero.
+Require Import Bedrock.Group.CurveAdd.CondMoveGroup.
+Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import bedrock2.Loops.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import Crypto.Bedrock.Field.FieldExtensions.WPTactics.
@@ -1511,7 +1511,7 @@ End GLV_Shamir_Generic.
 
 (** To instantiate for BLS12-381:
 
-    Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_G1.
+    Require Import Bedrock.Field.Synthesis.Examples.BLS12_G1.
     Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_prime.
     Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_three_b.
     Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.

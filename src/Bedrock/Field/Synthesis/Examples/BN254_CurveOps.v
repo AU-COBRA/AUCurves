@@ -16,12 +16,12 @@
 
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_three_b.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN254_G1.
-Require Import Crypto.Bedrock.Group.CurveAdd.CurveAdd.
-Require Import Crypto.Bedrock.Group.CurveAdd.PointDouble.
-Require Import Crypto.Bedrock.Group.CurveAdd.PointNegate.
-Require Import Crypto.Bedrock.Group.CurveAdd.StoreZero.
-Require Import Crypto.Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
+Require Import Bedrock.Field.Synthesis.Examples.BN254_G1.
+Require Import Bedrock.Group.CurveAdd.CurveAdd.
+Require Import Bedrock.Group.CurveAdd.PointDouble.
+Require Import Bedrock.Group.CurveAdd.PointNegate.
+Require Import Bedrock.Group.CurveAdd.StoreZero.
+Require Import Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.

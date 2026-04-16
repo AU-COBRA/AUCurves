@@ -35,7 +35,7 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_GLV_Proof.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_GLV_LoopBody.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_HornerAlgebra.
-Require Import Crypto.Bedrock.Group.CurveAdd.WNAFTable.
+Require Import Bedrock.Group.CurveAdd.WNAFTable.
 Import ListNotations.
 Local Open Scope Z_scope.
 

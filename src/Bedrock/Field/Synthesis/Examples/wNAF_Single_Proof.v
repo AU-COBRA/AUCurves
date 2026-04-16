@@ -13,7 +13,7 @@ Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
-Require Import Crypto.Bedrock.Group.CurveAdd.StoreZero.
+Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import bedrock2.Loops.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.

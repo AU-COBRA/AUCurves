@@ -1742,13 +1742,133 @@ Section WithWordCmd.
     && all_pairwise_disjoint_b (scan_mulx_pairs cs)
     && all_pair_names_disjoint_b (scan_mulx_pairs cs).
 
-  (** Bridge: match_fully_valid_b implies valid_match_at.
-      Unfolds the boolean check into the Prop form. *)
+  (** Helper: expr_eqb_full is sound. *)
+  Lemma expr_eqb_full_sound :
+    forall e1 e2, expr_eqb_full e1 e2 = true -> e1 = e2.
+  Proof.
+    induction e1; destruct e2; simpl; intros H; try discriminate;
+      try (apply String.eqb_eq in H; subst; reflexivity);
+      try (apply Z.eqb_eq in H; subst; reflexivity);
+      try (apply andb_prop in H as [Ha Hb];
+           apply IHe1_1 in Ha; apply IHe1_2 in Hb; subst; reflexivity).
+    - apply andb_prop in H as [Ha Hb].
+      apply IHe1 in Ha. apply Z.eqb_eq in Hb. subst. reflexivity.
+  Qed.
+
+  (** Helper: [stmts_between_safe] reflection. *)
+  Lemma stmts_between_safe_nth :
+    forall x mi mj n cs i c,
+      stmts_between_safe x mi mj n cs = true ->
+      (mi < n + i < mj)%nat ->
+      nth_error cs i = Some c ->
+      cmd_touches x c = false.
+  Proof.
+    intros x mi mj n cs. revert n.
+    induction cs as [|c0 cs IH]; intros n i c Hsafe Hrange Hnth.
+    - destruct i; discriminate Hnth.
+    - destruct i as [|i']; simpl in Hnth.
+      + injection Hnth as <-. simpl in Hsafe.
+        rewrite Nat.add_0_r in Hrange.
+        assert (Hrange' : (mi <? n)%nat && (n <? mj)%nat = true).
+        { apply andb_true_iff. split; apply Nat.ltb_lt; lia. }
+        rewrite Hrange' in Hsafe.
+        apply andb_prop in Hsafe as [Hhd _].
+        apply negb_true_iff in Hhd. exact Hhd.
+      + simpl in Hsafe. apply andb_prop in Hsafe as [_ Hsafe_tl].
+        apply (IH (S n) i' c); auto. lia.
+  Qed.
+
+  (** Helper: [cmd_touches_any_read] reflection. *)
+  Lemma cmd_touches_any_read_sound :
+    forall c op x,
+      cmd_touches_any_read c op = false ->
+      expr_reads x op = true ->
+      cmd_touches x c = false.
+  Proof.
+    intros c op. induction op; intros y Hct Hre; simpl in *;
+      try discriminate;
+      try (apply Bool.orb_true_iff in Hre as [Ha|Hb];
+           apply Bool.orb_false_iff in Hct as [Hca Hcb];
+           [apply IHop1; auto | apply IHop2; auto]).
+    - apply String.eqb_eq in Hre. subst. exact Hct.
+    - apply IHop; auto.
+  Qed.
+
+  (** [stmts_between_operand_safe] reflection. *)
+  Lemma stmts_between_operand_safe_nth :
+    forall op mi mj n cs i c x,
+      stmts_between_operand_safe op mi mj n cs = true ->
+      (mi < n + i < mj)%nat ->
+      nth_error cs i = Some c ->
+      expr_reads x op = true ->
+      cmd_touches x c = false.
+  Proof.
+    intros op mi mj n cs. revert n.
+    induction cs as [|c0 cs IH]; intros n i c y Hsafe Hrange Hnth Hre.
+    - destruct i; discriminate Hnth.
+    - destruct i as [|i']; simpl in Hnth.
+      + injection Hnth as <-. simpl in Hsafe.
+        rewrite Nat.add_0_r in Hrange.
+        assert (Hrange' : (mi <? n)%nat && (n <? mj)%nat = true).
+        { apply andb_true_iff. split; apply Nat.ltb_lt; lia. }
+        rewrite Hrange' in Hsafe.
+        apply andb_prop in Hsafe as [Hhd _].
+        apply negb_true_iff in Hhd.
+        eapply cmd_touches_any_read_sound; eauto.
+      + simpl in Hsafe. apply andb_prop in Hsafe as [_ Hsafe_tl].
+        apply (IH (S n) i' c y); auto. lia.
+  Qed.
+
+  (** Bridge: match_fully_valid_b implies valid_match_at. *)
   Lemma match_fully_valid_b_implies_valid :
     forall cs m,
       match_fully_valid_b cs m = true ->
       valid_match_at cs m.
-  Admitted.
+  Proof.
+    intros cs [[[[[mi mj] hi] lo] a] b] H.
+    cbn in H.
+    apply andb_prop in H as [H Hb_safe].
+    apply andb_prop in H as [H Ha_safe].
+    apply andb_prop in H as [H Hhi_safe].
+    apply andb_prop in H as [H Hhi_lo].
+    apply andb_prop in H as [H Hlo_b].
+    apply andb_prop in H as [H Hlo_a].
+    apply andb_prop in H as [H Hmj].
+    apply andb_prop in H as [Hlt Hmi].
+    apply Nat.ltb_lt in Hlt.
+    apply negb_true_iff in Hlo_a, Hlo_b, Hhi_lo.
+    apply String.eqb_neq in Hhi_lo.
+    destruct (nth_error cs mi) as [c_mi|] eqn:Enth_mi; [|discriminate Hmi].
+    destruct c_mi; try discriminate Hmi. destruct e; try discriminate Hmi.
+    apply andb_prop in Hmi as [Hmi Hb_eq].
+    apply andb_prop in Hmi as [Hlo_eq Ha_eq].
+    apply String.eqb_eq in Hlo_eq.
+    apply expr_eqb_full_sound in Ha_eq, Hb_eq.
+    subst lo. subst e1. subst e2.
+    destruct (nth_error cs mj) as [c_mj|] eqn:Enth_mj; [|discriminate Hmj].
+    destruct c_mj; try discriminate Hmj. destruct e; try discriminate Hmj.
+    apply andb_prop in Hmj as [Hmj Hb_mj_eq].
+    apply andb_prop in Hmj as [Hhi_eq Ha_mj_eq].
+    apply String.eqb_eq in Hhi_eq.
+    apply expr_eqb_full_sound in Ha_mj_eq, Hb_mj_eq.
+    subst hi. subst e1. subst e2.
+    split; [exact Hlt|].
+    split.
+    { eexists. eexists. split; [exact Enth_mi|]. split; [exact Enth_mj|].
+      split; intros ev; reflexivity. }
+    split.
+    { intros c i Hrange Hnth_i.
+      split; [|split].
+      - eapply stmts_between_safe_nth with (n := 0%nat);
+          [exact Hhi_safe| |exact Hnth_i]. lia.
+      - intros y Hreads.
+        eapply stmts_between_operand_safe_nth with (n := 0%nat);
+          [exact Ha_safe| |exact Hnth_i|exact Hreads]. lia.
+      - intros y Hreads.
+        eapply stmts_between_operand_safe_nth with (n := 0%nat);
+          [exact Hb_safe| |exact Hnth_i|exact Hreads]. lia. }
+    split; [exact Hlo_a|]. split; [exact Hlo_b|]. exact Hhi_lo.
+  Qed.
 
   (** Helper: matches_position_disjoint_b implies match_disjoint. *)
   Lemma matches_position_disjoint_b_implies :
@@ -1771,7 +1891,21 @@ Section WithWordCmd.
       expr_reads_all_safe hi1 lo1 a1 b1 op = true ->
       forall x, expr_reads x op = true ->
       x <> hi1 /\ x <> lo1 /\ expr_reads x a1 = false /\ expr_reads x b1 = false.
-  Admitted.
+  Proof.
+    intros hi1 lo1 a1 b1 op. induction op; intros H y Hre; simpl in *;
+      try discriminate;
+      try (apply Bool.orb_true_iff in Hre as [Ha|Hb];
+           apply andb_prop in H as [Ha' Hb'];
+           [apply IHop1; auto | apply IHop2; auto]).
+    - apply String.eqb_eq in Hre. subst.
+      apply andb_prop in H as [H Hy_b1].
+      apply andb_prop in H as [H Hy_a1].
+      apply andb_prop in H as [Hy_hi1 Hy_lo1].
+      apply negb_true_iff in Hy_hi1, Hy_lo1, Hy_a1, Hy_b1.
+      apply String.eqb_neq in Hy_hi1, Hy_lo1.
+      repeat split; auto.
+    - apply IHop; auto.
+  Qed.
 
   (** Helper: pair_names_disjoint_b implies match_names_disjoint. *)
   Lemma pair_names_disjoint_b_implies :

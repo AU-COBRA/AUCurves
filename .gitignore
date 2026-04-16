@@ -34,3 +34,23 @@ nra.cache
 /*.out.processed
 output-tests/*.expected.processed
 
+# OCaml extraction build artifacts
+# (.coq-native/ contents ARE tracked — see feedback_dont_touch_coq_native)
+*.cmi
+*.cmx
+*.cmxs
+*.o
+*.cmti
+!**/.coq-native/**
+
+# Rust static libs and build dirs
+*.rlib
+bls12-381-safe-rust/target/
+bn254-safe-rust/target/
+
+# MCP cache files
+rocq_mcp_cache_*.v
+
+# Top-level .coq-native temp cache (not under src/; see memory)
+/.coq-native/
+

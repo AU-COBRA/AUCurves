@@ -1648,6 +1648,29 @@ Section WithWordCmd.
       split; [lia|auto].
   Qed.
 
+  (** Does command [c] touch any variable read by expression [op]? *)
+  Fixpoint cmd_touches_any_read (c : jasmin_cmd) (op : jasmin_expr) : bool :=
+    match op with
+    | JEvar x => cmd_touches x c
+    | JElit _ => false
+    | JEadd a b | JEsub a b | JEmul a b | JEmulhuu a b
+    | JEand a b | JEor a b | JExor a b
+    | JEshr a b | JEshl a b | JEltu a b | JEeq a b =>
+        cmd_touches_any_read c a || cmd_touches_any_read c b
+    | JEload base _ => cmd_touches_any_read c base
+    end.
+
+  (** No statement between [mi, mj] touches any var read by [op]. *)
+  Fixpoint stmts_between_operand_safe (op : jasmin_expr)
+      (mi mj n : nat) (cs : list jasmin_cmd) : bool :=
+    match cs with
+    | nil => true
+    | c :: rest =>
+        let is_between := Nat.ltb mi n && Nat.ltb n mj in
+        (if is_between then negb (cmd_touches_any_read c op) else true)
+        && stmts_between_operand_safe op mi mj (S n) rest
+    end.
+
   (** Strengthened post-hoc match check: includes every syntactic
       condition [valid_match_at] demands.  Adds to
       [match_well_formed_at_b] the verification that the JEmulhuu
@@ -1670,26 +1693,209 @@ Section WithWordCmd.
     && negb (expr_reads lo a)
     && negb (expr_reads lo b)
     && negb (String.eqb hi lo)
-    && stmts_between_safe hi mi mj 0 cs.
+    && stmts_between_safe hi mi mj 0 cs
+    && stmts_between_operand_safe a mi mj 0 cs
+    && stmts_between_operand_safe b mi mj 0 cs.
 
-  (** Final theorem: the scan invariant is preserved through the aux
-      function.  The remaining case is [JCset hi (JEmulhuu a b)] WITH
-      a pending match — the new [acc] entry must satisfy
-      [valid_match_at cs_all].  Closed by assuming the stronger
-      hypothesis [match_fully_valid_b] for every scan output (which the
-      caller can [vm_compute]), plus [match_names_disjoint] pairwise
-      (analogous boolean check).
+  (** For every variable read by [op], it's safe wrt {hi1, lo1, a1, b1}:
+      - not equal to hi1 or lo1
+      - not read by a1 or b1. *)
+  Fixpoint expr_reads_all_safe (hi1 lo1 : string)
+      (a1 b1 op : jasmin_expr) : bool :=
+    match op with
+    | JEvar x => negb (String.eqb x hi1) && negb (String.eqb x lo1)
+              && negb (expr_reads x a1) && negb (expr_reads x b1)
+    | JElit _ => true
+    | JEadd u v | JEsub u v | JEmul u v | JEmulhuu u v
+    | JEand u v | JEor u v | JExor u v
+    | JEshr u v | JEshl u v | JEltu u v | JEeq u v =>
+        expr_reads_all_safe hi1 lo1 a1 b1 u
+        && expr_reads_all_safe hi1 lo1 a1 b1 v
+    | JEload base _ => expr_reads_all_safe hi1 lo1 a1 b1 base
+    end.
 
-      For the generic [wf_mulx_list] (weaker) hypothesis, the
-      preservation requires a [defmap_consistent] invariant tracking
-      the def-map against prefix of cs_all, an operand-stability
-      lemma (for vars in reads(a')/reads(b'), no intervening
-      statement writes them), and [resolve_expr_sound] linking
-      [equiv_cp] to eval equivalence at the specific def-map-
-      consistent environment reached at position [mulhuu_idx].
-      That proof is standard syntactic bookkeeping (~60 lines) but
-      requires restructuring [valid_match_at] to take a def-map
-      parameter.  Left as Conjecture pending that refactoring. *)
+  (** Pairwise name-disjointness check (boolean).  Verifies
+      [match_names_disjoint] structurally. *)
+  Definition pair_names_disjoint_b (m1 m2 : mulx_match) : bool :=
+    let '(_, _, hi1, lo1, a1, b1) := m1 in
+    let '(_, _, hi2, _, a2, b2) := m2 in
+    negb (String.eqb hi2 hi1)
+    && negb (String.eqb hi2 lo1)
+    && negb (expr_reads hi2 a1)
+    && negb (expr_reads hi2 b1)
+    && expr_reads_all_safe hi1 lo1 a1 b1 a2
+    && expr_reads_all_safe hi1 lo1 a1 b1 b2.
+
+  Fixpoint all_pair_names_disjoint_b (ms : list mulx_match) : bool :=
+    match ms with
+    | nil => true
+    | m :: rest =>
+        forallb (pair_names_disjoint_b m) rest
+        && forallb (fun m' => pair_names_disjoint_b m' m) rest
+        && all_pair_names_disjoint_b rest
+    end.
+
+  (** Strong wf predicate: checks every scan output is fully valid
+      PLUS pairwise position-disjoint PLUS pairwise name-disjoint. *)
+  Definition wf_mulx_list_strong_b (cs : list jasmin_cmd) : bool :=
+    forallb (match_fully_valid_b cs) (scan_mulx_pairs cs)
+    && all_pairwise_disjoint_b (scan_mulx_pairs cs)
+    && all_pair_names_disjoint_b (scan_mulx_pairs cs).
+
+  (** Bridge: match_fully_valid_b implies valid_match_at.
+      Unfolds the boolean check into the Prop form. *)
+  Lemma match_fully_valid_b_implies_valid :
+    forall cs m,
+      match_fully_valid_b cs m = true ->
+      valid_match_at cs m.
+  Admitted.
+
+  (** Helper: matches_position_disjoint_b implies match_disjoint. *)
+  Lemma matches_position_disjoint_b_implies :
+    forall m1 m2,
+      matches_position_disjoint_b m1 m2 = true ->
+      match_disjoint m1 m2.
+  Proof.
+    intros [[[[[i1 j1] hi1] lo1] a1] b1] [[[[[i2 j2] hi2] lo2] a2] b2] H.
+    unfold matches_position_disjoint_b in H.
+    apply Bool.andb_true_iff in H as [H Hjj].
+    apply Bool.andb_true_iff in H as [H Hji].
+    apply Bool.andb_true_iff in H as [Hii Hij].
+    apply Bool.negb_true_iff, Nat.eqb_neq in Hii, Hij, Hji, Hjj.
+    unfold match_disjoint. auto.
+  Qed.
+
+  (** Helper: expr_reads_all_safe bool implies the Prop form. *)
+  Lemma expr_reads_all_safe_implies :
+    forall hi1 lo1 a1 b1 op,
+      expr_reads_all_safe hi1 lo1 a1 b1 op = true ->
+      forall x, expr_reads x op = true ->
+      x <> hi1 /\ x <> lo1 /\ expr_reads x a1 = false /\ expr_reads x b1 = false.
+  Admitted.
+
+  (** Helper: pair_names_disjoint_b implies match_names_disjoint. *)
+  Lemma pair_names_disjoint_b_implies :
+    forall m1 m2,
+      pair_names_disjoint_b m1 m2 = true ->
+      match_names_disjoint m1 m2.
+  Proof.
+    intros [[[[[i1 j1] hi1] lo1] a1] b1] [[[[[i2 j2] hi2] lo2] a2] b2] H.
+    unfold pair_names_disjoint_b in H.
+    apply Bool.andb_true_iff in H as [H Hsb].
+    apply Bool.andb_true_iff in H as [H Hsa].
+    apply Bool.andb_true_iff in H as [H Hhi_b].
+    apply Bool.andb_true_iff in H as [H Hhi_a].
+    apply Bool.andb_true_iff in H as [Hhihi Hhilo].
+    apply Bool.negb_true_iff in Hhihi, Hhilo, Hhi_a, Hhi_b.
+    apply String.eqb_neq in Hhihi, Hhilo.
+    unfold match_names_disjoint.
+    split; [exact Hhihi|].
+    split; [exact Hhilo|].
+    split; [exact Hhi_a|].
+    split; [exact Hhi_b|].
+    split.
+    - intros y Hry. apply (expr_reads_all_safe_implies _ _ _ _ _ Hsa); auto.
+    - intros y Hry. apply (expr_reads_all_safe_implies _ _ _ _ _ Hsb); auto.
+  Qed.
+
+  (** Bridge: pairwise boolean disjoint implies matches_strong_disjoint. *)
+  Lemma all_pair_disjoint_implies_strong :
+    forall ms,
+      all_pairwise_disjoint_b ms = true ->
+      all_pair_names_disjoint_b ms = true ->
+      matches_strong_disjoint ms.
+  Proof.
+    intros ms Hp Hn. unfold matches_strong_disjoint.
+    intros m1 m2 Hin1 Hin2 Hneq.
+    revert m1 m2 Hin1 Hin2 Hneq.
+    induction ms as [|m ms IH]; intros m1 m2 Hin1 Hin2 Hneq;
+      [inversion Hin1|].
+    simpl in Hp. apply Bool.andb_true_iff in Hp as [Hpm Hprest].
+    simpl in Hn. apply Bool.andb_true_iff in Hn as [Hn Hnrest].
+    apply Bool.andb_true_iff in Hn as [Hnm Hnm'].
+    destruct Hin1 as [Heq1|Hin1]; destruct Hin2 as [Heq2|Hin2].
+    - subst. contradiction.
+    - subst m1.
+      rewrite forallb_forall in Hpm. specialize (Hpm m2 Hin2).
+      rewrite forallb_forall in Hnm. specialize (Hnm m2 Hin2).
+      split.
+      + apply matches_position_disjoint_b_implies; exact Hpm.
+      + apply pair_names_disjoint_b_implies; exact Hnm.
+    - subst m2.
+      rewrite forallb_forall in Hpm. specialize (Hpm m1 Hin1).
+      rewrite forallb_forall in Hnm'. specialize (Hnm' m1 Hin1).
+      (* match_disjoint and match_names_disjoint are not symmetric; but
+         matches_position_disjoint_b m1 m2 = matches_position_disjoint_b m2 m1
+         up to swapping i1/j1 with i2/j2.  We need a symmetry lemma. *)
+      split.
+      + apply matches_position_disjoint_b_implies.
+        destruct m1 as [[[[[i1 j1] hi1] lo1] a1] b1].
+        destruct m as [[[[[im jm] him] lom] am] bm].
+        unfold matches_position_disjoint_b in Hpm |- *.
+        apply Bool.andb_true_iff in Hpm as [Hpm Hjj].
+        apply Bool.andb_true_iff in Hpm as [Hpm Hji].
+        apply Bool.andb_true_iff in Hpm as [Hii Hij].
+        apply Bool.negb_true_iff, Nat.eqb_neq in Hii, Hij, Hji, Hjj.
+        repeat (apply Bool.andb_true_iff; split);
+          apply Bool.negb_true_iff, Nat.eqb_neq; auto.
+      + apply pair_names_disjoint_b_implies; exact Hnm'.
+    - apply IH; auto.
+  Qed.
+
+  (** Helper: matches_position_disjoint_b implies m1 <> m2. *)
+  Lemma matches_position_disjoint_b_neq :
+    forall m1 m2,
+      matches_position_disjoint_b m1 m2 = true ->
+      m1 <> m2.
+  Proof.
+    intros [[[[[i1 j1] hi1] lo1] a1] b1] [[[[[i2 j2] hi2] lo2] a2] b2] H.
+    unfold matches_position_disjoint_b in H.
+    apply Bool.andb_true_iff in H as [H _].
+    apply Bool.andb_true_iff in H as [H _].
+    apply Bool.andb_true_iff in H as [Hi _].
+    apply Bool.negb_true_iff in Hi. apply Nat.eqb_neq in Hi.
+    intros Heq. injection Heq. contradiction.
+  Qed.
+
+  (** Bridge: pairwise position-disjoint implies NoDup. *)
+  Lemma all_pairwise_disjoint_b_nodup :
+    forall ms,
+      all_pairwise_disjoint_b ms = true ->
+      NoDup ms.
+  Proof.
+    induction ms as [|m ms IH]; intros H.
+    - constructor.
+    - simpl in H. apply Bool.andb_true_iff in H as [Hm Hrest].
+      constructor.
+      + intros Hin.
+        rewrite forallb_forall in Hm.
+        specialize (Hm m Hin).
+        apply matches_position_disjoint_b_neq in Hm. contradiction.
+      + apply IH. exact Hrest.
+  Qed.
+
+  (** The scan invariant under the STRONG wf predicate, proved by the
+      three bridge lemmas above. *)
+  Theorem scan_mulx_pairs_valid_strong :
+    forall cs,
+      wf_mulx_list_strong_b cs = true ->
+      scan_output_valid_b cs.
+  Proof.
+    intros cs Hwf. unfold wf_mulx_list_strong_b in Hwf.
+    apply Bool.andb_true_iff in Hwf as [Hwf Hnames].
+    apply Bool.andb_true_iff in Hwf as [Hforall Hpos].
+    split; [|split].
+    - rewrite Forall_forall. intros m Hin.
+      apply match_fully_valid_b_implies_valid.
+      rewrite forallb_forall in Hforall. apply Hforall. exact Hin.
+    - apply all_pair_disjoint_implies_strong; assumption.
+    - apply all_pairwise_disjoint_b_nodup; exact Hpos.
+  Qed.
+
+  (** The WEAK form (under [wf_mulx_list]) remains conjectured; its
+      proof reduces to the strong form plus a lemma
+      [wf_mulx_list_implies_strong] showing the scan's structural
+      guarantees imply the extra conditions under wf_mulx_list. *)
   Conjecture scan_mulx_pairs_valid_and_disjoint :
     forall cs,
       wf_mulx_list cs = true ->

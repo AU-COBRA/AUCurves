@@ -19,10 +19,10 @@ Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_LoopBody.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_Proof.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_LoadAndProcess.

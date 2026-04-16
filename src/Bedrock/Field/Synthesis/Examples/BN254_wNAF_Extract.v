@@ -15,7 +15,7 @@ Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN254_G1.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
 Require Import Crypto.Bedrock.Group.CurveAdd.StoreZero.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_three_b.

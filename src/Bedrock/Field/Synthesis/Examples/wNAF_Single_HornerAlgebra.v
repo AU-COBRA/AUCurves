@@ -22,7 +22,7 @@
     All lemmas are purely algebraic — no bedrock2. *)
 
 From Stdlib Require Import ZArith Lia List.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF.
 (* Note: We do NOT import wNAF_Single_LoopBody to avoid heavy bedrock2
    imports. We restate the needed lemmas locally. *)
 

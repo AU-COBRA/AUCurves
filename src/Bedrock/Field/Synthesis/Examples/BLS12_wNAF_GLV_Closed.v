@@ -23,9 +23,9 @@ Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_wNAF_LoadAndProcess.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_LoadAndProcess.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Import Syntax BinInt String List.ListNotations.
 Local Open Scope string_scope. Local Open Scope Z_scope.
 

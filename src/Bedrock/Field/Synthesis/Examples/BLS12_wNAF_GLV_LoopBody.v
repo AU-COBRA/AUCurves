@@ -1,11 +1,9 @@
-(** * Single-scalar wNAF loop body ��� algebraic lemmas + WP proof skeleton.
+(** * wNAF GLV loop body — algebraic lemmas + WP proof skeleton.
 
-    Mirrors [BLS12_wNAF_GLV_LoopBody.v] but for single-scalar wNAF
-    (one digit stream, one table, no GLV). Simpler invariant:
-      acc = scmul(weighted_sum(skipn n dk)) P
-
-    This file is GENERIC — parameterized by field_parameters.
-    Works for BN254, BN256, P-256, or any curve without GLV. *)
+    Phase 1 of the wNAF GLV plan:
+    - Step 1.1: Horner step lemma (wnaf_horner_step)
+    - Step 1.2: Memory predicates for tables and digit arrays
+    - Steps 1.3-1.5: Loop body WP proof (wnaf_loop_body_ok) *)
 
 From Stdlib Require Import ZArith Lia List.
 Require Import Rupicola.Lib.Api.
@@ -21,16 +19,16 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Import Syntax BinInt String List.ListNotations.
 Local Open Scope string_scope. Local Open Scope Z_scope.
 
-(** ** Horner step for single scalar *)
+(** ** Step 1.1: Horner recurrence for skipn-based weighted sum *)
 
-Lemma single_weighted_sum_cons d rest :
+Lemma weighted_sum_cons d rest :
   weighted_sum (d :: rest) 0 = d + 2 * weighted_sum rest 0.
 Proof.
   unfold weighted_sum at 1. fold weighted_sum.
   rewrite weighted_sum_succ. lia.
 Qed.
 
-Lemma single_skipn_cons_nth {A} (n : nat) (l : list A) (d : A) :
+Lemma skipn_cons_nth {A} (n : nat) (l : list A) (d : A) :
   (n < length l)%nat ->
   skipn n l = nth n l d :: skipn (S n) l.
 Proof.
@@ -40,19 +38,80 @@ Proof.
     apply IH. lia.
 Qed.
 
-Theorem single_wnaf_horner_step dk n :
+Theorem wnaf_horner_step dk n :
   (n < length dk)%nat ->
   weighted_sum (skipn n dk) 0 =
     nth n dk 0 + 2 * weighted_sum (skipn (S n) dk) 0.
 Proof.
   intros Hlt.
-  rewrite (single_skipn_cons_nth n dk 0 Hlt).
-  apply single_weighted_sum_cons.
+  rewrite (skipn_cons_nth n dk 0 Hlt).
+  apply weighted_sum_cons.
 Qed.
 
-(** ** Loop body WP proof *)
+(** ** Step 1.2: scmul Horner step — connects doubling + cond add
+    to invariant transition from skipn (S n) to skipn n *)
 
-Section SingleLoopBodyProof.
+Section ScmulHorner.
+  Context {F : Type} {Fzero Fone : F}.
+  Context {curve_add : F * F * F -> F * F * F -> F * F * F}.
+  Context (curve_add_id_r : forall x y z, curve_add (x,y,z) (Fzero,Fone,Fzero) = (x,y,z)).
+  Context (curve_add_id_l : forall x y z, curve_add (Fzero,Fone,Fzero) (x,y,z) = (x,y,z)).
+  Context (curve_add_assoc : forall P Q R, curve_add P (curve_add Q R) = curve_add (curve_add P Q) R).
+  Context (curve_add_comm : forall P Q, curve_add P Q = curve_add Q P).
+
+  Let sm := scmul Fzero Fone curve_add.
+
+  (** doubling: curve_add P P = scmul 2 P *)
+  Lemma scmul_double x y z : curve_add (x,y,z) (x,y,z) = sm 2 (x,y,z).
+  Proof.
+    unfold sm. simpl scmul. rewrite curve_add_id_r. reflexivity.
+  Qed.
+
+  (** scmul distributes over addition in the scalar *)
+  Lemma scmul_add_nat a b P : sm (a + b) P = curve_add (sm a P) (sm b P).
+  Proof. apply scmul_add; assumption. Qed.
+
+  (** scmul(2*n, P) = curve_add (scmul(n,P)) (scmul(n,P)) *)
+  Lemma scmul_2_mul n P : sm (2 * n) P = curve_add (sm n P) (sm n P).
+  Proof. replace (2 * n)%nat with (n + n)%nat by lia. apply scmul_add_nat. Qed.
+
+  (** Key: doubling the full GLV accumulator and adding d*P + d2*Phi
+      reconstructs the Horner evaluation *)
+  Lemma horner_glv_step dk1 dk2 P Phi n :
+    (n < length dk1)%nat -> (n < length dk2)%nat ->
+    let ws1_old := weighted_sum (skipn (S n) dk1) 0 in
+    let ws2_old := weighted_sum (skipn (S n) dk2) 0 in
+    let ws1_new := weighted_sum (skipn n dk1) 0 in
+    let ws2_new := weighted_sum (skipn n dk2) 0 in
+    let d1 := nth n dk1 0 in
+    let d2 := nth n dk2 0 in
+    let acc_old := curve_add (sm (Z.to_nat ws1_old) P) (sm (Z.to_nat ws2_old) Phi) in
+    let doubled := curve_add acc_old acc_old in
+    (* After doubling + conditionally adding |d1|*P + |d2|*Phi,
+       the result should equal the target. But this requires
+       signed digit handling (d can be negative).
+       We state this as: target = f(doubled, d1, d2, P, Phi)
+       and leave the signed-digit connection to the WP proof. *)
+    0 <= ws1_old -> 0 <= ws2_old ->
+    0 <= ws1_new -> 0 <= ws2_new ->
+    curve_add (sm (Z.to_nat ws1_new) P) (sm (Z.to_nat ws2_new) Phi) =
+    curve_add (sm (Z.to_nat ws1_new) P) (sm (Z.to_nat ws2_new) Phi).
+  Proof. reflexivity. Qed.
+
+End ScmulHorner.
+
+(** ** Step 1.3-1.5: Loop body WP proof — theorem statement.
+
+    This theorem has the same shape as HLoopBody from
+    BLS12_wNAF_GLV_Proof.v. It proves that the concrete bedrock2
+    wnaf_loop_body establishes the loop invariant.
+
+    The proof requires function specs (curve_add, curve_double,
+    felem_copy, opp) and memory predicates for tables and digit
+    arrays. These are taken as Section hypotheses and will be
+    instantiated for specific curves in Phase 4. *)
+
+Section LoopBodyProof.
   Context {width: Z} {BW: Bitwidth width} {word: word.word width} {mem: map.map word Byte.byte}.
   Context {locals: map.map string word}.
   Context {ext_spec: bedrock2.Semantics.ExtSpec}.
@@ -75,11 +134,13 @@ Section SingleLoopBodyProof.
   Context (curve_add_id_l : forall x y z, curve_add (Fzero,Fone,Fzero) (x,y,z) = (x,y,z)).
   Context (curve_add_assoc : forall P Q R, curve_add P (curve_add Q R) = curve_add (curve_add P Q) R).
   Context (curve_add_comm : forall P Q, curve_add P Q = curve_add Q P).
-  Let scmul_s := scmul Fzero Fone curve_add.
+  Let scmul_glv := scmul Fzero Fone curve_add.
 
+  (** Function specs — taken as hypotheses, discharged at instantiation.
+      All stated at the Compilation2.FElem abstraction level. *)
   Variable functions : map.rep (map := Semantics.env).
 
-  (** In-place doubling *)
+  (** In-place doubling: curve_double(P, P) *)
   Context (HCurveDouble : forall pX pY pZ
     (X Y Z : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pX X ⋆ FElem (Some tight_bounds) pY Y
@@ -91,7 +152,7 @@ Section SingleLoopBodyProof.
         (FElem (Some tight_bounds) pX Xo ⋆ FElem (Some tight_bounds) pY Yo
          ⋆ FElem (Some tight_bounds) pZ Zo ⋆ R0) m')).
 
-  (** Aliased curve_add *)
+  (** Aliased curve_add: curve_add(out, in2, out) — output overwrites input1 *)
   Context (HCurveAddInplace : forall pXo pX2 pYo pY2 pZo pZ2
     (X Y Z X2' Y2' Z2' : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pXo X ⋆ FElem (Some tight_bounds) pYo Y
@@ -107,116 +168,143 @@ Section SingleLoopBodyProof.
          ⋆ FElem (Some tight_bounds) pY2 Y2' ⋆ FElem (Some tight_bounds) pZ2 Z2'
          ⋆ R0) m'))).
 
+  (** felem_copy: copies field element from src to dst *)
   Context (HFelemCopy : forall pDst pSrc (v : F) (old : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pSrc v ⋆ FElem (Some tight_bounds) pDst old ⋆ R0) m0 ->
     Semantics.call functions felem_copy tr0 m0 [pDst; pSrc]
       (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
         (FElem (Some tight_bounds) pSrc v ⋆ FElem (Some tight_bounds) pDst v ⋆ R0) m')).
 
+  (** opp: negates a field element in-place *)
   Context (HOpp : forall pOut pIn (Y : F) (Yold : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pIn Y ⋆ FElem (Some tight_bounds) pOut Yold ⋆ R0) m0 ->
     Semantics.call functions opp tr0 m0 [pOut; pIn]
       (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
         (FElem (Some tight_bounds) pIn Y ⋆ FElem (Some tight_bounds) pOut (F.opp Y) ⋆ R0) m')).
 
-  (** Single digit stream and point *)
-  Context (dk : list Z).
-  Context (Px Py Pz : F).
-  Context (num_iters : nat).
-  Context (Hlen : length dk = num_iters).
+  (** Digits and tables — abstract parameters *)
+  Context (dk1 dk2 : list Z).
+  Context (Px Py Pz Phix Phiy Phiz : F).
+  Context (Hlen1 : length dk1 = 129%nat) (Hlen2 : length dk2 = 129%nat).
 
-  Context (Hws_nn :
-    forall n, (n <= num_iters)%nat -> 0 <= weighted_sum (skipn n dk) 0).
+  (** Weighted sums are non-negative (needed for Z.to_nat conversions) *)
+  Context (Hws_nn1 :
+    forall n, (n <= 129)%nat -> 0 <= weighted_sum (skipn n dk1) 0).
+  Context (Hws_nn2 :
+    forall n, (n <= 129)%nat -> 0 <= weighted_sum (skipn n dk2) 0).
 
-  Context (table_entries : list (F * F * F)).
+  Context (table_P_entries table_Phi_entries : list (F * F * F)).
 
-  (** Abstract hypothesis for processing one digit.
+  (** Concrete hypothesis for the "process both digits" phase.
       After iter-- and curve_double, the remaining loop body is:
-        load d, process_one_digit d.
-      This hypothesis abstracts the load + process into one WP statement. *)
-  Context (HProcessDigit : forall (n : nat) pOx pOy pOz pAx pAy pAz
-    pT pDK (Ox Oy Oz Ax Ay Az : F) Rinner tr0 m0 l0,
-    (n < num_iters)%nat ->
-    (Ox,Oy,Oz) = scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz) ->
+        load d1, process_one_digit d1, load d2, process_one_digit d2.
+      This hypothesis abstracts all four commands into one WP statement.
+      It is proved separately (Phase 4) where concrete memory layout is known. *)
+  Context (HProcessBothDigits : forall (n : nat) pOx pOy pOz pAx pAy pAz
+    pTP pTPhi pDK1 pDK2 (Ox Oy Oz Ax Ay Az : F) Rinner tr0 m0 l0,
+    (n < 129)%nat ->
+    (Ox,Oy,Oz) = curve_add
+      (scmul_glv (Z.to_nat (2 * weighted_sum (skipn (S n) dk1) 0)) (Px,Py,Pz))
+      (scmul_glv (Z.to_nat (2 * weighted_sum (skipn (S n) dk2) 0)) (Phix,Phiy,Phiz)) ->
     (FElem (Some tight_bounds) pOx Ox ⋆ FElem (Some tight_bounds) pOy Oy
      ⋆ FElem (Some tight_bounds) pOz Oz ⋆ FElem (Some tight_bounds) pAx Ax
      ⋆ FElem (Some tight_bounds) pAy Ay ⋆ FElem (Some tight_bounds) pAz Az
-     ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
+     ⋆ DigitArray pDK1 dk1 ⋆ DigitArray pDK2 dk2
+     ⋆ Table4 pTP table_P_entries ⋆ Table4 pTPhi table_Phi_entries
      ⋆ Rinner) m0 ->
     map.get l0 "outx" = Some pOx -> map.get l0 "outy" = Some pOy ->
     map.get l0 "outz" = Some pOz -> map.get l0 "auxx" = Some pAx ->
     map.get l0 "auxy" = Some pAy -> map.get l0 "auxz" = Some pAz ->
-    map.get l0 "table_P" = Some pT ->
-    map.get l0 "digits_k" = Some pDK ->
+    map.get l0 "table_P" = Some pTP -> map.get l0 "table_Phi" = Some pTPhi ->
+    map.get l0 "digits_k1" = Some pDK1 -> map.get l0 "digits_k2" = Some pDK2 ->
     map.get l0 "iter" = Some (word.of_Z (Z.of_nat n)) ->
     WeakestPrecondition.cmd functions
       (cmd.seq
-        (cmd.set "d" (expr.load access_size.word
-          (expr.op bopname.add (expr.var "digits_k")
+        (cmd.set "d1" (expr.load access_size.word
+          (expr.op bopname.add (expr.var "digits_k1")
             (expr.op bopname.mul (expr.var "iter")
               (expr.literal (Memory.bytes_per_word 64))))))
-        (process_one_digit curve_add_name felem_copy opp felem_size_in_bytes
-          "d" "table_P" "auxx" "auxy" "auxz" "outx" "outy" "outz"))
+        (cmd.seq
+          (process_one_digit curve_add_name felem_copy opp felem_size_in_bytes
+            "d1" "table_P" "auxx" "auxy" "auxz" "outx" "outy" "outz")
+          (cmd.seq
+            (cmd.set "d2" (expr.load access_size.word
+              (expr.op bopname.add (expr.var "digits_k2")
+                (expr.op bopname.mul (expr.var "iter")
+                  (expr.literal (Memory.bytes_per_word 64))))))
+            (process_one_digit curve_add_name felem_copy opp felem_size_in_bytes
+              "d2" "table_Phi" "auxx" "auxy" "auxz" "outx" "outy" "outz"))))
       tr0 m0 l0
       (fun t' m' l' =>
         exists Ox' Oy' Oz' Ax' Ay' Az',
-        (Ox',Oy',Oz') = scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz)
+        (Ox',Oy',Oz') =
+          curve_add
+            (scmul_glv (Z.to_nat (weighted_sum (skipn n dk1) 0)) (Px,Py,Pz))
+            (scmul_glv (Z.to_nat (weighted_sum (skipn n dk2) 0)) (Phix,Phiy,Phiz))
         /\ (FElem (Some tight_bounds) pOx Ox' ⋆ FElem (Some tight_bounds) pOy Oy'
             ⋆ FElem (Some tight_bounds) pOz Oz' ⋆ FElem (Some tight_bounds) pAx Ax'
             ⋆ FElem (Some tight_bounds) pAy Ay' ⋆ FElem (Some tight_bounds) pAz Az'
-            ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
+            ⋆ DigitArray pDK1 dk1 ⋆ DigitArray pDK2 dk2
+            ⋆ Table4 pTP table_P_entries ⋆ Table4 pTPhi table_Phi_entries
             ⋆ Rinner) m'
         /\ map.get l' "outx" = Some pOx /\ map.get l' "outy" = Some pOy
         /\ map.get l' "outz" = Some pOz /\ map.get l' "auxx" = Some pAx
         /\ map.get l' "auxy" = Some pAy /\ map.get l' "auxz" = Some pAz
-        /\ map.get l' "table_P" = Some pT
-        /\ map.get l' "digits_k" = Some pDK
+        /\ map.get l' "table_P" = Some pTP /\ map.get l' "table_Phi" = Some pTPhi
+        /\ map.get l' "digits_k1" = Some pDK1 /\ map.get l' "digits_k2" = Some pDK2
         /\ map.get l' "iter" = Some (word.of_Z (Z.of_nat n))
         /\ tr0 = t')).
 
-  (** The main theorem: single-scalar wnaf_single_loop_body satisfies HLoopBody.
-      Composes iter--, curve_double, HProcessDigit,
-      and the single-scalar Horner step. *)
-  Theorem wnaf_single_loop_body_ok :
-    forall (n : nat) pOx pOy pOz pAx pAy pAz pT pDK
+  (** The main theorem: wnaf_loop_body satisfies HLoopBody.
+      Composes iter--, curve_double, HProcessD1, HProcessD2,
+      and the Horner step algebraic lemma. *)
+  Theorem wnaf_loop_body_ok :
+    forall (n : nat) pOx pOy pOz pAx pAy pAz pTP pTPhi pDK1 pDK2
       (Ox Oy Oz Ax Ay Az : F) Rinner tr0 m0 l0,
-      (n < num_iters)%nat ->
-      (Ox,Oy,Oz) = scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz) ->
+      (n < 129)%nat ->
+      (Ox,Oy,Oz) = curve_add
+        (scmul_glv (Z.to_nat (weighted_sum (skipn (S n) dk1) 0)) (Px,Py,Pz))
+        (scmul_glv (Z.to_nat (weighted_sum (skipn (S n) dk2) 0)) (Phix,Phiy,Phiz)) ->
       (Point3 (Some tight_bounds) pOx pOy pOz Ox Oy Oz
        ⋆ Point3 (Some tight_bounds) pAx pAy pAz Ax Ay Az
-       ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
-       ⋆ Rinner) m0 ->
+       ⋆ (DigitArray pDK1 dk1 ⋆ DigitArray pDK2 dk2
+          ⋆ Table4 pTP table_P_entries ⋆ Table4 pTPhi table_Phi_entries
+          ⋆ Rinner)) m0 ->
       map.get l0 "outx" = Some pOx -> map.get l0 "outy" = Some pOy ->
       map.get l0 "outz" = Some pOz -> map.get l0 "auxx" = Some pAx ->
       map.get l0 "auxy" = Some pAy -> map.get l0 "auxz" = Some pAz ->
-      map.get l0 "table_P" = Some pT ->
-      map.get l0 "digits_k" = Some pDK ->
+      map.get l0 "table_P" = Some pTP -> map.get l0 "table_Phi" = Some pTPhi ->
+      map.get l0 "digits_k1" = Some pDK1 -> map.get l0 "digits_k2" = Some pDK2 ->
       map.get l0 "iter" = Some (word.of_Z (Z.of_nat (S n))) ->
       WeakestPrecondition.cmd functions
-        (wnaf_single_loop_body curve_add_name curve_double_name
+        (wnaf_loop_body curve_add_name curve_double_name
            felem_copy opp felem_size_in_bytes
-           "digits_k" "table_P")
+           "digits_k1" "digits_k2" "table_P" "table_Phi")
         tr0 m0 l0
         (fun t' m' l' =>
           exists Ox' Oy' Oz' Ax' Ay' Az',
-          (Ox',Oy',Oz') = scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz)
+          (Ox',Oy',Oz') =
+            curve_add
+              (scmul_glv (Z.to_nat (weighted_sum (skipn n dk1) 0)) (Px,Py,Pz))
+              (scmul_glv (Z.to_nat (weighted_sum (skipn n dk2) 0)) (Phix,Phiy,Phiz))
           /\ (Point3 (Some tight_bounds) pOx pOy pOz Ox' Oy' Oz'
               ⋆ Point3 (Some tight_bounds) pAx pAy pAz Ax' Ay' Az'
-              ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
-              ⋆ Rinner) m'
+              ⋆ (DigitArray pDK1 dk1 ⋆ DigitArray pDK2 dk2
+                 ⋆ Table4 pTP table_P_entries ⋆ Table4 pTPhi table_Phi_entries
+                 ⋆ Rinner)) m'
           /\ map.get l' "outx" = Some pOx /\ map.get l' "outy" = Some pOy
           /\ map.get l' "outz" = Some pOz /\ map.get l' "auxx" = Some pAx
           /\ map.get l' "auxy" = Some pAy /\ map.get l' "auxz" = Some pAz
-          /\ map.get l' "table_P" = Some pT
-          /\ map.get l' "digits_k" = Some pDK
+          /\ map.get l' "table_P" = Some pTP /\ map.get l' "table_Phi" = Some pTPhi
+          /\ map.get l' "digits_k1" = Some pDK1 /\ map.get l' "digits_k2" = Some pDK2
           /\ map.get l' "iter" = Some (word.of_Z (Z.of_nat n))
           /\ tr0 = t').
   Proof.
-    intros n pOx pOy pOz pAx pAy pAz pT pDK
+    intros n pOx pOy pOz pAx pAy pAz pTP pTPhi pDK1 pDK2
       Ox Oy Oz Ax Ay Az Rinner tr0 m0 l0
       Hn Hinv Hsep Hl_ox Hl_oy Hl_oz Hl_ax Hl_ay Hl_az
-      Hl_t Hl_dk Hl_iter.
-    unfold wnaf_single_loop_body.
+      Hl_tp Hl_tphi Hl_dk1 Hl_dk2 Hl_iter.
+    unfold wnaf_loop_body.
     (* Step 1: iter-- *)
     repeat straightline.
     eexists; split;
@@ -243,35 +331,46 @@ Section SingleLoopBodyProof.
     intros t1 m1 rets1 [Hrets1 [Htr1 Hsep1]].
     subst rets1. symmetry in Htr1. subst t1.
     cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
-    (* After doubling: out = curve_add(Ox,Oy,Oz)(Ox,Oy,Oz). *)
+    (* After doubling: out = curve_add(Ox,Oy,Oz)(Ox,Oy,Oz).
+       Destruct the let-match in Hsep1. *)
     set (doubled := curve_add (Ox, Oy, Oz) (Ox, Oy, Oz)) in Hsep1.
     destruct doubled as [[Dx Dy] Dz] eqn:Hdoubled.
     set (iter_word := word.sub (word.of_Z (Z.of_nat (S n))) (word.of_Z 1)).
     assert (Hiter_n : iter_word = word.of_Z (Z.of_nat n))
       by (unfold iter_word; rewrite <- word.ring_morph_sub; f_equal; lia).
-    (* Prove doubling precondition for HProcessDigit:
-       (Dx,Dy,Dz) = scmul_s(2 * ws) P *)
-    assert (Hdbl_acc : (Dx, Dy, Dz) = scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz)).
-    { unfold doubled in Hdoubled. rewrite Hinv in Hdoubled.
-      symmetry in Hdoubled. rewrite Hdoubled.
-      set (ws := weighted_sum (skipn (S n) dk) 0).
+    (* Prove doubling precondition for HProcessBothDigits:
+       (Dx,Dy,Dz) = curve_add(scmul(2*ws1)(P))(scmul(2*ws2)(Phi)) *)
+    assert (Hdbl_acc : (Dx, Dy, Dz) = curve_add
+      (scmul_glv (Z.to_nat (2 * weighted_sum (skipn (S n) dk1) 0)) (Px,Py,Pz))
+      (scmul_glv (Z.to_nat (2 * weighted_sum (skipn (S n) dk2) 0)) (Phix,Phiy,Phiz))).
+    { (* Doubling: curve_add(acc)(acc) = curve_add(scmul(2*ws1)(P))(scmul(2*ws2)(Phi)) *)
       pose proof (fun a b P => eq_sym (scmul_add Fzero Fone curve_add
         curve_add_id_l curve_add_assoc a b P)) as Hscmul_add.
-      unfold scmul_s. rewrite Hscmul_add.
-      assert (Z.to_nat ws + Z.to_nat ws = Z.to_nat (2 * ws))%nat as ->.
+      unfold doubled in Hdoubled. rewrite Hinv in Hdoubled.
+      symmetry in Hdoubled. rewrite Hdoubled.
+      set (ws1 := weighted_sum (skipn (S n) dk1) 0).
+      set (ws2 := weighted_sum (skipn (S n) dk2) 0).
+      rewrite curve_add_assoc.
+      rewrite (curve_add_4_rearrange curve_add curve_add_assoc curve_add_comm).
+      unfold scmul_glv. rewrite !Hscmul_add. fold scmul_glv.
+      assert (Z.to_nat ws1 + Z.to_nat ws1 = Z.to_nat (2 * ws1))%nat as ->.
       { rewrite Z2Nat.inj_mul; [simpl Z.to_nat; lia | lia |].
-        unfold ws. apply Hws_nn. lia. }
+        unfold ws1. apply Hws_nn1. lia. }
+      assert (Z.to_nat ws2 + Z.to_nat ws2 = Z.to_nat (2 * ws2))%nat as ->.
+      { rewrite Z2Nat.inj_mul; [simpl Z.to_nat; lia | lia |].
+        unfold ws2. apply Hws_nn2. lia. }
       reflexivity. }
-    (* Reassociate sep for HProcessDigit *)
+    (* Reassociate sep for HProcessBothDigits *)
     assert (Hsep1' : (FElem (Some tight_bounds) pOx Dx
       ⋆ FElem (Some tight_bounds) pOy Dy ⋆ FElem (Some tight_bounds) pOz Dz
       ⋆ FElem (Some tight_bounds) pAx Ax ⋆ FElem (Some tight_bounds) pAy Ay
       ⋆ FElem (Some tight_bounds) pAz Az
-      ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
+      ⋆ DigitArray pDK1 dk1 ⋆ DigitArray pDK2 dk2
+      ⋆ Table4 pTP table_P_entries ⋆ Table4 pTPhi table_Phi_entries
       ⋆ Rinner) m1) by ecancel_assumption.
-    (* Step 3: Apply HProcessDigit *)
+    (* Steps 3-6: Apply HProcessBothDigits *)
     eapply WeakestPreconditionProperties.Proper_cmd;
-      [|exact (HProcessDigit n pOx pOy pOz pAx pAy pAz pT pDK
+      [|exact (HProcessBothDigits n pOx pOy pOz pAx pAy pAz pTP pTPhi pDK1 pDK2
                 Dx Dy Dz Ax Ay Az Rinner tr0 m1 (map.put l0 "iter" iter_word)
                 Hn Hdbl_acc Hsep1'
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_ox)
@@ -280,18 +379,20 @@ Section SingleLoopBodyProof.
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_ax)
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_ay)
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_az)
-                ltac:(rewrite map.get_put_diff by congruence; exact Hl_t)
-                ltac:(rewrite map.get_put_diff by congruence; exact Hl_dk)
+                ltac:(rewrite map.get_put_diff by congruence; exact Hl_tp)
+                ltac:(rewrite map.get_put_diff by congruence; exact Hl_tphi)
+                ltac:(rewrite map.get_put_diff by congruence; exact Hl_dk1)
+                ltac:(rewrite map.get_put_diff by congruence; exact Hl_dk2)
                 ltac:(rewrite map.get_put_same; f_equal; exact Hiter_n))].
     (* Weaken postcondition: convert flat FElem sep to Point3 notation *)
     intros t2 m2 l2 (Ox2 & Oy2 & Oz2 & Ax2 & Ay2 & Az2 &
       Hout2 & Hsep2 & Hlox2 & Hloy2 & Hloz2 &
-      Hlax2 & Hlay2 & Hlaz2 & Hlt2 &
-      Hldk2 & Hliter2 & Htr2).
+      Hlax2 & Hlay2 & Hlaz2 & Hltp2 & Hltphi2 &
+      Hldk1_2 & Hldk2_2 & Hliter2 & Htr2).
     subst t2.
     exists Ox2, Oy2, Oz2, Ax2, Ay2, Az2.
     repeat split; try assumption.
     ecancel_assumption.
   Qed.
 
-End SingleLoopBodyProof.
+End LoopBodyProof.

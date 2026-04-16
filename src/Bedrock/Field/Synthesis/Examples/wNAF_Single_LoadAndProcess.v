@@ -21,10 +21,10 @@ Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Require Import bedrock2.Scalars.
 Require Import bedrock2.Array.
 From coqutil.Tactics Require Import letexists.
@@ -136,6 +136,33 @@ Section SingleLoadAndProcess.
       [ exact eq_refl
       | eexists; split; [solve_mapget |]
       | eexists; split; [exact eq_refl |] ]).
+
+  (** Word-level arithmetic: the bedrock2 sequence
+        tab_idx = (lookup_d - 1) >> 1
+        tab_off = tab_idx * (3 * felem_size_in_bytes)
+      computes [((d-1)/2) * (3*fs)] for odd [d] in [[1..7]].
+
+      Bound [12 * felem_size_in_bytes < 2^width] (Hfs_small) is enough:
+      the max intermediate value is [((7-1)/2) * (3*fs) = 9*fs < 12*fs < 2^w].
+      Proof deferred; pattern is unfold-to-unsigned + word.unsigned_inj. *)
+  Lemma tab_off_compute (d : Z) :
+    1 <= d <= 7 ->
+    word.mul
+      (word.sru (word.sub (word.of_Z d : word) (word.of_Z 1)) (word.of_Z 1))
+      (word.of_Z (3 * felem_size_in_bytes))
+    = (word.of_Z (((d - 1) / 2) * (3 * felem_size_in_bytes)) : word).
+  Proof.
+    intros Hd.
+    (* Plan (to fill in):
+       apply word.unsigned_inj.
+       rewrite word.unsigned_mul, word.unsigned_sru_shamtZ by lia.
+       rewrite word.unsigned_sub_mod, ?word.unsigned_of_Z_nowrap by lia.
+       rewrite word.unsigned_of_Z_nowrap by
+         (pose proof Hfs_pos; pose proof Hfs_small; lia).
+       rewrite !Z.mod_small by
+         (split; try apply Z.shiftr_nonneg; try nia; nia).
+       rewrite Z.shiftr_div_pow2 by lia. reflexivity. *)
+  Admitted.
 
   (** Main theorem: load digit d from array, then process_one_digit.
       Postcondition: if d=0 then accumulator unchanged,

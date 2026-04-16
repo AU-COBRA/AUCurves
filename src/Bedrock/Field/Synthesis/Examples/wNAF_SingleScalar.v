@@ -11,7 +11,7 @@
     uses two scalars and two points simultaneously. *)
 
 From Stdlib Require Import ZArith Lia List.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.wNAF.
+Require Import Bedrock.Field.Synthesis.Examples.wNAF.
 Import ListNotations.
 Local Open Scope Z_scope.
 

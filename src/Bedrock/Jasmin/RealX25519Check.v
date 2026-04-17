@@ -77,3 +77,102 @@ Section Sound.
     apply col1_strong_check.
   Qed.
 End Sound.
+
+(* =================================================================== *)
+(* Full 4x4 schoolbook: 16 MUL/MULHUU pairs exercising many matches    *)
+(* simultaneously.  Each pair uses distinct target names [p_ij/h_ij]   *)
+(* so the matches are position-disjoint by construction.               *)
+(*                                                                     *)
+(* FINDING: with shared operands across columns (e.g. [e0] is read by  *)
+(* all 4 (0,j) pairs), the [pair_names_disjoint_b] check FAILS.  The   *)
+(* reason is that [cmd_touches] over-approximates as "writes OR reads" *)
+(* — the [JCmulx] inserted for pair (0,0) contains [JEvar "e0"] and is *)
+(* thus flagged as touching [e0], which appears in pair (0,1)'s operand*)
+(* reads.  This is semantically sound (JCmulx doesn't modify [e0]) but *)
+(* the strong check is over-conservative here.                         *)
+(*                                                                     *)
+(* The Qed'd pipeline still works on a subset with distinct operands   *)
+(* per pair (see [mul4_distinct_ops] below).                           *)
+(* =================================================================== *)
+
+Definition ei (i : nat) : string :=
+  match i with 0 => "e0" | 1 => "e1" | 2 => "e2" | _ => "e3" end%string.
+Definition aj (j : nat) : string :=
+  match j with 0 => "a0" | 1 => "a1" | 2 => "a2" | _ => "a3" end%string.
+Definition pij (i j : nat) : string :=
+  match i, j with
+  | 0,0 => "p00" | 0,1 => "p01" | 0,2 => "p02" | 0,3 => "p03"
+  | 1,0 => "p10" | 1,1 => "p11" | 1,2 => "p12" | 1,3 => "p13"
+  | 2,0 => "p20" | 2,1 => "p21" | 2,2 => "p22" | 2,3 => "p23"
+  | 3,0 => "p30" | 3,1 => "p31" | 3,2 => "p32" | _,_ => "p33"
+  end%string.
+Definition hij (i j : nat) : string :=
+  match i, j with
+  | 0,0 => "h00" | 0,1 => "h01" | 0,2 => "h02" | 0,3 => "h03"
+  | 1,0 => "h10" | 1,1 => "h11" | 1,2 => "h12" | 1,3 => "h13"
+  | 2,0 => "h20" | 2,1 => "h21" | 2,2 => "h22" | 2,3 => "h23"
+  | 3,0 => "h30" | 3,1 => "h31" | 3,2 => "h32" | _,_ => "h33"
+  end%string.
+
+(** One MUL/MULHUU pair with intervening accumulator ADD, like the
+    XEdDSA scalar_muladd column pattern. *)
+Definition sb_pair (i j : nat) : list jasmin_cmd :=
+  [ JCset (pij i j) (JEmul    (JEvar (ei i)) (JEvar (aj j)));
+    JCset "acc"     (JEadd    (JEvar "acc")  (JEvar (pij i j)));
+    JCset (hij i j) (JEmulhuu (JEvar (ei i)) (JEvar (aj j))) ].
+
+Definition schoolbook_list : list jasmin_cmd :=
+  List.flat_map (fun ij => sb_pair (fst ij) (snd ij))
+    [ (0,0); (0,1); (0,2); (0,3);
+      (1,0); (1,1); (1,2); (1,3);
+      (2,0); (2,1); (2,2); (2,3);
+      (3,0); (3,1); (3,2); (3,3) ]%nat.
+
+(* Diagnostics *)
+Eval vm_compute in length schoolbook_list.
+Eval vm_compute in length (scan_mulx_pairs schoolbook_list).
+Eval vm_compute in wf_mulx_list_strong_b schoolbook_list.
+
+(* Diagnostic: confirm the schoolbook triggers the pair-names-disjoint
+   limitation.  We don't Qed a soundness theorem for the full 16-pair
+   pattern because the strong check legitimately fails. *)
+Example schoolbook_strong_check_fails :
+  wf_mulx_list_strong_b schoolbook_list = false.
+Proof. vm_compute. reflexivity. Qed.
+
+(* ----- 4-pair subset with distinct operands per pair --------------- *)
+
+(** Four independent pairs, each using a disjoint set of operand
+    variables, so [pair_names_disjoint_b] is satisfied. *)
+Definition mul4_distinct_ops : list jasmin_cmd :=
+  [ JCset "q0" (JEmul    (JEvar "x0") (JEvar "y0"));
+    JCset "r0" (JEmulhuu (JEvar "x0") (JEvar "y0"));
+    JCset "q1" (JEmul    (JEvar "x1") (JEvar "y1"));
+    JCset "r1" (JEmulhuu (JEvar "x1") (JEvar "y1"));
+    JCset "q2" (JEmul    (JEvar "x2") (JEvar "y2"));
+    JCset "r2" (JEmulhuu (JEvar "x2") (JEvar "y2"));
+    JCset "q3" (JEmul    (JEvar "x3") (JEvar "y3"));
+    JCset "r3" (JEmulhuu (JEvar "x3") (JEvar "y3")) ].
+
+Eval vm_compute in length (scan_mulx_pairs mul4_distinct_ops).
+Eval vm_compute in wf_mulx_list_strong_b mul4_distinct_ops.
+
+Section SoundMul4.
+  Context {width : Z} {BW : Bitwidth width}
+          {w : word.word width} {w_ok : word.ok w}.
+
+  Lemma mul4_strong_check :
+    wf_mulx_list_strong_b mul4_distinct_ops = true.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Theorem mul4_lower_sound :
+    forall (e e' : string -> w),
+      @jeval_list width w e mul4_distinct_ops e' ->
+      @jeval_list width w e (lower_mulx_pairs mul4_distinct_ops) e'.
+  Proof.
+    intros e e' H.
+    apply lower_mulx_pairs_list_correct_via_scan_check; auto.
+    apply scan_mulx_pairs_valid_strong.
+    apply mul4_strong_check.
+  Qed.
+End SoundMul4.

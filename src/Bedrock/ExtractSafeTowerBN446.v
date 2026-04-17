@@ -24,8 +24,20 @@ Require Import Bedrock.Field.Synthesis.Examples.BN446_Pairing.
 Local Notation function_t :=
   (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.
 
+(** Inline Fp2_opp: negate both Fp components. bn446_Fp2.v doesn't define
+    it (BN254/BN256 use the same workaround). Offset 56 = 7 limbs × 8 bytes. *)
+Definition Fp2_opp_bn446 : function_t :=
+  ("bn446_Fp2_opp", (["out"; "x"], []:list String.string,
+    (Syntax.cmd.seq
+      (Syntax.cmd.call [] "bn446_opp"
+        [Syntax.expr.var "out"; Syntax.expr.var "x"])
+      (Syntax.cmd.call [] "bn446_opp"
+        [Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "out") (Syntax.expr.literal (BinInt.Z.of_nat 56));
+         Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "x") (Syntax.expr.literal (BinInt.Z.of_nat 56))])))).
+
 Definition bn446_fp2_funcs : list function_t :=
-  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr ].
+  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr;
+    Fp2_inv; Fp2_opp_bn446 ].
 
 Definition bn446_tower_funcs : list function_t :=
   Eval vm_compute in

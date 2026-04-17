@@ -67,3 +67,9 @@ src/Bedrock/bls12_safe_tower_main
 src/Bedrock/libbn254_leaves_inner.rlib
 src/Bedrock/bn256_*_main
 src/Bedrock/bn446_*_main
+
+# Rust crate build artifacts
+bn256-safe-rust/target/
+bn446-safe-rust/target/
+bn256-safe-rust/Cargo.lock
+bn446-safe-rust/Cargo.lock

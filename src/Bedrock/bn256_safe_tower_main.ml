@@ -25,11 +25,12 @@ let () =
     | [_; o] -> o
     | _ -> Printf.eprintf "Usage: %s <output.rs>\n" Sys.argv.(0); exit 2
   in
-  (* 5 = Zpos (XI (XO XH))  (binary 101) *)
-  let n = Zpos (XI (XO XH)) in
+  (* 4 = Zpos (XO (XO XH))  (binary 100).  WordByWordMontgomery.n derives
+     limb count from the prime: BN256 is 256 bits exactly → 4 limbs. *)
+  let n = Zpos (XO (XO XH)) in
   let funcs = bn256_tower_funcs in
   let n_tower = Stdlib.List.length funcs in
-  Printf.eprintf "[bn256_safe_tower] %d tower functions, 5 limbs\n" n_tower;
+  Printf.eprintf "[bn256_safe_tower] %d tower functions, 4 limbs\n" n_tower;
   let decls = ocaml_string (type_decls n) in
   let bodies = ocaml_string (safe_rust_module n funcs) in
   let leaf_wrappers = {|

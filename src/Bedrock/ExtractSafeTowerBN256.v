@@ -24,8 +24,23 @@ Local Notation function_t :=
   (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.
 
 (** Fp2 base ops (closed bodies, identical pattern to bn254). *)
+(** Inline Fp2_opp: negate both Fp components.  bn256_Fp2.v doesn't
+    define it (BN254's ExtractSafeRust.v uses the same workaround).
+    Offset 32 = 4 limbs × 8 bytes for BN256. *)
+Definition Fp2_opp_bn256 : function_t :=
+  ("bn256_Fp2_opp", (["out"; "x"], []:list String.string,
+    (Syntax.cmd.seq
+      (Syntax.cmd.call [] "bn256_opp"
+        [Syntax.expr.var "out"; Syntax.expr.var "x"])
+      (Syntax.cmd.call [] "bn256_opp"
+        [Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "out") (Syntax.expr.literal (BinInt.Z.of_nat 32));
+         Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "x") (Syntax.expr.literal (BinInt.Z.of_nat 32))])))).
+
+(** Fp2 base ops not already in bn256_all_pairing_funcs.
+    (Fp2_mul_xi and Fp2_conjugate live in bn256_pairing_ops via Fp6/Fp12.) *)
 Definition bn256_fp2_funcs : list function_t :=
-  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr ].
+  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr;
+    Fp2_inv; Fp2_opp_bn256 ].
 
 Definition bn256_tower_funcs : list function_t :=
   Eval vm_compute in

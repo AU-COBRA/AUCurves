@@ -14,7 +14,7 @@ Local Open Scope Z_scope.
 
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
 Require Import Crypto.Util.ZUtil.ModInv.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime_certif.
 
 Require Import Bedrock.SafeRustSimulation.
 Require Import Bedrock.SafeRustBedrockBridge.

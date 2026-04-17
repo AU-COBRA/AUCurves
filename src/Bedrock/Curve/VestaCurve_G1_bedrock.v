@@ -743,7 +743,7 @@ Proof.
   end.
 
   (*Use alternative curve spec for a = 0*)
-  destruct (MontgomeryCurveSpecs.BLS12_add_specs_equiv' m bw n r' m' (VestaCurve_G1_bedrock.a) three_b a_small three_b_small r'_correct m'_correct bw_big n_nz m_small m_big _ _ _ _ _ _ _ _ _ Hvalid Hvalid0 Hvalid1 Hvalid2 Hvalid3 Hvalid4 Hvalid5 Hvalid6 Hvalid7) as [Heq _].
+  destruct (MontgomeryCurveG1Equiv.BLS12_add_specs_equiv' m bw n r' m' (VestaCurve_G1_bedrock.a) three_b a_small three_b_small r'_correct m'_correct bw_big n_nz m_small m_big _ _ _ _ _ _ _ _ _ Hvalid Hvalid0 Hvalid1 Hvalid2 Hvalid3 Hvalid4 Hvalid5 Hvalid6 Hvalid7) as [Heq _].
   apply Heq; clear Heq.
 
   (*Use return values from function calls*)

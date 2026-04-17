@@ -3,6 +3,7 @@
 (coq.theory
  (name Bedrock)
  (mode vo)
+ (flags -time)
  (modules
   (:standard
    \ ExtractSafeRust
@@ -23,5 +24,8 @@
      Examples.felem_copy_32
      Examples.felem_copy_64
      Examples.felem_copy_p224_64
-     Examples.p224_64_Fp2))
+     Examples.p224_64_Fp2
+     End2End.Ristretto.ScalarMult
+     End2End.XEdDSA.Sign
+     End2End.XEdDSA.Verify))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

@@ -31,6 +31,7 @@ Require Import bedrock2.BasicC64Semantics.
 
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
+Require Import bedrock2.ProgramLogic.
 
 Require Import Bedrock.Curve.Secp256k1_Wired_Specs.
 
@@ -47,13 +48,12 @@ Local Open Scope Z_scope.
     Computation: [pout := (px * px) * px] using two calls to
     [secp256k1_mul]. *)
 Definition secp256k1_demo_double : Syntax.func :=
-  ("secp256k1_demo_double",
    ([ "pout"; "px"; "ptmp" ],
     ([] : list String.string),
     bedrock_func_body:(
       coq:(cmd.call [] "secp256k1_mul" [expr.var "ptmp"; expr.var "px"; expr.var "px"]);
       coq:(cmd.call [] "secp256k1_mul" [expr.var "pout"; expr.var "ptmp"; expr.var "px"])
-    ))).
+    )).
 
 (** The corresponding spec, in AUCurves Bignum style.
 
@@ -75,8 +75,8 @@ Instance spec_of_secp256k1_demo_double :
            (Rx Rtmp Rout : Interface.map.rep -> Prop),
       WordByWordMontgomery.valid 64 secp_n secp_m
         (List.map word.unsigned wsx) ->
-      length wsold_tmp = secp_n ->
-      length wsold_out = secp_n ->
+      Datatypes.length wsold_tmp = secp_n ->
+      Datatypes.length wsold_out = secp_n ->
       (Bignum secp_n px wsx * Rx)%sep mem ->
       (Bignum secp_n ptmp wsold_tmp * Rtmp)%sep mem ->
       (Bignum secp_n pout wsold_out * Rout)%sep mem ->
@@ -85,7 +85,7 @@ Instance spec_of_secp256k1_demo_double :
         (fun tr' mem' rets =>
            tr = tr' /\ rets = nil /\
            exists (wsout : list word.rep),
-             length wsout = secp_n /\
+             Datatypes.length wsout = secp_n /\
              WordByWordMontgomery.valid 64 secp_n secp_m
                (List.map word.unsigned wsout) /\
              (Bignum secp_n pout wsout * Rout)%sep mem' /\
@@ -109,5 +109,5 @@ Instance spec_of_secp256k1_demo_double :
 
 (** Compile-time assertion: the wired instance is reachable by
     typeclass resolution for the function name "secp256k1_mul". *)
-Goal exists s : spec_of "secp256k1_mul", True.
-Proof. eexists. exact I. Qed.
+Goal spec_of "secp256k1_mul".
+Proof. exact _. Qed.

@@ -9,7 +9,7 @@ Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import Crypto.Bedrock.Specs.Field.
 Import ListNotations.
 Require Import Crypto.Bedrock.Field.Translation.Proofs.ValidComputable.Func.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.pallas_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.pallas_prime_certif.
 Require Import bedrock2.WeakestPreconditionProperties.
 Require Import bedrock2.WeakestPrecondition.
 Require Import bedrock2.ProgramLogic.

@@ -24,6 +24,7 @@ Require Import coqutil.Word.Bitwidth64.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 
 (* The fiat-crypto secp256k1 field representation, with all WP proofs. *)
 Require Import Crypto.Bedrock.Secp256k1.Field256k1.
@@ -77,7 +78,7 @@ Section Secp256k1_Bignum_Specs.
   Lemma secp256k1_feval_unfold (x : felem) :
     F.to_Z (feval x) =
       F.to_Z (feval x) mod M.
-  Proof. apply (@feval_to_Z _ _ _ _ _ _ _ frep256k1). Qed.
+  Proof. apply (@feval_to_Z _ _ _ _ _ frep256k1). Qed.
 
   (* === Bounds equivalence (specialised) ===
      For the WBW representation, [bounded_by tight_bounds] and

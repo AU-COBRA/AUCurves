@@ -3,7 +3,7 @@
 
     This is the P-256 analogue of [Secp256k1_Bignum_Specs.v]. It uses
     the [p256_frep] field representation from
-    [Crypto.Bedrock.Field.Synthesis.Examples.p256_prime] (the
+    [Bedrock.Field.Synthesis.Examples.p256_prime] (the
     fiat-crypto WBW WP-proven instance for p256).
 
     Build dependency note: this file requires [p256_prime.vo] which
@@ -25,9 +25,10 @@ Require Import coqutil.Word.Bitwidth64.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 
 (* The fiat-crypto P-256 field representation. *)
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.p256_prime.
+Require Import Bedrock.Field.Synthesis.Examples.p256_prime.
 
 (* The generic Bignum/FElem bridge. *)
 Require Import Theory.WordByWordMontgomery.BignumFElemBridge.
@@ -69,7 +70,7 @@ Section P256_Bignum_Specs.
   Lemma p256_feval_unfold (x : felem) :
     F.to_Z (feval x) =
       F.to_Z (feval x) mod M.
-  Proof. apply (@feval_to_Z _ _ _ _ _ _ _ p256_frep). Qed.
+  Proof. apply (@feval_to_Z _ _ _ _ _ p256_frep). Qed.
 
   (* === Bounds equivalence ===
      [bounded_by tight_bounds] for the WBW p256 representation

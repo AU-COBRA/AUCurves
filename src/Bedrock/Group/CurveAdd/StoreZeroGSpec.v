@@ -1,9 +1,9 @@
 Require Import Rupicola.Lib.Api.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.ArrayUtil.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.ScalarsUtil.
+Require Import Bedrock.Field.Synthesis.Examples.ArrayUtil.
+Require Import Bedrock.Field.Synthesis.Examples.ScalarsUtil.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.WeakestPrecondition.
 Import Syntax BinInt String List.ListNotations.

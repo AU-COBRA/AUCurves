@@ -4,6 +4,7 @@ Require Import Coq.Lists.List.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import Crypto.Bedrock.Field.Common.Types.
 Require Import bedrock2.Syntax.
+Require Import bedrock2.Semantics.
 Require Import Coq.micromega.Lia.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Word.
@@ -11,12 +12,15 @@ Require Import Bedrock.Util.Tactics.
 Require Import Bedrock.Util.SeparationLogic.
 Require Import Crypto.Bedrock.Field.Common.Tactics.
 Require Import coqutil.Word.Interface.
+Require Import coqutil.Word.Bitwidth.
+Require Import coqutil.Map.Interface.
 Require Import Bedrock.Util.Word.
 Require Import bedrock2.WeakestPrecondition.
 Require Import bedrock2.ProgramLogic.
 Require Import bedrock2.Syntax.
 Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
+Require Import bedrock2.Memory.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 
@@ -26,11 +30,19 @@ Import ListNotations.
 Local Open Scope Z_scope.
 
 Section felemcopy.
+    Context
+      {width : Z} {BW : Bitwidth.Bitwidth width}
+      {word : word.word width} {mem : Interface.map.map word Byte.byte}
+      {locals : Interface.map.map String.string word}
+      {ext_spec : bedrock2.Semantics.ExtSpec}
+      {varname_gen : nat -> String.string}
+      {error : Syntax.expr.expr}
+      {p : @Types.parameters width BW word mem locals ext_spec varname_gen error}.
+    Local Notation word_size_in_bytes := (Memory.bytes_per_word width).
     Context (m : Z)
             (affix : string)
             (m_big : 0 < m)
             (num_limbs : nat)
-            {p : Types.parameters}
             (bw_big : 0 < word_size_in_bytes).
 
     Notation num_bytes := word_size_in_bytes.
@@ -50,7 +62,7 @@ Section felemcopy.
         | S (n0) => (cmd.seq (store_this pout pin nz) (copy_words n0 (S(nz)) pout pin) )
         end.
 
-    Definition felem_copy : Syntax.func :=
+    Definition felem_copy : String.string * Syntax.func :=
     let out := "out" in
     let elem := "elem" in
     (append "felem_copy" affix, ([out; elem], [], (copy_words num_limbs O out elem))).

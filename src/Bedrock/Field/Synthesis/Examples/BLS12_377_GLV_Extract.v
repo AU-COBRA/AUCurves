@@ -5,9 +5,9 @@ From Stdlib Require Import ZArith.ZArith.
 Require Import bedrock2.ToCString.
 Require Import bedrock2.Syntax.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_felem_copy.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_three_b.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_377_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_377_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_377_three_b.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_377_G1.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.CondMoveGroup.

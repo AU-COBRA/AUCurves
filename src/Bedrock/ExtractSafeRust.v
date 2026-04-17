@@ -34,10 +34,10 @@ Redirect "bn254_safe.rs" Eval vm_compute in bn254_safe_rust.
 (* Inner unsafe-Rust extraction (Path B)                              *)
 (* ================================================================ *)
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_Fp2.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN254_Pairing.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_Fp2.
+Require Import Bedrock.Field.Synthesis.Examples.BN254_Pairing.
 
 Local Notation function_t :=
   (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.

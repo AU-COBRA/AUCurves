@@ -1,5 +1,5 @@
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Coq.Strings.String.
 Local Open Scope string_scope. Local Open Scope Z_scope. Local Open Scope list_scope.
@@ -9,11 +9,11 @@ Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.WeakestPrecondition.
 Import Syntax BinInt String List.ListNotations.
 Local Open Scope string_scope. Local Open Scope Z_scope. Local Open Scope list_scope.
-Require Import Crypto.Bedrock.Field.FieldExtensions.QuadraticFieldExtensionsSpecs.
+Require Import Bedrock.Field.FieldExtensions.QuadraticFieldExtensionsSpecs.
 Require Import Rupicola.Lib.Api.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Specs.Field.
-Require Import Crypto.Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
+Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Import Crypto.Bedrock.Field.Interface.Compilation2.
 Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
@@ -212,7 +212,7 @@ Section bls12_Fp2.
             assert (three_b_F = feval three_b_words).
             {
                 simpl. cbv [Representation.eval_words eval_trans three_b_F].
-                Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
+                Require Import Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
                 pose proof (three_b_mont_mod).
                 assert (three_b_words = bls12_Fp2.three_b_words).
                 {
@@ -282,7 +282,7 @@ Qed. *)
 
 End bls12_Fp2.
     (* From bedrock2 Require Import ToCString Bytedump. *)
-    (* Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_from_list_F. *)
+    (* Require Import Bedrock.Field.Synthesis.Examples.bls12_from_list_F. *)
     (* Definition c_mod := (c_module (bls12_mul :: nil)). *)
 
     (* Redirect "blstest.c" Eval compute in c_mod. *)

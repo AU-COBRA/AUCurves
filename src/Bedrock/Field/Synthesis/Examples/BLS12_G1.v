@@ -1,5 +1,5 @@
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Coq.Strings.String.
 Local Open Scope string_scope. Local Open Scope Z_scope. Local Open Scope list_scope.
@@ -15,8 +15,8 @@ Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
 Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_three_b.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_three_b.
 Require Import coqutil.Word.Bitwidth64.
 Require Import bedrock2.BasicC64Semantics.
 

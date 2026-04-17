@@ -53,7 +53,7 @@ Section Bridge.
           {mem : map.map word Init.Byte.byte}
           {locals : map.map string word}.
 
-  (** In fiat-crypto's [Crypto.Bedrock.Specs.AbstractField], a felem
+  (** In fiat-crypto's [Bedrock.Specs.AbstractField], a felem
       is defined as [list word] (a list of word-sized limbs), and
       [feval : list word -> F] interprets the limbs as a field
       element. We mirror that here with the same shape: [felem :=
@@ -235,7 +235,7 @@ End Bridge.
     representation.
 
     To use the bridge with BN254 (see [SafeRustBN254Instance.v]):
-    1. Import [Crypto.Bedrock.Field.Synthesis.Examples.bn254_instances]
+    1. Import [Bedrock.Field.Synthesis.Examples.bn254_instances]
        to pull in [bn254_field_representation].
     2. Define [bn254_FElem] and [bn254_feval_Z] by projecting from
        the [FieldRepresentation] instance.

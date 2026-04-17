@@ -1,22 +1,4 @@
-(** Wired Bignum-style spec instances for secp256k1 field operations.
-
-    This file consumes [secp256k1_mul_correct], [secp256k1_add_correct],
-    [secp256k1_sub_correct], [secp256k1_square_correct],
-    [secp256k1_opp_correct] from
-    [Crypto.Bedrock.Secp256k1.Field256k1] (which give them as
-    [spec_of_BinOp]/[spec_of_UnOp] instances over [FElem]) and re-exposes
-    each as a Bignum-style spec that an AUCurves caller can use directly
-    with its [Bignum n p ws] / [valid] preconditions.
-
-    The conversion is mechanical and uses [FElem_iff_Bignum] from
-    [BignumFElemBridge.v] together with the definitional equalities
-    [tight_bounds = wordlist] and [feval = F.of_Z ∘ Positional.eval ∘
-    from_montgomerymod ∘ map word.unsigned].
-
-    The result: AUCurves' RCB add functions (e.g., a P-256 / secp256k1
-    G1 point addition built from these field operations) can use these
-    instances as if the synthesized bedrock2 functions had been written
-    against the AUCurves Bignum interface from the start. *)
+(** Wired Bignum-style spec instances for secp256k1 field operations. *)
 
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Lists.List.
@@ -28,255 +10,514 @@ Require Import bedrock2.Lift1Prop.
 Require Import bedrock2.Memory.
 Require Import bedrock2.Semantics.
 Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.WeakestPreconditionProperties.
+Require Import bedrock2.ProgramLogic.
+Require Import bedrock2.BasicC64Semantics.
 Require Import bedrock2.Syntax.
+Require Import bedrock2.ArrayCasts.
 Require Import coqutil.Word.Interface.
-Require Import coqutil.Word.Bitwidth64.
+Require Import coqutil.Word.Bitwidth.
 Require Import coqutil.Map.Interface.
-
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
 Require Import Crypto.Bedrock.Secp256k1.Field256k1.
-
+Require Import Crypto.Algebra.Hierarchy.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
 Require Import Theory.WordByWordMontgomery.BignumFElemBridge.
 Require Import Bedrock.Curve.Secp256k1_Bignum_Specs.
 
 Import ListNotations.
 Local Open Scope Z_scope.
-Local Open Scope string_scope.
 
-Section Secp256k1_Wired_Specs.
+Existing Instance Field256k1.field_parameters.
+Existing Instance Field256k1.frep256k1.
+Existing Instance Field256k1.frep256k1_ok.
 
-  Existing Instance Field256k1.field_parameters.
-  Existing Instance Field256k1.frep256k1.
-  Existing Instance Field256k1.frep256k1_ok.
+Local Notation m := (2^256 - 2^32 - 977)%Z.
+Local Notation n := 4%nat.
+Local Notation bw := 64%Z.
+Local Notation secp_m' := (@Field.m' bw field_parameters).
+Notation eval := (@WordByWordMontgomery.WordByWordMontgomery.eval bw n).
+Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m secp_m').
+Local Notation toZ := (List.map Interface.word.unsigned).
 
-  (** ** Bignum-style binop spec template
+(** ** Concrete spec_of instances *)
 
-      This is the canonical AUCurves shape: input/output buffers as
-      [Bignum n p ws], bounds as [valid (map word.unsigned ws)],
-      decoding via the [eval ∘ from_mont] notation. *)
+Instance spec_of_secp256k1_mul_bignum : spec_of "secp256k1_mul" :=
+  fun functions =>
+    forall (wsx wsy old_out : list word.rep)
+           (px py pout : word.rep)
+           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
+           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
+      WordByWordMontgomery.valid bw n m (toZ wsx) ->
+      WordByWordMontgomery.valid bw n m (toZ wsy) ->
+      Datatypes.length old_out = n ->
+      (Bignum n px wsx * Rx)%sep mem0 ->
+      (Bignum n py wsy * Ry)%sep mem0 ->
+      (Bignum n pout old_out * Rout)%sep mem0 ->
+      call functions Field.mul tr mem0
+        [pout; px; py]
+        (fun tr' mem' rets =>
+           tr = tr' /\ rets = nil /\
+           exists wsout : list word.rep,
+             Datatypes.length wsout = n /\
+             WordByWordMontgomery.valid bw n m (toZ wsout) /\
+             (Bignum n pout wsout * Rout)%sep mem' /\
+             (eval (from_mont (toZ wsout))) mod m =
+             ((eval (from_mont (toZ wsx))) mod m *
+              (eval (from_mont (toZ wsy))) mod m) mod m).
 
-  Definition bignum_binop_spec
-    (n : nat) (m : Z)
-    (op_z : Z -> Z -> Z) (name : String.string)
-    : spec_of name :=
-    fun functions =>
-      forall (wsx wsy old_out : list word.rep)
-             (px py pout : word.rep)
-             (tr : Semantics.trace)
-             (mem : Interface.map.rep)
-             (Rx Ry Rout : Interface.map.rep -> Prop),
-        WordByWordMontgomery.valid 64 n m (List.map word.unsigned wsx) ->
-        WordByWordMontgomery.valid 64 n m (List.map word.unsigned wsy) ->
-        length old_out = n ->
-        (Bignum n px wsx * Rx)%sep mem ->
-        (Bignum n py wsy * Ry)%sep mem ->
-        (Bignum n pout old_out * Rout)%sep mem ->
-        WeakestPrecondition.call functions name tr mem
-          [pout; px; py]
-          (fun tr' mem' rets =>
-             tr = tr' /\ rets = nil /\
-             exists (wsout : list word.rep),
-               length wsout = n /\
-               WordByWordMontgomery.valid 64 n m
-                 (List.map word.unsigned wsout) /\
-               (Bignum n pout wsout * Rout)%sep mem' /\
-               (* The output decodes to the application of [op_z] on the
-                  decoded inputs. Concrete callers will instantiate
-                  [op_z] with mul/add/sub/etc. *)
-               (eval (from_mont (List.map word.unsigned wsout))) mod m =
-               op_z
-                 ((eval (from_mont (List.map word.unsigned wsx))) mod m)
-                 ((eval (from_mont (List.map word.unsigned wsy))) mod m)).
+Instance spec_of_secp256k1_add_bignum : spec_of "secp256k1_add" :=
+  fun functions =>
+    forall (wsx wsy old_out : list word.rep)
+           (px py pout : word.rep)
+           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
+           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
+      WordByWordMontgomery.valid bw n m (toZ wsx) ->
+      WordByWordMontgomery.valid bw n m (toZ wsy) ->
+      Datatypes.length old_out = n ->
+      (Bignum n px wsx * Rx)%sep mem0 ->
+      (Bignum n py wsy * Ry)%sep mem0 ->
+      (Bignum n pout old_out * Rout)%sep mem0 ->
+      call functions Field.add tr mem0
+        [pout; px; py]
+        (fun tr' mem' rets =>
+           tr = tr' /\ rets = nil /\
+           exists wsout : list word.rep,
+             Datatypes.length wsout = n /\
+             WordByWordMontgomery.valid bw n m (toZ wsout) /\
+             (Bignum n pout wsout * Rout)%sep mem' /\
+             (eval (from_mont (toZ wsout))) mod m =
+             ((eval (from_mont (toZ wsx))) mod m +
+              (eval (from_mont (toZ wsy))) mod m) mod m).
 
-  (** ** Bignum-style unary op template *)
+Instance spec_of_secp256k1_sub_bignum : spec_of "secp256k1_sub" :=
+  fun functions =>
+    forall (wsx wsy old_out : list word.rep)
+           (px py pout : word.rep)
+           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
+           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
+      WordByWordMontgomery.valid bw n m (toZ wsx) ->
+      WordByWordMontgomery.valid bw n m (toZ wsy) ->
+      Datatypes.length old_out = n ->
+      (Bignum n px wsx * Rx)%sep mem0 ->
+      (Bignum n py wsy * Ry)%sep mem0 ->
+      (Bignum n pout old_out * Rout)%sep mem0 ->
+      call functions Field.sub tr mem0
+        [pout; px; py]
+        (fun tr' mem' rets =>
+           tr = tr' /\ rets = nil /\
+           exists wsout : list word.rep,
+             Datatypes.length wsout = n /\
+             WordByWordMontgomery.valid bw n m (toZ wsout) /\
+             (Bignum n pout wsout * Rout)%sep mem' /\
+             (eval (from_mont (toZ wsout))) mod m =
+             ((eval (from_mont (toZ wsx))) mod m -
+              (eval (from_mont (toZ wsy))) mod m) mod m).
 
-  Definition bignum_unop_spec
-    (n : nat) (m : Z)
-    (op_z : Z -> Z) (name : String.string)
-    : spec_of name :=
-    fun functions =>
-      forall (wsx old_out : list word.rep)
-             (px pout : word.rep)
-             (tr : Semantics.trace)
-             (mem : Interface.map.rep)
-             (Rx Rout : Interface.map.rep -> Prop),
-        WordByWordMontgomery.valid 64 n m (List.map word.unsigned wsx) ->
-        length old_out = n ->
-        (Bignum n px wsx * Rx)%sep mem ->
-        (Bignum n pout old_out * Rout)%sep mem ->
-        WeakestPrecondition.call functions name tr mem
-          [pout; px]
-          (fun tr' mem' rets =>
-             tr = tr' /\ rets = nil /\
-             exists (wsout : list word.rep),
-               length wsout = n /\
-               WordByWordMontgomery.valid 64 n m
-                 (List.map word.unsigned wsout) /\
-               (Bignum n pout wsout * Rout)%sep mem' /\
-               (eval (from_mont (List.map word.unsigned wsout))) mod m =
-               op_z
-                 ((eval (from_mont (List.map word.unsigned wsx))) mod m)).
+Instance spec_of_secp256k1_square_bignum : spec_of "secp256k1_square" :=
+  fun functions =>
+    forall (wsx old_out : list word.rep)
+           (px pout : word.rep)
+           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
+           (Rx Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
+      WordByWordMontgomery.valid bw n m (toZ wsx) ->
+      Datatypes.length old_out = n ->
+      (Bignum n px wsx * Rx)%sep mem0 ->
+      (Bignum n pout old_out * Rout)%sep mem0 ->
+      call functions Field.square tr mem0
+        [pout; px]
+        (fun tr' mem' rets =>
+           tr = tr' /\ rets = nil /\
+           exists wsout : list word.rep,
+             Datatypes.length wsout = n /\
+             WordByWordMontgomery.valid bw n m (toZ wsout) /\
+             (Bignum n pout wsout * Rout)%sep mem' /\
+             (eval (from_mont (toZ wsout))) mod m =
+             (((eval (from_mont (toZ wsx))) mod m) *
+              ((eval (from_mont (toZ wsx))) mod m)) mod m).
 
-  (** ** Concrete spec_of instances for the secp256k1 field operations *)
+Instance spec_of_secp256k1_opp_bignum : spec_of "secp256k1_opp" :=
+  fun functions =>
+    forall (wsx old_out : list word.rep)
+           (px pout : word.rep)
+           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
+           (Rx Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
+      WordByWordMontgomery.valid bw n m (toZ wsx) ->
+      Datatypes.length old_out = n ->
+      (Bignum n px wsx * Rx)%sep mem0 ->
+      (Bignum n pout old_out * Rout)%sep mem0 ->
+      call functions Field.opp tr mem0
+        [pout; px]
+        (fun tr' mem' rets =>
+           tr = tr' /\ rets = nil /\
+           exists wsout : list word.rep,
+             Datatypes.length wsout = n /\
+             WordByWordMontgomery.valid bw n m (toZ wsout) /\
+             (Bignum n pout wsout * Rout)%sep mem' /\
+             (eval (from_mont (toZ wsout))) mod m =
+             (- (eval (from_mont (toZ wsx))) mod m) mod m).
 
-  (* secp256k1 modulus: m = 2^256 - 2^32 - 977 *)
-  Local Notation secp_m := (2^256 - 2^32 - 977)%Z.
-  Local Notation secp_n := 4%nat.
+(** ** Helper: feval → eval/from_mont/mod m bridge *)
 
-  Instance spec_of_secp256k1_mul_bignum :
-    spec_of "secp256k1_mul" :=
-    bignum_binop_spec secp_n secp_m
-      (fun a b => (a * b) mod secp_m) "secp256k1_mul".
+(** For the WBW Montgomery representation, [feval ws] is definitionally
+    [F.of_Z M_pos (eval (from_mont (toZ ws)))]. Therefore
+    [F.to_Z (feval ws) = eval (from_mont (toZ ws)) mod m]. *)
+Local Lemma feval_toZ (ws : list word.rep) :
+  F.to_Z (feval ws) = eval (from_mont (toZ ws)) mod m.
+Proof.
+  change (feval ws) with (F.of_Z M_pos (eval (from_mont (toZ ws)))).
+  rewrite F.to_Z_of_Z. unfold M. reflexivity.
+Qed.
 
-  Instance spec_of_secp256k1_add_bignum :
-    spec_of "secp256k1_add" :=
-    bignum_binop_spec secp_n secp_m
-      (fun a b => (a + b) mod secp_m) "secp256k1_add".
+(** Bridge lemmas: from [feval out = F.op ...] to the [eval/from_mont mod m]
+    form used in the Bignum-style specs.  Each handles the Z modular
+    arithmetic so the transport proofs stay clean. *)
 
-  Instance spec_of_secp256k1_sub_bignum :
-    spec_of "secp256k1_sub" :=
-    bignum_binop_spec secp_n secp_m
-      (fun a b => (a - b) mod secp_m) "secp256k1_sub".
+Local Lemma feval_mul_bridge (wout wx wy : list word.rep) :
+  feval wout = F.mul (feval wx) (feval wy) ->
+  eval (from_mont (toZ wout)) mod m =
+  ((eval (from_mont (toZ wx))) mod m *
+   (eval (from_mont (toZ wy))) mod m) mod m.
+Proof.
+  intros H. apply (f_equal F.to_Z) in H.
+  rewrite F.to_Z_mul in H. rewrite !feval_toZ in H.
+  change (Z.pos M_pos) with m in H.
+  rewrite Z.mul_mod_idemp_r in H by discriminate.
+  rewrite Zmod_mod. exact H.
+Qed.
 
-  Instance spec_of_secp256k1_square_bignum :
-    spec_of "secp256k1_square" :=
-    bignum_unop_spec secp_n secp_m
-      (fun a => (a * a) mod secp_m) "secp256k1_square".
+Local Lemma feval_add_bridge (wout wx wy : list word.rep) :
+  feval wout = F.add (feval wx) (feval wy) ->
+  eval (from_mont (toZ wout)) mod m =
+  ((eval (from_mont (toZ wx))) mod m +
+   (eval (from_mont (toZ wy))) mod m) mod m.
+Proof.
+  intros H. apply (f_equal F.to_Z) in H.
+  rewrite F.to_Z_add in H. rewrite !feval_toZ in H.
+  change (Z.pos M_pos) with m in H. exact H.
+Qed.
 
-  Instance spec_of_secp256k1_opp_bignum :
-    spec_of "secp256k1_opp" :=
-    bignum_unop_spec secp_n secp_m
-      (fun a => (- a) mod secp_m) "secp256k1_opp".
+Local Lemma feval_sub_bridge (wout wx wy : list word.rep) :
+  feval wout = F.sub (feval wx) (feval wy) ->
+  eval (from_mont (toZ wout)) mod m =
+  ((eval (from_mont (toZ wx))) mod m -
+   (eval (from_mont (toZ wy))) mod m) mod m.
+Proof.
+  intros H. apply (f_equal F.to_Z) in H.
+  cbv [F.sub] in H.
+  rewrite F.to_Z_add, F.to_Z_opp in H. rewrite !feval_toZ in H.
+  change (Z.pos M_pos) with m in H.
+  rewrite Zdiv.Zplus_mod_idemp_r in H. exact H.
+Qed.
 
-  (** ** Per-op transport lemmas
+Local Lemma feval_square_bridge (wout wx : list word.rep) :
+  feval wout = F.pow (feval wx) 2 ->
+  eval (from_mont (toZ wout)) mod m =
+  ((eval (from_mont (toZ wx))) mod m *
+   (eval (from_mont (toZ wx))) mod m) mod m.
+Proof.
+  intros H. apply (f_equal F.to_Z) in H.
+  rewrite F.to_Z_pow in H. simpl Z.of_N in H.
+  rewrite Z.pow_2_r in H. rewrite !feval_toZ in H.
+  change (Z.pos M_pos) with m in H.
+  rewrite Z.mul_mod_idemp_r in H by discriminate.
+  rewrite Zmod_mod. exact H.
+Qed.
 
-      Each lemma takes the existing fiat-crypto correctness proof
-      (which delivers a [spec_of_BinOp]/[spec_of_UnOp] for the FElem
-      world) and produces the Bignum-style spec we declared above as
-      a typeclass instance. The proof skeleton uses the building
-      blocks in [BignumFElemBridge.v]:
+Local Lemma Z_opp_mod (a n : Z) : (- (a mod n)) mod n = (- a) mod n.
+Proof.
+  replace (- (a mod n)) with (0 - (a mod n)) by lia.
+  replace (- a) with (0 - a) by lia.
+  apply Zminus_mod_idemp_r.
+Qed.
 
-      - [Bignum_length] to extract [length wsx = secp_n] from the
-        Bignum sep predicate (needed to wrap word lists into [felem]
-        dependent pairs);
-      - [FElem_iff_Bignum] / [Bignum_to_FElem] to translate sep
-        predicates between FElem and Bignum form;
-      - [feval_to_Z] to convert [F.to_Z (feval _)] into the AUCurves
-        [eval (from_mont _) mod m] form;
-      - the definitional equality of [bounded_by tight_bounds] with
-        [WordByWordMontgomery.valid 64 4 secp_m] (witnessed by
-        [tight_bounds_eq] in
-        [Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery]);
-      - [felem_from_bytearray]/[felem_to_bytearray] from
-        [Crypto.Bedrock.Specs.Field] to handle the byte-buffer
-        precondition of the FElem-style spec for the OLD output. *)
+Local Lemma feval_opp_bridge (wout wx : list word.rep) :
+  feval wout = F.opp (feval wx) ->
+  eval (from_mont (toZ wout)) mod m =
+  (- (eval (from_mont (toZ wx))) mod m) mod m.
+Proof.
+  intros H. apply (f_equal F.to_Z) in H.
+  rewrite F.to_Z_opp in H. rewrite !feval_toZ in H.
+  change (Z.pos M_pos) with m in H.
+  rewrite Z_opp_mod in H. rewrite Zmod_mod. exact H.
+Qed.
 
-  (* The transport closure is parametric over the operation. We
-     state the result types for each op below; the proofs are by
-     application of the FElem-style hypothesis with witnesses
-     constructed from the Bignum context, then sep-logic transport
-     of pre/postconditions. *)
+(** ** Transport lemmas — proved via FElem bridge *)
 
-  (* Transport lemmas: from FElem-style binop_spec/unop_spec to
-     Bignum-style bignum_binop_spec/bignum_unop_spec.
+Lemma secp256k1_mul_bignum_correct :
+  forall functions,
+    spec_of_BinOp bin_mul (field_representation:=frep256k1) functions ->
+    spec_of_secp256k1_mul_bignum functions.
+Proof.
+  intros functions Hfelem.
+  intros wsx wsy old_out px py pout tr m0 Rx Ry Rout.
+  intros Hvalx Hvaly Hlenout Hsepx Hsepy Hsepout.
+  pose proof (Bignum_length _ _ _ _ _ Hsepx) as Hlenx.
+  pose proof (Bignum_length _ _ _ _ _ Hsepy) as Hleny.
+  change 4%nat with felem_size_in_words in Hlenout, Hlenx, Hleny, Hsepx, Hsepy, Hsepout.
+  set (fx := exist _ wsx Hlenx : felem).
+  set (fy := exist _ wsy Hleny : felem).
+  set (fout := exist _ old_out Hlenout : felem).
+  seprewrite_in (Bignum_to_FElem px wsx Hlenx) Hsepx.
+  seprewrite_in (Bignum_to_FElem py wsy Hleny) Hsepy.
+  seprewrite_in (Bignum_to_FElem pout old_out Hlenout) Hsepout.
+  seprewrite_in (felem_to_bytes pout fout) Hsepout.
+  unfold spec_of_BinOp in Hfelem.
+  set (out_bs := ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list fout)).
+  specialize (Hfelem pout px py fx fy out_bs Rout tr m0).
+  cbv [bin_mul bin_xbounds bin_ybounds bin_outbounds bin_model] in Hfelem.
+  assert (Hbdx : bounded_by loose_bounds (felem_to_list fx))
+    by (apply relax_bounds; exact Hvalx).
+  assert (Hbdy : bounded_by loose_bounds (felem_to_list fy))
+    by (apply relax_bounds; exact Hvaly).
+  assert (Hcall : call functions mul tr m0 [pout; px; py]
+    (fun (tr' : trace) (mem' : map.rep) (rets : list word.rep) =>
+       rets = [] /\ tr = tr' /\
+       (exists out0 : felem,
+          feval (felem_to_list out0) =
+          (feval (felem_to_list fx) * feval (felem_to_list fy))%F /\
+          bounded_by tight_bounds (felem_to_list out0) /\
+          (FElem pout out0 * Rout)%sep mem'))).
+  { apply Hfelem.
+    refine (conj Hbdx (conj Hbdy (conj _ (conj _ (conj _ _))))).
+    - exact (ws2bs_felem_length fout).
+    - exists Rx. exact Hsepx.
+    - exists Ry. exact Hsepy.
+    - exact Hsepout. }
+  eapply Proper_call; [ | exact Hcall].
+  clear Hcall Hfelem Hsepx Hsepy Hsepout Hbdx Hbdy.
+  intros tr' m' rets (Hrets & Htr & out0 & Hfeval_out & Hbd_out & Hsep_out).
+  split; [exact Htr|]. split; [exact Hrets|].
+  exists (felem_to_list out0).
+  split; [exact (proj2_sig out0)|].
+  split; [exact Hbd_out|].
+  split.
+  - seprewrite_in (FElem_iff_Bignum pout out0) Hsep_out.
+    change (proj1_sig out0) with (felem_to_list out0) in Hsep_out.
+    exact Hsep_out.
+  - apply (f_equal F.to_Z) in Hfeval_out.
+    rewrite F.to_Z_mul in Hfeval_out.
+    change (felem_to_list fx) with wsx in Hfeval_out.
+    change (felem_to_list fy) with wsy in Hfeval_out.
+    rewrite !feval_toZ in Hfeval_out.
+    change (Z.pos M_pos) with m in Hfeval_out.
+    rewrite Z.mul_mod_idemp_r in Hfeval_out by discriminate.
+    rewrite Zmod_mod.
+    exact Hfeval_out.
+Qed.
 
-     Proof sketch (same for all 5 ops):
-       1. Intro hypotheses, unfold bignum_binop_spec
-       2. Extract length witnesses from Bignum sep predicates via Bignum_length
-       3. Construct felem witnesses: felem_of_words wsx Hlenx
-       4. Convert output Bignum to byte array via felem_to_bytearray
-       5. Apply the FElem-style binop_spec hypothesis
-       6. Discharge FElem preconditions via Bignum_to_FElem
-       7. Discharge bounded_by preconditions (reflexivity for WBW)
-       8. On postcondition: unwrap felem, FElem_iff_Bignum, feval_to_Z
+Lemma secp256k1_add_bignum_correct :
+  forall functions,
+    spec_of_BinOp bin_add (field_representation:=frep256k1) functions ->
+    spec_of_secp256k1_add_bignum functions.
+Proof.
+  intros functions Hfelem.
+  intros wsx wsy old_out px py pout tr m0 Rx Ry Rout.
+  intros Hvalx Hvaly Hlenout Hsepx Hsepy Hsepout.
+  pose proof (Bignum_length _ _ _ _ _ Hsepx) as Hlenx.
+  pose proof (Bignum_length _ _ _ _ _ Hsepy) as Hleny.
+  change 4%nat with felem_size_in_words in Hlenout, Hlenx, Hleny, Hsepx, Hsepy, Hsepout.
+  set (fx := exist _ wsx Hlenx : felem).
+  set (fy := exist _ wsy Hleny : felem).
+  set (fout := exist _ old_out Hlenout : felem).
+  seprewrite_in (Bignum_to_FElem px wsx Hlenx) Hsepx.
+  seprewrite_in (Bignum_to_FElem py wsy Hleny) Hsepy.
+  seprewrite_in (Bignum_to_FElem pout old_out Hlenout) Hsepout.
+  seprewrite_in (felem_to_bytes pout fout) Hsepout.
+  unfold spec_of_BinOp in Hfelem.
+  set (out_bs := ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list fout)).
+  specialize (Hfelem pout px py fx fy out_bs Rout tr m0).
+  cbv [bin_add bin_xbounds bin_ybounds bin_outbounds bin_model] in Hfelem.
+  assert (Hcall : call functions add tr m0 [pout; px; py]
+    (fun (tr' : trace) (mem' : map.rep) (rets : list word.rep) =>
+       rets = [] /\ tr = tr' /\
+       (exists out0 : felem,
+          feval (felem_to_list out0) =
+          (feval (felem_to_list fx) + feval (felem_to_list fy))%F /\
+          bounded_by loose_bounds (felem_to_list out0) /\
+          (FElem pout out0 * Rout)%sep mem'))).
+  { apply Hfelem.
+    refine (conj Hvalx (conj Hvaly (conj _ (conj _ (conj _ _))))).
+    - exact (ws2bs_felem_length fout).
+    - exists Rx. exact Hsepx.
+    - exists Ry. exact Hsepy.
+    - exact Hsepout. }
+  eapply Proper_call; [ | exact Hcall].
+  clear Hcall Hfelem Hsepx Hsepy Hsepout.
+  intros tr' m' rets (Hrets & Htr & out0 & Hfeval_out & Hbd_out & Hsep_out).
+  split; [exact Htr|]. split; [exact Hrets|].
+  exists (felem_to_list out0).
+  split; [exact (proj2_sig out0)|].
+  split; [exact Hbd_out|].
+  split.
+  - seprewrite_in (FElem_iff_Bignum pout out0) Hsep_out.
+    change (proj1_sig out0) with (felem_to_list out0) in Hsep_out.
+    exact Hsep_out.
+  - apply (f_equal F.to_Z) in Hfeval_out.
+    rewrite F.to_Z_add in Hfeval_out.
+    change (felem_to_list fx) with wsx in Hfeval_out.
+    change (felem_to_list fy) with wsy in Hfeval_out.
+    rewrite !feval_toZ in Hfeval_out.
+    change (Z.pos M_pos) with m in Hfeval_out.
+    exact Hfeval_out.
+Qed.
 
-     These proofs require interactive tactic development against coqc
-     because the fnspec! macro expansion and $@ notation create complex
-     goal shapes. To complete: run `coqc` on this file with MCP and
-     replace each Admitted with the interactive proof. *)
+Lemma secp256k1_sub_bignum_correct :
+  forall functions,
+    spec_of_BinOp bin_sub (field_representation:=frep256k1) functions ->
+    spec_of_secp256k1_sub_bignum functions.
+Proof.
+  intros functions Hfelem.
+  intros wsx wsy old_out px py pout tr m0 Rx Ry Rout.
+  intros Hvalx Hvaly Hlenout Hsepx Hsepy Hsepout.
+  pose proof (Bignum_length _ _ _ _ _ Hsepx) as Hlenx.
+  pose proof (Bignum_length _ _ _ _ _ Hsepy) as Hleny.
+  change 4%nat with felem_size_in_words in Hlenout, Hlenx, Hleny, Hsepx, Hsepy, Hsepout.
+  set (fx := exist _ wsx Hlenx : felem).
+  set (fy := exist _ wsy Hleny : felem).
+  set (fout := exist _ old_out Hlenout : felem).
+  seprewrite_in (Bignum_to_FElem px wsx Hlenx) Hsepx.
+  seprewrite_in (Bignum_to_FElem py wsy Hleny) Hsepy.
+  seprewrite_in (Bignum_to_FElem pout old_out Hlenout) Hsepout.
+  seprewrite_in (felem_to_bytes pout fout) Hsepout.
+  unfold spec_of_BinOp in Hfelem.
+  set (out_bs := ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list fout)).
+  specialize (Hfelem pout px py fx fy out_bs Rout tr m0).
+  cbv [bin_sub bin_xbounds bin_ybounds bin_outbounds bin_model] in Hfelem.
+  assert (Hcall : call functions sub tr m0 [pout; px; py]
+    (fun (tr' : trace) (mem' : map.rep) (rets : list word.rep) =>
+       rets = [] /\ tr = tr' /\
+       (exists out0 : felem,
+          feval (felem_to_list out0) =
+          (feval (felem_to_list fx) - feval (felem_to_list fy))%F /\
+          bounded_by loose_bounds (felem_to_list out0) /\
+          (FElem pout out0 * Rout)%sep mem'))).
+  { apply Hfelem.
+    refine (conj Hvalx (conj Hvaly (conj _ (conj _ (conj _ _))))).
+    - exact (ws2bs_felem_length fout).
+    - exists Rx. exact Hsepx.
+    - exists Ry. exact Hsepy.
+    - exact Hsepout. }
+  eapply Proper_call; [ | exact Hcall].
+  clear Hcall Hfelem Hsepx Hsepy Hsepout.
+  intros tr' m' rets (Hrets & Htr & out0 & Hfeval_out & Hbd_out & Hsep_out).
+  split; [exact Htr|]. split; [exact Hrets|].
+  exists (felem_to_list out0).
+  split; [exact (proj2_sig out0)|].
+  split; [exact Hbd_out|].
+  split.
+  - seprewrite_in (FElem_iff_Bignum pout out0) Hsep_out.
+    change (proj1_sig out0) with (felem_to_list out0) in Hsep_out.
+    exact Hsep_out.
+  - change (felem_to_list fx) with wsx in Hfeval_out.
+    change (felem_to_list fy) with wsy in Hfeval_out.
+    apply (feval_sub_bridge _ _ _ Hfeval_out).
+Qed.
 
-  Lemma secp256k1_mul_bignum_correct :
-    forall functions,
-      spec_of_BinOp bin_mul (field_representation:=frep256k1) functions ->
-      spec_of_secp256k1_mul_bignum functions.
-  Proof. Admitted. (* interactive: see proof sketch above *)
+Lemma secp256k1_square_bignum_correct :
+  forall functions,
+    spec_of_UnOp un_square (field_representation:=frep256k1) functions ->
+    spec_of_secp256k1_square_bignum functions.
+Proof.
+  intros functions Hfelem.
+  intros wsx old_out px pout tr m0 Rx Rout.
+  intros Hvalx Hlenout Hsepx Hsepout.
+  pose proof (Bignum_length _ _ _ _ _ Hsepx) as Hlenx.
+  change 4%nat with felem_size_in_words in Hlenout, Hlenx, Hsepx, Hsepout.
+  set (fx := exist _ wsx Hlenx : felem).
+  set (fout := exist _ old_out Hlenout : felem).
+  seprewrite_in (Bignum_to_FElem px wsx Hlenx) Hsepx.
+  seprewrite_in (Bignum_to_FElem pout old_out Hlenout) Hsepout.
+  seprewrite_in (felem_to_bytes pout fout) Hsepout.
+  unfold spec_of_UnOp in Hfelem.
+  set (out_bs := ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list fout)).
+  specialize (Hfelem pout px fx out_bs Rout tr m0).
+  cbv [un_square un_xbounds un_outbounds un_model] in Hfelem.
+  assert (Hcall : call functions square tr m0 [pout; px]
+    (fun (tr' : trace) (mem' : map.rep) (rets : list word.rep) =>
+       rets = [] /\ tr = tr' /\
+       (exists out0 : felem,
+          feval (felem_to_list out0) =
+          F.pow (feval (felem_to_list fx)) 2 /\
+          bounded_by tight_bounds (felem_to_list out0) /\
+          (FElem pout out0 * Rout)%sep mem'))).
+  { apply Hfelem.
+    refine (conj Hvalx (conj _ (conj _ _))).
+    - exact (ws2bs_felem_length fout).
+    - exists Rx. exact Hsepx.
+    - exact Hsepout. }
+  eapply Proper_call; [ | exact Hcall].
+  clear Hcall Hfelem Hsepx Hsepout.
+  intros tr' m' rets (Hrets & Htr & out0 & Hfeval_out & Hbd_out & Hsep_out).
+  split; [exact Htr|]. split; [exact Hrets|].
+  exists (felem_to_list out0).
+  split; [exact (proj2_sig out0)|].
+  split; [exact Hbd_out|].
+  split.
+  - seprewrite_in (FElem_iff_Bignum pout out0) Hsep_out.
+    change (proj1_sig out0) with (felem_to_list out0) in Hsep_out.
+    exact Hsep_out.
+  - apply (f_equal F.to_Z) in Hfeval_out.
+    rewrite F.to_Z_pow in Hfeval_out.
+    change (felem_to_list fx) with wsx in Hfeval_out.
+    rewrite !feval_toZ in Hfeval_out.
+    simpl Z.of_N in Hfeval_out.
+    rewrite Z.pow_2_r in Hfeval_out.
+    change (Z.pos M_pos) with m in Hfeval_out.
+    exact Hfeval_out.
+Qed.
 
-  Lemma secp256k1_add_bignum_correct :
-    forall functions,
-      spec_of_BinOp bin_add (field_representation:=frep256k1) functions ->
-      spec_of_secp256k1_add_bignum functions.
-  Proof. Admitted.
-
-  Lemma secp256k1_sub_bignum_correct :
-    forall functions,
-      spec_of_BinOp bin_sub (field_representation:=frep256k1) functions ->
-      spec_of_secp256k1_sub_bignum functions.
-  Proof. Admitted.
-
-  Lemma secp256k1_square_bignum_correct :
-    forall functions,
-      spec_of_UnOp un_square (field_representation:=frep256k1) functions ->
-      spec_of_secp256k1_square_bignum functions.
-  Proof. Admitted.
-
-  Lemma secp256k1_opp_bignum_correct :
-    forall functions,
-      spec_of_UnOp un_opp (field_representation:=frep256k1) functions ->
-      spec_of_secp256k1_opp_bignum functions.
-  Proof. Admitted.
-
-  (** ** Composition recipe (no new lemmas — just consume the bridges)
-
-      To prove that the existing fiat-crypto-derived
-      [secp256k1_mul] (with its [spec_of_BinOp bin_mul] proof from
-      [secp256k1_mul_correct]) also satisfies
-      [spec_of_secp256k1_mul_bignum], a caller does:
-
-      1. Apply [secp256k1_mul_correct] to obtain a [binop_spec bin_mul]
-         hypothesis (FElem-style).
-      2. Use [secp256k1_Bignum_to_FElem] (from
-         [Secp256k1_Bignum_Specs.v]) to rewrite the Bignum
-         preconditions on [px], [py] into FElem form. The required
-         length-equality witnesses come from the
-         [Bignum n px wsx] precondition (which already embeds
-         [length wsx = n] via its [emp]-clause).
-      3. The output buffer is the only asymmetric piece: the FElem
-         binop_spec wants [out : list byte] of length
-         [felem_size_in_bytes] for the *old* output; AUCurves passes
-         a [Bignum n pout old_out]. Convert via [Bignum_of_bytes]
-         (from [Crypto.Bedrock.Field.Synthesis.Generic.Bignum]) which
-         is an [iff1] between an [array ptsto] of bytes and a [Bignum]
-         after grouping bytes into words.
-      4. Apply the FElem-style WP, then on the postcondition use
-         [secp256k1_FElem_iff_Bignum] to push the resulting [FElem
-         pout new_x] back into [Bignum n pout (proj1_sig new_x)].
-      5. The bounds are equal definitionally:
-         [bounded_by tight_bounds] for [frep256k1] is
-         [WordByWordMontgomery.valid 64 4 m].
-      6. The decoding is also equal definitionally:
-         [feval x = F.of_Z _ (eval (from_mont (map word.unsigned (proj1_sig x))))],
-         and we want
-         [eval (from_mont (...)) mod m = ...]; the [F.to_Z ∘ F.of_Z]
-         round trip gives exactly [_ mod m].
-
-      The result: a complete WP proof producing a
-      [bignum_binop_spec] from a [binop_spec], usable by AUCurves
-      callers via the standard [straightline_call] tactic. *)
-
-End Secp256k1_Wired_Specs.
-
-(** Note: These [Instance spec_of_secp256k1_*_bignum] declarations make
-    the Bignum-style specs available to typeclass resolution. An
-    AUCurves bedrock2 program that calls "secp256k1_mul" will pick up
-    [spec_of_secp256k1_mul_bignum] automatically. To dispatch the
-    actual proof obligation, the caller must (a) put
-    [secp256k1_mul_correct] (from [Field256k1.v]) into context and
-    (b) compose via the recipe documented above.
-
-    The mechanical sep-logic massaging in step (3)–(4) above is
-    standard Coq-bedrock2 plumbing of the kind used throughout
-    [BLS12Curve_G1.v]; it does not require any new lemmas beyond
-    those already in [BignumFElemBridge.v] and
-    [Secp256k1_Bignum_Specs.v]. *)
+Lemma secp256k1_opp_bignum_correct :
+  forall functions,
+    spec_of_UnOp un_opp (field_representation:=frep256k1) functions ->
+    spec_of_secp256k1_opp_bignum functions.
+Proof.
+  intros functions Hfelem.
+  intros wsx old_out px pout tr m0 Rx Rout.
+  intros Hvalx Hlenout Hsepx Hsepout.
+  pose proof (Bignum_length _ _ _ _ _ Hsepx) as Hlenx.
+  change 4%nat with felem_size_in_words in Hlenout, Hlenx, Hsepx, Hsepout.
+  set (fx := exist _ wsx Hlenx : felem).
+  set (fout := exist _ old_out Hlenout : felem).
+  seprewrite_in (Bignum_to_FElem px wsx Hlenx) Hsepx.
+  seprewrite_in (Bignum_to_FElem pout old_out Hlenout) Hsepout.
+  seprewrite_in (felem_to_bytes pout fout) Hsepout.
+  unfold spec_of_UnOp in Hfelem.
+  set (out_bs := ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list fout)).
+  specialize (Hfelem pout px fx out_bs Rout tr m0).
+  cbv [un_opp un_xbounds un_outbounds un_model] in Hfelem.
+  assert (Hcall : call functions opp tr m0 [pout; px]
+    (fun (tr' : trace) (mem' : map.rep) (rets : list word.rep) =>
+       rets = [] /\ tr = tr' /\
+       (exists out0 : felem,
+          feval (felem_to_list out0) =
+          F.opp (feval (felem_to_list fx)) /\
+          bounded_by loose_bounds (felem_to_list out0) /\
+          (FElem pout out0 * Rout)%sep mem'))).
+  { apply Hfelem.
+    refine (conj Hvalx (conj _ (conj _ _))).
+    - exact (ws2bs_felem_length fout).
+    - exists Rx. exact Hsepx.
+    - exact Hsepout. }
+  eapply Proper_call; [ | exact Hcall].
+  clear Hcall Hfelem Hsepx Hsepout.
+  intros tr' m' rets (Hrets & Htr & out0 & Hfeval_out & Hbd_out & Hsep_out).
+  split; [exact Htr|]. split; [exact Hrets|].
+  exists (felem_to_list out0).
+  split; [exact (proj2_sig out0)|].
+  split; [exact Hbd_out|].
+  split.
+  - seprewrite_in (FElem_iff_Bignum pout out0) Hsep_out.
+    change (proj1_sig out0) with (felem_to_list out0) in Hsep_out.
+    exact Hsep_out.
+  - apply (f_equal F.to_Z) in Hfeval_out.
+    rewrite F.to_Z_opp in Hfeval_out.
+    change (felem_to_list fx) with wsx in Hfeval_out.
+    rewrite !feval_toZ in Hfeval_out.
+    change (Z.pos M_pos) with m in Hfeval_out.
+    (* H: -(a mod m) mod m; goal: (-a) mod m mod m *)
+    rewrite Z_opp_mod in Hfeval_out. rewrite Zmod_mod. exact Hfeval_out.
+Qed.

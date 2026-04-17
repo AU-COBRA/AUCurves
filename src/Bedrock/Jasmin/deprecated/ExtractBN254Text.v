@@ -13,8 +13,8 @@ From Stdlib Require Export ExtrOcamlString.
 From Stdlib Require Import ZArith String Ascii.
 Require Import bedrock2.Syntax.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
 Require Import Bedrock.Jasmin.Core.
 
 Import BinInt String List.ListNotations.

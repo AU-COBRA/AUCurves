@@ -19,7 +19,7 @@ Require Import Theory.Fields.FieldsUtil.
 Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Crypto.Algebra.Hierarchy.
 From Coqprime Require Import GZnZ.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bw6_761_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime_certif.
 
 Local Open Scope Z_scope.
 Local Coercion Z.of_nat : nat >-> Z.

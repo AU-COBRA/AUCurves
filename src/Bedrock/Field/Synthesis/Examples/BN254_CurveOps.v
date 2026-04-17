@@ -14,8 +14,8 @@
     ([BN254_wNAF_Instance.v]), which expects [HCurveDouble] and
     [HCurveAddInplace] function specs. *)
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_three_b.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_three_b.
 Require Import Bedrock.Field.Synthesis.Examples.BN254_G1.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Bedrock.Group.CurveAdd.PointDouble.

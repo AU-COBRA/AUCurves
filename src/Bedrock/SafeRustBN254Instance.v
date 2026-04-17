@@ -38,11 +38,11 @@ Import ListNotations.
 Require Import Rupicola.Lib.Api.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
-Require Import Crypto.Bedrock.Specs.AbstractField.
-Require Import Crypto.Bedrock.Specs.PrimeField.
+Require Import Bedrock.Specs.AbstractField.
+Require Import Bedrock.Specs.PrimeField.
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_Fp2.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_instances.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_Fp2.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_instances.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.WeakestPrecondition.
 Require Import coqutil.Word.Bitwidth64.

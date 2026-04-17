@@ -26,8 +26,8 @@ Import BinInt String List.ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Bedrock.Group.CurveAdd.PointDouble.

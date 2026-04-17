@@ -43,7 +43,7 @@ Local Open Scope string_scope.
     [Instance spec_of_bls12_pairing : spec_of "bls12_pairing"] from
     [BLS12_PairingTop.v]. The reflection plumbing developed here works
     on this shape; importing the real module is then a matter of
-    [Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_PairingTop]
+    [Require Import Bedrock.Field.Synthesis.Examples.BLS12_PairingTop]
     and pointing the tactic at [spec_of_bls12_pairing].
 
     We use [nat] instead of [word], opaque [Prop] predicates for the

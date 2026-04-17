@@ -136,7 +136,20 @@ Inductive rust_exec_fenv (N u64_max : nat) (fenv : rust_fenv)
       ce_extract_output ce params rs_mid = Some rs_out_val ->
       ce_writeback_output ce dest rs_out_val rs_caller = Some rs_caller' ->
       rust_exec_fenv N u64_max fenv leaf_spec ce (RCall f dest args)
-                     rs_caller rs_caller'.
+                     rs_caller rs_caller'
+| XF_limb_store :
+    forall loc k e v rs rs' (Heq : loc_dst loc = TFp) old_fp,
+      (** [loc] must project down to an [Fp] value; [e] evaluates to a
+          limb word; [replace_limb] computes the new Fp with limb k
+          overwritten; [located_update] lifts that back into the
+          ambient state under the location's [field_path]. *)
+      sexpr_eval u64_max rs e = Some v ->
+      located_lookup rs loc = Some old_fp ->
+      located_update rs loc
+        (eq_rect TFp rust_val
+           (replace_limb k v (eq_rect (loc_dst loc) rust_val old_fp TFp Heq))
+           (loc_dst loc) (eq_sym Heq)) = Some rs' ->
+      rust_exec_fenv N u64_max fenv leaf_spec ce (RLimbStore loc k e) rs rs'.
 
 (* ================================================================ *)
 (* §2. rust_refines and structural composition                       *)
@@ -170,7 +183,7 @@ Lemma refines_seq
   rust_refines N u64_max fenv leaf_spec ce P (RSeq c1 c2) R.
 Proof.
   unfold rust_refines; intros H1 H2 rs1 rs3 Hpre Hexec.
-  inversion Hexec as [ | ? ? ? rs_mid ? Hc1 Hc2 | | | | | | | | | ];
+  inversion Hexec as [ | ? ? ? rs_mid ? Hc1 Hc2 | | | | | | | | | | ];
     subst.
   apply (H2 rs_mid rs3).
   - apply (H1 rs1 rs_mid); assumption.
@@ -209,22 +222,30 @@ Proof.
 Qed.
 
 (** Structural rule for [RLimbStore].  Proved by inversion on the
-    single [rust_exec_fenv] rule ([XB_limb_store] analog hasn't been
-    added to [rust_exec_fenv] yet; when it's added, this lemma
-    falls out by inversion).  *)
+    [XF_limb_store] rule of [rust_exec_fenv]: every [RLimbStore]
+    execution is witnessed by a single application of [XF_limb_store],
+    so the structural rule below suffices to close any goal of the
+    form [rust_refines P (RLimbStore loc k e) Q] by producing a
+    quantified post-state predicate that follows from the primitive
+    semantics. *)
 Lemma refines_limb_store
       (N u64_max : nat) (fenv : rust_fenv) (leaf_spec : leaf_spec_t)
-      (ce : CallEnv) (P : spec_t)
+      (ce : CallEnv) (P Q : spec_t)
       (loc : located) (k : nat) (e : sexpr) :
-  (** If the [rust_exec_fenv] semantics has no [RLimbStore] rule
-      (the current version doesn't), then [rust_refines] vacuously
-      holds for [RLimbStore] under any [P]: there is NO state pair
-      [(rs1, rs2)] with [rust_exec_fenv _ _ _ _ _ (RLimbStore _ _ _)
-      rs1 rs2], so the universal implication is trivially true. *)
-  rust_refines N u64_max fenv leaf_spec ce P (RLimbStore loc k e) P.
+  (forall rs rs' v (Heq : loc_dst loc = TFp) old_fp,
+     P rs ->
+     sexpr_eval u64_max rs e = Some v ->
+     located_lookup rs loc = Some old_fp ->
+     located_update rs loc
+       (eq_rect TFp rust_val
+          (replace_limb k v (eq_rect (loc_dst loc) rust_val old_fp TFp Heq))
+          (loc_dst loc) (eq_sym Heq)) = Some rs' ->
+     Q rs') ->
+  rust_refines N u64_max fenv leaf_spec ce P (RLimbStore loc k e) Q.
 Proof.
-  unfold rust_refines; intros rs1 rs2 Hpre Hexec.
-  inversion Hexec.
+  unfold rust_refines; intros Hbody rs1 rs2 Hpre Hexec.
+  inversion Hexec; subst.
+  eapply Hbody; eauto.
 Qed.
 
 (** Structural rule for [RWhileNz].  If a loop invariant [I] is

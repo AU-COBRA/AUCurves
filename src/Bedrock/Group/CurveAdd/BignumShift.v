@@ -3,7 +3,7 @@ Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.Core.
 Require Import Crypto.Arithmetic.UniformWeight.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.ArrayUtil.
+Require Import Bedrock.Field.Synthesis.Examples.ArrayUtil.
 (* Require Import Crypto.Bedrock.Specs.Field. *)
 Local Open Scope Z_scope.
 

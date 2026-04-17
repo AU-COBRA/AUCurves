@@ -2,13 +2,13 @@
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Lists.List.
+Require Import Coq.micromega.Lia.
 Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
 Require Import coqutil.Word.Interface.
-Require Import bedrock2.Semantics.
-Require Import Crypto.Bedrock.Field.Common.Types.
 Require Import coqutil.Map.Properties.
 Require Import bedrock2.Array.
+Require Import bedrock2.Memory.
 Require Import Crypto.Bedrock.Field.Common.Tactics.
 Require Import Bedrock.Util.Word.
 Import ListNotations.
@@ -16,9 +16,13 @@ Import ListNotations.
 (*Alternative characterization of Bignum using a fixpoint. This is useful for recursing over the Scalars of a Bignum.*)
 
 Section bignum.
-    Context {p : Types.parameters}
-            {ok : Types.ok}.
-            Existing Instance semantics_ok.
+    Context
+      {width : Z} {BW : Bitwidth.Bitwidth width} {word : word.word width}
+      {word_ok : word.ok word}
+      {mem : Interface.map.map word Byte.byte} {mem_ok : Interface.map.ok mem}.
+    Local Notation word_size_in_bytes := (Memory.bytes_per_word width).
+    Local Notation Bignum := (@Bignum width word mem) (only parsing).
+    Local Notation anybytes := (@Memory.anybytes width word mem) (only parsing).
 
     Local Open Scope string_scope.
     Local Infix "*" := sep : sep_scope.
@@ -55,16 +59,16 @@ Section bignum.
 
     Notation msplit := Interface.map.split.
 
-    Lemma split_empty_r: forall x, @msplit (@Semantics.word (@semantics p)) Init.Byte.byte
-    (@Semantics.mem (@semantics p)) x x Interface.map.empty.
+    Lemma split_empty_r: forall x, @msplit word Init.Byte.byte
+    mem x x Interface.map.empty.
     Proof.
         split.
         - rewrite map.putmany_empty_r. auto.
         - apply map.disjoint_empty_r.
     Qed.
 
-    Lemma split_empty_l: forall x, @msplit (@Semantics.word (@semantics p)) Init.Byte.byte
-    (@Semantics.mem (@semantics p)) x Interface.map.empty x.
+    Lemma split_empty_l: forall x, @msplit word Init.Byte.byte
+    mem x Interface.map.empty x.
     Proof.
         intros; rewrite Properties.map.split_comm. apply split_empty_r.
     Qed.
@@ -73,8 +77,7 @@ Section bignum.
     ((Scalars.scalar a v) * array Scalars.scalar (word.of_Z word_size_in_bytes) (word.add (word.of_Z word_size_in_bytes) a) l)%sep.
     Proof.
         rewrite word_add_comm.
-        destruct p. destruct semantics.
-        pose proof (@array_cons width word Init.Byte.byte mem word Scalars.scalar (word.of_Z word_size_in_bytes) v l a).
+        pose proof (array_cons Scalars.scalar (word.of_Z word_size_in_bytes) v l a).
         auto.
     Qed.
 
@@ -85,7 +88,7 @@ Section bignum.
         - unfold Bignum in H. sepsimpl_hyps. apply Scalar_cons in H0. apply sep_comm.
             do 3 destruct H0. destruct H1. exists x0. exists x1. split; auto. split.
             + unfold Bignum. simpl. exists Interface.map.empty. exists x0. split.
-                * apply split_empty_l. 
+                * apply split_empty_l.
                 * split.
                 {
                     sepsimpl. auto.
@@ -142,31 +145,20 @@ Section bignum.
 
     Lemma Bignum_anybytes: forall (n : nat) m num a wa (Hn : num = Z.of_nat (n * Z.to_nat word_size_in_bytes)), Bignum n a wa m -> anybytes a (num) m.
     Proof.
-    intros. pose proof (Bignum_to_bytes n a wa).
-    unfold Lift1Prop.impl1 in H0.
-    pose proof (H0 m H). unfold Lift1Prop.ex1 in H1. destruct H1.
-    pose proof (array_1_to_anybytes x m a). sepsimpl_hyps. apply H2 in H3.
-    rewrite Hn. rewrite <- H1. auto.
-    Qed.
-
-    Lemma ftprint_length : forall (a : word) n, length (ftprint a n) = Z.to_nat n.
-    Proof.
-        intros. unfold ftprint. generalize dependent a. induction (BinIntDef.Z.to_nat n) as [|n0 IHn0]; auto.
-        intros; simpl; auto. 
+    intros. apply (proj1 (Bignum_to_bytes n a wa m)) in H.
+    sepsimpl_hyps.
+    eapply array_1_to_anybytes in H0.
+    subst num. rewrite <- H. exact H0.
     Qed.
 
     Lemma anybytes_Bignum: forall n m num a (Hn : num = Z.of_nat (n * Z.to_nat word_size_in_bytes)), anybytes a (num) m -> exists wa, (Bignum n a wa) m.
     Proof.
-    intros. destruct H.
-    pose proof (Bignum_of_bytes n a x). assert (length x =  (n * (Z.to_nat word_size_in_bytes))%nat).
-        {
-        simpl. simpl in H. pose proof (map.of_disjoint_list_zip_length (ftprint a num) x m H). rewrite ftprint_length in H1. auto with zarith.
-        }
-    apply H0 in H1. unfold Lift1Prop.impl1 in H1. unfold Lift1Prop.ex1 in H1.
-    pose proof (of_disjoint_list_zip_to_array_1 (Z.to_nat num) a x m).
-    assert (Z.of_nat (Z.to_nat num) = num) by auto with zarith.
-    rewrite H3 in H2. apply H2 in H.
-    apply H1. auto.
+    intros. subst num.
+    apply anybytes_to_array_1 in H. destruct H as [bs [Harr Hlen]].
+    pose proof (Bignum_of_bytes n a bs) as Hbof.
+    assert (Hbslen: Datatypes.length bs = (n * Z.to_nat word_size_in_bytes)%nat) by lia.
+    apply (proj1 (Hbof Hbslen m)) in Harr.
+    eexists. exact Harr.
     Qed.
 
     Lemma Bignum_eq: forall n x p, Bignum n p x = (emp (Datatypes.length x = n) * array Scalars.scalar (word.of_Z word_size_in_bytes) p x)%sep.

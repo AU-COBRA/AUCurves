@@ -33,7 +33,7 @@ Require Import bedrock2.Memory.
 Require Import bedrock2.Semantics.
 Require Import bedrock2.WeakestPrecondition.
 
-Require Import Crypto.Bedrock.Specs.AbstractField.
+Require Import Bedrock.Specs.AbstractField.
 
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Import Constr.

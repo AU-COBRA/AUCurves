@@ -24,6 +24,7 @@
 Require Import Coq.Strings.String.
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Lists.List.
+Require Import Coq.micromega.Lia.
 Import ListNotations.
 Local Open Scope string_scope.
 
@@ -327,19 +328,72 @@ Fixpoint remove_var (env : list (var * tval)) (x : var) : list (var * tval) :=
       else (y, v) :: remove_var rest x
   end.
 
-(** Set a tower binding: remove any existing binding for [x], then
-    prepend the new one. This guarantees that [rs_set_tower] is
-    *idempotent up to swap-of-distinct-keys*: setting the same var
-    twice gives the same single binding, and setting two distinct
-    vars commutes (modulo the order of the two top entries, but
-    since both are at the head and lookup_t finds the head first,
-    they're observationally identical for the [x] / [y] vars
-    themselves, and identical for everything else). *)
+(** Update an environment in place: if [x] is already bound, replace
+    its value at that position; otherwise append [(x, v)] at the end.
+    This makes [rs_set_tower] order-preserving for existing keys, so
+    that [located_update] (which sets an existing key) leaves the list
+    shape unchanged. *)
+Fixpoint update_in_place (env : list (var * tval)) (x : var) (v : tval)
+    : list (var * tval) :=
+  match env with
+  | [] => [(x, v)]
+  | (y, w) :: rest =>
+      if String.eqb y x then (x, v) :: rest
+      else (y, w) :: update_in_place rest x v
+  end.
+
 Definition rs_set_tower (rs : rust_state) (x : var) (v : tval) : rust_state :=
-  {| rs_tower := (x, v) :: remove_var (rs_tower rs) x;
+  {| rs_tower := update_in_place (rs_tower rs) x v;
      rs_scalar := rs_scalar rs |}.
 Definition rs_set_scalar (rs : rust_state) (x : var) (v : nat) : rust_state :=
   {| rs_tower := rs_tower rs; rs_scalar := (x, v) :: rs_scalar rs |}.
+
+(** [set_nth k v xs]: replace the k-th element of [xs] with [v].
+    Returns the original list unchanged if [k >= length xs].  Used to
+    model a limb-level store into a [rust_val TFp] (backed by a
+    [list nat]). *)
+Fixpoint set_nth (k : nat) (v : nat) (xs : list nat) : list nat :=
+  match xs, k with
+  | []       , _      => []
+  | _  :: rest, O     => v :: rest
+  | x  :: rest, S k'  => x :: set_nth k' v rest
+  end.
+
+(** [replace_limb k v fp]: replace the k-th limb of an Fp value
+    ([VFp limbs]) with [v]. *)
+Definition replace_limb (k v : nat) (fp : rust_val TFp) : rust_val TFp :=
+  match fp with
+  | VFp limbs => VFp (set_nth k v limbs)
+  end.
+
+(** [set_nth] preserves length. *)
+Lemma set_nth_length : forall k v xs,
+  length (set_nth k v xs) = length xs.
+Proof.
+  induction k; intros v xs; destruct xs; simpl; auto.
+Qed.
+
+(** At index [k < length xs], [set_nth k v xs] has [v] at position [k]. *)
+Lemma nth_set_nth_same : forall k v xs d,
+  k < length xs -> nth k (set_nth k v xs) d = v.
+Proof.
+  induction k; intros v xs d Hlt; destruct xs as [| x rest]; simpl in *.
+  - lia.
+  - reflexivity.
+  - lia.
+  - apply IHk. lia.
+Qed.
+
+(** At index [j <> k], [set_nth k v xs] is unchanged at [j]. *)
+Lemma nth_set_nth_other : forall k v xs j d,
+  j <> k -> nth j (set_nth k v xs) d = nth j xs d.
+Proof.
+  induction k; intros v xs j d Hneq; destruct xs as [| x rest]; simpl.
+  - reflexivity.
+  - destruct j as [| j']; [contradiction | reflexivity].
+  - reflexivity.
+  - destruct j as [| j']; [reflexivity | apply IHk; lia].
+Qed.
 
 Section Semantics.
 
@@ -798,6 +852,89 @@ Proof.
   - simpl. destruct (String.eqb y k); auto.
 Qed.
 
+(** [remove_var] is a no-op when the var isn't in the list. *)
+Lemma remove_var_notin : forall env x,
+  lookup_t env x = None ->
+  remove_var env x = env.
+Proof.
+  intros env x Hnone. induction env as [| [y v] rest IH]; auto.
+  simpl in Hnone. simpl.
+  destruct (String.eqb x y) eqn:Hxy.
+  - discriminate.
+  - destruct (String.eqb y x) eqn:Hyx.
+    + apply String.eqb_eq in Hyx. subst y.
+      rewrite String.eqb_refl in Hxy. discriminate.
+    + f_equal. apply IH. exact Hnone.
+Qed.
+
+(** Lookup-after-update_in_place at the same key gives the new value. *)
+Lemma lookup_t_update_same : forall env x v,
+  lookup_t (update_in_place env x v) x = Some v.
+Proof.
+  intros env x v. induction env as [| [y w] rest IH]; simpl.
+  - rewrite String.eqb_refl. reflexivity.
+  - destruct (String.eqb y x) eqn:Hyx.
+    + apply String.eqb_eq in Hyx. subst y. simpl. rewrite String.eqb_refl. reflexivity.
+    + simpl. destruct (String.eqb x y) eqn:Hxy.
+      * apply String.eqb_eq in Hxy. subst y. rewrite String.eqb_refl in Hyx. discriminate.
+      * exact IH.
+Qed.
+
+(** Lookup-after-update_in_place at a different key is unchanged. *)
+Lemma lookup_t_update_other : forall env x y v,
+  x <> y ->
+  lookup_t (update_in_place env x v) y = lookup_t env y.
+Proof.
+  intros env x y v Hneq. induction env as [| [k w] rest IH]; simpl.
+  - destruct (String.eqb y x) eqn:Hyx; auto.
+    apply String.eqb_eq in Hyx. subst y. contradiction.
+  - destruct (String.eqb k x) eqn:Hkx.
+    + apply String.eqb_eq in Hkx. subst k. simpl.
+      destruct (String.eqb y x) eqn:Hyx.
+      * apply String.eqb_eq in Hyx. subst y. contradiction.
+      * reflexivity.
+    + simpl. destruct (String.eqb y k); auto.
+Qed.
+
+(** [update_in_place env x v] equals [env ++ [(x,v)]] when x is fresh. *)
+Lemma update_in_place_append : forall env x v,
+  lookup_t env x = None ->
+  update_in_place env x v = List.app env (cons (x, v) nil).
+Proof.
+  intros env x v Hnone. induction env as [| [y w] rest IH]; auto.
+  simpl in Hnone. simpl.
+  destruct (String.eqb x y) eqn:Hxy.
+  - discriminate.
+  - destruct (String.eqb y x) eqn:Hyx.
+    + apply String.eqb_eq in Hyx. subst y.
+      rewrite String.eqb_refl in Hxy. discriminate.
+    + f_equal. apply IH. exact Hnone.
+Qed.
+
+(** Removing x from [env ++ [(x, v)]] gives env when x is not in env. *)
+Lemma remove_var_append_at : forall env x v,
+  lookup_t env x = None ->
+  remove_var (List.app env (cons (x, v) nil)) x = env.
+Proof.
+  intros env x v Hnone. induction env as [| [y w] rest IH]; simpl.
+  - rewrite String.eqb_refl. reflexivity.
+  - simpl in Hnone.
+    destruct (String.eqb x y) eqn:Hxy; [discriminate|].
+    destruct (String.eqb y x) eqn:Hyx.
+    + apply String.eqb_eq in Hyx. subst y.
+      rewrite String.eqb_refl in Hxy. discriminate.
+    + f_equal. apply IH. exact Hnone.
+Qed.
+
+(** [update_in_place] preserves [lookup_t = None] for other keys. *)
+Lemma lookup_t_update_in_place_none : forall env x y v,
+  x <> y ->
+  lookup_t env y = None ->
+  lookup_t (update_in_place env x v) y = None.
+Proof.
+  intros. rewrite lookup_t_update_other; auto.
+Qed.
+
 (** ** Freshness lemmas (printer-side syntactic invariants).
 
     Previously these were axioms; now they are proven lemmas with
@@ -813,11 +950,9 @@ Lemma located_lookup_extend_other :
     located_lookup (rs_set_tower rs x v) loc = located_lookup rs loc.
 Proof.
   intros rs x v loc Hneq.
-  unfold located_lookup. simpl.
-  destruct (String.eqb (loc_var loc) x) eqn:Heqb.
-  - apply String.eqb_eq in Heqb. contradiction.
-  - rewrite lookup_t_remove_other by congruence.
-    reflexivity.
+  unfold located_lookup, rs_set_tower. cbn [rs_tower].
+  rewrite lookup_t_update_other by congruence.
+  reflexivity.
 Qed.
 
 (** Same for a list of [located]s, when none of them use the
@@ -882,31 +1017,71 @@ Proof.
   - reflexivity.
 Qed.
 
-(** This lemma states that updating a [located] commutes with
-    extending the state by a different variable, modulo the
-    tail-shape of the resulting list. The proof reduces to a
-    list-equality calculation that depends on:
+(** Helper: update_in_place commutes when [x] is fresh and [y] is
+    present in [env]. The "y present" condition rules out the empty
+    list case where the order would differ. *)
+Lemma update_in_place_commute_fresh : forall env x y vx vy,
+  x <> y ->
+  lookup_t env x = None ->
+  lookup_t env y <> None ->
+  update_in_place (update_in_place env x vx) y vy =
+  update_in_place (update_in_place env y vy) x vx.
+Proof.
+  intros env x y vx vy Hneq Hxnone Hysome.
+  induction env as [| [k w] rest IH].
+  - (* base case: empty env, but Hysome says y is in env — contradiction *)
+    simpl in Hysome. contradiction.
+  - simpl in Hxnone, Hysome.
+    destruct (String.eqb x k) eqn:Hxk; [discriminate|].
+    cbn [update_in_place].
+    destruct (String.eqb k x) eqn:Hkx.
+    { apply String.eqb_eq in Hkx. subst k.
+      rewrite String.eqb_refl in Hxk. discriminate. }
+    destruct (String.eqb k y) eqn:Hky.
+    + (* k = y: head matches y *)
+      apply String.eqb_eq in Hky. subst k.
+      cbn [update_in_place].
+      destruct (String.eqb y x) eqn:Hyx.
+      { apply String.eqb_eq in Hyx. symmetry in Hyx. contradiction. }
+      destruct (String.eqb y y) eqn:Hyy.
+      { reflexivity. }
+      pose proof (String.eqb_refl y) as Heqy.
+      rewrite Hyy in Heqy. discriminate.
+    + (* k ≠ y, k ≠ x: recurse *)
+      cbn [update_in_place]. rewrite Hkx, Hky.
+      destruct (String.eqb y k) eqn:Hyk.
+      { apply String.eqb_eq in Hyk. subst k.
+        rewrite String.eqb_refl in Hky. discriminate. }
+      f_equal. apply IH; auto.
+Qed.
 
-    - [remove_var_cons_eq] / [remove_var_cons_neq]: case analysis on
-      the head of a list when removing
-    - [remove_var_swap]: removing two distinct vars commutes
-
-    These supporting lemmas are all proven above. The remaining
-    obligation is purely calculation on string-keyed lists, which
-    Coq's [cbn] sometimes fails to normalize without manual help.
-
-    We leave this lemma as Admitted (a single calculation lemma,
-    no semantic content). Discharging it requires only manual
-    [destruct] case analysis on the head [String.eqb] tests; the
-    proof has no dependencies on bedrock or Rust semantics. *)
+(** [located_update] on an extended state commutes with the extension,
+    using the new [update_in_place] semantics. Requires [x] to be
+    fresh in [rs] (which is the case when [x = ac_var] and [rs] is
+    [state_ac_fresh]). *)
 Lemma located_update_extend_other :
   forall rs x v dest new_dest rs',
     loc_var dest <> x ->
+    lookup_t (rs_tower rs) x = None ->
     located_update rs dest new_dest = Some rs' ->
     located_update (rs_set_tower rs x v) dest new_dest =
       Some (rs_set_tower rs' x v).
 Proof.
-Admitted.
+  intros rs x v dest new_dest rs' Hneq Hxnone Hupd.
+  unfold located_update in *.
+  unfold rs_set_tower at 1. cbn [rs_tower].
+  rewrite lookup_t_update_other by congruence.
+  destruct (lookup_t (rs_tower rs) (loc_var dest)) as [[t v_old]|] eqn:Hlookup;
+    [|discriminate].
+  destruct (tower_type_eq_dec t (loc_src dest)) as [Heq|]; [|discriminate].
+  injection Hupd as Hrs'. subst rs'.
+  unfold rs_set_tower. cbn [rs_tower rs_scalar].
+  apply f_equal. apply f_equal2; [|reflexivity].
+  apply update_in_place_commute_fresh.
+  - congruence.
+  - exact Hxnone.
+  - rewrite Hlookup. intro Hc. discriminate.
+Qed.
 
 (** ** Cleanliness invariants.
 
@@ -963,10 +1138,8 @@ Proof.
     [|discriminate].
   destruct (tower_type_eq_dec t (loc_src dest)) as [Heq|]; [|discriminate].
   inversion Hupd; subst rs'. clear Hupd.
-  unfold state_ac_fresh.
-  unfold rs_set_tower. simpl rs_tower.
-  rewrite lookup_t_set_other by (intro Hc; subst; contradiction).
-  rewrite lookup_t_remove_other by (intro Hc; subst; contradiction).
+  unfold state_ac_fresh, rs_set_tower. cbn [rs_tower].
+  rewrite lookup_t_update_other by (intro Hc; subst; contradiction).
   exact Hfresh.
 Qed.
 
@@ -988,9 +1161,8 @@ Lemma rs_set_tower_preserves_fresh :
     state_ac_fresh (rs_set_tower rs x v).
 Proof.
   intros rs x v Hfresh Hneq.
-  unfold state_ac_fresh, rs_set_tower. simpl rs_tower.
-  rewrite lookup_t_set_other by congruence.
-  rewrite lookup_t_remove_other by congruence.
+  unfold state_ac_fresh, rs_set_tower. cbn [rs_tower].
+  rewrite lookup_t_update_other by congruence.
   exact Hfresh.
 Qed.
 
@@ -1072,23 +1244,93 @@ Theorem safe_cmd_correct : forall c rs1 rs2,
   bedrock_exec c rs1 rs2 ->
   rust_exec N u64_max leaf_spec (btranslate c) rs1 rs2.
 Proof.
-  (** Proof structure: by induction on [bedrock_exec c rs1 rs2].
-      Each case maps the bedrock constructor to its [rust_cmd]
-      equivalent via [btranslate]. Cleanliness ([cmd_clean]) and
-      freshness ([state_ac_fresh]) are threaded through structural
-      cases via [bedrock_exec_preserves_fresh]. The aliasing call
-      case uses the freshness lemmas
-      [located_lookup_extend_other], [locateds_lookup_extend_other],
-      [located_update_extend_other], [remove_var_head], and
-      [remove_var_skip].
+  intros c rs1 rs2 Hclean Hfresh Hexec.
+  revert Hclean Hfresh.
+  induction Hexec; intros Hclean Hfresh; cbn [btranslate].
 
-      The complete proof is ~80 lines of straightforward case
-      analysis. The supporting lemmas above are all proven Qed.
-      We leave the final theorem Admitted because the IH
-      manipulation in BSeq / BWhileNz_true requires careful
-      generalization that needs more attention than this session
-      affords; the scaffold is in place. *)
-Admitted.
+  - (* BSkip *)
+    constructor.
+
+  - (* BSeq *)
+    destruct Hclean as [Hc1 Hc2].
+    assert (Hfresh2 : state_ac_fresh rs2).
+    { apply bedrock_exec_preserves_fresh with (c := c1) (rs1 := rs1); assumption. }
+    eapply XR_seq.
+    + apply IHHexec1; assumption.
+    + apply IHHexec2; assumption.
+
+  - (* BLetZero *)
+    destruct Hclean as [Hxac Hbody].
+    apply XR_let_zero.
+    apply IHHexec.
+    + exact Hbody.
+    + apply rs_set_tower_preserves_fresh; assumption.
+
+  - (* BLetU64Zero *)
+    destruct Hclean as [Hxac Hbody].
+    apply XR_let_u64_zero.
+    apply IHHexec.
+    + exact Hbody.
+    + apply rs_set_scalar_preserves_fresh; assumption.
+
+  - (* BScalarSet *)
+    constructor; auto.
+
+  - (* BIfNz true *)
+    destruct Hclean as [Hct _].
+    eapply XR_if_true; eauto.
+
+  - (* BIfNz false *)
+    destruct Hclean as [_ Hcf].
+    eapply XR_if_false; eauto.
+
+  - (* BWhileNz false *)
+    apply XR_while_false; auto.
+
+  - (* BWhileNz true *)
+    assert (Hfresh2 : state_ac_fresh rs2).
+    { apply bedrock_exec_preserves_fresh with (c := body) (rs1 := rs1); assumption. }
+    eapply XR_while_true.
+    + exact H.
+    + exact H0.
+    + apply IHHexec1; assumption.
+    + apply IHHexec2; assumption.
+
+  - (* BCall *)
+    destruct Hclean as [Hdest_clean Hargs_clean].
+    destruct (call_aliases dest args) eqn:Halias.
+
+    + (** Aliasing: btranslate emits RCloneCall.
+          Build the inner RCall in the cloned state, then pop ac_var. *)
+      eapply XR_clone_call with (x := ac_var) (call_dest := dest)
+                                (old_dest_v := old_dest); eauto.
+      * (* Inner call uses the extended state *)
+        eapply XR_call with (old_dest := old_dest) (in_vals := in_vals); eauto.
+        ** rewrite located_lookup_extend_other by assumption. exact H.
+        ** rewrite locateds_lookup_extend_other by assumption. exact H0.
+        ** apply located_update_extend_other.
+           --- assumption.
+           --- exact Hfresh.
+           --- exact H2.
+      * (* Pop ac_var: the inner state's rs_tower is
+              update_in_place (rs_tower rs') ac_var (...)
+           because [located_update_extend_other] commuted the dest
+           update past the ac_var binding. Removing ac_var leaves
+           rs_tower rs', and reassembling the record gives rs'. *)
+        assert (Hfresh' : state_ac_fresh rs').
+        { eapply located_update_preserves_fresh; eauto. }
+        unfold state_ac_fresh in Hfresh'.
+        unfold rs_set_tower. cbn [rs_tower rs_scalar].
+        rewrite update_in_place_append by exact Hfresh'.
+        rewrite remove_var_append_at by exact Hfresh'.
+        destruct rs'; reflexivity.
+
+    + (** No aliasing: btranslate emits RCall directly *)
+      eapply XR_call; eauto.
+
+  - (* BLimbStore *)
+    eapply XR_limb_store; eauto.
+Qed.
 
 (** ** The aliasing case as a separate lemma.
 
@@ -1101,49 +1343,22 @@ Admitted.
     is not bound in [rs_tower]. This captures freshness. *)
 Definition alias_safe (rs : rust_state) (v : var) : Prop :=
   lookup_t (rs_tower rs) v = None.
-(** The proof is complete except for three syntactic admits in the
-    aliasing-call case. They reduce to:
-
-    1. [Hfresh : loc_var dest <> ac_var] — discharged by the printer's
-       fresh-name generation: ac_var is "__ac<n>" where <n> is a
-       monotonically increasing counter, never used as a bedrock2 var.
-
-    2. [locateds_lookup args] is unchanged after binding ac_var —
-       discharged by the same freshness argument plus a structural
-       induction on [args]: if no element of [args] uses [ac_var]
-       as its base variable (true by freshness), then extending the
-       state with [(ac_var, _)] doesn't affect any lookup.
-
-    3. The post-update state in the cloned-then-called model
-       differs from the post-update state in the bedrock model
-       only by the ac_var binding, which doesn't affect [equiv]
-       (which is just equality on rs_tower restricted to non-fresh
-       names).
-
-    The third admit is the place where the equivalence relation
-    needs to be slightly more permissive: instead of strict
-    equality, [equiv b rs] should be "rs and b agree on all variable
-    bindings except possibly fresh helper variables". With that
-    refined equivalence, all three admits go through.
-
-    The structural cases (skip, seq, let_zero, let_u64_zero,
-    scalar_set, if_*, while_*, no-alias call, limb_store) are all
-    fully proven above with no admits. *)
+(** The proof is now complete (Qed): the freshness preconditions
+    [cmd_clean] and [state_ac_fresh] are threaded through the
+    induction, and the aliasing-call case discharges via
+    [located_lookup_extend_other], [locateds_lookup_extend_other],
+    [located_update_extend_other], [update_in_place_append], and
+    [remove_var_append_at]. No axioms remain. *)
 
 (* ================================================================ *)
 (* §8. Status of the simulation                                      *)
 (* ================================================================ *)
 
-(** Print Assumptions safe_cmd_correct shows the three textual
-    admits in the aliasing-call case. The structural cases are
-    fully proven. The remaining admits are about the freshness of
-    ac_var — a syntactic invariant of the printer in
-    ToSafeRustBody.v that does not depend on bedrock2 semantics.
-
-    To close them: refine [equiv] from strict equality to
-    "agreement up to fresh helper variables", and add a freshness
-    invariant to safe_cmd's induction hypothesis. Both are
-    standard proof-engineering steps. *)
+(** [Print Assumptions safe_cmd_correct] reports [Closed under the
+    global context]: no axioms, no admits. The simulation theorem
+    holds against the toy bedrock semantics for any [bcmd] satisfying
+    the [cmd_clean] freshness invariant (which is established
+    syntactically by the printer in [ToSafeRustBody.v]). *)
 
 End ToyBedrock.
 

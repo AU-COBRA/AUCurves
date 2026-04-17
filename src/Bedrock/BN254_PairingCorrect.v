@@ -51,31 +51,31 @@ Require Import bedrock2.BasicC64Semantics.
 
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
-Require Import Crypto.Bedrock.Specs.AbstractField.
-Require Import Crypto.Bedrock.Specs.PrimeField.
+Require Import Bedrock.Specs.AbstractField.
+Require Import Bedrock.Specs.PrimeField.
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_prime_certif.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
-Require Import Crypto.Bedrock.Field.FieldExtensions.QuadraticFieldExtensions.
-Require Import Crypto.Bedrock.Field.FieldExtensions.QuadraticFieldExtensionsSpecs.
-Require Import Crypto.Bedrock.Field.FieldExtensions.CubicFieldExtensions.
-Require Import Crypto.Bedrock.Field.FieldExtensions.CubicFieldExtensionsSpecs.
-Require Import Crypto.Bedrock.Field.FieldExtensions.DodecicFieldExtensions.
-Require Import Crypto.Bedrock.Field.FieldExtensions.DodecicFieldExtensionsSpecs.
-Require Import Crypto.Bedrock.Field.FieldExtensions.PairingFieldOps.
-Require Import Crypto.Bedrock.Field.FieldExtensions.WPTactics.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN254_Pairing.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN_StraightlineFast.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_CurveInstances.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
+Require Import Bedrock.Field.FieldExtensions.QuadraticFieldExtensions.
+Require Import Bedrock.Field.FieldExtensions.QuadraticFieldExtensionsSpecs.
+Require Import Bedrock.Field.FieldExtensions.CubicFieldExtensions.
+Require Import Bedrock.Field.FieldExtensions.CubicFieldExtensionsSpecs.
+Require Import Bedrock.Field.FieldExtensions.DodecicFieldExtensions.
+Require Import Bedrock.Field.FieldExtensions.DodecicFieldExtensionsSpecs.
+Require Import Bedrock.Field.FieldExtensions.PairingFieldOps.
+Require Import Bedrock.Field.FieldExtensions.WPTactics.
+Require Import Bedrock.Field.Synthesis.Examples.BN254_Pairing.
+Require Import Bedrock.Field.Synthesis.Examples.BN_StraightlineFast.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_CurveInstances.
 
-Require Import Crypto.Bedrock.Field.PairingTheory.ZModTower.
-Require Import Crypto.Bedrock.Field.PairingTheory.Affine.
-Require Import Crypto.Bedrock.Field.PairingTheory.PairingSpec.
-Require Import Crypto.Bedrock.Field.PairingTheory.CurveParams.
-Require Import Crypto.Bedrock.Field.PairingTheory.Curves.BN254_params.
-Require Import Crypto.Bedrock.Field.PairingTheory.MillerLoopWP.
-Require Import Crypto.Bedrock.Field.PairingTheory.FevalBridge.
+Require Import Bedrock.Field.PairingTheory.ZModTower.
+Require Import Bedrock.Field.PairingTheory.Affine.
+Require Import Bedrock.Field.PairingTheory.PairingSpec.
+Require Import Bedrock.Field.PairingTheory.CurveParams.
+Require Import Bedrock.Field.PairingTheory.Curves.BN254_params.
+Require Import Bedrock.Field.PairingTheory.MillerLoopWP.
+Require Import Bedrock.Field.PairingTheory.FevalBridge.
 
 Import BinInt String List.ListNotations.
 

@@ -3,6 +3,7 @@
 
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.ZArith.Znumtheory.
+Require Import Coq.Lists.List. Import ListNotations.
 From Coqprime Require Import PocklingtonRefl BasePrimes.
 
 Local Open Scope positive_scope.

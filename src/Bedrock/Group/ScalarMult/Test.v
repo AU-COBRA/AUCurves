@@ -1,5 +1,5 @@
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
 Require Import Bedrock.Group.CurveAdd.StorePointAtInfinity.
 
      (* Require Import bedrock2.Syntax. *)

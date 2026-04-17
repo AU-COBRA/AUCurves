@@ -1,11 +1,11 @@
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.BignumShift.
 Require Import Bedrock.Group.CurveAdd.CondMoveGroup.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Bedrock.Group.CurveAdd.CurveAddAlt.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_three_b.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_three_b.
 Require Import Bedrock.Group.CurveAdd.LoopBody.
 Require Import Bedrock.Group.CurveAdd.ScalarMult.
 

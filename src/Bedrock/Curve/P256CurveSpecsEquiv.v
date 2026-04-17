@@ -25,7 +25,7 @@ Local Coercion Z.of_nat : nat >-> Z.
 Section P256_Equiv.
 
   (* P-256 parameters *)
-  Local Definition m := Eval vm_compute in (Z.pos P256.p256).
+  Local Definition m := Eval vm_compute in P256.p256.
   Local Definition bw := 64.
   Local Definition n := 4%nat.
   Local Definition a := Eval vm_compute in ((-3) mod m)%Z.
@@ -55,7 +55,7 @@ Section P256_Equiv.
 
   Lemma m_prime : prime m.
   Proof.
-    change m with (Z.pos P256.p256).
+    change m with P256.p256.
     exact P256.prime_p256.
   Qed.
 

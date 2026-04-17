@@ -171,8 +171,8 @@ Proof.
   change (three_b_list bw n three_b) with secp256k1_three_b_list.
   remember (eval secp256k1_three_b_list) as tb.
   unfold my_mul, my_add, my_sub.
-  pull_Zmod.
-  split; (intros H; rewrite H; apply pair_equal_spec; split;
+  Time pull_Zmod.
+  Time split; (intros H; rewrite H; apply pair_equal_spec; split;
     [apply pair_equal_spec; split| ]; apply (f_equal (fun y => y mod m)); ring).
 Qed.
 

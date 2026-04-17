@@ -3,7 +3,7 @@ Require Import Coq.Strings.String.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.WordByWordMontgomery.
 Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bw6_761_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime_certif.
 
 Local Open Scope Z_scope.
 

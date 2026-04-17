@@ -27,7 +27,7 @@ From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List. Import ListNotations.
 From Stdlib Require Import micromega.Lia.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls24_509_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls24_509_prime.
 Require Import Bedrock.Field.PairingTheory.CurveParams.
 
 Local Open Scope Z_scope.

@@ -27,7 +27,7 @@ Require Import Crypto.Bedrock.End2End.X25519.Field25519.
 Require Import Crypto.Bedrock.End2End.X25519.MontgomeryLadder.
 Require Import Crypto.Bedrock.End2End.X25519.clamp.
 
-Require Import Crypto.Bedrock.Field.FieldExtensions.ToJasmin.
+Require Import Bedrock.Jasmin.Core.
 
 Import BinInt String List.ListNotations.
 Local Open Scope string_scope.

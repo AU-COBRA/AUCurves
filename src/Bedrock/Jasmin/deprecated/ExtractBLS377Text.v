@@ -12,8 +12,8 @@ From Stdlib Require Export Extraction ExtrOcamlBasic ExtrOcamlString.
 From Stdlib Require Import ZArith String Ascii.
 Require Import bedrock2.Syntax.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_felem_copy.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_377_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_377_felem_copy.
 Require Import Bedrock.Jasmin.Core.
 
 Import BinInt String List.ListNotations.

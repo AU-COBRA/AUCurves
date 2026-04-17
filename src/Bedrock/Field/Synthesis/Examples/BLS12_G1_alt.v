@@ -1,6 +1,6 @@
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Bedrock.Group.CurveAdd.CurveAddAlt.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import Coq.Strings.String.
@@ -19,8 +19,8 @@ Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import coqutil.Word.Bitwidth64.
 Require Import bedrock2.BasicC64Semantics.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_G1.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_three_b.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_from_list_F.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_three_b.
 
 (* Compatibility shim: opam bedrock2 >=0.0.9 removed the name from func *)
 Local Notation function_t := (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.

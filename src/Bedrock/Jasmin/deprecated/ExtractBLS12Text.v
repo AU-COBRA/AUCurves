@@ -33,10 +33,10 @@ From Stdlib Require Export ExtrOcamlString.
 From Stdlib Require Import ZArith String Ascii.
 Require Import bedrock2.Syntax.
 
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
-Require Import Crypto.Bedrock.Field.FieldExtensions.QuadraticFieldExtensions.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BLS12_Pairing.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_felem_copy.
+Require Import Bedrock.Field.FieldExtensions.QuadraticFieldExtensions.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_Pairing.
 
 Require Import Bedrock.Jasmin.Core.
 Require Import Bedrock.Jasmin.FlattenStackalloc.

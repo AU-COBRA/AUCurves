@@ -5,8 +5,8 @@ Require Import Coq.Lists.List. Import ListNotations.
 Local Open Scope string_scope.
 
 Require Import Bedrock.ToSafeRustBody.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bn254_Fp2.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN254_Pairing.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_Fp2.
+Require Import Bedrock.Field.Synthesis.Examples.BN254_Pairing.
 
 Local Notation function_t :=
   (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.

@@ -35,7 +35,7 @@ Require Import Bedrock.Group.CurveAdd.CondMoveGroup.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
 Require Import bedrock2.Loops.
 Require Import bedrock2.NotationsCustomEntry.
-Require Import Crypto.Bedrock.Field.FieldExtensions.WPTactics.
+Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_GLV_LoopInvariant.
 Require Import coqutil.Tactics.ltac_list_ops.
 Require Import coqutil.Tactics.rdelta.
@@ -1512,12 +1512,12 @@ End GLV_Shamir_Generic.
 (** To instantiate for BLS12-381:
 
     Require Import Bedrock.Field.Synthesis.Examples.BLS12_G1.
-    Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_prime.
-    Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_377_three_b.
+    Require Import Bedrock.Field.Synthesis.Examples.bls12_377_prime.
+    Require Import Bedrock.Field.Synthesis.Examples.bls12_377_three_b.
     Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
     Require Import coqutil.Word.Bitwidth64.
     Require Import bedrock2.BasicC64Semantics.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.BN_StraightlineFast.
+Require Import Bedrock.Field.Synthesis.Examples.BN_StraightlineFast.
 
     Definition bls12_377_glv_shamir :=
       @glv_shamir_func _ _ _ _ _ _ _ _ _ _

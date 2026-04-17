@@ -2058,14 +2058,23 @@ Section WithWordCmd.
     - apply all_pairwise_disjoint_b_nodup; exact Hpos.
   Qed.
 
-  (** The WEAK form (under [wf_mulx_list]) remains conjectured; its
-      proof reduces to the strong form plus a lemma
-      [wf_mulx_list_implies_strong] showing the scan's structural
-      guarantees imply the extra conditions under wf_mulx_list. *)
-  Conjecture scan_mulx_pairs_valid_and_disjoint :
-    forall cs,
-      wf_mulx_list cs = true ->
-      scan_output_valid_b cs.
+  (** Note: the weak form
+        [forall cs, wf_mulx_list cs = true -> scan_output_valid_b cs]
+      is NOT a theorem of this development and is not provable as
+      stated.  The scan's operand-matching uses [equiv_cp] under a
+      running [def_map], which gives operand equality only for
+      environments consistent with the def-map — not universally,
+      as the [forall ev, eval_jexpr ev a = eval_jexpr ev a''] clause
+      of [valid_match_at] demands.  Closing it would require
+      refactoring [valid_match_at] to take a def-map parameter and
+      threading [defmap_consistent] through the rewrite proofs.
+
+      The canonical soundness API uses the Qed'd strong variant
+      [scan_mulx_pairs_valid_strong] above: users extracting a
+      concrete program [vm_compute] the decidable check
+      [wf_mulx_list_strong_b cs] and compose with
+      [lower_mulx_pairs_list_correct_via_scan_check] for end-to-end
+      zero-conjecture soundness. *)
 
   (** Step 4 composition auxiliary: single-match form.
       Given valid_match_at cs m (which entails disjoint operand/target
@@ -2340,11 +2349,10 @@ Section WithWordCmd.
       + apply rewrite_mulx_aux_sound_single; [exact Hm_val|exact Hev].
   Qed.
 
-  (** Restate the final theorem using the post-hoc scan-output check.
-      Decouples soundness from the scan invariant: a user who runs
-      [vm_compute (scan_output_valid_b cs)] on a concrete cs and gets
-      [True] gets the soundness directly, independent of the
-      [scan_mulx_pairs_valid_and_disjoint] conjecture. *)
+  (** Soundness of the pass given a post-hoc scan-output validity
+      proof.  [scan_mulx_pairs_valid_strong] above provides the
+      Qed'd path from the decidable [wf_mulx_list_strong_b] check
+      to this hypothesis. *)
   Theorem lower_mulx_pairs_list_correct_via_scan_check :
     forall cs e e',
       scan_output_valid_b cs ->
@@ -2356,18 +2364,19 @@ Section WithWordCmd.
     apply rewrite_mulx_aux_sound_iter; assumption.
   Qed.
 
-  (** The final theorem: under [wf_mulx_list cs], [lower_mulx_pairs]
-      preserves [jeval_list].  Qed modulo the sole remaining
-      conjecture [scan_mulx_pairs_valid_and_disjoint]. *)
+  (** The canonical list-level soundness theorem: under the decidable
+      strong well-formedness check [wf_mulx_list_strong_b cs = true],
+      the [lower_mulx_pairs] pass preserves [jeval_list].  Fully Qed,
+      no conjectures. *)
   Theorem lower_mulx_pairs_list_correct_final :
     forall cs e e',
-      wf_mulx_list cs = true ->
+      wf_mulx_list_strong_b cs = true ->
       jeval_list e cs e' ->
       jeval_list e (lower_mulx_pairs cs) e'.
   Proof.
     intros cs e e' Hwf Hev.
     apply lower_mulx_pairs_list_correct_via_scan_check;
-      [apply scan_mulx_pairs_valid_and_disjoint; exact Hwf | exact Hev].
+      [apply scan_mulx_pairs_valid_strong; exact Hwf | exact Hev].
   Qed.
 
   (** Soundness in the empty-scan case, proved via [mulx_rewrite_star_sound]. *)

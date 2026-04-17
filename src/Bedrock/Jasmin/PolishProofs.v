@@ -1158,17 +1158,8 @@ Section WithWordCmd.
   Qed.
 
   (** [lower_mulx_pairs_cmd_correct]: discharged for the identity case.
-
-      Phase 3 status (2026-04-15):
-      - [word.mulhuu] added to [eval_jexpr] — Qed ([ExprBridge.v]).
-      - [jeval_mulx] rule uses real MULX semantics — Qed (above).
-      - [wf_mulx_list] / [wf_mulx_cmd] predicates — Qed ([MulxSoundness.v]).
-      - [cmd_to_list_sound] + [list_to_cmd_sound] — Qed ([MulxSoundness.v]).
-      - [cmd_touches_preserves_var] + [jeval_list_unaffected] — Qed ([MulxSoundness.v]).
-      - Remaining: [scan_mulx_pairs_valid], [jeval_list_unaffected_range],
-        [rewrite_mulx_one_match_sound], [lower_mulx_pairs_list_correct]
-        (stated as [Conjecture] in [MulxSoundness.v], ~150 lines of Qed
-        remaining). *)
+      The full [JCseq] case is handled by [lower_mulx_pairs_cmd_correct_full]
+      below (Qed, no conjectures). *)
   Theorem lower_mulx_pairs_cmd_correct :
     forall (c : jasmin_cmd) (e e' : env),
       is_simple_for_carry c = true ->
@@ -1246,19 +1237,28 @@ Section WithWordCmd.
     - eapply jeval_while_true; eauto.
   Qed.
 
-  (** FULL VERSION (Step 5): for arbitrary commands under
-      [wf_mulx_cmd], the pass preserves [jeval].  Reduces to the
-      list-level theorem via [cmd_to_list_sound] + [list_to_cmd_sound]
-      through the [jeval_to_MS]/[MS_to_jeval] bridge.
+  (** Decidable cmd-level strong well-formedness: recurses through
+      the structural cases and requires [wf_mulx_list_strong_b] on
+      the flattened body of every [JCseq]. *)
+  Fixpoint wf_mulx_cmd_strong_b (c : jasmin_cmd) : bool :=
+    match c with
+    | JCseq _ _ =>
+        MulxSoundness.wf_mulx_list_strong_b (cmd_to_list c)
+    | JCif _ ct cf =>
+        wf_mulx_cmd_strong_b ct && wf_mulx_cmd_strong_b cf
+    | JCwhile _ body => wf_mulx_cmd_strong_b body
+    | JCdecl _ _ body => wf_mulx_cmd_strong_b body
+    | _ => true
+    end.
 
-      Note: this theorem inherits the
-      [scan_mulx_pairs_valid_and_disjoint] conjecture from
-      [lower_mulx_pairs_list_correct_final] in [MulxSoundness.v].
-      For a conjecture-free variant, see
-      [lower_mulx_pairs_cmd_correct_via_scan_check] below. *)
+  (** FULL VERSION (Step 5): for arbitrary commands under the
+      decidable strong check [wf_mulx_cmd_strong_b], the pass
+      preserves [jeval].  Fully Qed, no conjectures.  Reduces to the
+      list-level theorem via [cmd_to_list_sound] + [list_to_cmd_sound]
+      through the [jeval_to_MS]/[MS_to_jeval] bridge. *)
   Theorem lower_mulx_pairs_cmd_correct_full :
     forall (c : jasmin_cmd) (env1 env2 : env),
-      MulxSoundness.wf_mulx_cmd c = true ->
+      wf_mulx_cmd_strong_b c = true ->
       jeval env1 c env2 ->
       jeval env1 (lower_mulx_pairs_cmd c) env2.
   Proof.

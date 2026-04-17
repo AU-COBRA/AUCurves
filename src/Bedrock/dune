@@ -10,6 +10,8 @@
      ExtractSafeTower
      ExtractSafeTowerBLS12
      ExtractSafeTowerBLS12_Native
+     ExtractSafeTowerBN256
+     ExtractSafeTowerBN446
      TestSafeBody
      Field.bls12prime
      Field.pallasprime

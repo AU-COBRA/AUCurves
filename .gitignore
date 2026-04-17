@@ -65,3 +65,5 @@ src/Bedrock/bn254_*_verified
 src/Bedrock/bn254_safe_tower
 src/Bedrock/bls12_safe_tower_main
 src/Bedrock/libbn254_leaves_inner.rlib
+src/Bedrock/bn256_*_main
+src/Bedrock/bn446_*_main

@@ -1115,178 +1115,21 @@ Section P.
       intros [= H1 H2]. apply Ha0. exact H1.
   Qed.
 
-  (* FElem disjointness: two Fp2 FElems at non-overlapping addresses have
-     disjoint submaps. This holds whenever the address ranges [p, p+96) don't
-     overlap, which is guaranteed by all callers (they construct combined seps).
-     Not provable from the unop_spec's two-part precondition alone because
-     unop_spec quantifies over arbitrary pout/px including px=pout (in-place).
-     Admitted as a sound axiom for the non-overlapping case. *)
-  Local Lemma FElem_disjoint_ax : forall (px_ pout_ : word.rep) x_ out_
-    (Rx_ Rr_ : @map.rep _ _ BasicC64Semantics.mem -> Prop)
-    (m_ : @map.rep _ _ BasicC64Semantics.mem),
-    (FElem px_ x_ ⋆ Rx_) m_ ->
-    (FElem pout_ out_ ⋆ Rr_) m_ ->
-    forall mp mq, FElem px_ x_ mp -> FElem pout_ out_ mq -> map.disjoint mp mq.
-  Proof. admit. Admitted.
+  (* FElem_disjoint_ax + helper lemmas (three_way_split, sep_reassoc)
+     REMOVED.  They only supported the flat unop_spec wrappers
+     bls377_Fp2_inv_ok and bls377_Fp2_mul_xi_ok (now also removed),
+     which had no consumer in active code.  The disjointness fact is
+     not provable from unop_spec alone because the spec allows in-place
+     calls (px = pout) where the FElems alias.  See sections C' and E
+     comments below. *)
 
   (* ================================================================ *)
-  (* Map algebra: three-way split (axiom — requires map subtraction)  *)
+  (* C'. Fp2 inverse: flat unop_spec wrapper REMOVED.                 *)
+  (*    The nested form bls377_Fp2_inv_nested (Qed earlier) is what   *)
+  (*    the BLS12-377 pairing chain uses.  The flat wrapper required  *)
+  (*    FElem_disjoint_ax (only valid for non-aliasing callers); no   *)
+  (*    consumer in active code.                                      *)
   (* ================================================================ *)
-  Local Lemma three_way_split (m mx mrx mq mrr : @map.rep _ _ BasicC64Semantics.mem) :
-    map.split m mx mrx ->
-    map.split m mq mrr ->
-    map.disjoint mx mq ->
-    exists ms,
-      map.split mrx mq ms /\
-      map.split mrr mx ms /\
-      map.disjoint mx (map.putmany mq ms).
-  Proof.
-    intros [Heqx Hdx] [Heqq Hdq] Hdpq.
-    exists (map.fold (fun acc k v =>
-              match map.get mq k with Some _ => acc | None => map.put acc k v end)
-            map.empty mrx).
-    set (ms := map.fold _ map.empty mrx).
-    assert (Hms_get : forall k, map.get ms k =
-              match map.get mq k with Some _ => None | None => map.get mrx k end).
-    { subst ms. intro k.
-      pose (P := fun (m_partial : @map.rep _ _ BasicC64Semantics.mem)
-                     (acc : @map.rep _ _ BasicC64Semantics.mem) =>
-           forall k0 : word.rep, map.get acc k0 =
-             match map.get mq k0 with Some _ => None | None => map.get m_partial k0 end).
-      pose (f := fun (acc : @map.rep _ _ BasicC64Semantics.mem)
-                     (k0 : word.rep) (v : Init.Byte.byte) =>
-           match map.get mq k0 with Some _ => acc | None => map.put acc k0 v end).
-      enough (H : P mrx (map.fold f map.empty mrx)) by (exact (H k)).
-      apply (map.fold_spec P f map.empty); subst P f; cbv beta.
-      - intro k0. rewrite map.get_empty. destruct (map.get mq k0); reflexivity.
-      - intros k0 v m_partial acc Hget_none IH k1.
-        destruct (map.get mq k0) eqn:Hmq_k0.
-        + rewrite IH. rewrite map.get_put_dec.
-          destruct (word.eqb k0 k1) eqn:Heq_k.
-          * destruct (map.get mq k1) eqn:Hmq_k1; [reflexivity|].
-            exfalso. apply word.eqb_true in Heq_k. subst. congruence.
-          * reflexivity.
-        + rewrite map.get_put_dec.
-          destruct (word.eqb k0 k1) eqn:Heq_k.
-          * apply word.eqb_true in Heq_k. subst.
-            rewrite Hmq_k0. rewrite map.get_put_same. reflexivity.
-          * rewrite IH. rewrite map.get_put_dec. rewrite Heq_k. reflexivity. }
-    assert (Hm_eq : forall k,
-              map.get (map.putmany mx mrx) k = map.get (map.putmany mq mrr) k).
-    { intro. rewrite <- Heqx, <- Heqq. reflexivity. }
-    split; [|split].
-    { split.
-      { apply map.map_ext. intro k.
-        rewrite map.get_putmany_dec, Hms_get.
-        pose proof (Hm_eq k) as Hk. rewrite !map.get_putmany_dec in Hk.
-        destruct (map.get mq k) eqn:Hmq;
-          destruct (map.get mrx k) eqn:Hmrx;
-          destruct (map.get mx k) eqn:Hmx;
-          destruct (map.get mrr k) eqn:Hmrr;
-          try reflexivity; try congruence;
-          try (exfalso; eapply Hdx; eauto; fail);
-          try (exfalso; eapply Hdq; eauto; fail);
-          try (exfalso; eapply Hdpq; eauto; fail). }
-      { unfold map.disjoint. intros k v1 v2 Hq Hms_k.
-        rewrite Hms_get, Hq in Hms_k. discriminate. } }
-    { split.
-      { apply map.map_ext. intro k.
-        rewrite map.get_putmany_dec, Hms_get.
-        pose proof (Hm_eq k) as Hk. rewrite !map.get_putmany_dec in Hk.
-        destruct (map.get mq k) eqn:Hmq;
-          destruct (map.get mrx k) eqn:Hmrx;
-          destruct (map.get mx k) eqn:Hmx;
-          destruct (map.get mrr k) eqn:Hmrr;
-          try reflexivity; try congruence;
-          try (exfalso; eapply Hdx; eauto; fail);
-          try (exfalso; eapply Hdq; eauto; fail);
-          try (exfalso; eapply Hdpq; eauto; fail). }
-      { unfold map.disjoint. intros k v1 v2 Hmx Hms_k.
-        rewrite Hms_get in Hms_k.
-        destruct (map.get mq k); [discriminate|eapply Hdx; eauto]. } }
-    { unfold map.disjoint. intros k v1 v2 Hmx Hpmq.
-      rewrite map.get_putmany_dec in Hpmq.
-      rewrite Hms_get in Hpmq.
-      destruct (map.get mq k) eqn:Hmq.
-      - eapply Hdpq; eauto.
-      - destruct (map.get mrx k) eqn:Hmrx; [|discriminate].
-        injection Hpmq; intro; subst. eapply Hdx; eauto. }
-  Qed.
-
-  (* Sep reassociation: combine two seps into a three-way sep.
-     Requires P to be precise (unique submap) and P/Q disjoint. *)
-  Local Notation mem := (@map.rep _ _ BasicC64Semantics.mem).
-  Local Lemma sep_reassoc (P Q Rr : mem -> Prop) (m : mem) :
-    (exists Rx, (P ⋆ Rx) m) ->
-    (Q ⋆ Rr) m ->
-    (forall mp mq, P mp -> Q mq -> map.disjoint mp mq) ->
-    (forall m1 m2, P m1 -> P m2 -> m1 = m2) ->
-    exists R_nested,
-      (P ⋆ (Q ⋆ R_nested)) m /\
-      (forall (Q' : mem -> Prop) m', (Q' ⋆ (P ⋆ R_nested)) m' -> (Q' ⋆ Rr) m').
-  Proof.
-    intros [Rx [mx [mrx [[Heqx Hdx] [Hp Hrx]]]]] [mq [mrr [[Heqq Hdq] [Hq Hrr]]]] Hdisj Hprec.
-    subst.
-    pose proof (Hdisj _ _ Hp Hq) as Hdpq.
-    destruct (three_way_split _ _ _ _ _
-      (conj eq_refl Hdx : map.split _ mx mrx)
-      (conj Heqq Hdq) Hdpq)
-      as [ms [[Heq_rx Hd_qms] [[Heq_rr Hd_xms] Hdx_qms]]].
-    exists (fun m_rest => Rr (map.putmany mx m_rest) /\ map.disjoint mx m_rest).
-    split.
-    { exists mx, (map.putmany mq ms).
-      split. { split. { subst mrx. reflexivity. } exact Hdx_qms. }
-      split. { exact Hp. }
-      exists mq, ms.
-      split. { split. { reflexivity. } exact Hd_qms. }
-      split. { exact Hq. }
-      split. { subst mrr. exact Hrr. } exact Hd_xms. }
-    { intros Q' m' [mq' [m_px_rest [[Heq' Hd'] [Hq' Hprest]]]].
-      destruct Hprest as [mx' [ms' [[Heq'' Hd''] [Hp' [Hrr' Hdxms']]]]].
-      exists mq', (map.putmany mx' ms').
-      split. { split. { subst. rewrite map.putmany_assoc. reflexivity. }
-        subst. exact Hd'. }
-      split. { exact Hq'. }
-      replace mx' with mx in * by (exact (Hprec _ _ Hp Hp')).
-      exact Hrr'. }
-  Qed.
-
-  (* ================================================================ *)
-  (* C'. Fp2 inverse: unop_spec wrapper                               *)
-  (* ================================================================ *)
-  Lemma bls377_Fp2_inv_ok :
-    forall functions,
-    map.get functions (fst Fp2_inv) = Some (snd Fp2_inv) ->
-    spec_of_F_square functions -> spec_of_F_square functions ->
-    spec_of_F_add functions -> spec_of_F_add functions ->
-    spec_of_F_add functions -> spec_of_F_add functions ->
-    spec_of_F_inv functions ->
-    spec_of_F_mul functions ->
-    spec_of_F_sub functions -> spec_of_F_sub functions ->
-    spec_of_F_mul functions ->
-    AbstractField.unop_spec AbstractField.un_inv (F:=F*F) functions.
-  Proof.
-    intros functions HEnv HFsqr1 HFsqr2 HFadd1 HFadd2 HFadd3 HFadd4
-           HFinv HFmul1 HFsub1 HFsub2 HFmul2.
-    unfold AbstractField.unop_spec.
-    intros pout px out x Rr tr mem0 [Hbx [[Rx Hmemx] Hmemout]].
-    assert (Hdisj_FElem : forall mp mq, FElem px x mp -> FElem pout out mq -> map.disjoint mp mq) by (eapply FElem_disjoint_ax; eassumption).
-    assert (Hprec_FElem : forall m1 m2, FElem px x m1 -> FElem px x m2 -> m1 = m2) by (exact (FElem_Fp2_precise px x)).
-    destruct (sep_reassoc (FElem px x) (FElem pout out) Rr mem0
-      (ex_intro _ Rx Hmemx) Hmemout Hdisj_FElem Hprec_FElem)
-      as [R_nested [Hcombined Hbridge]].
-    eapply Semantics.weaken_call.
-    1: { eapply bls377_Fp2_inv_nested; try eassumption. }
-    cbv beta. intros t' m' rets Hpost.
-    destruct Hpost as [Hrets [Htr [out' [Hfeval [Hbounds Hsep']]]]].
-    split. { exact Hrets. }
-    split. { exact Htr. }
-    exists out'.
-    split. { (* feval bridge: fp2_inv → invp2 *)
-      rewrite Hfeval. rewrite invp2_eq_fp2_inv_uncond. reflexivity. }
-    split. { exact Hbounds. }
-    exact (Hbridge _ _ Hsep').
-  Admitted. (* depends on FElem_disjoint_ax *)
 
   (* ================================================================ *)
   (* D. Fp2 mul_xi nested-sep version                                 *)
@@ -1483,40 +1326,12 @@ Section P.
   Qed.
 
   (* ================================================================ *)
-  (* E. Fp2 mul_xi — unop_spec wrapper                                *)
+  (* E. Fp2 mul_xi — flat unop_spec wrapper REMOVED.                  *)
+  (*    The nested form bls377_Fp2_mul_xi_nested (Qed above) is what  *)
+  (*    the BLS12-377 pairing chain actually uses.  The flat wrapper  *)
+  (*    required FElem_disjoint_ax which only holds for non-aliasing  *)
+  (*    callers and has no consumer in active code.                   *)
   (* ================================================================ *)
-  Lemma bls377_Fp2_mul_xi_ok :
-    forall functions,
-    map.get functions (fst Fp2_mul_xi) = Some (snd Fp2_mul_xi) ->
-    spec_of_F_add functions ->
-    spec_of_F_add functions ->
-    spec_of_F_add functions ->
-    spec_of_F_felem_copy functions ->
-    spec_of_F_opp functions ->
-    CubicFieldExtensions.spec_of_Fp2_mul_xi bls377_beta bls377_xi_re bls377_xi_im fp2_prefix functions.
-  Proof.
-    intros functions HEnv HFadd1 HFadd2 HFadd3 HFcopy HFopp.
-    unfold CubicFieldExtensions.spec_of_Fp2_mul_xi, AbstractField.unop_spec.
-    intros pout px out x Rr tr mem0 [Hbx [[Rx Hmemx] Hmemout]].
-    (* FElem properties needed for sep_reassoc *)
-    assert (Hdisj_FElem : forall mp mq, FElem px x mp -> FElem pout out mq -> map.disjoint mp mq) by (eapply FElem_disjoint_ax; eassumption).
-    assert (Hprec_FElem : forall m1 m2, FElem px x m1 -> FElem px x m2 -> m1 = m2) by (exact (FElem_Fp2_precise px x)).
-    (* Use sep_reassoc to combine the two seps from the unop_spec precondition *)
-    destruct (sep_reassoc (FElem px x) (FElem pout out) Rr mem0
-      (ex_intro _ Rx Hmemx) Hmemout Hdisj_FElem Hprec_FElem)
-      as [R_nested [Hcombined Hbridge]].
-    (* Apply the nested spec *)
-    eapply Semantics.weaken_call.
-    1: { eapply bls377_Fp2_mul_xi_nested; try eassumption. }
-    (* Postcondition bridge: nested → unop_spec *)
-    cbv beta. intros t' m' rets Hpost.
-    destruct Hpost as [Hrets [Htr [out' [Hfeval [Hbounds Hsep']]]]].
-    split. { exact Hrets. }
-    split. { exact Htr. }
-    exists out'. split. { exact Hfeval. }
-    split. { exact Hbounds. }
-    exact (Hbridge _ _ Hsep').
-  Admitted. (* depends on FElem_disjoint_ax *)
 
   (* ================================================================ *)
   (* F. Fp2 conjugate — reuse from PairingFieldOps                    *)

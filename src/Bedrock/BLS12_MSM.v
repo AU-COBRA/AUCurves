@@ -3540,6 +3540,42 @@ Section PippengerSpec.
        value matches segment-6's [scaled_sum] via
        [reduce_buckets_eq_scaled_sum] (Qed). *)
     unfold outer_body_cmd.
+    (* Segment 1: [cmd.set "w" (w - 1)].  Pure locals update. *)
+    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+    fold WeakestPrecondition.cmd.
+    eexists. split.
+    { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+           WeakestPrecondition.expr_body WeakestPrecondition.literal
+           WeakestPrecondition.get dlet.dlet].
+      eexists; split; [exact Hlw | reflexivity]. }
+    cbv [dlet.dlet].
+    (* Segment 2: [cmd.set "i" c].  Pure locals update. *)
+    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+    fold WeakestPrecondition.cmd.
+    eexists. split.
+    { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+           WeakestPrecondition.expr_body WeakestPrecondition.literal
+           WeakestPrecondition.get dlet.dlet].
+      reflexivity. }
+    cbv [dlet.dlet].
+    (* Segment 3: double-shift while.  The cmd structure here is
+         [cmd.seq (cmd.while ...double-shift...) REST]
+       after the two preceding [cmd.set] peels.  The proof here weakens
+       the sub-post of the while and applies L1
+       [msm_bls12_double_shift_wp] with the 11-cell [R]-frame (the
+       remaining sep cells beyond (outx,outy,outz)).  L1's post
+       re-establishes (outx,outy,outz) at tight_bounds + R, with
+       (Ox',Oy',Oz') = [Nat.iter c g1_double_spec out0], and preserves
+       the 3 outx/outy/outz locals.
+
+       The segments 4-10 (bucket_clear via L2, distribute via L3,
+       two store_zero via HStoreZero, reduce via L4 with bounds-bridge
+       from None buckets to tight_bounds, final curve_add via HCurveAdd)
+       and the closing Gallina step on [outer_inv] / [partial_msm_from]
+       (the [S k] fold of [partial_msm_from], with
+       [reduce_buckets_eq_scaled_sum] bridging the reduce loop's
+       [scaled_sum] to the spec's [reduce_buckets]/[process_window])
+       are the remaining work. *)
     admit.
   Admitted.
 

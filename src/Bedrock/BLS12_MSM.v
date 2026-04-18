@@ -1246,6 +1246,195 @@ Section PippengerSpec.
         exact Hlz. } }
   Qed.
 
+  (** --- Helpers for the [msm_bls12_bucket_clear_wp] proof below. --- *)
+
+  (** List splitting lemma: [firstn (S n) xs = firstn n xs ++ [nth n xs d]].  Used to peel
+      the last cell from a length-[S n] [firstn] prefix. *)
+  Lemma firstn_S_as_snoc {A : Type} (d : A) (n : nat) (xs : list A) :
+    (n < length xs)%nat ->
+    firstn (S n) xs = (firstn n xs ++ [nth n xs d])%list.
+  Proof.
+    revert n. induction xs as [|x rest IH]; intros n Hlt; [cbn in Hlt; Lia.lia|].
+    destruct n as [|n'].
+    - (* n = 0 *)
+      destruct rest; reflexivity.
+    - (* n = S n' *)
+      cbn in Hlt.
+      specialize (IH n' ltac:(Lia.lia)).
+      change (firstn (S (S n')) (x :: rest)) with (x :: firstn (S n') rest).
+      change ((firstn (S n') (x :: rest) ++ [nth (S n') (x :: rest) d])%list)
+        with ((x :: (firstn n' rest ++ [nth n' rest d]))%list).
+      rewrite <- IH. reflexivity.
+  Qed.
+
+  (** Bridge: peel the last element from three parallel arrays of length [S n]
+      at once.  The lemma takes concrete bucket lists (not [firstn]-expressions)
+      to avoid [seprewrite_in] unfolding issues.  Output shape: three shorter
+      arrays (length [n] via [firstn]) + three individual [FElem None] cells at
+      offset [n*sz]. *)
+  Lemma bucket_clear_triple_split_step
+        (buckets_x buckets_y buckets_z : word)
+        (pref_x pref_y pref_z : list F)
+        (Fdef : F)
+        (n : nat)
+        (suffix : mem -> Prop) (R : mem -> Prop) (m : mem) :
+    length pref_x = S n -> length pref_y = S n -> length pref_z = S n ->
+    let sz := word.of_Z (width:=width) felem_size_in_bytes in
+    let wsz' := word.unsigned sz in
+    (array (FElem None) sz buckets_x pref_x
+     * array (FElem None) sz buckets_y pref_y
+     * array (FElem None) sz buckets_z pref_z
+     * suffix * R)%sep m ->
+    (array (FElem None) sz buckets_x (firstn n pref_x)
+     * FElem None (word.add buckets_x (word.of_Z (wsz' * Z.of_nat n)))
+                  (nth n pref_x Fdef)
+     * array (FElem None) sz buckets_y (firstn n pref_y)
+     * FElem None (word.add buckets_y (word.of_Z (wsz' * Z.of_nat n)))
+                  (nth n pref_y Fdef)
+     * array (FElem None) sz buckets_z (firstn n pref_z)
+     * FElem None (word.add buckets_z (word.of_Z (wsz' * Z.of_nat n)))
+                  (nth n pref_z Fdef)
+     * suffix * R)%sep m.
+  Proof.
+    intros Hlenx Hleny Hlenz sz wsz' Hm.
+    (* Use PointArray_split_at on each of the three bucket arrays. *)
+    pose proof (PointArray_split_at (T:=F) (default:=Fdef)
+                  (FElem None) sz buckets_x pref_x n
+                  ltac:(Lia.lia)) as Hx.
+    pose proof (PointArray_split_at (T:=F) (default:=Fdef)
+                  (FElem None) sz buckets_y pref_y n
+                  ltac:(Lia.lia)) as Hy.
+    pose proof (PointArray_split_at (T:=F) (default:=Fdef)
+                  (FElem None) sz buckets_z pref_z n
+                  ltac:(Lia.lia)) as Hz.
+    unfold PointArray in Hx, Hy, Hz.
+    (* [hd default (skipn k xs) = nth k xs d] when [k < length xs].
+       Generic over [k]. *)
+    assert (Hhd_gen : forall (k : nat) (xs : list F),
+      (k < length xs)%nat ->
+      hd Fdef (skipn k xs) = nth k xs Fdef).
+    { intros k. induction k as [|k' IHk]; intros xs Hlt.
+      - destruct xs; [cbn in Hlt; Lia.lia | reflexivity].
+      - destruct xs as [|x rest]; [cbn in Hlt; Lia.lia|].
+        cbn [skipn nth]. apply IHk. cbn in Hlt. Lia.lia. }
+    assert (Hhdx : hd Fdef (skipn n pref_x) = nth n pref_x Fdef)
+      by (apply Hhd_gen; Lia.lia).
+    assert (Hhdy : hd Fdef (skipn n pref_y) = nth n pref_y Fdef)
+      by (apply Hhd_gen; Lia.lia).
+    assert (Hhdz : hd Fdef (skipn n pref_z) = nth n pref_z Fdef)
+      by (apply Hhd_gen; Lia.lia).
+    rewrite Hhdx in Hx. rewrite Hhdy in Hy. rewrite Hhdz in Hz.
+    (* [skipn (S n) pref = nil] since length = S n. *)
+    assert (Hskipx : skipn (S n) pref_x = nil)
+      by (apply length_zero_iff_nil; rewrite length_skipn; Lia.lia).
+    assert (Hskipy : skipn (S n) pref_y = nil)
+      by (apply length_zero_iff_nil; rewrite length_skipn; Lia.lia).
+    assert (Hskipz : skipn (S n) pref_z = nil)
+      by (apply length_zero_iff_nil; rewrite length_skipn; Lia.lia).
+    rewrite Hskipx in Hx. rewrite Hskipy in Hy. rewrite Hskipz in Hz.
+    (* Arrays over [nil] reduce. *)
+    subst sz wsz'. cbv beta.
+    seprewrite_in Hx Hm. seprewrite_in Hy Hm. seprewrite_in Hz Hm.
+    cbn [array] in Hm.
+    ecancel_assumption.
+  Qed.
+
+  (** Reverse direction: merge three freshly-written tight-bounds cells at
+      offset [n*sz] into the existing tight-bounds suffix at offset [(S n)*sz],
+      producing a longer tight-bounds suffix starting at offset [n*sz]. *)
+  Lemma bucket_clear_triple_merge_step
+        (buckets_x buckets_y buckets_z : word)
+        (bs_x bs_y bs_z : list F)
+        (Xi Yi Zi : F)
+        (n nb : nat)
+        (prefix : mem -> Prop) (R : mem -> Prop) (m : mem) :
+    (n < nb)%nat ->
+    let sz := word.of_Z (width:=width) felem_size_in_bytes in
+    let wsz' := word.unsigned sz in
+    (FElem (Some tight_bounds)
+           (word.add buckets_x (word.of_Z (wsz' * Z.of_nat n))) Xi
+     * FElem (Some tight_bounds)
+           (word.add buckets_y (word.of_Z (wsz' * Z.of_nat n))) Yi
+     * FElem (Some tight_bounds)
+           (word.add buckets_z (word.of_Z (wsz' * Z.of_nat n))) Zi
+     * array (FElem (Some tight_bounds)) sz
+             (word.add buckets_x (word.of_Z (wsz' * Z.of_nat (S n))))
+             (repeat Xi (nb - S n))
+     * array (FElem (Some tight_bounds)) sz
+             (word.add buckets_y (word.of_Z (wsz' * Z.of_nat (S n))))
+             (repeat Yi (nb - S n))
+     * array (FElem (Some tight_bounds)) sz
+             (word.add buckets_z (word.of_Z (wsz' * Z.of_nat (S n))))
+             (repeat Zi (nb - S n))
+     * prefix * R)%sep m ->
+    (array (FElem (Some tight_bounds)) sz
+           (word.add buckets_x (word.of_Z (wsz' * Z.of_nat n)))
+           (repeat Xi (nb - n))
+     * array (FElem (Some tight_bounds)) sz
+           (word.add buckets_y (word.of_Z (wsz' * Z.of_nat n)))
+           (repeat Yi (nb - n))
+     * array (FElem (Some tight_bounds)) sz
+           (word.add buckets_z (word.of_Z (wsz' * Z.of_nat n)))
+           (repeat Zi (nb - n))
+     * prefix * R)%sep m.
+  Proof.
+    intros Hlt sz wsz' Hm.
+    (* [nb - n = S (nb - S n)]. *)
+    assert (Hdec : (nb - n = S (nb - S n))%nat) by Lia.lia.
+    rewrite Hdec.
+    (* Use array_cons to move the single FElem into the suffix.  The suffix
+       starts at [base + (S n)*sz] which equals [base + n*sz + sz]. *)
+    assert (Hshift_x : word.add buckets_x (word.of_Z (wsz' * Z.of_nat (S n)))
+                    = word.add (word.add buckets_x (word.of_Z (wsz' * Z.of_nat n))) sz).
+    { apply word.unsigned_inj.
+      rewrite !word.unsigned_add, !word.unsigned_of_Z.
+      cbv [word.wrap].
+      rewrite !Zdiv.Zplus_mod_idemp_r.
+      rewrite !Zdiv.Zplus_mod_idemp_l.
+      f_equal. subst wsz' sz. rewrite word.unsigned_of_Z. unfold word.wrap.
+      rewrite Nat2Z.inj_succ. Lia.lia. }
+    assert (Hshift_y : word.add buckets_y (word.of_Z (wsz' * Z.of_nat (S n)))
+                    = word.add (word.add buckets_y (word.of_Z (wsz' * Z.of_nat n))) sz).
+    { apply word.unsigned_inj.
+      rewrite !word.unsigned_add, !word.unsigned_of_Z.
+      cbv [word.wrap].
+      rewrite !Zdiv.Zplus_mod_idemp_r.
+      rewrite !Zdiv.Zplus_mod_idemp_l.
+      f_equal. subst wsz' sz. rewrite word.unsigned_of_Z. unfold word.wrap.
+      rewrite Nat2Z.inj_succ. Lia.lia. }
+    assert (Hshift_z : word.add buckets_z (word.of_Z (wsz' * Z.of_nat (S n)))
+                    = word.add (word.add buckets_z (word.of_Z (wsz' * Z.of_nat n))) sz).
+    { apply word.unsigned_inj.
+      rewrite !word.unsigned_add, !word.unsigned_of_Z.
+      cbv [word.wrap].
+      rewrite !Zdiv.Zplus_mod_idemp_r.
+      rewrite !Zdiv.Zplus_mod_idemp_l.
+      f_equal. subst wsz' sz. rewrite word.unsigned_of_Z. unfold word.wrap.
+      rewrite Nat2Z.inj_succ. Lia.lia. }
+    rewrite Hshift_x, Hshift_y, Hshift_z in Hm.
+    (* The goal is [(array tight sz p_xn (repeat Xi (S (nb - S n))) * ...) m],
+       and [repeat v (S k) = v :: repeat v k] syntactically.  Simplify. *)
+    change (repeat ?v (S ?k)) with (v :: repeat v k).
+    (* Each array at [repeat v (nb - n)] is now [v :: repeat v (nb - S n)];
+       [array _ _ p (v :: xs) = element p v * array _ _ (p+sz) xs]. *)
+    (* Let's use cbn [array] to unfold the array-cons equation. *)
+    cbn [array].
+    ecancel_assumption.
+  Qed.
+
+  (** Lift [drop_bounds_FElem] to an array of [num] parallel cells. *)
+  Lemma array_FElem_drop_bounds_impl1
+        (sz : word) (p : word) (xs : list F) :
+    Lift1Prop.impl1
+      (array (FElem (Some tight_bounds)) sz p xs)
+      (array (FElem None) sz p xs).
+  Proof.
+    revert p. induction xs as [|x xs' IH]; intros p.
+    - cbn. reflexivity.
+    - cbn. apply Proper_sep_impl1;
+        [ apply Compilation2.drop_bounds_FElem | apply IH ].
+  Qed.
+
   (** Leaf 2: bucket-clear sub-loop.  [i] counts from [num_buckets] down;
       each iter computes address [bp_k = buckets_k + i*48] for k ∈ {x,y,z}
       then calls [store_zero] on the triple.  Exit: every bucket =
@@ -1300,7 +1489,531 @@ Section PippengerSpec.
              map.get l' "buckets_x" = Some buckets_x /\
              map.get l' "buckets_y" = Some buckets_y /\
              map.get l' "buckets_z" = Some buckets_z).
-  Admitted.
+  Proof.
+    intros functions HStoreZero
+           buckets_x buckets_y buckets_z bs_x bs_y bs_z
+           R tr mem0 l0
+           Hlen_x Hlen_y Hlen_z Hsep
+           Hl_bx Hl_by Hl_bz Hl_i.
+    (* Width bounds used repeatedly. *)
+    pose proof width_cases as Hwc.
+    assert (H2w_big : 2 ^ 32 <= 2 ^ width).
+    { apply Z.pow_le_mono_r; [Lia.lia|].
+      destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
+    assert (H2w_pos : 0 < 2 ^ width).
+    { pose proof word.width_pos; apply Z.pow_pos_nonneg; Lia.lia. }
+    assert (Hnb_val : num_buckets = 511) by reflexivity.
+    assert (Hnb_small : num_buckets < 2 ^ width) by Lia.lia.
+    pose proof felem_size_ok as Hfs_le.
+    (* Name the identity triple.  Use [remember]-like pattern with explicit
+       pairs so [g1_identity] is NOT substituted in the subsequent goal. *)
+    remember g1_identity as giden eqn:Hgiden.
+    destruct giden as [[Xi Yi] Zi].
+    (* [Hgiden : (Xi, Yi, Zi) = g1_identity] *)
+    symmetry in Hgiden. rename Hgiden into HgI.
+    (* Now [HgI : g1_identity = (Xi, Yi, Zi)]. *)
+    (* Invariant at measure [v], "v buckets left to clear":
+         exists pref_x, pref_y, pref_z : list F of length v,
+           [array None sz p_k pref_k] holds for the first [v] cells
+           at each bucket array, and
+           [array tight sz (p_k + v*sz) (repeat K_i (num_buckets - v))]
+           holds for the last [num_buckets - v] cells.
+         All 4 locals preserved; [i = iw] with [word.unsigned iw = Z.of_nat v].
+    *)
+    pose (inv := fun (v : nat) (tr' : Semantics.trace) (m : mem) (l : locals) =>
+      exists (pref_x pref_y pref_z : list F) (iw : word),
+        (v <= Z.to_nat num_buckets)%nat /\
+        word.unsigned iw = Z.of_nat v /\
+        length pref_x = v /\ length pref_y = v /\ length pref_z = v /\
+        (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x pref_x
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+                 (word.add buckets_x
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat v)))
+                 (repeat Xi (Z.to_nat num_buckets - v))
+         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y pref_y
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+                 (word.add buckets_y
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat v)))
+                 (repeat Yi (Z.to_nat num_buckets - v))
+         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z pref_z
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+                 (word.add buckets_z
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat v)))
+                 (repeat Zi (Z.to_nat num_buckets - v))
+         * R)%sep m /\
+        map.get l "buckets_x" = Some buckets_x /\
+        map.get l "buckets_y" = Some buckets_y /\
+        map.get l "buckets_z" = Some buckets_z /\
+        map.get l "i" = Some iw /\
+        tr = tr').
+    eapply (Loops.while_localsmap (measure:=nat) inv Nat.lt_wf_0
+                                  (Z.to_nat num_buckets)).
+    { (* Entry: v = num_buckets.  No cleared buckets yet; pref_k = bs_k. *)
+      subst inv; cbv beta.
+      exists bs_x, bs_y, bs_z, (word.of_Z num_buckets).
+      split; [Lia.lia|].
+      split.
+      { rewrite word.unsigned_of_Z. cbv [word.wrap].
+        rewrite Z.mod_small by Lia.lia.
+        rewrite Z2Nat.id by (cbv; discriminate). reflexivity. }
+      split; [rewrite <- (Nat2Z.id (length bs_x)); rewrite Hlen_x; reflexivity|].
+      split; [rewrite <- (Nat2Z.id (length bs_y)); rewrite Hlen_y; reflexivity|].
+      split; [rewrite <- (Nat2Z.id (length bs_z)); rewrite Hlen_z; reflexivity|].
+      split.
+      { replace (Z.to_nat num_buckets - Z.to_nat num_buckets)%nat with 0%nat by Lia.lia.
+        cbn [repeat array].
+        (* Three [array tight ... nil] collapse.  Show original [Hsep] suffices. *)
+        ecancel_assumption. }
+      repeat (split; [try (now exact Hl_bx); try (now exact Hl_by);
+                      try (now exact Hl_bz); try (now exact Hl_i)|]).
+      reflexivity. }
+    { (* Body step. *)
+      intros vi tr1 m1 l1 Hinv.
+      subst inv; cbv beta in Hinv.
+      destruct Hinv as (pref_x & pref_y & pref_z & iw &
+                        Hvi_le & Hiw_val & Hlenpx & Hlenpy & Hlenpz & Hm1 &
+                        Hlbx1 & Hlby1 & Hlbz1 & Hli1 & Htreq).
+      subst tr1.
+      exists iw.
+      split.
+      { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hli1|]. exact eq_refl. }
+      split.
+      - (* TRUE branch: iw <> 0, so vi = S n. *)
+        intro Hbr.
+        assert (Hvi_pos : (vi > 0)%nat).
+        { destruct vi as [|n']; [|Lia.lia].
+          exfalso. apply Hbr. rewrite Hiw_val. reflexivity. }
+        destruct vi as [|n]; [Lia.lia|].
+        (* Bounds on Z.of_nat (S n). *)
+        assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
+        { assert (HSn_le : Z.of_nat (S n) <= 511).
+          { rewrite <- Hnb_val. rewrite <- (Z2Nat.id num_buckets)
+              by (cbv; discriminate).
+            apply Nat2Z.inj_le. exact Hvi_le. }
+          Lia.lia. }
+        assert (Hn_small : Z.of_nat n < 2 ^ width).
+        { rewrite Nat2Z.inj_succ in HSn_small. Lia.lia. }
+        assert (Hn_le_nb : (n < Z.to_nat num_buckets)%nat) by Lia.lia.
+        (* cmd.set "i" := i - 1. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split; [exact Hli1|].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (iw' := word.sub iw (word.of_Z 1)).
+        assert (Hiw'_unsigned : word.unsigned iw' = Z.of_nat n).
+        { subst iw'.
+          rewrite word.unsigned_sub.
+          rewrite Hiw_val. rewrite word.unsigned_of_Z.
+          cbv [word.wrap]. rewrite Nat2Z.inj_succ.
+          rewrite (Z.mod_small 1 (2 ^ width)) by Lia.lia.
+          rewrite Z.mod_small by Lia.lia. Lia.lia. }
+        (* cmd.set "bpx". *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence. exact Hlbx1. }
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "bpy". *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence. exact Hlby1. }
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "bpz". *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence. exact Hlbz1. }
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* Bucket addresses *)
+        set (sz := word.of_Z (width:=width) felem_size_in_bytes).
+        set (bpx := word.add buckets_x (word.mul iw' sz)).
+        set (bpy := word.add buckets_y (word.mul iw' sz)).
+        set (bpz := word.add buckets_z (word.mul iw' sz)).
+        (* bp_k = buckets_k + n*sz *)
+        assert (Hmul_eq :
+          word.mul iw' sz =
+          word.of_Z (word.unsigned sz * Z.of_nat n)).
+        { apply word.unsigned_inj.
+          rewrite word.unsigned_mul. rewrite Hiw'_unsigned.
+          rewrite word.unsigned_of_Z. unfold word.wrap.
+          f_equal. Lia.lia. }
+        assert (Hbpx_eq : bpx =
+          word.add buckets_x (word.of_Z (word.unsigned sz * Z.of_nat n))).
+        { subst bpx. f_equal. apply Hmul_eq. }
+        assert (Hbpy_eq : bpy =
+          word.add buckets_y (word.of_Z (word.unsigned sz * Z.of_nat n))).
+        { subst bpy. f_equal. apply Hmul_eq. }
+        assert (Hbpz_eq : bpz =
+          word.add buckets_z (word.of_Z (word.unsigned sz * Z.of_nat n))).
+        { subst bpz. f_equal. apply Hmul_eq. }
+        (* Split via bucket_clear_triple_split_step.  The 3 prefix arrays
+           have length S n. *)
+        assert (HlpxSn : length pref_x = S n) by Lia.lia.
+        assert (HlpySn : length pref_y = S n) by Lia.lia.
+        assert (HlpzSn : length pref_z = S n) by Lia.lia.
+        (* Bundle [array tight (+ v*sz) ... * R] as "suffix" and the 3 prefix
+           arrays as the prefix in the lemma statement.  However, our lemma's
+           structure puts the 3 [None]-prefix arrays as a triple; the suffix
+           is everything else.  Rearrange Hm1 to match. *)
+        pose (suffix :=
+          (array (FElem (Some tight_bounds))
+                 (word.of_Z (width:=width) felem_size_in_bytes)
+                 (word.add buckets_x
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat (S n))))
+                 (repeat Xi (Z.to_nat num_buckets - S n))
+           * array (FElem (Some tight_bounds))
+                 (word.of_Z (width:=width) felem_size_in_bytes)
+                 (word.add buckets_y
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat (S n))))
+                 (repeat Yi (Z.to_nat num_buckets - S n))
+           * array (FElem (Some tight_bounds))
+                 (word.of_Z (width:=width) felem_size_in_bytes)
+                 (word.add buckets_z
+                    (word.of_Z (word.unsigned (width:=width)
+                                  (word.of_Z felem_size_in_bytes) * Z.of_nat (S n))))
+                 (repeat Zi (Z.to_nat num_buckets - S n)))%sep).
+        assert (Hm1' :
+          (array (FElem None) sz buckets_x pref_x
+           * array (FElem None) sz buckets_y pref_y
+           * array (FElem None) sz buckets_z pref_z
+           * suffix
+           * R)%sep m1).
+        { subst suffix sz. ecancel_assumption. }
+        pose proof (bucket_clear_triple_split_step
+                      buckets_x buckets_y buckets_z
+                      pref_x pref_y pref_z
+                      Xi n suffix R m1
+                      HlpxSn HlpySn HlpzSn Hm1') as Hm1_split.
+        cbv zeta in Hm1_split.
+        fold sz in Hm1_split.
+        (* Call store_zero with [bpx;bpy;bpz]. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexprs list_map list_map_body
+               WeakestPrecondition.expr WeakestPrecondition.expr_body
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          reflexivity. }
+        (* Invoke HStoreZero.  It expects [FElem None bp* X*] and produces
+           [FElem (Some tight_bounds) bp* Xi] where (Xi,Yi,Zi) = g1_identity. *)
+        eapply Semantics.weaken_call.
+        { eapply (HStoreZero bpx bpy bpz
+                    (nth n pref_x Xi) (nth n pref_y Xi) (nth n pref_z Xi)).
+          (* Reshape Hm1_split to match HStoreZero's shape:
+             [FElem None bpx * FElem None bpy * FElem None bpz * R'].  The
+             rest becomes the callee's R'. *)
+          rewrite <- Hbpx_eq, <- Hbpy_eq, <- Hbpz_eq in Hm1_split.
+          ecancel_assumption. }
+        cbv beta. intros tr' m2 rets [Hrets [Htreq2 Hm2]].
+        subst rets tr'.
+        (* HStoreZero's postcondition contains [let '(Xi, Yi, Zi) := g1_identity
+           in ...].  Rewrite [g1_identity] to the pair to reduce the match. *)
+        rewrite HgI in Hm2.
+        cbv match in Hm2.
+        (* After store_zero: bpx:=FElem tight Xi, bpy:=FElem tight Yi,
+           bpz:=FElem tight Zi.  Now merge with the existing tight suffix. *)
+        cbv [map.putmany_of_list_zip].
+        eexists. split; [reflexivity|].
+        (* Re-establish invariant at v' = n. *)
+        exists n. split.
+        { (* Compose the inv.  Need:
+             - pref_x' = firstn n pref_x (length n)
+             - pref_y' = firstn n pref_y
+             - pref_z' = firstn n pref_z
+             - iw' = word.sub iw 1 with unsigned = n
+             - memory: None prefixes of length n + tight suffix of length
+               (num_buckets - n) = (num_buckets - S n) + 1, starting at
+               (p + n*sz).
+           Use bucket_clear_triple_merge_step. *)
+          exists (firstn n pref_x), (firstn n pref_y), (firstn n pref_z), iw'.
+          split; [Lia.lia|].
+          split; [exact Hiw'_unsigned|].
+          split; [rewrite length_firstn, Nat.min_l by Lia.lia; reflexivity|].
+          split; [rewrite length_firstn, Nat.min_l by Lia.lia; reflexivity|].
+          split; [rewrite length_firstn, Nat.min_l by Lia.lia; reflexivity|].
+          split.
+          { (* Memory.  Hm2 after store_zero has:
+               array None sz buckets_x (firstn n pref_x)
+               * FElem tight bpx Xi
+               * (similar for y,z)
+               * suffix (= tight arrays starting at buckets_k + (S n)*sz)
+               * R.
+             Merge the single cells with the existing suffix using
+             bucket_clear_triple_merge_step. *)
+            rewrite Hbpx_eq, Hbpy_eq, Hbpz_eq in Hm2.
+            pose proof (bucket_clear_triple_merge_step
+                          buckets_x buckets_y buckets_z
+                          (firstn n pref_x) (firstn n pref_y) (firstn n pref_z)
+                          Xi Yi Zi n (Z.to_nat num_buckets)
+                          (array (FElem None) sz buckets_x (firstn n pref_x)
+                           * array (FElem None) sz buckets_y (firstn n pref_y)
+                           * array (FElem None) sz buckets_z (firstn n pref_z))%sep
+                          R m2) as Hm2_merge.
+            cbv zeta in Hm2_merge.
+            fold sz in Hm2_merge.
+            specialize (Hm2_merge Hn_le_nb).
+            (* Reshape Hm2 to match Hm2_merge's hypothesis. *)
+            assert (Hm2_shape :
+              (FElem (Some tight_bounds)
+                 (word.add buckets_x (word.of_Z (word.unsigned sz * Z.of_nat n))) Xi
+               * FElem (Some tight_bounds)
+                 (word.add buckets_y (word.of_Z (word.unsigned sz * Z.of_nat n))) Yi
+               * FElem (Some tight_bounds)
+                 (word.add buckets_z (word.of_Z (word.unsigned sz * Z.of_nat n))) Zi
+               * array (FElem (Some tight_bounds)) sz
+                   (word.add buckets_x
+                      (word.of_Z (word.unsigned sz * Z.of_nat (S n))))
+                   (repeat Xi (Z.to_nat num_buckets - S n))
+               * array (FElem (Some tight_bounds)) sz
+                   (word.add buckets_y
+                      (word.of_Z (word.unsigned sz * Z.of_nat (S n))))
+                   (repeat Yi (Z.to_nat num_buckets - S n))
+               * array (FElem (Some tight_bounds)) sz
+                   (word.add buckets_z
+                      (word.of_Z (word.unsigned sz * Z.of_nat (S n))))
+                   (repeat Zi (Z.to_nat num_buckets - S n))
+               * (array (FElem None) sz buckets_x (firstn n pref_x)
+                  * array (FElem None) sz buckets_y (firstn n pref_y)
+                  * array (FElem None) sz buckets_z (firstn n pref_z))
+               * R)%sep m2).
+            { subst suffix sz. ecancel_assumption. }
+            specialize (Hm2_merge Hm2_shape).
+            subst sz. ecancel_assumption. }
+          (* Locals preservation after store_zero (rets = []). *)
+          split.
+          { repeat (rewrite map.get_put_diff by congruence). exact Hlbx1. }
+          split.
+          { repeat (rewrite map.get_put_diff by congruence). exact Hlby1. }
+          split.
+          { repeat (rewrite map.get_put_diff by congruence). exact Hlbz1. }
+          split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          reflexivity. }
+        { Lia.lia. }
+      - (* FALSE branch: iw = 0 → vi = 0, close the post. *)
+        intro Hbr.
+        assert (Hvi0 : vi = 0%nat).
+        { destruct vi as [|n]; [reflexivity|].
+          exfalso.
+          assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
+          { assert (HSn_le : Z.of_nat (S n) <= 511).
+            { rewrite <- Hnb_val. rewrite <- (Z2Nat.id num_buckets)
+                by (cbv; discriminate).
+              apply Nat2Z.inj_le. exact Hvi_le. }
+            Lia.lia. }
+          rewrite Hiw_val in Hbr. rewrite Nat2Z.inj_succ in Hbr. Lia.lia. }
+        subst vi.
+        (* At v = 0: pref_x/y/z have length 0 (= nil); tight suffix has
+           length num_buckets at base buckets_k.  Drop bounds to get
+           [array None].  Post bs_k' = repeat K_i num_buckets. *)
+        assert (Hpx_nil : pref_x = nil) by (apply length_zero_iff_nil; Lia.lia).
+        assert (Hpy_nil : pref_y = nil) by (apply length_zero_iff_nil; Lia.lia).
+        assert (Hpz_nil : pref_z = nil) by (apply length_zero_iff_nil; Lia.lia).
+        subst pref_x pref_y pref_z.
+        split; [reflexivity|].
+        exists (repeat Xi (Z.to_nat num_buckets)),
+               (repeat Yi (Z.to_nat num_buckets)),
+               (repeat Zi (Z.to_nat num_buckets)).
+        split; [rewrite repeat_length, Z2Nat.id by (cbv; discriminate); reflexivity|].
+        split; [rewrite repeat_length, Z2Nat.id by (cbv; discriminate); reflexivity|].
+        split; [rewrite repeat_length, Z2Nat.id by (cbv; discriminate); reflexivity|].
+        split.
+        { (* nth k (points_of (repeat Xi n) (repeat Yi n) (repeat Zi n)) (Xi,Yi,Zi)
+             = (Xi,Yi,Zi).  (Note: g1_identity has been substituted by (Xi,Yi,Zi)
+             in the goal after [remember]+[destruct].) *)
+          intros k Hk.
+          assert (Hpt_repeat : forall nn,
+            points_of (repeat Xi nn) (repeat Yi nn) (repeat Zi nn)
+            = repeat (Xi, Yi, Zi) nn).
+          { induction nn as [|nn' IH]; [reflexivity|].
+            cbn [repeat points_of].
+            rewrite IH. reflexivity. }
+          rewrite Hpt_repeat.
+          generalize (Z.to_nat num_buckets) as nn.
+          clear Hk. intros nn. revert nn.
+          induction k as [|k' IH]; intros nn.
+          - destruct nn; reflexivity.
+          - destruct nn as [|nn']; [reflexivity|].
+            cbn [repeat nth]. apply IH. }
+        split.
+        { (* Memory: drop tight_bounds to None on the three full arrays. *)
+          replace (Z.to_nat num_buckets - 0)%nat with (Z.to_nat num_buckets) in Hm1
+            by Lia.lia.
+          (* Hm1 has:
+             array None sz buckets_k nil (= emp True) * array tight (buckets_k + 0) (repeat K_i ...) * R.
+             [word.of_Z (wsz * 0) = 0]. *)
+          (* Drop bounds on each of the three tight arrays. *)
+          assert (Hdrop_x :
+            Lift1Prop.impl1
+              (array (FElem (Some tight_bounds))
+                     (word.of_Z felem_size_in_bytes)
+                     (word.add buckets_x
+                        (word.of_Z (word.unsigned
+                                      (word.of_Z (width:=width) felem_size_in_bytes)
+                                      * Z.of_nat 0)))
+                     (repeat Xi (Z.to_nat num_buckets)))
+              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x
+                     (repeat Xi (Z.to_nat num_buckets)))).
+          { replace (word.unsigned
+                       (word.of_Z (width:=width) felem_size_in_bytes)
+                     * Z.of_nat 0) with 0 by Lia.lia.
+            replace (word.add buckets_x (word.of_Z 0)) with buckets_x.
+            2:{ apply word.unsigned_inj.
+                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
+                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
+                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
+            apply array_FElem_drop_bounds_impl1. }
+          assert (Hdrop_y :
+            Lift1Prop.impl1
+              (array (FElem (Some tight_bounds))
+                     (word.of_Z felem_size_in_bytes)
+                     (word.add buckets_y
+                        (word.of_Z (word.unsigned
+                                      (word.of_Z (width:=width) felem_size_in_bytes)
+                                      * Z.of_nat 0)))
+                     (repeat Yi (Z.to_nat num_buckets)))
+              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y
+                     (repeat Yi (Z.to_nat num_buckets)))).
+          { replace (word.unsigned
+                       (word.of_Z (width:=width) felem_size_in_bytes)
+                     * Z.of_nat 0) with 0 by Lia.lia.
+            replace (word.add buckets_y (word.of_Z 0)) with buckets_y.
+            2:{ apply word.unsigned_inj.
+                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
+                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
+                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
+            apply array_FElem_drop_bounds_impl1. }
+          assert (Hdrop_z :
+            Lift1Prop.impl1
+              (array (FElem (Some tight_bounds))
+                     (word.of_Z felem_size_in_bytes)
+                     (word.add buckets_z
+                        (word.of_Z (word.unsigned
+                                      (word.of_Z (width:=width) felem_size_in_bytes)
+                                      * Z.of_nat 0)))
+                     (repeat Zi (Z.to_nat num_buckets)))
+              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z
+                     (repeat Zi (Z.to_nat num_buckets)))).
+          { replace (word.unsigned
+                       (word.of_Z (width:=width) felem_size_in_bytes)
+                     * Z.of_nat 0) with 0 by Lia.lia.
+            replace (word.add buckets_z (word.of_Z 0)) with buckets_z.
+            2:{ apply word.unsigned_inj.
+                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
+                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
+                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
+            apply array_FElem_drop_bounds_impl1. }
+          (* Combine the 3 drops via impl1 transitivity applied on the full sep
+             shape.  We state the combined lemma [Hfull] and prove it by
+             Proper_sep_impl1.  Then transform Hm1's sep shape to match
+             Hfull's LHS using [ecancel_assumption] (after manually bundling). *)
+          (* Build one big impl1 covering all 3 arrays + the R frame. *)
+          assert (Hfull : Lift1Prop.impl1
+            (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+               (word.add buckets_x
+                  (word.of_Z (word.unsigned
+                                (word.of_Z (width:=width) felem_size_in_bytes)
+                                * Z.of_nat 0)))
+               (repeat Xi (Z.to_nat num_buckets))
+             * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+               (word.add buckets_y
+                  (word.of_Z (word.unsigned
+                                (word.of_Z (width:=width) felem_size_in_bytes)
+                                * Z.of_nat 0)))
+               (repeat Yi (Z.to_nat num_buckets))
+             * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
+               (word.add buckets_z
+                  (word.of_Z (word.unsigned
+                                (word.of_Z (width:=width) felem_size_in_bytes)
+                                * Z.of_nat 0)))
+               (repeat Zi (Z.to_nat num_buckets))
+             * R)%sep
+            (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x
+               (repeat Xi (Z.to_nat num_buckets))
+             * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y
+               (repeat Yi (Z.to_nat num_buckets))
+             * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z
+               (repeat Zi (Z.to_nat num_buckets))
+             * R)%sep).
+          { intros m' Hm'.
+            (* Left-assoc sep: [(((A * B) * C) * R)].
+               Destructure fully, transform each piece, then rebuild. *)
+            destruct Hm' as (mABC & mR & HsAR & HABC & HR_val).
+            destruct HABC as (mAB & mC & HsAB & HAB & Hz_val).
+            destruct HAB as (mA & mB & HsA & Hx_val & Hy_val).
+            apply Hdrop_x in Hx_val.
+            apply Hdrop_y in Hy_val.
+            apply Hdrop_z in Hz_val.
+            exists mABC, mR. split; [exact HsAR|]. split; [|exact HR_val].
+            exists mAB, mC. split; [exact HsAB|]. split; [|exact Hz_val].
+            exists mA, mB. split; [exact HsA|]. split; [exact Hx_val|exact Hy_val]. }
+          eapply Hfull.
+          (* Hm1 after [cbn [array]] was (emp_x * tight_x * emp_y * tight_y
+             * emp_z * tight_z * R) m1; ecancel should match. *)
+          cbn [array] in Hm1.
+          use_sep_assumption. cancel. cancel_seps_at_indices 0%nat 0%nat;
+            [reflexivity|].
+          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
+          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
+          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
+          (* Remaining: 3 [emp True] on the left, nothing on the right. *)
+          reflexivity. }
+        split; [exact Hlbx1|].
+        split; [exact Hlby1|].
+        exact Hlbz1. }
+  Qed.
 
   (** Gallina step lemmas for the distribute loop.  Going from
       [distribute_inv w i bs ss ps] to [distribute_inv w (i-1) bs' ss ps],

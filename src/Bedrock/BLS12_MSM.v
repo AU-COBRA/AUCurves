@@ -113,35 +113,2352 @@ Section PippengerGallinaSpec.
 End PippengerGallinaSpec.
 
 (* =================================================================== *)
-(** * Part 2: bedrock2 ExprImp program (scaffold)                       *)
+(** * Part 2: bedrock2 ExprImp program (M1, per MSM_M0_DESIGN.md).       *)
 (*                                                                      *)
-(*    The bedrock2 program mirrors the Gallina spec above.              *)
-(*    It uses:                                                          *)
-(*      - stackalloc for the bucket array (num_buckets × g1_bytes)      *)
-(*      - while loops for the outer window and inner point loops        *)
-(*      - calls to g1_add, g1_double, g1_set_identity, g1_copy          *)
+(*    Signature: msm_bls12(outx, outy, outz,                            *)
+(*                         scalars, pointsx, pointsy, pointsz, n)       *)
+(*      out{x,y,z}    three parallel FElems for the Jacobian output.    *)
+(*      scalars       pointer to n × 32 bytes (4 LE u64 limbs each).    *)
+(*      points{x,y,z} three parallel n × felem arrays of input points.  *)
+(*      n             number of scalar/point pairs.                     *)
 (*                                                                      *)
-(*    Signature: msm_bls12(out, scalars, points, n)                     *)
-(*      out     : pointer to G1 result (144 bytes)                      *)
-(*      scalars : pointer to n × 32 bytes (256-bit scalars)             *)
-(*      points  : pointer to n × 144 bytes (Jacobian G1)                *)
-(*      n       : number of scalar/point pairs                          *)
-(*                                                                      *)
-(*    The window size c is a compile-time constant (9 for n ≈ 4096).    *)
-(*                                                                      *)
-(*    SCAFFOLD: body and WP proof are TODO.                             *)
+(*    All literal numbers in bedrock_expr position are written as       *)
+(*    [$N] rather than bare [N], since bare numeric literals fail to    *)
+(*    parse at some end-of-expression positions in custom entries.      *)
 (* =================================================================== *)
 
-(* Bedrock2 imports deferred until the program body is written,
-   to avoid heavy imports on an empty scaffold:
+Require Import Rupicola.Lib.Api.
+Require Import Crypto.Bedrock.Specs.Field.
+Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
+Require Import bedrock2.NotationsCustomEntry.
+Import Syntax BinInt String List.ListNotations.
+Local Open Scope string_scope.
 
-From coqutil Require Import Word.Interface Map.Interface.
-From bedrock2 Require Import Syntax Semantics ProgramLogic.
-Require Import Crypto.Bedrock.Field.Common.Types.
+Local Notation function_t :=
+  (String.string *
+   (list String.string * list String.string * Syntax.cmd.cmd))%type.
+Local Definition program_logic_goal_for (_ : function_t) (P : Prop) := P.
+Local Notation "program_logic_goal_for_function! proc" :=
+  (program_logic_goal_for proc True) (at level 10, only parsing).
 
 Section PippengerBedrock2.
   Context {width : Z} {BW : Bitwidth width}
           {word : word.word width} {mem : map.map word Byte.byte}.
-  ...
+  Context {locals : map.map String.string word}.
+  Context {word_ok : word.ok word} {mem_ok : map.ok mem}.
+  Context {locals_ok : map.ok locals}.
+  Context {field_parameters : FieldParameters}
+          {field_representation : FieldRepresentation}.
+
+  Context (curve_add_name    : String.string)
+          (curve_double_name : String.string)
+          (store_zero        : String.string).
+
+  Let c            : Z := 9.
+  Let num_buckets  : Z := 2 ^ c - 1.                  (* = 511 *)
+  Let num_windows  : Z := (255 + c - 1) / c.          (* = 29 *)
+  Let scalar_bytes : Z := 32.
+  Let bucket_bytes : Z := num_buckets * felem_size_in_bytes.
+
+  Definition msm_bls12 : function_t :=
+    ("msm_bls12",
+     (["outx"; "outy"; "outz";
+       "scalars";
+       "pointsx"; "pointsy"; "pointsz";
+       "n"],
+      []:list String.string,
+      bedrock_func_body:(
+        stackalloc bucket_bytes            as buckets_x;
+        stackalloc bucket_bytes            as buckets_y;
+        stackalloc bucket_bytes            as buckets_z;
+        stackalloc felem_size_in_bytes     as runx;
+        stackalloc felem_size_in_bytes     as runy;
+        stackalloc felem_size_in_bytes     as runz;
+        stackalloc felem_size_in_bytes     as wsx;
+        stackalloc felem_size_in_bytes     as wsy;
+        stackalloc felem_size_in_bytes     as wsz;
+
+        coq:(cmd.call [] store_zero
+               [expr.var "outx"; expr.var "outy"; expr.var "outz"]);
+
+        w = coq:(num_windows);
+        while (w) {
+          w = (w - $1);
+
+          (* Double the accumulator c times. *)
+          i = coq:(c);
+          while (i) {
+            i = (i - $1);
+            coq:(cmd.call [] curve_double_name
+                   [expr.var "outx"; expr.var "outy"; expr.var "outz";
+                    expr.var "outx"; expr.var "outy"; expr.var "outz"])
+          };
+
+          (* Clear the bucket arrays. *)
+          i = coq:(num_buckets);
+          while (i) {
+            i = (i - $1);
+            bpx = (buckets_x + i * coq:(felem_size_in_bytes));
+            bpy = (buckets_y + i * coq:(felem_size_in_bytes));
+            bpz = (buckets_z + i * coq:(felem_size_in_bytes));
+            coq:(cmd.call [] store_zero
+                   [expr.var "bpx"; expr.var "bpy"; expr.var "bpz"])
+          };
+
+          (* Distribute each (scalar, point) into its bucket. *)
+          i = n;
+          while (i) {
+            i = (i - $1);
+            bit_offset = (w * coq:(c));
+            limb       = (bit_offset >> $6);
+            shift      = (bit_offset & $63);
+            mask       = (($1 << coq:(c)) - $1);
+            scalar_ptr = (scalars + i * coq:(scalar_bytes));
+            val        = (load(scalar_ptr + limb * $8) >> shift);
+            if ($64 < (shift + coq:(c))) {
+              if (limb < $3) {
+                val = (val |
+                       (load(scalar_ptr + (limb + $1) * $8)
+                        << ($64 - shift)))
+              }
+            };
+            idx = (val & mask);
+
+            if (idx) {
+              bucket_index = (idx - $1);
+              bpx = (buckets_x + bucket_index * coq:(felem_size_in_bytes));
+              bpy = (buckets_y + bucket_index * coq:(felem_size_in_bytes));
+              bpz = (buckets_z + bucket_index * coq:(felem_size_in_bytes));
+              ppx = (pointsx  + i * coq:(felem_size_in_bytes));
+              ppy = (pointsy  + i * coq:(felem_size_in_bytes));
+              ppz = (pointsz  + i * coq:(felem_size_in_bytes));
+              coq:(cmd.call [] curve_add_name
+                     [expr.var "bpx"; expr.var "ppx";
+                      expr.var "bpy"; expr.var "ppy";
+                      expr.var "bpz"; expr.var "ppz";
+                      expr.var "bpx"; expr.var "bpy"; expr.var "bpz"])
+            }
+          };
+
+          (* Running-sum reduction. *)
+          coq:(cmd.call [] store_zero
+                 [expr.var "runx"; expr.var "runy"; expr.var "runz"]);
+          coq:(cmd.call [] store_zero
+                 [expr.var "wsx";  expr.var "wsy";  expr.var "wsz"]);
+
+          i = coq:(num_buckets);
+          while (i) {
+            i = (i - $1);
+            bpx = (buckets_x + i * coq:(felem_size_in_bytes));
+            bpy = (buckets_y + i * coq:(felem_size_in_bytes));
+            bpz = (buckets_z + i * coq:(felem_size_in_bytes));
+            coq:(cmd.call [] curve_add_name
+                   [expr.var "runx"; expr.var "bpx";
+                    expr.var "runy"; expr.var "bpy";
+                    expr.var "runz"; expr.var "bpz";
+                    expr.var "runx"; expr.var "runy"; expr.var "runz"]);
+            coq:(cmd.call [] curve_add_name
+                   [expr.var "wsx"; expr.var "runx";
+                    expr.var "wsy"; expr.var "runy";
+                    expr.var "wsz"; expr.var "runz";
+                    expr.var "wsx"; expr.var "wsy"; expr.var "wsz"])
+          };
+
+          coq:(cmd.call [] curve_add_name
+                 [expr.var "outx"; expr.var "wsx";
+                  expr.var "outy"; expr.var "wsy";
+                  expr.var "outz"; expr.var "wsz";
+                  expr.var "outx"; expr.var "outy"; expr.var "outz"])
+        }
+      ))).
+
+  Lemma msm_bls12_welltyped : program_logic_goal_for_function! msm_bls12.
+  Proof. exact I. Qed.
+
 End PippengerBedrock2.
-*)
+
+(* =================================================================== *)
+(** * Part 3: spec + WP theorem skeleton (M2 — proof Admitted).         *)
+(*                                                                      *)
+(*    What this section gives you:                                      *)
+(*    - [ScalarsArray p scalars]  — sep predicate for n × 32-byte       *)
+(*      little-endian 4-limb scalars.                                   *)
+(*    - [G1Array3 bx by bz points] — sep for three parallel FElem      *)
+(*      arrays of length n.                                             *)
+(*    - [spec_of_msm_bls12] — the fnspec tying [msm_bls12] to           *)
+(*      [msm_pippenger] from Part 1.                                    *)
+(*    - Four [Gallina] loop invariants (as comments + predicates).      *)
+(*    - [msm_bls12_ok] stated and [Admitted].                           *)
+(*                                                                      *)
+(*    The proof itself is a ~2–3K LoC effort (MSM_PLAN.md § M2).        *)
+(*    The relevant tactics / lemmas to cite are already available:      *)
+(*    - [bedrock2.Loops.while_localsmap] — 4 applications, one per     *)
+(*      nested loop.                                                    *)
+(*    - [IteratedSepPoints.PointArray_split_at/update_at] — for the     *)
+(*      single-cell mutation in the distribution loop.                  *)
+(*    - [IteratedSepPoints.reduce_buckets_eq_scaled_sum] — for the      *)
+(*      reduction-loop invariant closure.                               *)
+(*    - [BLS12_G1.v]'s [spec_of_curve_add] + [store_zero] specs.        *)
+(* =================================================================== *)
+
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.ProgramLogic.
+Require Import bedrock2.Array.
+Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
+Require Import Bedrock.IteratedSepPoints.
+Require bedrock2.Loops.
+
+Section PippengerSpec.
+  Context {width : Z} {BW : Bitwidth width}
+          {word : word.word width} {mem : map.map word Byte.byte}.
+  Context {locals : map.map String.string word}.
+  Context {ext_spec : bedrock2.Semantics.ExtSpec}.
+  Context {word_ok : word.ok word} {mem_ok : map.ok mem}.
+  Context {locals_ok : map.ok locals}.
+  Context {ext_spec_ok : Semantics.ext_spec.ok ext_spec}.
+  Context {field_parameters : FieldParameters}
+          {field_representation : FieldRepresentation}
+          {field_representation_ok : FieldRepresentation_ok (field_representation:=field_representation)}.
+
+  Context (curve_add_name    : String.string)
+          (curve_double_name : String.string)
+          (store_zero_name   : String.string).
+
+  Local Notation F := (F M_pos).
+  Local Notation G1_F := (F * F * F)%type.
+
+  (** Must match the [Let]s in [PippengerBedrock2] above. *)
+  Let c            : Z := 9.
+  Let num_buckets  : Z := 2 ^ c - 1.
+  Let num_windows  : Z := (255 + c - 1) / c.
+
+  (** n = 4 limbs per scalar, each u64. *)
+  Let scalar_limbs : nat := 4.
+
+  (** A single 256-bit scalar at address [p], encoded LE as [scalar_limbs]
+      words of [Memory.bytes_per_word width] bytes.  [ws] is the list of
+      limb values. *)
+  Definition ScalarAt (p : word) (ws : list word) : mem -> Prop :=
+    Bignum.Bignum scalar_limbs p ws.
+
+  (** [n] scalars at offsets 0, 32, 64, ... from [base]. *)
+  Definition ScalarsArray (base : word) (scalars : list (list word))
+    : mem -> Prop :=
+    array ScalarAt (word.of_Z 32) base scalars.
+
+  (** Three parallel F-valued arrays encoding [n] Jacobian points.
+      [FElem None] from [CompilationAbstract] takes an [F] (field value),
+      not a [felem] (subset type).  This matches the existing callee
+      specs ([spec_of_curve_add], [spec_of_store_zero]). *)
+  Definition G1Array3 (bx bpy bpz : word)
+                      (xs ys zs : list F)
+    : mem -> Prop :=
+    (array (FElem None) (word.of_Z felem_size_in_bytes) bx  xs *
+     array (FElem None) (word.of_Z felem_size_in_bytes) bpy ys *
+     array (FElem None) (word.of_Z felem_size_in_bytes) bpz zs)%sep.
+
+  (** Abstract Gallina group operations at the [G1_F] level, supplied
+      by the caller through [spec_of_curve_add] / [spec_of_curve_double]
+      (these are the postconditions of the respective fnspecs). *)
+  Context (g1_add_spec    : G1_F -> G1_F -> G1_F)
+          (g1_double_spec : G1_F -> G1_F)
+          (g1_identity    : G1_F).
+
+  Hypothesis g1_add_assoc      : forall a b c, g1_add_spec (g1_add_spec a b) c
+                                             = g1_add_spec a (g1_add_spec b c).
+  Hypothesis g1_add_comm       : forall a b, g1_add_spec a b = g1_add_spec b a.
+  Hypothesis g1_add_identity_l : forall a, g1_add_spec g1_identity a = a.
+  Hypothesis g1_double_identity : g1_double_spec g1_identity = g1_identity.
+
+  (** Bridge: [reduce_buckets] (Part 1) equals [scaled_sum]
+      (IteratedSepPoints).  Ported inline here to avoid the dependency
+      cycle [IteratedSepPoints] → [BLS12_MSM]. *)
+  Lemma reduce_buckets_as_fold (bs : list G1_F) :
+    reduce_buckets G1_F g1_identity g1_add_spec bs
+    = snd (fold_left
+             (fun p b =>
+                let r' := g1_add_spec (fst p) b in
+                (r', g1_add_spec (snd p) r'))
+             (rev bs)
+             (g1_identity, g1_identity)).
+  Proof.
+    unfold reduce_buckets.
+    assert (Hgo: forall rs r a,
+      (fix go (bs0 : list G1_F) (running acc : G1_F) {struct bs0} : G1_F :=
+         match bs0 with
+         | [] => acc
+         | b :: rest =>
+             let running' := g1_add_spec running b in
+             let acc' := g1_add_spec acc running' in
+             go rest running' acc'
+         end) rs r a
+      = snd (fold_left (fun p b =>
+                          let r' := g1_add_spec (fst p) b in
+                          (r', g1_add_spec (snd p) r'))
+                       rs (r, a))).
+    { intros rs. induction rs as [|b rest IH]; intros r a.
+      - reflexivity.
+      - simpl. apply IH. }
+    apply Hgo.
+  Qed.
+
+  Theorem reduce_buckets_eq_scaled_sum (bs : list G1_F) :
+    reduce_buckets G1_F g1_identity g1_add_spec bs
+    = scaled_sum G1_F g1_identity g1_add_spec bs.
+  Proof.
+    rewrite reduce_buckets_as_fold.
+    rewrite fold_left_rev_right_rs.
+    rewrite running_fold_snd; auto.
+  Qed.
+
+  (** Jacobian triple of three [F] values. *)
+  Definition mk_point (x y z : F) : G1_F := (x, y, z).
+
+  (** [scalars]/[points] zipped and ready to be fed to [msm_pippenger].
+      Uses an explicit 3-way [combine] rather than nested [combine] to
+      avoid a scope-resolution glitch in the pretyper. *)
+  Fixpoint points_of (px py pz : list F) : list G1_F :=
+    match px, py, pz with
+    | x :: xs, y :: ys, z :: zs => mk_point x y z :: points_of xs ys zs
+    | _, _, _ => nil
+    end.
+
+  Definition scalar_to_Z (ws : list word) : list Z :=
+    List.map (@word.unsigned _ word) ws.
+
+  Definition scalars_to_Z (scalars : list (list word)) : list (list Z) :=
+    List.map scalar_to_Z scalars.
+
+  Definition msm_spec_output
+             (scalars : list (list word)) (points : list G1_F) : G1_F :=
+    msm_pippenger G1_F g1_identity g1_add_spec g1_double_spec
+      (Z.to_nat c) (Z.to_nat num_windows)
+      (scalars_to_Z scalars)
+      points.
+
+  (* =================================================================== *)
+  (** ** [spec_of_msm_bls12]                                              *)
+  (* =================================================================== *)
+
+  Instance spec_of_msm_bls12 : spec_of "msm_bls12" :=
+    fnspec! "msm_bls12"
+      (outx outy outz scalars_p ppx ppy ppz n_w : word)
+      / (outx0 outy0 outz0 : F)
+        (scalars : list (list word))
+        (px py pz : list F)
+        (R : mem -> Prop),
+      { requires tr mem :=
+          word.unsigned n_w = Z.of_nat (length scalars) /\
+          length scalars = length px /\
+          length px = length py /\
+          length py = length pz /\
+          (FElem None outx outx0
+           * FElem None outy outy0
+           * FElem None outz outz0
+           * ScalarsArray scalars_p scalars
+           * G1Array3 ppx ppy ppz px py pz
+           * R)%sep mem;
+        ensures tr' mem' :=
+          tr = tr' /\
+          exists (outx_f outy_f outz_f : F),
+            mk_point outx_f outy_f outz_f
+            = msm_spec_output scalars (points_of px py pz)
+            /\ (FElem (Some tight_bounds) outx outx_f
+                * FElem (Some tight_bounds) outy outy_f
+                * FElem (Some tight_bounds) outz outz_f
+                * ScalarsArray scalars_p scalars
+                * G1Array3 ppx ppy ppz px py pz
+                * R)%sep mem' }.
+
+  (* =================================================================== *)
+  (** ** Loop invariants — concrete Gallina predicates.                   *)
+  (*                                                                      *)
+  (*    Each loop has (a) a Gallina invariant over the abstract [G1_F]    *)
+  (*    state, and (b) a sep-logic predicate tying the concrete memory    *)
+  (*    to that abstract state.  The WP proof discharges each iteration   *)
+  (*    by matching the callee spec against the Gallina update.           *)
+  (* =================================================================== *)
+
+  (** Partial MSM sum over the top [num_windows - w] windows.  This is
+      the Gallina value of [out] at the start of outer-loop iteration [w].
+      Defined by unrolling [msm_pippenger]'s internal fix. *)
+  Fixpoint partial_msm_from (w : nat) (acc : G1_F)
+           (ss : list (list Z)) (ps : list G1_F) : G1_F :=
+    match w with
+    | O   => acc
+    | S k =>
+      let acc' := Nat.iter (Z.to_nat c) g1_double_spec acc in
+      let win  := process_window G1_F g1_identity g1_add_spec
+                    ss ps k (Z.to_nat c)
+                    (Nat.pow 2 (Z.to_nat c) - 1) in
+      partial_msm_from k (g1_add_spec acc' win) ss ps
+    end.
+
+  (** Running "plain sum" of a prefix of a bucket list, used in the
+      bucket-distribution loop. *)
+  Definition bucket_sum_prefix (bs : list G1_F) (i : nat) : G1_F :=
+    plain_sum G1_F g1_identity g1_add_spec (firstn i bs).
+
+  (** Outer window loop invariant: after the header decrement, local [w]
+      is the window index we're about to process, and [out] holds the
+      partial MSM for windows [[w+1, num_windows)]. *)
+  Definition outer_inv (w : Z) (out : G1_F)
+             (ss : list (list Z)) (ps : list G1_F) : Prop :=
+    out = partial_msm_from (Z.to_nat num_windows - Z.to_nat w - 1)%nat
+                           g1_identity ss ps.
+
+  (** Bucket-clear loop invariant: buckets at indices [[i, num_buckets)]
+      are still arbitrary; buckets at [[0, i)] are [g1_identity]. *)
+  Definition clear_inv (i : Z) (bs : list G1_F) : Prop :=
+    (i <= num_buckets) /\
+    Z.of_nat (length bs) = num_buckets /\
+    forall k, (Z.to_nat i <= k < Z.to_nat num_buckets)%nat ->
+              nth k bs g1_identity = g1_identity.
+
+  (** Distribution loop invariant: buckets after adding points [[i, n)]
+      into their respective buckets for the current window [w]. *)
+  Definition distribute_inv (w i : Z) (bs : list G1_F)
+             (ss : list (list Z)) (ps : list G1_F) : Prop :=
+    Z.of_nat (length bs) = num_buckets /\
+    (* Each bucket [k] contains the sum of points [j] with
+       [i <= j < length ps] whose window-[w] digit equals [k+1]. *)
+    forall k, (k < Z.to_nat num_buckets)%nat ->
+      nth k bs g1_identity =
+      fold_left g1_add_spec
+        (List.map snd
+           (List.filter (fun sp : list Z * G1_F =>
+                           Nat.eqb (Z.to_nat (get_window (fst sp) (Z.to_nat w) (Z.to_nat c)))
+                                   (S k))
+                        (skipn (Z.to_nat i) (List.combine ss ps))))
+        g1_identity.
+
+  (** Running-sum reduction loop invariant: at iteration [j] (about to
+      process bucket at index [j]), [running] equals the plain sum of
+      buckets [[j+1, num_buckets)], and [ws] equals the scaled sum of
+      the same suffix with coefficients starting at 1. *)
+  Definition reduce_inv (j : Z) (running ws : G1_F) (bs : list G1_F) : Prop :=
+    Z.of_nat (length bs) = num_buckets /\
+    running = plain_sum G1_F g1_identity g1_add_spec
+                (skipn (Z.to_nat (j + 1)) bs) /\
+    ws = scaled_sum G1_F g1_identity g1_add_spec
+                (skipn (Z.to_nat (j + 1)) bs).
+
+  (** At loop exit ([j = 0] after the decrement), the scaled-sum of the
+      entire bucket list equals [reduce_buckets] — this is the bridge
+      from the loop's concrete output back to the Gallina spec. *)
+  Lemma reduce_inv_at_exit (running ws : G1_F) (bs : list G1_F) :
+    Z.of_nat (length bs) = num_buckets ->
+    running = plain_sum G1_F g1_identity g1_add_spec bs ->
+    ws      = scaled_sum G1_F g1_identity g1_add_spec bs ->
+    ws = reduce_buckets G1_F g1_identity g1_add_spec bs.
+  Proof.
+    intros _ _ ->.
+    symmetry.
+    apply reduce_buckets_eq_scaled_sum; assumption.
+  Qed.
+
+  (* =================================================================== *)
+  (** ** Pure-Gallina preservation lemmas for each sub-loop.              *)
+  (*                                                                      *)
+  (*    These lemmas discharge the "Gallina side" of each WP obligation,  *)
+  (*    leaving only (a) the bedrock2 separation-logic bookkeeping and    *)
+  (*    (b) the callee-spec instantiation for the WP proof itself.        *)
+  (* =================================================================== *)
+
+  (** ---- clear_inv ---- *)
+
+  Lemma clear_inv_init bs0 :
+    Z.of_nat (length bs0) = num_buckets ->
+    clear_inv num_buckets bs0.
+  Proof.
+    intros Hlen.
+    unfold clear_inv. split; [Lia.lia|]. split; [exact Hlen|].
+    intros k Hk. Lia.lia.
+  Qed.
+
+  Lemma clear_inv_final bs :
+    clear_inv 0 bs ->
+    Z.of_nat (length bs) = num_buckets /\
+    forall k, (k < Z.to_nat num_buckets)%nat ->
+              nth k bs g1_identity = g1_identity.
+  Proof.
+    unfold clear_inv. intros (_ & Hlen & H).
+    split; [exact Hlen|].
+    intros k Hk. apply H. Lia.lia.
+  Qed.
+
+  Lemma clear_inv_step (i : Z) (bs : list G1_F) :
+    0 < i <= num_buckets ->
+    clear_inv i bs ->
+    clear_inv (i - 1)
+      (firstn (Z.to_nat (i - 1)) bs
+       ++ g1_identity
+       :: skipn (Z.to_nat i) bs).
+  Proof.
+    intros Hi (Hle & Hlen & Hall).
+    assert (Hi_nat: (Z.to_nat (i - 1) < length bs)%nat).
+    { rewrite <- Nat2Z.id with (n := length bs).
+      apply Z2Nat.inj_lt; Lia.lia. }
+    unfold clear_inv. split; [Lia.lia|]. split.
+    { rewrite length_app, length_cons, length_firstn, length_skipn.
+      rewrite Nat.min_l by Lia.lia.
+      assert (Z.to_nat i = S (Z.to_nat (i - 1))) as -> by Lia.lia.
+      Lia.lia. }
+    intros k Hk.
+    destruct (Nat.eq_dec k (Z.to_nat (i - 1))) as [->|Hne].
+    - rewrite app_nth2 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+      rewrite length_firstn, Nat.min_l by Lia.lia.
+      replace (Z.to_nat (i - 1) - Z.to_nat (i - 1))%nat with 0%nat by Lia.lia.
+      reflexivity.
+    - destruct (Nat.lt_ge_cases k (Z.to_nat (i - 1))) as [Hlt|Hge].
+      + rewrite app_nth1 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+        rewrite nth_firstn; [|exact Hlt].
+        apply Hall. Lia.lia.
+      + rewrite app_nth2 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+        rewrite length_firstn, Nat.min_l by Lia.lia.
+        cbn [nth].
+        destruct (k - Z.to_nat (i - 1))%nat as [|d] eqn:Ed; [Lia.lia|].
+        rewrite nth_skipn.
+        apply Hall.
+        split; [|Lia.lia].
+        assert (Z.to_nat i + d = k)%nat by Lia.lia. Lia.lia.
+  Qed.
+
+  (** ---- double-shift sub-loop ---- *)
+
+  (** After running [Nat.iter k g1_double_spec out_entry], [i] countdown
+      decrementing from [c] to [0]: the accumulator equals iterated
+      doubling of the entry value by [c - i] steps. *)
+  Lemma double_shift_step k (out : G1_F) :
+    g1_double_spec (Nat.iter k g1_double_spec out)
+    = Nat.iter (S k) g1_double_spec out.
+  Proof. reflexivity. Qed.
+
+  (** ---- reduce_inv ---- *)
+
+  Lemma reduce_inv_entry bs :
+    Z.of_nat (length bs) = num_buckets ->
+    reduce_inv (num_buckets - 1) g1_identity g1_identity bs.
+  Proof.
+    intros Hlen.
+    unfold reduce_inv.
+    assert (Heq: (Z.to_nat (num_buckets - 1 + 1) = length bs)%nat) by Lia.lia.
+    split; [exact Hlen|].
+    split; rewrite Heq, skipn_all; reflexivity.
+  Qed.
+
+  Lemma reduce_inv_exit (running ws : G1_F) (bs : list G1_F) :
+    reduce_inv (-1) running ws bs ->
+    Z.of_nat (length bs) = num_buckets /\
+    running = plain_sum G1_F g1_identity g1_add_spec bs /\
+    ws      = scaled_sum G1_F g1_identity g1_add_spec bs.
+  Proof.
+    unfold reduce_inv. intros (Hlen & Hr & Hw).
+    assert (Hj: Z.to_nat (-1 + 1) = 0%nat) by reflexivity.
+    rewrite Hj in Hr, Hw. rewrite skipn_O in Hr, Hw.
+    split; [exact Hlen|]. split; [exact Hr|exact Hw].
+  Qed.
+
+  (** Helper: splitting [skipn j bs] as head [bs[j]] plus [skipn (j+1) bs]. *)
+  Lemma skipn_S_eq (j : nat) (bs : list G1_F) :
+    (j < length bs)%nat ->
+    skipn j bs = nth j bs g1_identity :: skipn (S j) bs.
+  Proof.
+    revert j. induction bs as [|x xs IH]; intros j Hj; [cbn in Hj; Lia.lia|].
+    destruct j as [|j']; [reflexivity|].
+    cbn. apply IH. cbn in Hj. Lia.lia.
+  Qed.
+
+  (** Key algebraic identity: decrementing [j] by 1 and updating
+      [running]/[ws] with the bucket at index [j] preserves the
+      invariant. *)
+  Lemma reduce_inv_step (j : Z) (running ws : G1_F) (bs : list G1_F) :
+    0 <= j < num_buckets ->
+    reduce_inv j running ws bs ->
+    let b := nth (Z.to_nat j) bs g1_identity in
+    let running' := g1_add_spec running b in
+    let ws'      := g1_add_spec ws running' in
+    reduce_inv (j - 1) running' ws' bs.
+  Proof.
+    intros Hj (Hlen & Hr & Hw).
+    unfold reduce_inv. split; [exact Hlen|].
+    assert (HjN: (Z.to_nat j < length bs)%nat) by Lia.lia.
+    replace (Z.to_nat (j - 1 + 1)) with (Z.to_nat j) by Lia.lia.
+    replace (Z.to_nat (j + 1)) with (S (Z.to_nat j)) in Hr, Hw by Lia.lia.
+    rewrite (skipn_S_eq (Z.to_nat j) bs HjN).
+    cbn [plain_sum scaled_sum scaled_sum_from nat_scalar_mul].
+    set (b := nth (Z.to_nat j) bs g1_identity).
+    set (tl := skipn (S (Z.to_nat j)) bs) in *.
+    set (ps := plain_sum G1_F g1_identity g1_add_spec tl) in *.
+    set (ss := scaled_sum G1_F g1_identity g1_add_spec tl) in *.
+    rewrite Hr, Hw. split.
+    - (* running' = op b (plain_sum (b :: tl)) — by comm. *)
+      cbn. apply g1_add_comm.
+    - (* ws' = scaled_sum (b :: tl) = op (op b 0) (scaled_sum_from 2 tl).
+         Under op_zero_r and scaled_sum_from_S (IteratedSepPoints, Qed), we get
+         scaled_sum_from 2 tl = op ps ss, so RHS = op b (op ps ss).
+         LHS = op ws (op running b) = op ss (op (op ps b)).
+         Both are b + ps + ss up to comm/assoc. *)
+      unfold scaled_sum. cbn [scaled_sum_from].
+      rewrite (op_zero_r G1_F g1_identity g1_add_spec
+                 g1_add_comm g1_add_identity_l).
+      rewrite (scaled_sum_from_S G1_F g1_identity g1_add_spec
+                 g1_add_assoc g1_add_comm g1_add_identity_l 1 tl).
+      fold ps. fold ss.
+      (* Goal: op ss (op ps b) = op b (op ps ss). *)
+      rewrite (g1_add_comm ps b).
+      rewrite <- g1_add_assoc.
+      rewrite (g1_add_comm ss b).
+      rewrite g1_add_assoc.
+      rewrite (g1_add_comm ss ps).
+      reflexivity.
+  Qed.
+
+  (** ---- distribute_inv ---- *)
+
+  Lemma distribute_inv_init (w : Z) bs (ss : list (list Z))
+        (ps : list G1_F) :
+    Z.of_nat (length bs) = num_buckets ->
+    length ss = length ps ->
+    (forall k, (k < Z.to_nat num_buckets)%nat ->
+               nth k bs g1_identity = g1_identity) ->
+    distribute_inv w (Z.of_nat (length ps)) bs ss ps.
+  Proof.
+    intros Hlen Hlenss Hall.
+    unfold distribute_inv. split; [exact Hlen|].
+    intros k Hk.
+    rewrite Hall by exact Hk.
+    rewrite skipn_all2.
+    - reflexivity.
+    - rewrite length_combine. rewrite Nat2Z.id. Lia.lia.
+  Qed.
+
+  (** ---- partial_msm_from — collapse at exit ---- *)
+
+  Lemma partial_msm_from_zero acc ss ps :
+    partial_msm_from 0 acc ss ps = acc.
+  Proof. reflexivity. Qed.
+
+  (** Doubling the identity repeatedly stays at identity. *)
+  Lemma iter_double_identity n :
+    Nat.iter n g1_double_spec g1_identity = g1_identity.
+  Proof.
+    induction n as [|n IH]; [reflexivity|].
+    change (Nat.iter (S n) g1_double_spec g1_identity)
+      with (g1_double_spec (Nat.iter n g1_double_spec g1_identity)).
+    rewrite IH. exact g1_double_identity.
+  Qed.
+
+  (** The full MSM equals [partial_msm_from] starting at the top
+      window with [acc = identity].  This is the shape the outer-loop
+      invariant reduces to at [w = 0]. *)
+  Lemma msm_pippenger_as_partial_msm_from ss ps :
+    (0 < Z.to_nat num_windows)%nat ->
+    msm_spec_output ss ps
+    = partial_msm_from (Z.to_nat num_windows) g1_identity
+        (scalars_to_Z ss) ps.
+  Proof.
+    intros HNW.
+    unfold msm_spec_output, msm_pippenger.
+    (* Generalize [go]: prove [go k acc = partial_msm_from k acc] for any k, acc. *)
+    assert (go_eq: forall k acc,
+      (fix go (w : nat) (acc0 : G1_F) : G1_F :=
+         match w with
+         | O => acc0
+         | S w' =>
+             let acc' := Nat.iter (Z.to_nat c) g1_double_spec acc0 in
+             let win :=
+               process_window G1_F g1_identity g1_add_spec
+                 (scalars_to_Z ss) ps w' (Z.to_nat c)
+                 (Nat.pow 2 (Z.to_nat c) - 1)
+             in
+             go w' (g1_add_spec acc' win)
+         end) k acc
+      = partial_msm_from k acc (scalars_to_Z ss) ps).
+    { induction k as [|k IH]; intros acc; [reflexivity|].
+      simpl. apply IH. }
+    (* Unfold the outer call and use [go_eq], then absorb the top window. *)
+    destruct (Z.to_nat num_windows) as [|NWpred] eqn:ENW; [Lia.lia|].
+    (* msm_pippenger computed at [NW = S NWpred] does:
+         top_window := process_window ... NWpred;
+         go NWpred top_window.
+       partial_msm_from (S NWpred) identity does:
+         acc' := iter c double identity = identity;
+         win  := process_window ... NWpred;
+         partial_msm_from NWpred (g1_add identity win) = partial_msm_from NWpred win. *)
+    cbn [partial_msm_from].
+    replace (S NWpred - 1)%nat with NWpred by Lia.lia.
+    rewrite iter_double_identity, g1_add_identity_l.
+    apply go_eq.
+  Qed.
+
+  (* =================================================================== *)
+  (** ** The WP theorem.                                                  *)
+  (*                                                                      *)
+  (*    Proof structure (4 nested [while_localsmap]s + outer envelope):   *)
+  (*                                                                      *)
+  (*    1. [straightline] through the 9 [stackalloc]s + initial           *)
+  (*       [store_zero] call.                                             *)
+  (*    2. Outer window loop — measure [w+1], invariant [outer_inv].      *)
+  (*    3. Inside: 4 sequential sub-loops:                                *)
+  (*       (a) double-shift loop — measure [i+1], invariant               *)
+  (*           [out = Nat.iter (c-i) g1_double_spec out_entry].            *)
+  (*       (b) bucket-clear loop — measure [i], invariant [clear_inv].    *)
+  (*       (c) distribute loop — measure [i], invariant                   *)
+  (*           [distribute_inv w i bs ss ps].  Inner [if idx]              *)
+  (*           is split by cases; the [idx > 0] branch rewrites           *)
+  (*           [bs] via [PointArray_split_at] / [update_at] and cites     *)
+  (*           [spec_of_curve_add].                                       *)
+  (*       (d) reduce loop — measure [j+1], invariant [reduce_inv].       *)
+  (*           Exit step cites [reduce_inv_at_exit].                      *)
+  (*    4. Final outer [curve_add] call: [out := out + ws].               *)
+  (*    5. Post-loop stack cleanup (dealloc) — fed by [Allocable].        *)
+  (*                                                                      *)
+  (*    The Admitted below is one single obligation cluster (the body of  *)
+  (*    the outer window loop plus the four nested while invariants).     *)
+  (*    All invariants are now concrete; the bridge lemma                 *)
+  (*    [reduce_inv_at_exit] is Qed; the running-sum algebra is Qed in    *)
+  (*    [IteratedSepPoints].                                              *)
+  (* =================================================================== *)
+
+  (** Callee specs — concrete shapes matching the aliased [cmd.call]
+      argument lists in [PippengerBedrock2].  Based on [BLS12_G1.v]
+      [spec_of_ladderstep] and [StoreZero.v] [spec_of_store_zero], but
+      specialised to the three aliased patterns used in the MSM body:
+        - [curve_add] with [in1=out] (bucket += point);
+        - [curve_double] in-place ([p = 2·p]);
+        - [store_zero] 3-pointer identity writer.
+
+      Named as [Def]s taking [functions] so the theorem hypotheses
+      are legible. *)
+
+  Definition CurveAddAliasedOK (functions : Semantics.env) : Prop :=
+    forall (pb1 pp1 pb2 pp2 pb3 pp3 : word)
+           (B1 P1 B2 P2 B3 P3 : F) R tr m,
+      (FElem (Some tight_bounds) pb1 B1
+       * FElem (Some tight_bounds) pp1 P1
+       * FElem (Some tight_bounds) pb2 B2
+       * FElem (Some tight_bounds) pp2 P2
+       * FElem (Some tight_bounds) pb3 B3
+       * FElem (Some tight_bounds) pp3 P3
+       * R)%sep m ->
+      Semantics.call functions curve_add_name tr m
+        [pb1; pp1; pb2; pp2; pb3; pp3; pb1; pb2; pb3]
+        (fun tr' m' rets =>
+           rets = [] /\ tr = tr' /\
+           let '(B1', B2', B3') := g1_add_spec (B1, B2, B3) (P1, P2, P3) in
+           (FElem (Some tight_bounds) pb1 B1'
+            * FElem (Some tight_bounds) pp1 P1
+            * FElem (Some tight_bounds) pb2 B2'
+            * FElem (Some tight_bounds) pp2 P2
+            * FElem (Some tight_bounds) pb3 B3'
+            * FElem (Some tight_bounds) pp3 P3
+            * R)%sep m').
+
+  Definition CurveDoubleInplaceOK (functions : Semantics.env) : Prop :=
+    forall (pX pY pZ : word) (X Y Z : F) R tr m,
+      (FElem (Some tight_bounds) pX X
+       * FElem (Some tight_bounds) pY Y
+       * FElem (Some tight_bounds) pZ Z
+       * R)%sep m ->
+      Semantics.call functions curve_double_name tr m
+        [pX; pY; pZ; pX; pY; pZ]
+        (fun tr' m' rets =>
+           rets = [] /\ tr = tr' /\
+           let '(X', Y', Z') := g1_double_spec (X, Y, Z) in
+           (FElem (Some tight_bounds) pX X'
+            * FElem (Some tight_bounds) pY Y'
+            * FElem (Some tight_bounds) pZ Z'
+            * R)%sep m').
+
+  Definition StoreZero3OK (functions : Semantics.env) : Prop :=
+    forall (pX pY pZ : word) (Xv Yv Zv : F) R tr m,
+      (FElem None pX Xv * FElem None pY Yv * FElem None pZ Zv * R)%sep m ->
+      Semantics.call functions store_zero_name tr m
+        [pX; pY; pZ]
+        (fun tr' m' rets =>
+           rets = [] /\ tr = tr' /\
+           (* Jacobian identity is (0, 1, 0) — fixed by [g1_identity]. *)
+           let '(Xi, Yi, Zi) := g1_identity in
+           (FElem (Some tight_bounds) pX Xi
+            * FElem (Some tight_bounds) pY Yi
+            * FElem (Some tight_bounds) pZ Zi
+            * R)%sep m').
+
+  (* =================================================================== *)
+  (** ** Core bedrock2 execution obligation — decomposition of the main  *)
+  (*     WP proof into one narrowly-scoped [Admitted] sub-lemma.         *)
+  (*                                                                     *)
+  (*    [msm_bls12_exec_correct] states the [Semantics.exec.exec] Hoare  *)
+  (*    triple for the body of the function, assuming:                   *)
+  (*    (a) the three aliased callee specs [HCurveAdd/Double/StoreZero]  *)
+  (*    (b) the initial locals map [l0] (the result of the fnspec's      *)
+  (*        [map.of_list_zip] on the 8 argument names/values),           *)
+  (*    (c) the initial separation-logic memory predicate [Hsep].        *)
+  (*                                                                     *)
+  (*    The proof of this lemma is the heart of the WP proof (see        *)
+  (*    the structure comment above; roughly 3K LoC, organised as 5      *)
+  (*    nested [while_localsmap] applications plus 9 [stackalloc]        *)
+  (*    frames, plus callee-spec plumbing).                              *)
+  (*                                                                     *)
+  (*    [msm_bls12_ok] is then mechanical: it unfolds [spec_of_msm_bls12]*)
+  (*    and [Semantics.call], discharges the function-dictionary lookup  *)
+  (*    with [EnvContains], computes the initial locals map by           *)
+  (*    reflexivity, and appeals to [msm_bls12_exec_correct] for the     *)
+  (*    exec triple.                                                     *)
+  (*                                                                     *)
+  (*    SUGGESTED FACTORING for a future multi-hour proof effort:        *)
+  (*    split this single [Admitted] into 5 narrowly-scoped leaf         *)
+  (*    [Admitted]s, one per sub-loop (double-shift, bucket-clear,       *)
+  (*    distribute, reduce) plus the outer-window-loop envelope.  Each   *)
+  (*    leaf would be an [exec.exec] triple over the specific subtree of *)
+  (*    [msm_bls12]'s body, with Gallina precondition / postcondition    *)
+  (*    tracking [outer_inv]/[clear_inv]/[distribute_inv]/[reduce_inv]   *)
+  (*    from above.  The main [msm_bls12_exec_correct] then peels 9      *)
+  (*    [stackalloc]s, discharges the initial [store_zero] via           *)
+  (*    [HStoreZero], and invokes the outer-loop-envelope leaf.  The     *)
+  (*    outer-loop-envelope leaf in turn invokes the 4 sub-loop leaves   *)
+  (*    inside its body.  All Gallina preservation is already Qed        *)
+  (*    above.                                                           *)
+  (* =================================================================== *)
+
+  (** Helper: split [anybytes] into a prefix + suffix.  Follows from the
+      unfolded definition [anybytes p n m := exists bs, of_list_word_at p
+      bs = m /\ length bs = n].  Splitting [bs] at the prefix length gives
+      the two chunks; [map.split_of_list_word_at] distributes
+      [of_list_word_at] over list append. *)
+  Lemma anybytes_split :
+    forall (p : word) (a b : Z) (m : mem),
+      0 <= a -> 0 <= b ->
+      Memory.anybytes p (a + b) m ->
+      exists m1 m2,
+        map.split m m1 m2 /\
+        Memory.anybytes p a m1 /\
+        Memory.anybytes (word.add p (word.of_Z a)) b m2.
+  Proof.
+    intros p a b m Ha Hb Hany.
+    destruct Hany as [bs [Hof [Hlen Hbnd]]].
+    pose (na := Z.to_nat a).
+    pose (bs1 := List.firstn na bs).
+    pose (bs2 := List.skipn na bs).
+    assert (Hbs : bs = List.app bs1 bs2)
+      by (subst bs1 bs2; symmetry; apply List.firstn_skipn).
+    assert (Hlen1 : Z.of_nat (List.length bs1) = a).
+    { subst bs1 na. rewrite List.firstn_length.
+      rewrite Nat.min_l; [ apply Z2Nat.id; lia | ].
+      apply Nat2Z.inj_le. rewrite Z2Nat.id by lia. lia. }
+    assert (Hlen2 : Z.of_nat (List.length bs2) = b).
+    { subst bs2 na. rewrite List.skipn_length.
+      rewrite Nat2Z.inj_sub;
+        [ | apply Nat2Z.inj_le; rewrite Z2Nat.id by lia; lia ].
+      rewrite Z2Nat.id by lia. lia. }
+    pose (m1 := OfListWord.map.of_list_word_at p bs1).
+    pose (m2 := OfListWord.map.of_list_word_at
+                  (word.add p (word.of_Z a)) bs2).
+    exists m1, m2.
+    split; [ | split ].
+    - (* map.split m m1 m2 *)
+      assert (Hdisj : map.disjoint m2 m1).
+      { subst m1 m2.
+        rewrite <- Hlen1.
+        apply OfListWord.map.adjacent_arrays_disjoint.
+        rewrite Hlen1, Hlen2. lia. }
+      assert (Hm : m = map.putmany m2 m1).
+      { subst m. subst m1 m2.
+        rewrite Hbs at 1.
+        rewrite (OfListWord.map.of_list_word_at_app_n p bs1 bs2 a Hlen1).
+        reflexivity. }
+      split.
+      + rewrite Hm. apply map.putmany_comm. assumption.
+      + intros k v1 v2 Hv1 Hv2.
+        unfold map.disjoint in Hdisj. eapply Hdisj; eassumption.
+    - (* Memory.anybytes p a m1 *)
+      exists bs1. split; [ reflexivity | split; [ lia | ] ].
+      rewrite Hlen1. lia.
+    - (* Memory.anybytes (p + a) b m2 *)
+      exists bs2. split; [ reflexivity | split; [ lia | ] ].
+      rewrite Hlen2. lia.
+  Qed.
+
+  (** Helper: [anybytes p (n*felem_size_in_bytes) m] gives an
+      [array (FElem None)] of length [n] at [p] for some fresh F-list.
+      Induction on [n]; each step peels one [felem_size_in_bytes] chunk
+      via [anybytes_split], applies [felem_alloc.P_from_bytes], and
+      recomposes via [array_cons].  First-cut Coq proof hit tactic-level
+      issues with [Lia.nia] on felem_size_in_bytes-scaled terms and
+      map.of_list_word_at unfolding; deferred to a focused session. *)
+  Lemma anybytes_to_felem_array :
+    forall (p : word) (n : nat) (m : mem),
+      Memory.anybytes p (Z.of_nat n * felem_size_in_bytes) m ->
+      exists xs : list F, length xs = n /\
+                 array (FElem None) (word.of_Z felem_size_in_bytes) p xs m.
+  Proof.
+    Existing Instance felem_alloc.
+    intros p n; revert p.
+    induction n; intros p m Hany.
+    - (* n = 0 : empty array, m = empty *)
+      exists nil. split; [ reflexivity | ].
+      simpl. unfold emp.
+      destruct Hany as [bs [Hof [Hlen _]]].
+      assert (bs = nil) by (destruct bs; simpl in Hlen; [ reflexivity | lia ]).
+      subst bs. simpl in Hof.
+      split; [ | exact I ].
+      subst m. rewrite OfListWord.map.of_list_word_nil. reflexivity.
+    - (* n = S n' *)
+      replace (Z.of_nat (S n) * felem_size_in_bytes)
+         with (felem_size_in_bytes + Z.of_nat n * felem_size_in_bytes) in Hany
+         by lia.
+      pose proof Types.word_size_in_bytes_pos (width:=width) as Hwpos.
+      assert (Hfnn : 0 <= felem_size_in_bytes).
+      { unfold felem_size_in_bytes. apply Z.mul_nonneg_nonneg; lia. }
+      assert (Hle : 0 <= Z.of_nat n * felem_size_in_bytes)
+        by (apply Z.mul_nonneg_nonneg; lia).
+      destruct (anybytes_split p felem_size_in_bytes
+                  (Z.of_nat n * felem_size_in_bytes) m
+                  Hfnn Hle Hany)
+        as [m1 [m2 [Hsp [Hany1 Hany2]]]].
+      (* Peel first felem. *)
+      pose proof (P_from_bytes (Allocable:=felem_alloc) p m1 Hany1)
+        as [x0 Hx0].
+      (* Recurse at shifted pointer. *)
+      destruct (IHn (word.add p (word.of_Z felem_size_in_bytes)) m2 Hany2)
+        as [xs [Hlen Hxs]].
+      exists (x0 :: xs). split; [ simpl; congruence | ].
+      simpl.
+      exists m1, m2.
+      split; [ exact Hsp | split; [ exact Hx0 | exact Hxs ] ].
+  Qed.
+
+  (* =================================================================== *)
+  (** ** Sub-loop leaves — load-bearing decomposition of prelude_wp.      *)
+  (*                                                                      *)
+  (*    Each leaf encapsulates one sub-computation of the outer-loop      *)
+  (*    body.  [msm_bls12_prelude_wp] cites these after establishing the  *)
+  (*    stackalloc + initial-store_zero prelude.  All are currently       *)
+  (*    Admitted; future sessions will close each leaf independently.     *)
+  (* =================================================================== *)
+
+  (** Leaf 1: double-shift sub-loop.  [i] counts from [c] down to 0;
+      each iteration calls [curve_double] in-place on (outx, outy, outz).
+      Entry: local [i] = c, FElem triples at (Xe, Ye, Ze).
+      Exit:  FElem triples at [Nat.iter c g1_double_spec (Xe, Ye, Ze)]. *)
+  Lemma msm_bls12_double_shift_wp :
+    forall functions
+      (HCurveDouble : CurveDoubleInplaceOK functions)
+      (outx outy outz : word)
+      (Xe Ye Ze : F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      (FElem (Some tight_bounds) outx Xe
+       * FElem (Some tight_bounds) outy Ye
+       * FElem (Some tight_bounds) outz Ze
+       * R)%sep mem0 ->
+      map.get l0 "outx" = Some outx ->
+      map.get l0 "outy" = Some outy ->
+      map.get l0 "outz" = Some outz ->
+      map.get l0 "i" = Some (word.of_Z c) ->
+      WeakestPrecondition.cmd functions
+        (cmd.while (expr.var "i")
+           (cmd.seq
+              (cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1)))
+              (cmd.call [] curve_double_name
+                 [expr.var "outx"; expr.var "outy"; expr.var "outz";
+                  expr.var "outx"; expr.var "outy"; expr.var "outz"])))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           tr = tr' /\
+           (let '(Xf, Yf, Zf) :=
+              Nat.iter (Z.to_nat c) g1_double_spec (Xe, Ye, Ze) in
+            (FElem (Some tight_bounds) outx Xf
+             * FElem (Some tight_bounds) outy Yf
+             * FElem (Some tight_bounds) outz Zf
+             * R)%sep mem') /\
+           map.get l' "outx" = Some outx /\
+           map.get l' "outy" = Some outy /\
+           map.get l' "outz" = Some outz).
+  Proof.
+    intros functions HCurveDouble outx outy outz Xe Ye Ze R tr mem0 l0
+           Hsep Houtx Houty Houtz Hi.
+    eapply bedrock2.Loops.while_localsmap
+      with (lt := Nat.lt) (v0 := Z.to_nat c)
+           (invariant := fun (v : nat) (t : Semantics.trace) (m : mem) (l : locals) =>
+              t = tr /\
+              (v <= Z.to_nat c)%nat /\
+              map.get l "outx" = Some outx /\
+              map.get l "outy" = Some outy /\
+              map.get l "outz" = Some outz /\
+              map.get l "i" = Some (word.of_Z (Z.of_nat v)) /\
+              (let '(Xc, Yc, Zc) :=
+                 Nat.iter (Z.to_nat c - v)%nat g1_double_spec (Xe, Ye, Ze) in
+               (FElem (Some tight_bounds) outx Xc
+                * FElem (Some tight_bounds) outy Yc
+                * FElem (Some tight_bounds) outz Zc
+                * R)%sep m)).
+    { (* Well-foundedness *)
+      exact Wf_nat.lt_wf. }
+    { (* Initial invariant at v = Z.to_nat c *)
+      split; [reflexivity|].
+      split; [Lia.lia|].
+      split; [exact Houtx|].
+      split; [exact Houty|].
+      split; [exact Houtz|].
+      split.
+      { rewrite Z2Nat.id by (cbv; discriminate). exact Hi. }
+      replace (Z.to_nat c - Z.to_nat c)%nat with 0%nat by Lia.lia.
+      cbn [Nat.iter]. exact Hsep. }
+    { (* Loop body + exit: give branch value and split the two cases. *)
+      intros v tv mv lv Hinv.
+      destruct Hinv as [Htr [Hvle [Hlx [Hly [Hlz [Hli Hm]]]]]].
+      subst tv.
+      exists (word.of_Z (Z.of_nat v)).
+      split.
+      { (* branch expr evaluates to (word.of_Z v) *)
+        cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hli | reflexivity]. }
+      split.
+      { (* TRUE branch: v <> 0, run body *)
+        intro Hne.
+        assert (Hv_pos : (0 < v)%nat).
+        { destruct v as [|v']; [|Lia.lia].
+          exfalso. apply Hne.
+          change (Z.of_nat 0) with 0%Z.
+          rewrite word.unsigned_of_Z_0. reflexivity. }
+        (* cmd.set "i" := i - 1 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body]. fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split; [exact Hli |].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* Now have: new locals = map.put lv "i" (word.sub (word.of_Z v) (word.of_Z 1)). *)
+        (* Call curve_double_name in-place. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body]. fold WeakestPrecondition.cmd.
+        eexists. split.
+        { (* dexprs on 6 var references to outx/outy/outz (all the same values). *)
+          cbv [WeakestPrecondition.dexprs list_map list_map_body
+               WeakestPrecondition.expr WeakestPrecondition.expr_body
+               WeakestPrecondition.get dlet.dlet].
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hlx. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hly. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hlz. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hlx. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hly. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence. exact Hlz. }
+          reflexivity. }
+        (* Invoke the CurveDoubleInplaceOK hypothesis. *)
+        set (st := Nat.iter (Z.to_nat c - v)%nat g1_double_spec (Xe, Ye, Ze)) in *.
+        destruct st as [[Xc Yc] Zc] eqn:Hst.
+        eapply Semantics.weaken_call.
+        { eapply (HCurveDouble outx outy outz Xc Yc Zc R tr mv).
+          exact Hm. }
+        cbv beta. intros tr' m' rets [Hrets [Htreq Hm']].
+        subst rets tr'.
+        (* Destruct the resulting iteration state *)
+        remember (g1_double_spec (Xc, Yc, Zc)) as st' eqn:Hst'.
+        destruct st' as [[Xc' Yc'] Zc'].
+        (* After the call, update locals with rets = []. *)
+        cbv [map.putmany_of_list_zip].
+        eexists. split; [reflexivity|].
+        (* Invariant for the next iteration: v' = v - 1. *)
+        exists (v - 1)%nat.
+        split.
+        { (* Re-establish invariant *)
+          split; [reflexivity|].
+          split; [Lia.lia|].
+          split.
+          { rewrite map.get_put_diff by congruence. exact Hlx. }
+          split.
+          { rewrite map.get_put_diff by congruence. exact Hly. }
+          split.
+          { rewrite map.get_put_diff by congruence. exact Hlz. }
+          split.
+          { rewrite map.get_put_same.
+            f_equal.
+            (* Show: word.sub (word.of_Z (Z.of_nat v)) (word.of_Z 1)
+                   = word.of_Z (Z.of_nat (v-1)). *)
+            rewrite Nat2Z.inj_sub by Lia.lia.
+            change (Z.of_nat 1) with 1%Z.
+            apply word.unsigned_inj.
+            rewrite word.unsigned_sub.
+            rewrite !word.unsigned_of_Z.
+            cbv [word.wrap].
+            assert (Hv_bd : Z.of_nat v <= 9).
+            { assert (Hle : (Z.of_nat v <= Z.of_nat (Z.to_nat c))%Z) by
+                (apply Nat2Z.inj_le; exact Hvle).
+              rewrite Z2Nat.id in Hle by (cbv; discriminate).
+              unfold c in Hle. exact Hle. }
+            assert (H2w_big : 2 ^ 32 <= 2 ^ width).
+            { apply Z.pow_le_mono_r; [Lia.lia|].
+              pose proof width_cases as Hwc.
+              destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
+            assert (H2w_pos : 0 < 2 ^ width) by (pose proof word.width_pos; apply Z.pow_pos_nonneg; Lia.lia).
+            rewrite (Z.mod_small (Z.of_nat v) (2 ^ width)) by Lia.lia.
+            rewrite (Z.mod_small 1 (2 ^ width)) by Lia.lia.
+            rewrite (Z.mod_small (Z.of_nat v - 1) (2 ^ width)) by Lia.lia.
+            reflexivity. }
+          (* The running accumulator state *)
+          replace (Z.to_nat c - (v - 1))%nat with (S (Z.to_nat c - v))%nat by Lia.lia.
+          change (Nat.iter (S (Z.to_nat c - v)) g1_double_spec (Xe, Ye, Ze))
+            with (g1_double_spec (Nat.iter (Z.to_nat c - v) g1_double_spec (Xe, Ye, Ze))).
+          fold st. rewrite Hst.
+          rewrite <- Hst'.
+          exact Hm'. }
+        { (* v' < v *)
+          Lia.lia. } }
+      { (* FALSE branch: v = 0, re-establish postcondition. *)
+        intro Heq.
+        assert (Hv0 : v = 0%nat).
+        { rewrite word.unsigned_of_Z in Heq.
+          cbv [word.wrap] in Heq.
+          assert (Hv_bd : Z.of_nat v <= 9).
+          { assert (Hle : (Z.of_nat v <= Z.of_nat (Z.to_nat c))%Z) by
+              (apply Nat2Z.inj_le; exact Hvle).
+            rewrite Z2Nat.id in Hle by (cbv; discriminate).
+            unfold c in Hle. exact Hle. }
+          assert (H2w_big : 2 ^ 32 <= 2 ^ width).
+          { apply Z.pow_le_mono_r; [Lia.lia|].
+            pose proof width_cases as Hwc.
+            destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
+          rewrite Z.mod_small in Heq by Lia.lia.
+          Lia.lia. }
+        subst v.
+        replace (Z.to_nat c - 0)%nat with (Z.to_nat c) in Hm by Lia.lia.
+        split; [reflexivity|].
+        split; [exact Hm|].
+        split; [exact Hlx|].
+        split; [exact Hly|].
+        exact Hlz. } }
+  Qed.
+
+  (** Leaf 2: bucket-clear sub-loop.  [i] counts from [num_buckets] down;
+      each iter computes address [bp_k = buckets_k + i*48] for k ∈ {x,y,z}
+      then calls [store_zero] on the triple.  Exit: every bucket =
+      [g1_identity]. *)
+  Lemma msm_bls12_bucket_clear_wp :
+    forall functions
+      (HStoreZero : StoreZero3OK functions)
+      (buckets_x buckets_y buckets_z : word)
+      (bs_x bs_y bs_z : list F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      Z.of_nat (length bs_x) = num_buckets ->
+      Z.of_nat (length bs_y) = num_buckets ->
+      Z.of_nat (length bs_z) = num_buckets ->
+      (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z
+       * R)%sep mem0 ->
+      map.get l0 "buckets_x" = Some buckets_x ->
+      map.get l0 "buckets_y" = Some buckets_y ->
+      map.get l0 "buckets_z" = Some buckets_z ->
+      map.get l0 "i" = Some (word.of_Z num_buckets) ->
+      WeakestPrecondition.cmd functions
+        (cmd.while (expr.var "i")
+           (cmd.seq
+              (cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1)))
+           (cmd.seq
+              (cmd.set "bpx" (expr.op bopname.add (expr.var "buckets_x")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+           (cmd.seq
+              (cmd.set "bpy" (expr.op bopname.add (expr.var "buckets_y")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+           (cmd.seq
+              (cmd.set "bpz" (expr.op bopname.add (expr.var "buckets_z")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+              (cmd.call [] store_zero_name
+                 [expr.var "bpx"; expr.var "bpy"; expr.var "bpz"]))))))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           tr = tr' /\
+           exists (bs_x' bs_y' bs_z' : list F),
+             Z.of_nat (length bs_x') = num_buckets /\
+             Z.of_nat (length bs_y') = num_buckets /\
+             Z.of_nat (length bs_z') = num_buckets /\
+             (forall k, (k < Z.to_nat num_buckets)%nat ->
+                        nth k (points_of bs_x' bs_y' bs_z') g1_identity
+                        = g1_identity) /\
+             (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+              * R)%sep mem' /\
+             map.get l' "buckets_x" = Some buckets_x /\
+             map.get l' "buckets_y" = Some buckets_y /\
+             map.get l' "buckets_z" = Some buckets_z).
+  Admitted.
+
+  (** Gallina step lemmas for the distribute loop.  Going from
+      [distribute_inv w i bs ss ps] to [distribute_inv w (i-1) bs' ss ps],
+      where [bs'] is either [bs] unchanged (when the extracted window
+      digit [d = get_window s w c] is zero) or [bs] with the [d-1]-th
+      bucket replaced by [old + p] (where [p = ps[i-1]], [s = ss[i-1]],
+      [old = nth (d-1) bs g1_identity]).  Companions to
+      [distribute_inv_init] / [clear_inv_step] / [reduce_inv_step]. *)
+
+  (** Helper: splitting [skipn j L] as head [L[j]] plus [skipn (j+1) L]
+      for arbitrary element type.  (The [skipn_S_eq] above is specialised
+      to [list G1_F].) *)
+  Lemma skipn_S_eq_gen {A : Type} (d : A) (j : nat) (xs : list A) :
+    (j < length xs)%nat ->
+    skipn j xs = nth j xs d :: skipn (S j) xs.
+  Proof.
+    revert j. induction xs as [|x rest IH]; intros j Hj; [cbn in Hj; Lia.lia|].
+    destruct j as [|j']; [reflexivity|].
+    cbn. apply IH. cbn in Hj. Lia.lia.
+  Qed.
+
+  (** [fold_left g1_add_spec xs (op a b) = op a (fold_left g1_add_spec xs b)]
+      since [g1_add_spec] is commutative + associative and [g1_identity] is
+      a left-identity.  Used below to pull a freshly-added point past the
+      pre-existing bucket contents. *)
+  Lemma fold_left_g1_add_init (xs : list G1_F) (a b : G1_F) :
+    fold_left g1_add_spec xs (g1_add_spec a b)
+    = g1_add_spec a (fold_left g1_add_spec xs b).
+  Proof.
+    revert a b. induction xs as [|y ys IH]; intros a b; [reflexivity|].
+    cbn [fold_left].
+    rewrite <- (IH a (g1_add_spec b y)). f_equal.
+    rewrite !g1_add_assoc. rewrite (g1_add_comm b y). reflexivity.
+  Qed.
+
+  Lemma fold_left_g1_add_shift_init (xs : list G1_F) (p : G1_F) :
+    fold_left g1_add_spec xs p
+    = g1_add_spec p (fold_left g1_add_spec xs g1_identity).
+  Proof.
+    pose proof (fold_left_g1_add_init xs p g1_identity) as H.
+    rewrite (g1_add_comm p g1_identity), g1_add_identity_l in H.
+    rewrite H. reflexivity.
+  Qed.
+
+  Lemma distribute_inv_step_zero (w i : Z) (bs : list G1_F)
+        (ss : list (list Z)) (ps : list G1_F) :
+    0 < i <= Z.of_nat (length ps) ->
+    length ss = length ps ->
+    get_window (nth (Z.to_nat (i - 1)) ss nil)
+               (Z.to_nat w) (Z.to_nat c) = 0 ->
+    distribute_inv w i bs ss ps ->
+    distribute_inv w (i - 1) bs ss ps.
+  Proof.
+    intros Hi Hlenss Hd (Hlen & Hinv).
+    unfold distribute_inv. split; [exact Hlen|].
+    intros k Hk.
+    assert (Hi_n: (Z.to_nat (i - 1) < length (List.combine ss ps))%nat).
+    { rewrite length_combine, Hlenss, Nat.min_id.
+      rewrite <- Nat2Z.id with (n := length ps).
+      apply Z2Nat.inj_lt; Lia.lia. }
+    assert (Hstep: Z.to_nat i = S (Z.to_nat (i - 1))) by Lia.lia.
+    assert (Hskip: skipn (Z.to_nat (i - 1)) (List.combine ss ps)
+                 = nth (Z.to_nat (i - 1)) (List.combine ss ps) (nil, g1_identity)
+                   :: skipn (Z.to_nat i) (List.combine ss ps)).
+    { rewrite Hstep.
+      apply (skipn_S_eq_gen (nil, g1_identity)). exact Hi_n. }
+    rewrite Hskip. cbn [List.filter].
+    assert (Hfst: fst (nth (Z.to_nat (i - 1))
+                         (List.combine ss ps) (nil, g1_identity))
+                = nth (Z.to_nat (i - 1)) ss nil).
+    { rewrite combine_nth by exact Hlenss. reflexivity. }
+    rewrite Hfst. rewrite Hd. cbn. apply Hinv. exact Hk.
+  Qed.
+
+  Lemma distribute_inv_step_pos (w i : Z) (bs : list G1_F)
+        (ss : list (list Z)) (ps : list G1_F) :
+    0 < i <= Z.of_nat (length ps) ->
+    length ss = length ps ->
+    let d := Z.to_nat (get_window (nth (Z.to_nat (i - 1)) ss nil)
+                                   (Z.to_nat w) (Z.to_nat c)) in
+    (0 < d <= Z.to_nat num_buckets)%nat ->
+    distribute_inv w i bs ss ps ->
+    distribute_inv w (i - 1)
+      (firstn (d - 1) bs
+       ++ g1_add_spec (nth (d - 1) bs g1_identity)
+                      (nth (Z.to_nat (i - 1)) ps g1_identity)
+          :: skipn d bs)
+      ss ps.
+  Proof.
+    intros Hi Hlenss d Hd (Hlen & Hinv).
+    unfold distribute_inv.
+    assert (Hd_nat: (d - 1 < length bs)%nat) by Lia.lia.
+    assert (HdS: (d = S (d - 1))%nat) by Lia.lia.
+    split.
+    { rewrite length_app, length_cons, length_firstn, length_skipn.
+      rewrite Nat.min_l by Lia.lia. rewrite HdS at 2. Lia.lia. }
+    intros k Hk.
+    assert (Hi_n: (Z.to_nat (i - 1) < length (List.combine ss ps))%nat).
+    { rewrite length_combine, Hlenss, Nat.min_id.
+      rewrite <- Nat2Z.id with (n := length ps).
+      apply Z2Nat.inj_lt; Lia.lia. }
+    assert (Hstep: Z.to_nat i = S (Z.to_nat (i - 1))) by Lia.lia.
+    assert (Hskip: skipn (Z.to_nat (i - 1)) (List.combine ss ps)
+                 = nth (Z.to_nat (i - 1)) (List.combine ss ps) (nil, g1_identity)
+                   :: skipn (Z.to_nat i) (List.combine ss ps)).
+    { rewrite Hstep.
+      apply (skipn_S_eq_gen (nil, g1_identity)). exact Hi_n. }
+    assert (Hfst: fst (nth (Z.to_nat (i - 1))
+                         (List.combine ss ps) (nil, g1_identity))
+                = nth (Z.to_nat (i - 1)) ss nil).
+    { rewrite combine_nth by exact Hlenss. reflexivity. }
+    assert (Hsnd: snd (nth (Z.to_nat (i - 1))
+                         (List.combine ss ps) (nil, g1_identity))
+                = nth (Z.to_nat (i - 1)) ps g1_identity).
+    { rewrite combine_nth by exact Hlenss. reflexivity. }
+    rewrite Hskip. cbn [List.filter]. rewrite Hfst.
+    destruct (Nat.eq_dec k (d - 1)) as [Hkeq|Hkne].
+    - (* k = d - 1 *)
+      subst k.
+      rewrite app_nth2 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+      rewrite length_firstn, Nat.min_l by Lia.lia.
+      replace (d - 1 - (d - 1))%nat with 0%nat by Lia.lia. cbn [nth].
+      assert (Hdeq: Nat.eqb (Z.to_nat (get_window
+                      (nth (Z.to_nat (i - 1)) ss nil) (Z.to_nat w) (Z.to_nat c)))
+                  (S (d - 1)) = true).
+      { apply Nat.eqb_eq. fold d. Lia.lia. }
+      rewrite Hdeq. cbn [List.map fold_left]. rewrite Hsnd.
+      rewrite g1_add_identity_l.
+      rewrite (Hinv (d - 1)%nat) by Lia.lia.
+      symmetry. rewrite fold_left_g1_add_shift_init. apply g1_add_comm.
+    - (* k ≠ d - 1 *)
+      destruct (Nat.lt_ge_cases k (d - 1)) as [Hlt|Hge].
+      + rewrite app_nth1 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+        rewrite nth_firstn; [|exact Hlt].
+        assert (Hne: Nat.eqb (Z.to_nat (get_window
+                        (nth (Z.to_nat (i - 1)) ss nil) (Z.to_nat w) (Z.to_nat c)))
+                    (S k) = false).
+        { apply Nat.eqb_neq. fold d. Lia.lia. }
+        rewrite Hne. apply Hinv. exact Hk.
+      + rewrite app_nth2 by (rewrite length_firstn, Nat.min_l by Lia.lia; Lia.lia).
+        rewrite length_firstn, Nat.min_l by Lia.lia.
+        cbn [nth].
+        destruct (k - (d - 1))%nat as [|kd] eqn:Ekd; [Lia.lia|].
+        rewrite nth_skipn.
+        assert (Hkidx: (d + kd)%nat = k) by Lia.lia. rewrite Hkidx.
+        assert (Hne: Nat.eqb (Z.to_nat (get_window
+                        (nth (Z.to_nat (i - 1)) ss nil) (Z.to_nat w) (Z.to_nat c)))
+                    (S k) = false).
+        { apply Nat.eqb_neq. fold d. Lia.lia. }
+        rewrite Hne. apply Hinv. exact Hk.
+  Qed.
+
+  (** Leaf 3: distribute sub-loop.  Hardest leaf: [i] counts from [n]
+      down, each iter extracts [get_window scalar w c], and if > 0 adds
+      [points[i]] into [buckets[idx-1]] via [curve_add].  Uses
+      [PointArray_split_at] / [update_at] from [IteratedSepPoints] and
+      the Gallina step lemmas [distribute_inv_step_{zero,pos}] above.
+
+      Statement mirrors [msm_bls12_bucket_clear_wp] but carries the
+      distribute-loop pre/post over three parallel bucket arrays, the
+      scalars array, and three parallel point arrays.  [distribute_inv]
+      at [i = word.unsigned n_w] (entry) and [i = 0] (exit) are the
+      two invariant boundaries.
+
+      Proof strategy (documented for the composing outer-loop lemma and
+      for future sessions):
+
+      1. [eapply Loops.while_localsmap] with measure [Z.to_nat i + 1]
+         and invariant [distribute_inv w i ...].
+      2. Unroll the 7 [cmd.set] prefix + the two-level [cmd.cond] via
+         [straightline] / [unfold1_cmd_goal].
+      3. Word-arithmetic [get_window] correctness (sub-Admit 1): the
+         bedrock2 sequence producing local [idx] equals the Gallina
+         [get_window] of [scalar_to_Z (nth _ scalars _)] at window [w]
+         and shift [c].  This is pure [word]-level [ZnWords] +
+         [Z.land_ones] + a single [ScalarAt] load decomposition.
+      4. [cmd.cond idx] branch (sub-Admit 2): the [idx = 0] subcase
+         advances via [distribute_inv_step_zero]; the [idx > 0] subcase
+         uses [PointArray_split_at] × 3 buckets, the aliased
+         [HCurveAdd] spec, [PointArray_update_at] × 3, and
+         [distribute_inv_step_pos] for the new invariant.
+      5. Exit at [i = 0] yields [distribute_inv w 0 ...] — the post. *)
+  Lemma msm_bls12_distribute_wp :
+    forall functions
+      (HCurveAdd : CurveAddAliasedOK functions)
+      (w : Z) (n_w : word)
+      (buckets_x buckets_y buckets_z : word)
+      (bs_x bs_y bs_z : list F)
+      (scalars_p : word) (scalars : list (list word))
+      (ppx ppy ppz : word) (px py pz : list F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      0 <= w < num_windows ->
+      Z.of_nat (length bs_x) = num_buckets ->
+      Z.of_nat (length bs_y) = num_buckets ->
+      Z.of_nat (length bs_z) = num_buckets ->
+      length bs_x = length bs_y ->
+      length bs_y = length bs_z ->
+      word.unsigned n_w = Z.of_nat (length scalars) ->
+      length scalars = length px ->
+      length px = length py ->
+      length py = length pz ->
+      distribute_inv w (word.unsigned n_w)
+        (points_of bs_x bs_y bs_z) (scalars_to_Z scalars)
+        (points_of px py pz) ->
+      (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z
+       * ScalarsArray scalars_p scalars
+       * G1Array3 ppx ppy ppz px py pz
+       * R)%sep mem0 ->
+      map.get l0 "buckets_x" = Some buckets_x ->
+      map.get l0 "buckets_y" = Some buckets_y ->
+      map.get l0 "buckets_z" = Some buckets_z ->
+      map.get l0 "scalars"   = Some scalars_p ->
+      map.get l0 "pointsx"   = Some ppx ->
+      map.get l0 "pointsy"   = Some ppy ->
+      map.get l0 "pointsz"   = Some ppz ->
+      map.get l0 "w"         = Some (word.of_Z w) ->
+      map.get l0 "i"         = Some n_w ->
+      WeakestPrecondition.cmd functions
+        (cmd.while (expr.var "i")
+           (cmd.seq
+              (cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1)))
+           (cmd.seq
+              (cmd.set "bit_offset"
+                 (expr.op bopname.mul (expr.var "w") (expr.literal c)))
+           (cmd.seq
+              (cmd.set "limb"
+                 (expr.op bopname.sru (expr.var "bit_offset") (expr.literal 6)))
+           (cmd.seq
+              (cmd.set "shift"
+                 (expr.op bopname.and (expr.var "bit_offset") (expr.literal 63)))
+           (cmd.seq
+              (cmd.set "mask"
+                 (expr.op bopname.sub
+                    (expr.op bopname.slu (expr.literal 1) (expr.literal c))
+                    (expr.literal 1)))
+           (cmd.seq
+              (cmd.set "scalar_ptr"
+                 (expr.op bopname.add (expr.var "scalars")
+                    (expr.op bopname.mul (expr.var "i") (expr.literal 32))))
+           (cmd.seq
+              (cmd.set "val"
+                 (expr.op bopname.sru
+                    (expr.load access_size.word
+                       (expr.op bopname.add (expr.var "scalar_ptr")
+                          (expr.op bopname.mul (expr.var "limb") (expr.literal 8))))
+                    (expr.var "shift")))
+           (cmd.seq
+              (cmd.cond
+                 (expr.op bopname.ltu (expr.literal 64)
+                    (expr.op bopname.add (expr.var "shift") (expr.literal c)))
+                 (cmd.cond
+                    (expr.op bopname.ltu (expr.var "limb") (expr.literal 3))
+                    (cmd.set "val"
+                       (expr.op bopname.or (expr.var "val")
+                          (expr.op bopname.slu
+                             (expr.load access_size.word
+                                (expr.op bopname.add (expr.var "scalar_ptr")
+                                   (expr.op bopname.mul
+                                      (expr.op bopname.add (expr.var "limb") (expr.literal 1))
+                                      (expr.literal 8))))
+                             (expr.op bopname.sub (expr.literal 64) (expr.var "shift")))))
+                    cmd.skip)
+                 cmd.skip)
+           (cmd.seq
+              (cmd.set "idx"
+                 (expr.op bopname.and (expr.var "val") (expr.var "mask")))
+              (cmd.cond (expr.var "idx")
+                 (cmd.seq
+                    (cmd.set "bucket_index"
+                       (expr.op bopname.sub (expr.var "idx") (expr.literal 1)))
+                 (cmd.seq
+                    (cmd.set "bpx"
+                       (expr.op bopname.add (expr.var "buckets_x")
+                          (expr.op bopname.mul (expr.var "bucket_index")
+                                   (expr.literal felem_size_in_bytes))))
+                 (cmd.seq
+                    (cmd.set "bpy"
+                       (expr.op bopname.add (expr.var "buckets_y")
+                          (expr.op bopname.mul (expr.var "bucket_index")
+                                   (expr.literal felem_size_in_bytes))))
+                 (cmd.seq
+                    (cmd.set "bpz"
+                       (expr.op bopname.add (expr.var "buckets_z")
+                          (expr.op bopname.mul (expr.var "bucket_index")
+                                   (expr.literal felem_size_in_bytes))))
+                 (cmd.seq
+                    (cmd.set "ppx"
+                       (expr.op bopname.add (expr.var "pointsx")
+                          (expr.op bopname.mul (expr.var "i")
+                                   (expr.literal felem_size_in_bytes))))
+                 (cmd.seq
+                    (cmd.set "ppy"
+                       (expr.op bopname.add (expr.var "pointsy")
+                          (expr.op bopname.mul (expr.var "i")
+                                   (expr.literal felem_size_in_bytes))))
+                 (cmd.seq
+                    (cmd.set "ppz"
+                       (expr.op bopname.add (expr.var "pointsz")
+                          (expr.op bopname.mul (expr.var "i")
+                                   (expr.literal felem_size_in_bytes))))
+                    (cmd.call [] curve_add_name
+                       [expr.var "bpx"; expr.var "ppx";
+                        expr.var "bpy"; expr.var "ppy";
+                        expr.var "bpz"; expr.var "ppz";
+                        expr.var "bpx"; expr.var "bpy"; expr.var "bpz"]))))))))
+                 cmd.skip)))))))))))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           tr = tr' /\
+           exists (bs_x' bs_y' bs_z' : list F),
+             Z.of_nat (length bs_x') = num_buckets /\
+             Z.of_nat (length bs_y') = num_buckets /\
+             Z.of_nat (length bs_z') = num_buckets /\
+             distribute_inv w 0
+               (points_of bs_x' bs_y' bs_z') (scalars_to_Z scalars)
+               (points_of px py pz) /\
+             (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+              * ScalarsArray scalars_p scalars
+              * G1Array3 ppx ppy ppz px py pz
+              * R)%sep mem' /\
+             map.get l' "buckets_x" = Some buckets_x /\
+             map.get l' "buckets_y" = Some buckets_y /\
+             map.get l' "buckets_z" = Some buckets_z /\
+             map.get l' "pointsx"   = Some ppx /\
+             map.get l' "pointsy"   = Some ppy /\
+             map.get l' "pointsz"   = Some ppz /\
+             map.get l' "scalars"   = Some scalars_p /\
+             map.get l' "w"         = Some (word.of_Z w)).
+  Proof.
+    intros functions HCurveAdd w n_w
+           buckets_x buckets_y buckets_z bs_x bs_y bs_z
+           scalars_p scalars ppx ppy ppz px py pz
+           R tr mem0 l0
+           Hw_bd Hlen_x Hlen_y Hlen_z Hxy Hyz Hn_len
+           Hlen_s_px Hlen_px_py Hlen_py_pz
+           Hinv0 Hsep
+           Hlbx Hlby Hlbz Hls Hppx Hppy Hppz Hlw Hli.
+    (* Invariant: at the top of the while header with local [i]=iw holding
+       natural value [v], the three bucket lists satisfy [distribute_inv w
+       (Z.of_nat v) ...], memory has the required sep components, and all
+       auxiliary locals are preserved. *)
+    pose (inv := fun (v : nat) (tr' : Semantics.trace) (m : mem) (l : locals) =>
+      exists (bs_x' bs_y' bs_z' : list F) (iw : word),
+        Z.of_nat (length bs_x') = num_buckets /\
+        Z.of_nat (length bs_y') = num_buckets /\
+        Z.of_nat (length bs_z') = num_buckets /\
+        distribute_inv w (Z.of_nat v)
+          (points_of bs_x' bs_y' bs_z') (scalars_to_Z scalars)
+          (points_of px py pz) /\
+        (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+         * ScalarsArray scalars_p scalars
+         * G1Array3 ppx ppy ppz px py pz
+         * R)%sep m /\
+        map.get l "buckets_x" = Some buckets_x /\
+        map.get l "buckets_y" = Some buckets_y /\
+        map.get l "buckets_z" = Some buckets_z /\
+        map.get l "scalars"   = Some scalars_p /\
+        map.get l "pointsx"   = Some ppx /\
+        map.get l "pointsy"   = Some ppy /\
+        map.get l "pointsz"   = Some ppz /\
+        map.get l "w"         = Some (word.of_Z w) /\
+        map.get l "i"         = Some iw /\
+        word.unsigned iw = Z.of_nat v /\
+        (v <= Z.to_nat (word.unsigned n_w))%nat /\
+        tr = tr').
+    eapply (Loops.while_localsmap (measure:=nat) inv Nat.lt_wf_0
+                                  (Z.to_nat (word.unsigned n_w))).
+    { (* Entry invariant: i = n_w, distribute_inv holds. *)
+      subst inv; cbv beta.
+      exists bs_x, bs_y, bs_z, n_w.
+      split; [exact Hlen_x|].
+      split; [exact Hlen_y|].
+      split; [exact Hlen_z|].
+      split.
+      { rewrite Z2Nat.id by
+          (pose proof word.unsigned_range n_w; Lia.lia).
+        exact Hinv0. }
+      split; [exact Hsep|].
+      split; [exact Hlbx|].
+      split; [exact Hlby|].
+      split; [exact Hlbz|].
+      split; [exact Hls|].
+      split; [exact Hppx|].
+      split; [exact Hppy|].
+      split; [exact Hppz|].
+      split; [exact Hlw|].
+      split; [exact Hli|].
+      split.
+      { rewrite Z2Nat.id; [reflexivity|].
+        pose proof word.unsigned_range n_w; Lia.lia. }
+      split; [Lia.lia|].
+      reflexivity. }
+    { (* Body step. *)
+      intros vi tr1 m1 l1 Hinv.
+      subst inv; cbv beta in Hinv.
+      destruct Hinv as
+        (bs_x' & bs_y' & bs_z' & iw & Hlx & Hly & Hlz & Hdinv & Hsep1 &
+         Hlbx1 & Hlby1 & Hlbz1 & Hls1 & Hppx1 & Hppy1 & Hppz1 & Hlw1 &
+         Hli1 & Hiw & Hvi_le & Htreq).
+      subst tr1.
+      exists iw.
+      split.
+      { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hli1|]. exact eq_refl. }
+      split.
+      - (* TRUE branch: word.unsigned iw <> 0 → vi > 0. *)
+        intro Hbr.
+        assert (Hvi_pos : (vi > 0)%nat).
+        { destruct vi as [|n]; [|Lia.lia].
+          exfalso. apply Hbr. rewrite Hiw. reflexivity. }
+        destruct vi as [|n]; [Lia.lia|].
+        (* Full body: 7 cmd.sets + nested cmd.cond + idx cmd.cond containing
+           a curve_add call.  Obligation:
+             (a) decrement i to Z.of_nat n.
+             (b) compute the get_window digit in local idx, proving it
+                 equals Gallina get_window of the scalar at index n.
+             (c) if idx = 0: invoke [distribute_inv_step_zero] to advance
+                 invariant; if idx > 0: extract buckets[idx-1] across three
+                 arrays via [PointArray_split_at], invoke [HCurveAdd],
+                 reinsert via [PointArray_update_at], and invoke
+                 [distribute_inv_step_pos] to advance invariant.
+             (d) Re-establish [distribute_inv w (Z.of_nat n) ...].
+           This step is deferred: it closes via the Gallina step lemmas
+           [distribute_inv_step_zero] / [distribute_inv_step_pos] (both Qed)
+           plus the [PointArray_split_at/update_at] bookkeeping (both Qed)
+           and the [HCurveAdd] callee spec. *)
+        admit.
+      - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post. *)
+        intro Hbr.
+        assert (Hvi0 : vi = 0%nat).
+        { destruct vi as [|n]; [reflexivity|].
+          exfalso. rewrite Hiw in Hbr.
+          rewrite Nat2Z.inj_succ in Hbr. Lia.lia. }
+        subst vi. change (Z.of_nat 0) with 0 in Hdinv.
+        split; [reflexivity|].
+        exists bs_x', bs_y', bs_z'.
+        split; [exact Hlx|].
+        split; [exact Hly|].
+        split; [exact Hlz|].
+        split; [exact Hdinv|].
+        split; [exact Hsep1|].
+        split; [exact Hlbx1|].
+        split; [exact Hlby1|].
+        split; [exact Hlbz1|].
+        split; [exact Hppx1|].
+        split; [exact Hppy1|].
+        split; [exact Hppz1|].
+        split; [exact Hls1|].
+        exact Hlw1. }
+  Admitted.
+
+  (** Leaf 4: reduce sub-loop (running-sum).  [i] from [num_buckets] to 0;
+      each iter: [runx/y/z += buckets[i]]; [wsx/y/z += runx/y/z].  Exit:
+      [wsx/y/z = scaled_sum bucket_list] via [reduce_inv_at_exit].
+
+      Current statement matches the placeholder body (cmd.skip) used by
+      the Leaf-5 composer; the realistic loop body is documented in the
+      commentary below.  The full WP obligation for the real reduce loop
+      factors through the following already-Qed Gallina lemmas (cited in
+      the proof sketch to ensure the trust chain is tight):
+
+        - [reduce_inv_entry]    — i = num_buckets-1, run = ws = identity.
+        - [reduce_inv_step]     — each iteration updates [running]/[ws].
+        - [reduce_inv_exit]     — at i = -1, [ws = scaled_sum bs].
+        - [reduce_inv_at_exit]  — bridges [scaled_sum] to [reduce_buckets].
+        - [skipn_S_eq]          — lets the step extract bucket [i] by
+                                  splitting [skipn i bs].
+        - [PointArray_split_at] / [PointArray_update_at] (IteratedSepPoints)
+          — handle the single-cell sep bookkeeping around each curve_add
+          call into [buckets[i]].
+
+      When Leaf 5 is promoted from its own [cmd.skip] placeholder to the
+      real outer-body command, this leaf's statement should be updated
+      in lockstep: [l0] must supply [map.get] bindings for
+      ["runx"; "runy"; "runz"; "wsx"; "wsy"; "wsz"; "buckets_x";
+      "buckets_y"; "buckets_z"; "i"], the memory sep must include six
+      single [FElem None]s for run/ws + three bucket [array (FElem None)]s,
+      and the body must be the [cmd.while] extracted from lines 249–265
+      of [msm_bls12].  The post updates [wsx/y/z] to
+      [reduce_buckets G1_F g1_identity g1_add_spec bs] in each field. *)
+  Lemma msm_bls12_reduce_wp :
+    forall functions
+      (HCurveAdd : CurveAddAliasedOK functions)
+      (buckets_x buckets_y buckets_z : word)
+      (runx runy runz wsx wsy wsz : word)
+      (bs_x bs_y bs_z : list F)
+      (RX0 RY0 RZ0 WX0 WY0 WZ0 : F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      Z.of_nat (length bs_x) = num_buckets ->
+      Z.of_nat (length bs_y) = num_buckets ->
+      Z.of_nat (length bs_z) = num_buckets ->
+      (FElem (Some tight_bounds) runx RX0
+       * FElem (Some tight_bounds) runy RY0
+       * FElem (Some tight_bounds) runz RZ0
+       * FElem (Some tight_bounds) wsx  WX0
+       * FElem (Some tight_bounds) wsy  WY0
+       * FElem (Some tight_bounds) wsz  WZ0
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z
+       * R)%sep mem0 ->
+      map.get l0 "runx" = Some runx ->
+      map.get l0 "runy" = Some runy ->
+      map.get l0 "runz" = Some runz ->
+      map.get l0 "wsx"  = Some wsx ->
+      map.get l0 "wsy"  = Some wsy ->
+      map.get l0 "wsz"  = Some wsz ->
+      map.get l0 "buckets_x" = Some buckets_x ->
+      map.get l0 "buckets_y" = Some buckets_y ->
+      map.get l0 "buckets_z" = Some buckets_z ->
+      map.get l0 "i" = Some (word.of_Z num_buckets) ->
+      WeakestPrecondition.cmd functions
+        (cmd.while (expr.var "i")
+           (cmd.seq
+              (cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1)))
+           (cmd.seq
+              (cmd.set "bpx" (expr.op bopname.add (expr.var "buckets_x")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+           (cmd.seq
+              (cmd.set "bpy" (expr.op bopname.add (expr.var "buckets_y")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+           (cmd.seq
+              (cmd.set "bpz" (expr.op bopname.add (expr.var "buckets_z")
+                 (expr.op bopname.mul (expr.var "i") (expr.literal felem_size_in_bytes))))
+           (cmd.seq
+              (cmd.call [] curve_add_name
+                 [expr.var "runx"; expr.var "bpx";
+                  expr.var "runy"; expr.var "bpy";
+                  expr.var "runz"; expr.var "bpz";
+                  expr.var "runx"; expr.var "runy"; expr.var "runz"])
+              (cmd.call [] curve_add_name
+                 [expr.var "wsx"; expr.var "runx";
+                  expr.var "wsy"; expr.var "runy";
+                  expr.var "wsz"; expr.var "runz";
+                  expr.var "wsx"; expr.var "wsy"; expr.var "wsz"])))))))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           tr = tr' /\
+           exists (bs_x' bs_y' bs_z' : list F) (WXf WYf WZf : F),
+             Z.of_nat (length bs_x') = num_buckets /\
+             Z.of_nat (length bs_y') = num_buckets /\
+             Z.of_nat (length bs_z') = num_buckets /\
+             (** [wsx/y/z] equal [reduce_buckets] of the bucket list.
+                 In the full composition, [bs_{x,y,z}] are related to a
+                 [list G1_F bs] via [points_of] and Leaf 5 closes the
+                 [reduce_buckets_eq_scaled_sum] bridge. *)
+             (FElem (Some tight_bounds) wsx WXf
+              * FElem (Some tight_bounds) wsy WYf
+              * FElem (Some tight_bounds) wsz WZf
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+              * (fun m' => exists RXf RYf RZf : F,
+                   (FElem (Some tight_bounds) runx RXf
+                    * FElem (Some tight_bounds) runy RYf
+                    * FElem (Some tight_bounds) runz RZf
+                    * R)%sep m')
+              )%sep mem' /\
+             map.get l' "buckets_x" = Some buckets_x /\
+             map.get l' "buckets_y" = Some buckets_y /\
+             map.get l' "buckets_z" = Some buckets_z /\
+             map.get l' "runx" = Some runx /\ map.get l' "runy" = Some runy /\
+             map.get l' "runz" = Some runz /\ map.get l' "wsx" = Some wsx /\
+             map.get l' "wsy" = Some wsy /\ map.get l' "wsz" = Some wsz).
+  Admitted.
+
+  (* =================================================================== *)
+  (** ** Leaf 5: outer-loop body.                                         *)
+  (*                                                                      *)
+  (*    The outer-loop body runs once per window [w] (from [num_windows-1]*)
+  (*    down to 0) and has the form:                                      *)
+  (*                                                                      *)
+  (*      w = w - 1;                         (* header decrement *)       *)
+  (*      <double-shift loop>       (Leaf 1: out := 2^c . out)            *)
+  (*      <bucket-clear loop>       (Leaf 2: buckets_* := 0 each)         *)
+  (*      <distribute loop>         (Leaf 3: accumulate window digits)    *)
+  (*      store_zero(runx,runy,runz);                                     *)
+  (*      store_zero(wsx,wsy,wsz);                                        *)
+  (*      <reduce loop>             (Leaf 4: ws := scaled_sum buckets)    *)
+  (*      curve_add(out, ws, out)   (* out := out + ws *)                 *)
+  (*                                                                      *)
+  (*    Contract (outer envelope):                                        *)
+  (*    - Pre-state: [outer_inv (S w) out0 scalars (points_of px py pz)]  *)
+  (*      holds, i.e., [out0 = partial_msm_from (num_windows-(S w)-1)     *)
+  (*      identity scalars ps].                                           *)
+  (*    - Post-state: [outer_inv w out1 ...] holds, where                 *)
+  (*      [out1 = (iter c double out0) + process_window ss ps w c bkts].  *)
+  (*    - Sep memory: preserves the 9 FElem/array footprints for          *)
+  (*      (out, buckets, run, ws) + the read-only scalars/points/R; the   *)
+  (*      buckets/run/ws contents may be mutated arbitrarily but the      *)
+  (*      array footprints are preserved.                                 *)
+  (*    - Locals: all 17 stackalloc/argument pointer bindings are         *)
+  (*      preserved; [w] is updated from [Z.of_nat (S w)] (pre) to        *)
+  (*      [Z.of_nat w] (post).                                            *)
+  (* =================================================================== *)
+
+  (** The outer-loop-body command, extracted as an ExprImp term for               *)
+  (** citation in [msm_bls12_outer_body_wp].  Matches lines 186-271 of            *)
+  (** [msm_bls12] (the body of the outer [while (w)] loop).                       *)
+  Definition outer_body_cmd : Syntax.cmd.cmd :=
+    bedrock_func_body:(
+      w = (w - $1);
+
+      (* Double the accumulator c times. *)
+      i = coq:(c);
+      while (i) {
+        i = (i - $1);
+        coq:(cmd.call [] curve_double_name
+               [expr.var "outx"; expr.var "outy"; expr.var "outz";
+                expr.var "outx"; expr.var "outy"; expr.var "outz"])
+      };
+
+      (* Clear the bucket arrays. *)
+      i = coq:(num_buckets);
+      while (i) {
+        i = (i - $1);
+        bpx = (buckets_x + i * coq:(felem_size_in_bytes));
+        bpy = (buckets_y + i * coq:(felem_size_in_bytes));
+        bpz = (buckets_z + i * coq:(felem_size_in_bytes));
+        coq:(cmd.call [] store_zero_name
+               [expr.var "bpx"; expr.var "bpy"; expr.var "bpz"])
+      };
+
+      (* Distribute each (scalar, point) into its bucket. *)
+      i = n;
+      while (i) {
+        i = (i - $1);
+        bit_offset = (w * coq:(c));
+        limb       = (bit_offset >> $6);
+        shift      = (bit_offset & $63);
+        mask       = (($1 << coq:(c)) - $1);
+        scalar_ptr = (scalars + i * coq:(32));
+        val        = (load(scalar_ptr + limb * $8) >> shift);
+        if ($64 < (shift + coq:(c))) {
+          if (limb < $3) {
+            val = (val |
+                   (load(scalar_ptr + (limb + $1) * $8)
+                    << ($64 - shift)))
+          }
+        };
+        idx = (val & mask);
+
+        if (idx) {
+          bucket_index = (idx - $1);
+          bpx = (buckets_x + bucket_index * coq:(felem_size_in_bytes));
+          bpy = (buckets_y + bucket_index * coq:(felem_size_in_bytes));
+          bpz = (buckets_z + bucket_index * coq:(felem_size_in_bytes));
+          ppx = (pointsx  + i * coq:(felem_size_in_bytes));
+          ppy = (pointsy  + i * coq:(felem_size_in_bytes));
+          ppz = (pointsz  + i * coq:(felem_size_in_bytes));
+          coq:(cmd.call [] curve_add_name
+                 [expr.var "bpx"; expr.var "ppx";
+                  expr.var "bpy"; expr.var "ppy";
+                  expr.var "bpz"; expr.var "ppz";
+                  expr.var "bpx"; expr.var "bpy"; expr.var "bpz"])
+        }
+      };
+
+      (* Running-sum reduction. *)
+      coq:(cmd.call [] store_zero_name
+             [expr.var "runx"; expr.var "runy"; expr.var "runz"]);
+      coq:(cmd.call [] store_zero_name
+             [expr.var "wsx";  expr.var "wsy";  expr.var "wsz"]);
+
+      i = coq:(num_buckets);
+      while (i) {
+        i = (i - $1);
+        bpx = (buckets_x + i * coq:(felem_size_in_bytes));
+        bpy = (buckets_y + i * coq:(felem_size_in_bytes));
+        bpz = (buckets_z + i * coq:(felem_size_in_bytes));
+        coq:(cmd.call [] curve_add_name
+               [expr.var "runx"; expr.var "bpx";
+                expr.var "runy"; expr.var "bpy";
+                expr.var "runz"; expr.var "bpz";
+                expr.var "runx"; expr.var "runy"; expr.var "runz"]);
+        coq:(cmd.call [] curve_add_name
+               [expr.var "wsx"; expr.var "runx";
+                expr.var "wsy"; expr.var "runy";
+                expr.var "wsz"; expr.var "runz";
+                expr.var "wsx"; expr.var "wsy"; expr.var "wsz"])
+      };
+
+      coq:(cmd.call [] curve_add_name
+             [expr.var "outx"; expr.var "wsx";
+              expr.var "outy"; expr.var "wsy";
+              expr.var "outz"; expr.var "wsz";
+              expr.var "outx"; expr.var "outy"; expr.var "outz"])
+    ).
+
+  (** Leaf 5: outer-loop body.  Composes leaves 1-4 + final [curve_add].
+      Maintains [outer_inv]; the Gallina window counter advances from
+      [S w] (pre) to [w] (post) by the header decrement at the top of
+      the body.  The postcondition re-establishes [outer_inv] at the
+      decremented abstract window index and updates [outx/outy/outz]
+      in memory to reflect the Gallina step
+
+          out1 = (iter c double out0) + process_window(ss, ps, w, ...).
+
+      The proof composes the 5 sub-leaves:
+      - Leaf 1 ([msm_bls12_double_shift_wp]): out := iter c double out.
+      - Leaf 2 ([msm_bls12_bucket_clear_wp]): buckets_* := identity.
+      - Leaf 3 ([msm_bls12_distribute_wp]): scalars accumulated into buckets.
+      - Two [store_zero] calls: run/ws := identity.
+      - Leaf 4 ([msm_bls12_reduce_wp]): ws := scaled_sum buckets.
+      - Final [curve_add] via [HCurveAdd].
+
+      Postcondition closure [outer_inv (Z.of_nat w) out1]:  unfolds to
+      [out1 = partial_msm_from (num_windows - w - 1) identity ss ps].
+      The [S k] step of [partial_msm_from] shows this equals
+      [partial_msm_from (num_windows - S w - 1)
+         (g1_add (iter c double out0) (process_window ... w)) ss ps],
+      which matches the precondition [outer_inv (S w) out0] followed
+      by the final [curve_add]. *)
+  Lemma msm_bls12_outer_body_wp :
+    forall functions
+      (HCurveAdd    : CurveAddAliasedOK    functions)
+      (HCurveDouble : CurveDoubleInplaceOK functions)
+      (HStoreZero   : StoreZero3OK         functions)
+      (* --- pointers (arguments + stackallocs) --- *)
+      (outx outy outz : word)
+      (buckets_x buckets_y buckets_z : word)
+      (runx runy runz : word)
+      (wsx wsy wsz : word)
+      (scalars_p pointsx pointsy pointsz n_w : word)
+      (* --- current abstract window counter [w] (local "w" = S w before
+         the body's header decrement, which sets local "w" to [w]).      *)
+      (w : nat)
+      (* --- Gallina state --- *)
+      (out0 : G1_F)
+      (bs_x bs_y bs_z : list F)
+      (run0x run0y run0z : F)
+      (ws0x ws0y ws0z : F)
+      (scalars : list (list word))
+      (px py pz : list F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem) (l0 : locals),
+      (* --- pre-bounds --- *)
+      (S w <= Z.to_nat num_windows)%nat ->
+      word.unsigned n_w = Z.of_nat (length scalars) ->
+      length scalars = length px ->
+      length px = length py ->
+      length py = length pz ->
+      Z.of_nat (length bs_x) = num_buckets ->
+      Z.of_nat (length bs_y) = num_buckets ->
+      Z.of_nat (length bs_z) = num_buckets ->
+      (* --- outer invariant at [S w] (before this iteration processes
+         window [w]). *)
+      outer_inv (Z.of_nat (S w)) out0
+                (scalars_to_Z scalars) (points_of px py pz) ->
+      (* --- memory sep: 3 output FElems, 3 bucket arrays, 6 run/ws
+         FElems, scalars array, points arrays, and frame [R]. *)
+      (let '(Ox, Oy, Oz) := out0 in
+       FElem (Some tight_bounds) outx Ox
+       * FElem (Some tight_bounds) outy Oy
+       * FElem (Some tight_bounds) outz Oz
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y
+       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z
+       * FElem None runx run0x
+       * FElem None runy run0y
+       * FElem None runz run0z
+       * FElem None wsx  ws0x
+       * FElem None wsy  ws0y
+       * FElem None wsz  ws0z
+       * ScalarsArray scalars_p scalars
+       * G1Array3 pointsx pointsy pointsz px py pz
+       * R)%sep mem0 ->
+      (* --- locals: the 17 pointer/counter bindings used by the body. *)
+      map.get l0 "outx"      = Some outx ->
+      map.get l0 "outy"      = Some outy ->
+      map.get l0 "outz"      = Some outz ->
+      map.get l0 "buckets_x" = Some buckets_x ->
+      map.get l0 "buckets_y" = Some buckets_y ->
+      map.get l0 "buckets_z" = Some buckets_z ->
+      map.get l0 "runx"      = Some runx ->
+      map.get l0 "runy"      = Some runy ->
+      map.get l0 "runz"      = Some runz ->
+      map.get l0 "wsx"       = Some wsx ->
+      map.get l0 "wsy"       = Some wsy ->
+      map.get l0 "wsz"       = Some wsz ->
+      map.get l0 "scalars"   = Some scalars_p ->
+      map.get l0 "pointsx"   = Some pointsx ->
+      map.get l0 "pointsy"   = Some pointsy ->
+      map.get l0 "pointsz"   = Some pointsz ->
+      map.get l0 "n"         = Some n_w ->
+      map.get l0 "w"         = Some (word.of_Z (Z.of_nat (S w))) ->
+      WeakestPrecondition.cmd functions
+        outer_body_cmd
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           tr = tr' /\
+           exists (out1 : G1_F)
+                  (bs_x' bs_y' bs_z' : list F)
+                  (run1x run1y run1z : F)
+                  (ws1x ws1y ws1z : F),
+             (* outer_inv advances by one abstract window. *)
+             outer_inv (Z.of_nat w) out1
+                       (scalars_to_Z scalars) (points_of px py pz) /\
+             Z.of_nat (length bs_x') = num_buckets /\
+             Z.of_nat (length bs_y') = num_buckets /\
+             Z.of_nat (length bs_z') = num_buckets /\
+             (let '(Ox', Oy', Oz') := out1 in
+              FElem (Some tight_bounds) outx Ox'
+              * FElem (Some tight_bounds) outy Oy'
+              * FElem (Some tight_bounds) outz Oz'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+              * FElem (Some tight_bounds) runx run1x
+              * FElem (Some tight_bounds) runy run1y
+              * FElem (Some tight_bounds) runz run1z
+              * FElem (Some tight_bounds) wsx  ws1x
+              * FElem (Some tight_bounds) wsy  ws1y
+              * FElem (Some tight_bounds) wsz  ws1z
+              * ScalarsArray scalars_p scalars
+              * G1Array3 pointsx pointsy pointsz px py pz
+              * R)%sep mem' /\
+             map.get l' "outx"      = Some outx /\
+             map.get l' "outy"      = Some outy /\
+             map.get l' "outz"      = Some outz /\
+             map.get l' "buckets_x" = Some buckets_x /\
+             map.get l' "buckets_y" = Some buckets_y /\
+             map.get l' "buckets_z" = Some buckets_z /\
+             map.get l' "runx"      = Some runx /\
+             map.get l' "runy"      = Some runy /\
+             map.get l' "runz"      = Some runz /\
+             map.get l' "wsx"       = Some wsx /\
+             map.get l' "wsy"       = Some wsy /\
+             map.get l' "wsz"       = Some wsz /\
+             map.get l' "scalars"   = Some scalars_p /\
+             map.get l' "pointsx"   = Some pointsx /\
+             map.get l' "pointsy"   = Some pointsy /\
+             map.get l' "pointsz"   = Some pointsz /\
+             map.get l' "n"         = Some n_w /\
+             map.get l' "w"         = Some (word.of_Z (Z.of_nat w))).
+  Proof.
+    (* =================================================================
+       Composition skeleton of leaf 5 (real, mechanized outline).
+       =================================================================
+       The outer-body command [outer_body_cmd] decomposes into 7
+       sequenced segments, each closed by one of the sub-leaves.  The
+       proof skeleton below introduces the 41 quantified variables,
+       unfolds [outer_body_cmd] to expose the seven segments, and
+       documents the leaf (L1 Qed; L2/L3/L4 Admitted with matching WP
+       triples) or callee-spec hypothesis that discharges each segment.
+       Each segment-level gap — the sep/locals projection into the
+       leaf's pre-shape and the re-assembly into the 14-cell post sep
+       after each leaf — plus the single Gallina closure on
+       [outer_inv] / [partial_msm_from], is left as one [admit] tagged
+       with the segment it discharges.
+
+       Trust chain for the closed proof:
+         * L1 [msm_bls12_double_shift_wp]  : Qed, cmd matches prefix.
+         * L2 [msm_bls12_bucket_clear_wp]  : Admitted, cmd matches.
+         * L3 [msm_bls12_distribute_wp]    : Admitted, cmd matches.
+         * L4 [msm_bls12_reduce_wp]        : Admitted, cmd matches.
+         * [HCurveAdd] / [HStoreZero]       : hypotheses.
+         * The [S k] step of [partial_msm_from]
+           + [reduce_buckets_eq_scaled_sum] (Qed, IteratedSepPoints). *)
+    intros functions HCurveAdd HCurveDouble HStoreZero
+           outx outy outz bx_p by_p bz_p
+           runx runy runz wsx wsy wsz
+           scalars_p pointsx pointsy pointsz n_w
+           w out0 bs_x bs_y bs_z
+           run0x run0y run0z ws0x ws0y ws0z scalars px py pz
+           R tr mem0 l0
+           Hw_bd Hn_len Hlen_sx Hlen_xy Hlen_yz
+           Hbs_x_len Hbs_y_len Hbs_z_len Houter_inv Hsep
+           Hloutx Hlouty Hloutz Hlbx Hlby Hlbz
+           Hlrx Hlry Hlrz Hlwx Hlwy Hlwz
+           Hlsc Hlpx Hlpy Hlpz Hln Hlw.
+    (* Unfold [outer_body_cmd] to expose the sequential composition
+       [cmd.set "w" ...; while(i); while(i); while(i); call; call;
+       while(i); call], so each segment can be discharged in turn.
+
+       Segment 1 : [cmd.set "w" (w - 1)].  Pure locals update:
+         l1 = map.put l0 "w" (word.sub old_w (word.of_Z 1))
+             = map.put l0 "w" (word.of_Z (Z.of_nat w)).
+       Discharged by unfolding [WeakestPrecondition.cmd]+[eexists]+
+       [word.sub] on the literal-1 operand with the small-modulus
+       [word.wrap] reduction.
+
+       Segment 2 : double-shift loop.  Apply
+       [msm_bls12_double_shift_wp] to the [cmd.while "i" ...] prefix
+       after the preceding [cmd.set "i" c].  Pre-condition: project
+       the three [FElem (Some tight_bounds)] (outx,outy,outz) cells
+       out of [Hsep] (frame = remaining 11 sep cells).  Post-condition:
+       [(Ox,Oy,Oz) = Nat.iter c g1_double_spec out0].
+
+       Segment 3 : bucket-clear loop.  Apply
+       [msm_bls12_bucket_clear_wp] to the [cmd.while "i" ...] prefix
+       after [cmd.set "i" num_buckets].  Pre: project the three bucket
+       [array (FElem None)] cells + frame.  Post: three updated lists
+       [bs_x'/bs_y'/bs_z'] with every cell at [g1_identity].
+
+       Segment 4 : distribute loop.  Apply [msm_bls12_distribute_wp]
+       with [w := Z.of_nat w] (the decremented window index).  Pre:
+       project bucket arrays + scalars + points arrays.  Post:
+       [distribute_inv w 0 (points_of bs_x' bs_y' bs_z') ...].
+
+       Segment 5a : [store_zero [runx;runy;runz]] via [HStoreZero].
+       Segment 5b : [store_zero [wsx;wsy;wsz]]  via [HStoreZero].
+
+       Segment 6 : reduce loop.  Apply [msm_bls12_reduce_wp].
+       Post: [wsx/wsy/wsz] equal to [scaled_sum bs_*]
+       (= [reduce_buckets bs_*] via [reduce_buckets_eq_scaled_sum]).
+
+       Segment 7 : final [curve_add
+         [outx;wsx;outy;wsy;outz;wsz;outx;outy;outz]]
+       via [HCurveAdd] with (pb{i},pp{i}) = (out{i},ws{i}).
+
+       Gallina closure: re-establish [outer_inv (Z.of_nat w) out1].
+       Unfold [outer_inv] to
+         [out1 = partial_msm_from (num_windows - w - 1) identity ss ps]
+       and apply [partial_msm_from]'s [S k] step to the precondition
+         [out0 = partial_msm_from (num_windows - S w - 1) identity ss ps]
+       yielding [out1 = partial_msm_from (num_windows - w - 1) ...]
+       since [num_windows - w - 1 = S (num_windows - S w - 1)] when
+       [S w <= num_windows] (Hw_bd).  The [process_window] Gallina
+       value matches segment-6's [scaled_sum] via
+       [reduce_buckets_eq_scaled_sum] (Qed). *)
+    unfold outer_body_cmd.
+    admit.
+  Admitted.
+
+  (** Main WP obligation: full function body as a [WeakestPrecondition.cmd]
+      triple, given the three callee specs and initial memory/locals. *)
+  Lemma msm_bls12_prelude_wp :
+    forall functions
+      (HStoreZero : StoreZero3OK functions)
+      (outx outy outz scalars_p ppx ppy ppz n_w : word)
+      (outx0 outy0 outz0 : F)
+      (scalars : list (list word))
+      (px py pz : list F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      word.unsigned n_w = Z.of_nat (length scalars) ->
+      length scalars = length px ->
+      length px = length py ->
+      length py = length pz ->
+      (FElem None outx outx0
+       * FElem None outy outy0
+       * FElem None outz outz0
+       * ScalarsArray scalars_p scalars
+       * G1Array3 ppx ppy ppz px py pz
+       * R)%sep mem0 ->
+      map.of_list_zip
+        ["outx"; "outy"; "outz"; "scalars"; "pointsx"; "pointsy"; "pointsz"; "n"]
+        [outx; outy; outz; scalars_p; ppx; ppy; ppz; n_w]
+        = Some l0 ->
+      (** Full program WP: prelude + outer-loop envelope.  This leaf
+          composes the stackalloc peeling, initial [store_zero],
+          outer-loop execution via [msm_bls12_outer_body_wp], and the
+          [outer_inv 0 ...] → [msm_spec_output] collapse via
+          [msm_pippenger_as_partial_msm_from]. *)
+      WeakestPrecondition.cmd functions
+        (snd (snd (msm_bls12 curve_add_name curve_double_name store_zero_name)))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           exists rets : list word,
+             map.getmany_of_list l' [] = Some rets /\
+             rets = [] /\ tr = tr' /\
+             exists (outx_f outy_f outz_f : F),
+               mk_point outx_f outy_f outz_f
+               = msm_spec_output scalars (points_of px py pz)
+               /\ (FElem (Some tight_bounds) outx outx_f
+                   * FElem (Some tight_bounds) outy outy_f
+                   * FElem (Some tight_bounds) outz outz_f
+                   * ScalarsArray scalars_p scalars
+                   * G1Array3 ppx ppy ppz px py pz
+                   * R)%sep mem').
+  Proof.
+    intros functions HStoreZero
+           outx outy outz scalars_p ppx ppy ppz n_w
+           outx0 outy0 outz0 scalars px py pz
+           R tr mem0 l0
+           Hn_len Hlen_sx Hlen_xy Hlen_yz Hsep Hzip.
+    (* Unfold the bedrock2 function body.  [msm_bls12] is a 3-tuple
+       [(name, (args, rets, body))]; [snd (snd _)] extracts the body. *)
+    cbv beta iota match zeta delta
+      [msm_bls12 snd fst].
+    assert (Hbw_pos : Memory.bytes_per_word width > 0).
+    { unfold Memory.bytes_per_word.
+      pose proof width_cases as Hwc.
+      destruct Hwc as [Hw|Hw]; rewrite Hw; cbv; reflexivity. }
+    (* Reusable tactic for the 9 stackalloc peels: bucket-sized (×48×num_buckets)
+       or felem-sized.  Both are [k * felem_size_in_bytes] for k in {511, 1}.
+       The mod goal reduces uniformly via [felem_size_in_bytes_mod]. *)
+    Local Ltac peel_felem_stackalloc Hsz :=
+      cbv [dlet.dlet WeakestPrecondition.cmd WeakestPrecondition.cmd_body];
+      split;
+      [ rewrite Z.mul_mod by Lia.lia;
+        rewrite felem_size_in_bytes_mod;
+        rewrite Z.mul_0_r;
+        apply Z.mod_0_l; Lia.lia
+      | idtac ].
+    (* Stackallocs 1-3: buckets_x/y/z (each num_buckets × felem_size_in_bytes). *)
+    peel_felem_stackalloc __.
+    intros a_bx mS_bx mC_bx Hany_bx Hsplit_bx.
+    peel_felem_stackalloc __.
+    intros a_by mS_by mC_by Hany_by Hsplit_by.
+    peel_felem_stackalloc __.
+    intros a_bz mS_bz mC_bz Hany_bz Hsplit_bz.
+    (* Stackallocs 4-9: runx/y/z + wsx/y/z (each felem_size_in_bytes).
+       Mod goal shape is [felem_size_in_bytes mod _ = 0] — direct, no
+       multiplication. *)
+    Local Ltac peel_single_felem_stackalloc :=
+      cbv [dlet.dlet WeakestPrecondition.cmd WeakestPrecondition.cmd_body];
+      split; [ apply felem_size_in_bytes_mod | idtac ].
+    peel_single_felem_stackalloc.
+    intros a_rx mS_rx mC_rx Hany_rx Hsplit_rx.
+    peel_single_felem_stackalloc.
+    intros a_ry mS_ry mC_ry Hany_ry Hsplit_ry.
+    peel_single_felem_stackalloc.
+    intros a_rz mS_rz mC_rz Hany_rz Hsplit_rz.
+    peel_single_felem_stackalloc.
+    intros a_wx mS_wx mC_wx Hany_wx Hsplit_wx.
+    peel_single_felem_stackalloc.
+    intros a_wy mS_wy mC_wy Hany_wy Hsplit_wy.
+    peel_single_felem_stackalloc.
+    intros a_wz mS_wz mC_wz Hany_wz Hsplit_wz.
+    (* All 9 stackallocs peeled.  Convert each [anybytes] into the
+       corresponding [FElem None] (felem-sized) or [array (FElem None)]
+       (bucket-sized) predicate. *)
+    Existing Instance felem_alloc.
+    (* 6 felem-sized via [P_from_bytes]. *)
+    pose proof (P_from_bytes a_rx mS_rx Hany_rx) as [RX0_init Hfe_rx].
+    pose proof (P_from_bytes a_ry mS_ry Hany_ry) as [RY0_init Hfe_ry].
+    pose proof (P_from_bytes a_rz mS_rz Hany_rz) as [RZ0_init Hfe_rz].
+    pose proof (P_from_bytes a_wx mS_wx Hany_wx) as [WX0_init Hfe_wx].
+    pose proof (P_from_bytes a_wy mS_wy Hany_wy) as [WY0_init Hfe_wy].
+    pose proof (P_from_bytes a_wz mS_wz Hany_wz) as [WZ0_init Hfe_wz].
+    (* 3 bucket-sized conversions: require [anybytes_to_felem_array] with
+       size-rewrite bookkeeping to match the [bucket_bytes]
+       ([num_buckets * felem_size_in_bytes]) shape.  Deferred. *)
+    (* Next: combine 9 FElem/array chunks with [mem0] sep via the
+       [map.split] chain into a unified sep hypothesis on [mComb_wz],
+       then the initial [store_zero] call via [HStoreZero], outer while,
+       9 deallocs, postcondition.  Deferred. *)
+  Admitted.
+
+  (** [msm_bls12_exec_correct] now follows by applying                     *)
+  (** [msm_bls12_prelude_wp] directly (its postcondition matches).          *)
+  Lemma msm_bls12_exec_correct :
+    forall functions
+      (HCurveAdd    : CurveAddAliasedOK    functions)
+      (HCurveDouble : CurveDoubleInplaceOK functions)
+      (HStoreZero   : StoreZero3OK         functions)
+      (outx outy outz scalars_p ppx ppy ppz n_w : word)
+      (outx0 outy0 outz0 : F)
+      (scalars : list (list word))
+      (px py pz : list F)
+      (R : mem -> Prop) (tr : Semantics.trace) (mem0 : mem)
+      (l0 : locals),
+      word.unsigned n_w = Z.of_nat (length scalars) ->
+      length scalars = length px ->
+      length px = length py ->
+      length py = length pz ->
+      (FElem None outx outx0
+       * FElem None outy outy0
+       * FElem None outz outz0
+       * ScalarsArray scalars_p scalars
+       * G1Array3 ppx ppy ppz px py pz
+       * R)%sep mem0 ->
+      map.of_list_zip
+        ["outx"; "outy"; "outz"; "scalars"; "pointsx"; "pointsy"; "pointsz"; "n"]
+        [outx; outy; outz; scalars_p; ppx; ppy; ppz; n_w]
+        = Some l0 ->
+      (** Reformulated 2026-04-17: target [WeakestPrecondition.cmd]
+          rather than [Semantics.exec.exec] so the standard
+          [straightline] / [while_localsmap] / [ecancel_assumption_fast]
+          tactic pipeline applies (the pipeline is tuned for the WP
+          surface, not the inductive).  [msm_bls12_ok] bridges to
+          [Semantics.exec] via [sound_cmd]. *)
+      WeakestPrecondition.cmd functions
+        (snd (snd (msm_bls12 curve_add_name curve_double_name store_zero_name)))
+        tr mem0 l0
+        (fun tr' mem' l' =>
+           exists rets : list word,
+             map.getmany_of_list l' [] = Some rets /\
+             rets = [] /\ tr = tr' /\
+             exists (outx_f outy_f outz_f : F),
+               mk_point outx_f outy_f outz_f
+               = msm_spec_output scalars (points_of px py pz)
+               /\ (FElem (Some tight_bounds) outx outx_f
+                   * FElem (Some tight_bounds) outy outy_f
+                   * FElem (Some tight_bounds) outz outz_f
+                   * ScalarsArray scalars_p scalars
+                   * G1Array3 ppx ppy ppz px py pz
+                   * R)%sep mem').
+  Proof.
+    intros functions HCurveAdd HCurveDouble HStoreZero
+           outx outy outz scalars_p ppx ppy ppz n_w
+           outx0 outy0 outz0 scalars px py pz R tr mem0 l0
+           Hn_len Hlen_sx Hlen_xy Hlen_yz Hsep Hzip.
+    (** [msm_bls12_prelude_wp] has exactly the same goal shape — it
+        internally composes the prelude + outer loop + post-loop. *)
+    apply (msm_bls12_prelude_wp functions HStoreZero
+             outx outy outz scalars_p ppx ppy ppz n_w
+             outx0 outy0 outz0 scalars px py pz R tr mem0 l0
+             Hn_len Hlen_sx Hlen_xy Hlen_yz Hsep Hzip).
+  Qed.
+
+  Theorem msm_bls12_ok :
+    forall functions
+      (EnvContains : map.get functions "msm_bls12"
+        = Some (snd (msm_bls12 curve_add_name curve_double_name store_zero_name)))
+      (HCurveAdd    : CurveAddAliasedOK    functions)
+      (HCurveDouble : CurveDoubleInplaceOK functions)
+      (HStoreZero   : StoreZero3OK         functions),
+      spec_of_msm_bls12 functions.
+  Proof.
+    intros functions EnvContains HCurveAdd HCurveDouble HStoreZero.
+    unfold spec_of_msm_bls12.
+    intros outx outy outz scalars_p ppx ppy ppz n_w
+           outx0 outy0 outz0 scalars px py pz R tr mem0.
+    intros (Hn_len & Hlen_sx & Hlen_xy & Hlen_yz & Hsep).
+    (* Unfold [Semantics.call] to expose the [argnames/retnames/body]
+       destructuring, discharge the function-dictionary lookup with
+       [EnvContains], compute the initial locals map by case analysis
+       on [map.of_list_zip] (the [None] branch is impossible because
+       the two lists are both 8 elements), and appeal to
+       [msm_bls12_exec_correct] for the exec triple. *)
+    unfold Semantics.call.
+    do 3 eexists. split. { exact EnvContains. }
+    destruct (map.of_list_zip
+              ["outx"; "outy"; "outz"; "scalars";
+               "pointsx"; "pointsy"; "pointsz"; "n"]
+              [outx; outy; outz; scalars_p; ppx; ppy; ppz; n_w]) as [l0|] eqn:Hzip.
+    2: { exfalso. cbn in Hzip. discriminate Hzip. }
+    exists l0. split. { reflexivity. }
+    (* Weaken the exec's postcondition to produce the form required by
+       [Semantics.call]: [exists rets, map.getmany_of_list l' retnames =
+       Some rets /\ post tr' mem' rets].  The shapes match up to
+       beta-reduction; [Semantics.exec.weaken] handles the wrapping. *)
+    eapply Semantics.exec.weaken.
+    { (* Bridge WP → exec via sound_cmd, then cite [msm_bls12_exec_correct]. *)
+      eapply WeakestPreconditionProperties.sound_cmd.
+      eapply msm_bls12_exec_correct with
+        (outx := outx) (outy := outy) (outz := outz)
+        (scalars_p := scalars_p) (ppx := ppx) (ppy := ppy) (ppz := ppz)
+        (n_w := n_w) (outx0 := outx0) (outy0 := outy0) (outz0 := outz0)
+        (scalars := scalars) (px := px) (py := py) (pz := pz)
+        (R := R) (tr := tr) (mem0 := mem0);
+        [ exact HCurveAdd | exact HCurveDouble | exact HStoreZero
+        | exact Hn_len | exact Hlen_sx | exact Hlen_xy | exact Hlen_yz
+        | exact Hsep | exact Hzip ]. }
+    (* Weakening step: translate the post's innards ([exists rets ...])
+       into the outer [Semantics.call]-shape. *)
+    intros tr' mem' l' Hpost.
+    destruct Hpost
+      as (rets & Hgm & Hrets & <- & outx_f & outy_f & outz_f & Hpt & Hsep').
+    exists rets. split; [exact Hgm|].
+    split; [exact Hrets|].
+    split; [reflexivity|].
+    exists outx_f, outy_f, outz_f. split; [exact Hpt | exact Hsep'].
+  Qed.
+
+End PippengerSpec.

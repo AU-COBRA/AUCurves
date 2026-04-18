@@ -58,6 +58,11 @@ fn sub_p_if_ge(r: [u64; 5]) -> [u64; 4] {
     }
 }
 
+// Rust stubs for _bn254_add and _bn254_sub: kept unconditional because
+// measurement shows they outperform Jasmin's auto-spilled add/sub
+// (`automatic spilling is experimental` warning at jasminc time).  The
+// Jasmin alias shim does NOT redirect _bn254_add / _bn254_sub for the
+// same reason.
 #[no_mangle]
 pub unsafe extern "C" fn _bn254_add(out: *mut u64, x: *const u64, y: *const u64) {
     let a = read4(x);
@@ -150,6 +155,7 @@ fn mont_mul(x: [u64; 4], y: [u64; 4]) -> [u64; 4] {
     sub_p_if_ge(r)
 }
 
+#[cfg(not(feature = "jasmin"))]
 #[no_mangle]
 pub unsafe extern "C" fn _bn254_mul(out: *mut u64, x: *const u64, y: *const u64) {
     let xv = read4(x);
@@ -157,6 +163,7 @@ pub unsafe extern "C" fn _bn254_mul(out: *mut u64, x: *const u64, y: *const u64)
     write4(out, mont_mul(xv, yv));
 }
 
+#[cfg(not(feature = "jasmin"))]
 #[no_mangle]
 pub unsafe extern "C" fn _bn254_square(out: *mut u64, x: *const u64) {
     let xv = read4(x);

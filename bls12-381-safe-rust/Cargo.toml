@@ -1,0 +1,44 @@
+[package]
+name = "bls12-381-safe-rust"
+version = "0.1.0"
+edition = "2021"
+description = "BLS12-381 pairing extracted from verified bedrock2, with safe Rust API"
+license = "Apache-2.0"
+
+[features]
+cryptopt = []  # Enables CryptOpt-accelerated mul/square (set by build.rs when nasm available)
+
+[dev-dependencies]
+blst = "0.3"
+ark-bls12-381 = "0.5"
+ark-ec = "0.5"
+ark-ff = "0.5"
+ark-std = "0.5"
+
+[[example]]
+name = "bench_compare"
+path = "examples/bench_compare.rs"
+
+[lib]
+name = "bls12_381"
+path = "src/lib.rs"
+
+[[example]]
+name = "pairing_test"
+path = "examples/pairing_test.rs"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+
+[[example]]
+name = "multilin_test"
+path = "examples/multilin_test.rs"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+[[example]]
+name = "ml_dump"
+path = "examples/ml_dump.rs"

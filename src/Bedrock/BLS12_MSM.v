@@ -214,12 +214,18 @@ Section PippengerBedrock2.
             shift      = (bit_offset & $63);
             mask       = (($1 << coq:(c)) - $1);
             scalar_ptr = (scalars + i * coq:(scalar_bytes));
-            val        = (load(scalar_ptr + limb * $8) >> shift);
+            (* Precompute load offsets into named vars so ToRustString's
+               [rust_ptr_varlit] (which only handles lit/var) emits a
+               well-formed pointer-add rather than "()". *)
+            load_off1 = (limb * $8);
+            load_addr1 = (scalar_ptr + load_off1);
+            val        = (load(load_addr1) >> shift);
             if ($64 < (shift + coq:(c))) {
               if (limb < $3) {
+                load_off2 = ((limb + $1) * $8);
+                load_addr2 = (scalar_ptr + load_off2);
                 val = (val |
-                       (load(scalar_ptr + (limb + $1) * $8)
-                        << ($64 - shift)))
+                       (load(load_addr2) << ($64 - shift)))
               }
             };
             idx = (val & mask);
@@ -1936,12 +1942,15 @@ Section PippengerSpec.
         shift      = (bit_offset & $63);
         mask       = (($1 << coq:(c)) - $1);
         scalar_ptr = (scalars + i * coq:(32));
-        val        = (load(scalar_ptr + limb * $8) >> shift);
+        load_off1  = (limb * $8);
+        load_addr1 = (scalar_ptr + load_off1);
+        val        = (load(load_addr1) >> shift);
         if ($64 < (shift + coq:(c))) {
           if (limb < $3) {
+            load_off2 = ((limb + $1) * $8);
+            load_addr2 = (scalar_ptr + load_off2);
             val = (val |
-                   (load(scalar_ptr + (limb + $1) * $8)
-                    << ($64 - shift)))
+                   (load(load_addr2) << ($64 - shift)))
           }
         };
         idx = (val & mask);

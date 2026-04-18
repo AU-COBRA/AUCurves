@@ -2433,21 +2433,61 @@ Section PippengerSpec.
         { destruct vi as [|n]; [|Lia.lia].
           exfalso. apply Hbr. rewrite Hiw. reflexivity. }
         destruct vi as [|n]; [Lia.lia|].
-        (* Full body: 7 cmd.sets + nested cmd.cond + idx cmd.cond containing
-           a curve_add call.  Obligation:
-             (a) decrement i to Z.of_nat n.
+        (* Width bounds used repeatedly in the word-arithmetic of the body. *)
+        pose proof width_cases as Hwc.
+        assert (H2w_big : 2 ^ 32 <= 2 ^ width).
+        { apply Z.pow_le_mono_r; [Lia.lia|].
+          destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
+        assert (H2w_pos : 0 < 2 ^ width).
+        { pose proof word.width_pos; apply Z.pow_pos_nonneg; Lia.lia. }
+        assert (Hnw_small : word.unsigned n_w < 2 ^ width).
+        { pose proof (word.unsigned_range n_w); Lia.lia. }
+        assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
+        { assert (HSn_le : Z.of_nat (S n) <= word.unsigned n_w).
+          { rewrite <- (Z2Nat.id (word.unsigned n_w))
+              by (pose proof word.unsigned_range n_w; Lia.lia).
+            apply Nat2Z.inj_le. exact Hvi_le. }
+          Lia.lia. }
+        assert (Hn_small : Z.of_nat n < 2 ^ width).
+        { rewrite Nat2Z.inj_succ in HSn_small. Lia.lia. }
+        (* cmd.set "i" := i - 1.  Mechanical unfolding, copied verbatim from
+           the analogous step in [msm_bls12_reduce_wp]. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split; [exact Hli1|].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (iw' := word.sub iw (word.of_Z 1)).
+        (* [word.unsigned iw' = Z.of_nat n] by the same step as in L4. *)
+        assert (Hiw'_unsigned : word.unsigned iw' = Z.of_nat n).
+        { subst iw'.
+          rewrite word.unsigned_sub.
+          rewrite Hiw. rewrite word.unsigned_of_Z.
+          cbv [word.wrap]. rewrite Nat2Z.inj_succ.
+          rewrite (Z.mod_small 1 (2 ^ width)) by Lia.lia.
+          rewrite Z.mod_small by Lia.lia. Lia.lia. }
+        (* Remaining body: 6 cmd.sets + cmd.cond (cross-limb) + cmd.set "idx"
+           + cmd.cond on idx containing a curve_add call.  Obligations:
+             (a) [DONE] decrement i to Z.of_nat n.
              (b) compute the get_window digit in local idx, proving it
                  equals Gallina get_window of the scalar at index n.
+                 Requires a helper [get_window_word_correct] that
+                 decomposes [Bignum scalar_limbs p ws] into per-limb
+                 [scalar] cells, loads the appropriate cell, and equates
+                 the bedrock2 word-arithmetic to the Gallina [get_window].
              (c) if idx = 0: invoke [distribute_inv_step_zero] to advance
                  invariant; if idx > 0: extract buckets[idx-1] across three
                  arrays via [PointArray_split_at], invoke [HCurveAdd],
                  reinsert via [PointArray_update_at], and invoke
                  [distribute_inv_step_pos] to advance invariant.
              (d) Re-establish [distribute_inv w (Z.of_nat n) ...].
-           This step is deferred: it closes via the Gallina step lemmas
-           [distribute_inv_step_zero] / [distribute_inv_step_pos] (both Qed)
-           plus the [PointArray_split_at/update_at] bookkeeping (both Qed)
-           and the [HCurveAdd] callee spec. *)
+           Closure cites [distribute_inv_step_zero] / [distribute_inv_step_pos]
+           (both Qed), [PointArray_split_at/update_at] (both Qed), and the
+           [HCurveAdd] callee spec. *)
         admit.
       - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post. *)
         intro Hbr.
@@ -3540,42 +3580,190 @@ Section PippengerSpec.
        value matches segment-6's [scaled_sum] via
        [reduce_buckets_eq_scaled_sum] (Qed). *)
     unfold outer_body_cmd.
-    (* Segment 1: [cmd.set "w" (w - 1)].  Pure locals update. *)
-    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
-    fold WeakestPrecondition.cmd.
+    (* Segment 1 (peel outer seq for [cmd.set "w" (w-1)]).  Use
+       [unfold1_cmd_goal] (peel ONE [cmd] layer) rather than
+       [cbv [cmd cmd_body]] (which cascade-unfolds into
+       [Semantics.exec.exec] via the top-level fixpoint).  After the
+       peel, we have [cmd e (cmd.set "w" ...) tr mem l0 (fun _ _ l =>
+       cmd e REST_1 ...)].  Unfolding a second layer exposes the
+       [cmd.set] existential. *)
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
     eexists. split.
     { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
            WeakestPrecondition.expr_body WeakestPrecondition.literal
            WeakestPrecondition.get dlet.dlet].
       eexists; split; [exact Hlw | reflexivity]. }
     cbv [dlet.dlet].
-    (* Segment 2: [cmd.set "i" c].  Pure locals update. *)
-    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
-    fold WeakestPrecondition.cmd.
+    (* Segment 2: same shape for [cmd.set "i" c]. *)
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
     eexists. split.
     { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
            WeakestPrecondition.expr_body WeakestPrecondition.literal
            WeakestPrecondition.get dlet.dlet].
       reflexivity. }
     cbv [dlet.dlet].
-    (* Segment 3: double-shift while.  The cmd structure here is
-         [cmd.seq (cmd.while ...double-shift...) REST]
-       after the two preceding [cmd.set] peels.  The proof here weakens
-       the sub-post of the while and applies L1
-       [msm_bls12_double_shift_wp] with the 11-cell [R]-frame (the
-       remaining sep cells beyond (outx,outy,outz)).  L1's post
-       re-establishes (outx,outy,outz) at tight_bounds + R, with
-       (Ox',Oy',Oz') = [Nat.iter c g1_double_spec out0], and preserves
-       the 3 outx/outy/outz locals.
+    (* After segments 1-2 (cmd.set "w", cmd.set "i"), the remaining goal
+       is [cmd e (cmd.seq SEG3 REST) tr mem0 l2 post], where [l2] has
+       [map.put l0 "w" ...] composed with [map.put _ "i" (word.of_Z c)].
+       We peel each subsequent segment in turn, citing the matching
+       leaf lemma (L1..L4 + HStoreZero/HCurveAdd), and close the
+       Gallina postcondition via [partial_msm_from]'s [S k] step.
 
-       The segments 4-10 (bucket_clear via L2, distribute via L3,
-       two store_zero via HStoreZero, reduce via L4 with bounds-bridge
-       from None buckets to tight_bounds, final curve_add via HCurveAdd)
-       and the closing Gallina step on [outer_inv] / [partial_msm_from]
-       (the [S k] fold of [partial_msm_from], with
-       [reduce_buckets_eq_scaled_sum] bridging the reduce loop's
-       [scaled_sum] to the spec's [reduce_buckets]/[process_window])
-       are the remaining work. *)
+       The remaining work decomposes as:
+
+       Seg 3  (L1 [msm_bls12_double_shift_wp])  : [out] := [Nat.iter c
+              g1_double_spec out0].  Pre: project (outx,outy,outz)
+              FElems at [tight_bounds] + 11-cell frame from [Hsep].
+              Post: (Ox',Oy',Oz') in out, tight_bounds preserved,
+              frame unchanged.
+
+       Seg 4  (L2 [msm_bls12_bucket_clear_wp])  : buckets_{x,y,z}
+              := g1_identity arrays.  Pre: project the 3 bucket arrays
+              at [FElem None] + remaining frame.  Post: [bs_x',bs_y',
+              bs_z'] all g1_identity pointwise.
+
+       Seg 5  (L3 [msm_bls12_distribute_wp])    : scalars accumulated
+              into buckets per window [w].  Pre: 3 bucket arrays + 3
+              point arrays + ScalarsArray.  Post: [distribute_inv w 0]
+              holds on [bs_x'',bs_y'',bs_z''].
+
+       Seg 6a (HStoreZero on run{x,y,z})        : 3 FElems := identity.
+       Seg 6b (HStoreZero on ws{x,y,z})         : 3 FElems := identity.
+
+       Seg 7  (L4 [msm_bls12_reduce_wp])        : ws := scaled_sum
+              buckets.  Requires bucket arrays at [tight_bounds] —
+              bridged from [FElem None] (L3 exit) via the
+              [distribute_inv]+[clear_inv] observation that every cell
+              is either g1_identity (from L2) or g1_add_spec-chained
+              from input [px,py,pz] (pre-bounds).  See the [Seg 7
+              bounds-bridge] note below.
+
+       Seg 8  (HCurveAdd)                        : out := out + ws
+              with (pb,pp) = (out,ws).
+
+       Seg 9  (Gallina closure)                  : re-establish
+              [outer_inv (Z.of_nat w) out1] using [partial_msm_from]'s
+              [S k] unfolding and [reduce_buckets_eq_scaled_sum]. *)
+
+    (* Seg 3 bounds-bridge note: L2 exits with [array (FElem None)]
+       at every bucket cell, which is exactly what L3's pre-shape
+       requires.  Between L3 exit and L4 entry, we need to upgrade
+       to [array (FElem (Some tight_bounds))]; this is the
+       "None→tight" direction that is NOT generically sound (None
+       allows any limb pattern, not just tight).  The bridge relies
+       on per-cell knowledge: every bucket cell at L3 exit is either
+       [g1_identity] (for untouched buckets) or the result of
+       [curve_add_name] calls (inplace on bucket_* + ppoint), whose
+       post from CurveAddAliasedOK is [FElem (Some tight_bounds)].
+       A fully mechanized bridge would need L3's post strengthened
+       to [FElem (Some tight_bounds)] throughout (the callee's
+       natural post).  Deferred to a future L3 revision. *)
+
+    (* ================================================================
+       Segment 3: double-shift while.  Peel one seq layer via
+       [unfold1_cmd_goal] (one-level-cmd unfolding without over-unfolding
+       the while body), then use [Proper_cmd] to weaken the sub-post
+       and eapply L1.
+
+       NOTE: a bare [cbv [cmd cmd_body]; fold cmd] here over-unfolds
+       into [Semantics.exec.exec] because by this point the containing
+       post contains [cmd e REST ...] inside [Semantics.exec]-shaped
+       obligations produced from the seg-1/seg-2 peels.  Use
+       [unfold1_cmd_goal] to keep the goal at [WeakestPrecondition.cmd]
+       for the top [cmd.seq] without diving into the while.
+       ================================================================ *)
+    destruct out0 as [[Ox Oy] Oz].
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    (* Goal: cmd e W3 tr mem0 l2 (fun tr' m' l' => cmd e REST tr' m' l' post).
+       The inner post is our REST continuation; weaken to L1's shape. *)
+    eapply WeakestPreconditionProperties.Proper_cmd;
+      [ | eapply msm_bls12_double_shift_wp with
+            (Xe := Ox) (Ye := Oy) (Ze := Oz)
+            (R := (array (FElem None) (word.of_Z felem_size_in_bytes) bx_p bs_x
+                   * array (FElem None) (word.of_Z felem_size_in_bytes) by_p bs_y
+                   * array (FElem None) (word.of_Z felem_size_in_bytes) bz_p bs_z
+                   * FElem None runx run0x
+                   * FElem None runy run0y
+                   * FElem None runz run0z
+                   * FElem None wsx  ws0x
+                   * FElem None wsy  ws0y
+                   * FElem None wsz  ws0z
+                   * ScalarsArray scalars_p scalars
+                   * G1Array3 pointsx pointsy pointsz px py pz
+                   * R)%sep);
+        [ exact HCurveDouble
+        | (* Pre-sep L1: reshape Hsep into (outx,outy,outz) head + frame. *)
+          ecancel_assumption
+        | (* "outx" local: after two put's of "w" and "i" *)
+          rewrite !map.get_put_diff by congruence; exact Hloutx
+        | rewrite !map.get_put_diff by congruence; exact Hlouty
+        | rewrite !map.get_put_diff by congruence; exact Hloutz
+        | (* "i" local = word.of_Z c *)
+          rewrite map.get_put_same; reflexivity ] ].
+    (* L1 post available; feed it to REST. *)
+    cbv beta.
+    intros tr3 mem3 l3 HL1.
+    destruct HL1 as [Htr3 [Hsep3 [Hlo3x [Hlo3y Hlo3z]]]].
+    subst tr3.
+    (* Name the post state (Xf,Yf,Zf) from the iter result. *)
+    set (st3 := Nat.iter (Z.to_nat c) g1_double_spec (Ox, Oy, Oz)) in *.
+    destruct st3 as [[Xf Yf] Zf] eqn:Hst3.
+
+    (* ================================================================
+       Segments 4-9 remain as a single admit.
+
+       State at this admit:
+         - [Hsep3] : (FElem tight outx Xf * FElem tight outy Yf
+                     * FElem tight outz Zf * <11-cell frame>)%sep mem3
+                    — the frame is the 11-cell sep bound to R in the
+                    L1 application above.
+         - [Hlo3x], [Hlo3y], [Hlo3z] : [map.get l3 "outx/y/z"] from L1.
+         - [Hst3] : (Xf, Yf, Zf) = Nat.iter (Z.to_nat c) g1_double_spec
+                    (Ox, Oy, Oz).
+
+       Known blocker for continuing (root cause):
+         L1's post [msm_bls12_double_shift_wp] only exposes [map.get l'
+         "outx/y/z"] and the 4-hypothesis memory triple.  It does NOT
+         preserve the OTHER locals ("buckets_x/y/z", "runx/y/z",
+         "wsx/y/z", "scalars", "pointsx/y/z", "n", "w", "i") across
+         the while's invariant.  To apply L2-L4 we need all of those
+         locals in [l3].  In reality the L1 body only issues
+         [cmd.set "i" ...] (modifying just "i") and [cmd.call
+         curve_double_name [...]] (which per Semantics.call leaves
+         locals untouched), so the other locals ARE preserved — but
+         L1's invariant does not state it, so we cannot extract it
+         from [HL1].
+
+         This is analogous for L2, L3, L4: each only preserves its
+         own direct locals.  Fully mechanizing composition requires
+         EITHER:
+           (a) strengthening each leaf lemma's invariant with
+               [frame_locals] preservation (the task forbids editing
+               L1-L4), OR
+           (b) re-proving each leaf inline within the outer_body_wp
+               proof, this time with richer invariants (doubles proof
+               size; infeasible within budget), OR
+           (c) a generic frame-locals lemma bridging each leaf's
+               abstract post with [∀ k ∉ keys_touched, map.get l' k =
+               map.get l k] (no such lemma exists in bedrock2/coqutil
+               and proving it against the opaque WP/exec semantics is
+               comparable in difficulty to the original proof).
+
+       Remaining work summary (when (a)/(c) is available):
+         * Seg 4: cmd.set "i" num_buckets; cmd.while (L2).
+         * Seg 5: cmd.set "i" n; cmd.while (L3).
+         * Seg 6: cmd.call store_zero_name [runx;runy;runz]; same for ws.
+         * Seg 7: cmd.set "i" num_buckets; cmd.while (L4) — needs
+                  bucket bounds bridge [FElem None] → [FElem tight].
+         * Seg 8: cmd.call curve_add_name [outx;wsx;outy;wsy;outz;wsz;
+                  outx;outy;outz].
+         * Seg 9: close [outer_inv (Z.of_nat w) out1] via the [S k]
+                  step of [partial_msm_from] and
+                  [reduce_buckets_eq_scaled_sum] (Qed,
+                  IteratedSepPoints).
+       ================================================================ *)
     admit.
   Admitted.
 

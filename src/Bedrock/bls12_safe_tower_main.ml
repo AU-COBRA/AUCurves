@@ -63,6 +63,14 @@ unsafe extern "C" {
 #[inline] pub fn bls12_Fp2_sub(o: &mut Fp2, x: &Fp2, y: &Fp2) { bls12_sub(&mut o.c0, &x.c0, &y.c0); bls12_sub(&mut o.c1, &x.c1, &y.c1); }
 #[inline]
 pub fn bls12_Fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) {
+    // Schoolbook: 4 Fp muls + 2 Fp add/sub.
+    // Karatsuba (3 muls + 5 add/sub) was tried but is slower in practice
+    // here because (a) bls12_mul via CryptOpt is only ~33 ns -- the gap
+    // between mul and add/sub is small, (b) the extra Fp scratch vars
+    // (5 vs 4) inflate the per-call frame, (c) the saved mul doesn't
+    // amortise the extra inter-leaf call overhead.  Real lazy-reduction
+    // (defer Montgomery normalisation to combine the mul + sub) needs new
+    // fiat-crypto reified ops and is out of scope here.
     let xv = *x; let yv = *y;
     let mut t0 = Fp::zero(); let mut t1 = Fp::zero();
     let mut t2 = Fp::zero(); let mut t3 = Fp::zero();

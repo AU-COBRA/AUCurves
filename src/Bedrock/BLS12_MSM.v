@@ -4584,12 +4584,83 @@ Section PippengerSpec.
       (* ============================================================
          Segment 7/8/9: L4 reduce + HCurveAdd + outer_inv closure.
          L4's strengthened spec now has the reduce_buckets equation.
-         Remaining: (a) determine goal shape at this point (goal
-         unification with Proper_cmd fails — needs MCP inspection to
-         identify the correct unfold pattern), (b) apply L4 with the
-         20 premises discharge, (c) HCurveAdd, (d) Gallina outer_inv
-         closure via partial_msm_from S-step + L4's mk_point = reduce_buckets
-         equation. *)
+
+         Goal shape at this point (verified via MCP 2026-04-19, at
+         post-seg-6b):
+
+             exists v, DEXPR mem6b l5 (expr.literal num_buckets) v /\
+             (let/d l := #{...l5; "i" => v}# in
+              Semantics.exec.exec functions
+                (while (i) { body } ; curve_add(...))
+                tr mem6b l
+                (fun t' m' l' =>
+                   exists args, dexprs m' l' [...] args /\
+                   Semantics.call functions curve_add_name t' m' args
+                     (fun t'' m'' rets =>
+                       exists l'', match rets with [] => Some l | ... => None end
+                                 = Some l'' /\ tr = t'' /\
+                       (exists out1 bs_x' bs_y' bs_z' 6 F-vals, ...))))
+
+         Note: goal is in [Semantics.exec.exec] form, NOT
+         [WeakestPrecondition.cmd] form; needs [sound_cmd] bridge.
+
+         Step 7a (sound_cmd bridge): [eapply sound_cmd] — Qed via
+         [WeakestPreconditionProperties.sound_cmd].
+         Step 7b (peel "i" := num_buckets): [eexists; split;
+         [reflexivity | cbv [dlet.dlet]]].
+         Step 7c (apply L4): [Proper_cmd] + [frame_locals_wp_list]
+         with xs = ["outx";"outy";"outz";"scalars";"pointsx";
+                    "pointsy";"pointsz";"n";"w"], then
+         [msm_bls12_reduce_wp] with (RX0,RY0,RZ0) := (Xi,Yi,Zi)
+         and (WX0,WY0,WZ0) := (Xi,Yi,Zi).  L4's post gives
+             mk_point WXf WYf WZf =
+               reduce_buckets _ g1_identity g1_add_spec
+                              (points_of bs_x6 bs_y6 bs_z6).
+
+         Step 8 (final HCurveAdd): destruct L4's post to get Hsep7
+         and Heq_ws; apply [HCurveAdd] with
+           (pb1,pp1)=(outx,wsx), (pb2,pp2)=(outy,wsy),
+           (pb3,pp3)=(outz,wsz).  Post: outx,y,z updated to
+         [g1_add_spec (Xf,Yf,Zf) (WXf,WYf,WZf)].
+
+         Step 9 (outer_inv closure): unfold [outer_inv] to
+           [out1 = partial_msm_from (num_windows - w - 1) identity
+                      (scalars_to_Z scalars) (points_of px py pz)].
+         From [Hw_bd]: [S w <= Z.to_nat num_windows] implies
+           [Z.to_nat num_windows - w - 1 = S (Z.to_nat num_windows - S w - 1)].
+         By [partial_msm_from]'s [S k] unfold,
+           partial_msm_from (S k) identity ss ps
+             = partial_msm_from k
+                 (g1_add_spec (Nat.iter c double identity)
+                    (process_window ss ps k c num_buckets)) ss ps.
+         But partial_msm_from is called at the TOP with identity as
+         first acc, so [Nat.iter c double identity = identity].
+         Thus the S-step on Houter_inv (at [S w]) becomes:
+           out0 = partial_msm_from (num_windows - S w - 1) identity ss ps
+         (= the right-hand side after one unfold).
+         Finally [out1 = g1_add_spec (iter c double out0) win_w] with
+           win_w = process_window (scalars_to_Z scalars)
+                                   (points_of px py pz)
+                                   w c num_buckets
+                 = reduce_buckets (fold_left ...).
+         The [Heq_ws] from L4's new post
+           mk_point WXf WYf WZf = reduce_buckets (points_of bs_x6 bs_y6 bs_z6)
+         combined with [Hdist5 : distribute_inv w 0 ...] (which after
+         [distribute_inv_exit] matches the fold_left shape of
+         process_window) closes the equation.  The intermediate
+         Gallina bridge is the load-bearing work — needs a new lemma
+         [process_window_as_reduce_buckets] on top of the existing
+         [reduce_buckets_eq_scaled_sum] (in IteratedSepPoints.v).
+
+         STATUS 2026-04-19: the sound_cmd bridge (step 7a-7b) is
+         verified to work via MCP.  The remaining 200+ LoC of tactics
+         (steps 7c, 8, 9) plus the new [process_window_as_reduce_buckets]
+         Gallina lemma are out of scope for the current fix window.
+
+         Single bare admit preserved: it remains the only obstacle
+         to L5 [msm_bls12_outer_body_wp] Qed.  Admitted count on this
+         file is 3 (L3 [msm_bls12_distribute_wp], L5 [this], and
+         [msm_bls12_prelude_wp]) + 1 internal admit (in L3). *)
       admit.
   Admitted.
 

@@ -4226,7 +4226,32 @@ Section PippengerSpec.
        (HStoreZero calls), seg 7 (L4 reduce), seg 8 (HCurveAdd),
        and seg 9 (Gallina closure via partial_msm_from's [S k] step
        + reduce_buckets_eq_scaled_sum). *)
-    admit.
+
+    (* ============================================================
+       Segment 5 (L3 distribute): peel [cmd.set "i" n], apply L3.
+       ============================================================ *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    eexists.
+    split.
+    - cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+           WeakestPrecondition.expr_body WeakestPrecondition.literal
+           WeakestPrecondition.get dlet.dlet].
+      eexists; split; [exact Hlo4_n | reflexivity].
+    - cbv [dlet.dlet].
+      unfold1_cmd_goal; cbv beta match delta [cmd_body].
+      (* Apply L3 with frame_locals_wp_list preserving 10 outer locals
+         (outx/y/z + runx/y/z + wsx/y/z + n).  L3's statement tracks:
+         buckets_x/y/z, scalars, pointsx/y/z, w, i (8). *)
+      (* REMAINING WORK (segs 5 L3 premises + 6a/6b HStoreZero + 7 L4
+         reduce + 8 HCurveAdd + 9 outer_inv closure):
+         ~500 LoC of interdependent WP composition tactics + 2 sub-lemmas
+         (distribute_inv entry from Hid4; Forall (v = cv) bs_x5/y5/z5
+         extraction for bucket bounds bridge).  Scoped, compiled-in, but
+         not mechanised in this commit.  Structure above is proven to
+         unify via MCP (Proper_cmd + frame_locals_wp_list + L3 all
+         type-check at this point). *)
+      admit.
   Admitted.
 
   (** Main WP obligation: full function body as a [WeakestPrecondition.cmd]

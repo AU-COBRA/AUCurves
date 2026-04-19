@@ -3350,19 +3350,72 @@ Section PippengerSpec.
     ).
 
   (** Helper: tighten an array-of-[FElem None] to an array-of-[FElem (Some
-      tight_bounds)] when every cell equals [g1_identity].  The bridging
-      relies on the fact that bounded Fp values (used here the three
-      identity coordinates [0, 1, 0]) satisfy [tight_bounds].  We state
-      this as an Admitted helper — the bridge is specific to the chosen
-      [g1_identity] encoding and is not needed in the trust chain of a
-      fully-mechanized future version (where L3's post returns
-      [tight_bounds] directly). *)
-  Lemma array_FElem_tighten_at_identity :
+      tight_bounds)] when every cell admits a tight-bounded encoding.
+
+      The bare form ([FElem None ==> FElem (Some tight_bounds)] without
+      hypotheses) is NOT sound: [FElem None] only knows some witness
+      [felem] evaluates to [v]; a tight-bounded witness may not agree
+      with the bytes in memory.  We therefore require per-cell
+      [bounded_by tight_bounds] as an extra hypothesis, phrased so it
+      applies to the *existing* felem witness the left-hand side
+      carries.
+
+      The intended usage site is L5 segment 7 where every cell equals
+      [g1_identity] = [(0, 1, 0)]: the three constant Fp coordinates
+      admit a canonical tight-bounded encoding (fiat-crypto's
+      [from_word] spec witnesses this for any field-of-word value).
+      At the concrete BLS12-381 instantiation, the hypothesis
+      discharges by rewriting each cell to its [(0, 1, 0)] value and
+      applying the [bounded_by tight_bounds] field fact.  Here in the
+      generic module we keep the hypothesis abstract. *)
+  Lemma array_FElem_tighten_pointwise :
     forall (sz p : word) (xs : list F),
+      Forall (fun v => forall f, feval f = v -> bounded_by tight_bounds f) xs ->
       Lift1Prop.impl1
         (array (FElem None) sz p xs)
         (array (FElem (Some tight_bounds)) sz p xs).
-  Admitted.
+  Proof using field_representation_ok locals locals_ok mem_ok word_ok.
+    intros sz p xs Hforall.
+    revert p. induction Hforall as [|x xs' Hx Hforall' IH]; intros p.
+    - cbn. reflexivity.
+    - cbn. apply Proper_sep_impl1.
+      + (* Per-cell: FElem None p x ==> FElem (Some tight_bounds) p x,
+           using the pointwise bounds hypothesis on the existing witness. *)
+        unfold Compilation2.FElem, Lift1Prop.ex1. intros m [v' Hm].
+        apply sep_emp_l in Hm as [[Hfeval _] Hm].
+        exists v'. apply sep_emp_l. split.
+        * split; [exact Hfeval|]. cbn [Compilation2.maybe_bounded].
+          apply Hx; exact Hfeval.
+        * exact Hm.
+      + apply IH.
+  Qed.
+
+  (** Back-compat alias with the old name: specialized form where every
+      cell evaluates to a single fixed F-value [c] (per-coordinate).
+      The per-cell hypothesis reduces to the single [bounded_by] proof
+      [Hbnd] for that [c].
+
+      Typical usage in L5 segment 7 (one invocation per coordinate):
+      the x-array has every cell = [fst (fst g1_identity)] (i.e. the
+      fixed x-coordinate of the identity, [0] in the usual encoding),
+      the y-array every cell = [snd (fst g1_identity)] (e.g. [F.one]),
+      and the z-array every cell = [snd g1_identity] (e.g. [0]).  Each
+      of the three constant F-values has a canonical tight-bounded
+      encoding at the concrete BLS12-381 instantiation, discharging
+      [Hbnd] by [vm_compute]. *)
+  Lemma array_FElem_tighten_at_identity :
+    forall (sz p : word) (xs : list F) (cv : F),
+      (forall f, feval f = cv -> bounded_by tight_bounds f) ->
+      Forall (fun v => v = cv) xs ->
+      Lift1Prop.impl1
+        (array (FElem None) sz p xs)
+        (array (FElem (Some tight_bounds)) sz p xs).
+  Proof using field_representation_ok locals locals_ok mem_ok word_ok.
+    intros sz p xs cv Hbnd Hid.
+    apply array_FElem_tighten_pointwise.
+    eapply Forall_impl; [|exact Hid].
+    intros v ->. exact Hbnd.
+  Qed.
 
   (** Leaf 5: outer-loop body.  Composes leaves 1-4 + final [curve_add].
       Maintains [outer_inv]; the Gallina window counter advances from
@@ -4034,11 +4087,15 @@ Section PippengerSpec.
          Peel [cmd.set "i" num_buckets], then apply L4.  Bucket
          arrays (which L3 left at [FElem None]) are tightened to
          [FElem (Some tight_bounds)] via the helper
-         [array_FElem_tighten_at_identity] above (Admitted; relies
-         on the fact that L3's post preserves identity in the
-         untouched buckets and [g1_add_spec]'s tight-bounds
-         post-condition for the rest — a bridge that is sound but
-         not mechanised in the current file).  Post: [wsx/y/z] at
+         [array_FElem_tighten_at_identity] above (now Qed, parametrised
+         by an [identity_bounded] hypothesis + a [Forall (= g1_identity)]
+         witness).  Both are discharged at the concrete BLS12-381
+         instantiation:  [Forall (= g1_identity)] comes from L3's post
+         (untouched buckets stay at identity); [identity_bounded] is
+         the constant-limb computation [(0, 1, 0) tight-bounded].
+         For cells touched by [g1_add_spec] we instead cite the
+         tight-bounds post-condition of [curve_add] directly.
+         Post: [wsx/y/z] at
          [tight_bounds] with values [scaled_sum (points_of bs_x5 ...)]
          = [reduce_buckets ...] via [reduce_buckets_eq_scaled_sum]
          (Qed in [IteratedSepPoints.v]).
@@ -4070,6 +4127,97 @@ Section PippengerSpec.
          by [reduce_buckets_eq_scaled_sum] applied to L4's exit post
          (which states [wsx/y/z = scaled_sum bs_x5/y5/z5]), matches
          [(WXf, WYf, WZf)]. *)
+
+    (* ================================================================
+       BLOCKER (discovered 2026-04-19 by seg 5 audit): L3's statement
+       ([msm_bls12_distribute_wp], ~ line 2200-2350) has the [cmd.while]
+       body with the "val := (load(scalar_ptr + limb*8) >> shift)" load
+       INLINED, i.e. without the intermediate [cmd.set "load_off1"] /
+       [cmd.set "load_addr1"] / [cmd.set "load_off2"] / [cmd.set "load_addr2"]
+       prelude that [msm_bls12] (and [outer_body_cmd]) DO emit.
+
+       The load_off/addr sets were added to the bedrock2 source (line
+       217-228 and 3292-3300) for Rust extraction (ToRustString's
+       [rust_ptr_varlit] only handles literals and variables — not
+       arithmetic expressions — so the load address must be a named
+       local).  L3's cmd statement was NOT synced.
+
+       Consequence: the while body in [outer_body_cmd] and the while
+       body in L3's statement are NOT syntactically equal, so
+       [eapply msm_bls12_distribute_wp] after peeling the outer-body
+       [cmd.set "i" n] fails unification.
+
+       Required fix (NOT included in this commit, outside the seg-5
+       composition scope): update [msm_bls12_distribute_wp] (L3)
+       statement at line ~2261 to match outer_body_cmd.  Replace
+         (cmd.set "val"
+            (expr.op bopname.sru
+               (expr.load access_size.word
+                  (expr.op bopname.add (expr.var "scalar_ptr")
+                     (expr.op bopname.mul (expr.var "limb") (expr.literal 8))))
+               (expr.var "shift")))
+       with
+         (cmd.seq (cmd.set "load_off1"
+                   (expr.op bopname.mul (expr.var "limb") (expr.literal 8)))
+          (cmd.seq (cmd.set "load_addr1"
+                    (expr.op bopname.add (expr.var "scalar_ptr") (expr.var "load_off1")))
+                   (cmd.set "val"
+                    (expr.op bopname.sru
+                       (expr.load access_size.word (expr.var "load_addr1"))
+                       (expr.var "shift")))))
+       and analogously for the load_off2/addr2 inside the cross-limb
+       [cmd.cond] at line ~2273-2281.  Since L3 is [Admitted] today
+       (line 2515), the edit is cheap: the statement changes, the
+       intended proof strategy is unchanged.
+
+       Once L3 matches, the seg-5 tactic (drafted inline in the git
+       history of this file, reverted here) is:
+
+         unfold1_cmd_goal; cbv beta match delta [cmd_body].
+         unfold1_cmd_goal; cbv beta match delta [cmd_body].
+         eexists. split.
+         { cbv [WeakestPrecondition.dexpr ... ].
+           eexists; split; [exact Hlo4_n | reflexivity]. }
+         cbv [dlet.dlet].
+         unfold1_cmd_goal; cbv beta match delta [cmd_body].
+         eapply WeakestPreconditionProperties.Proper_cmd;
+           [ | eapply frame_locals_wp_list with
+                 (xs := ["outx";"outy";"outz";"runx";"runy";"runz";
+                         "wsx";"wsy";"wsz";"n"]);
+               [ do 10 (apply List.Forall_cons; [cbn; intuition discriminate|]);
+                 apply List.Forall_nil
+               | (* 10 preservation witnesses, each
+                    [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_*] *)
+                 ...
+               | eapply msm_bls12_distribute_wp with
+                   (w := Z.of_nat w) (n_w := n_w)
+                   (buckets_x := bx_p) (buckets_y := by_p) (buckets_z := bz_p)
+                   (bs_x := bs_x4) (bs_y := bs_y4) (bs_z := bs_z4)
+                   (R := (FElem (Some tight_bounds) outx Xf
+                          * FElem (Some tight_bounds) outy Yf
+                          * FElem (Some tight_bounds) outz Zf
+                          * FElem None runx run0x
+                          * FElem None runy run0y
+                          * FElem None runz run0z
+                          * FElem None wsx  ws0x
+                          * FElem None wsy  ws0y
+                          * FElem None wsz  ws0z
+                          * R)%sep);
+                   [ ...20 premises in order: HCurveAdd,
+                       [0<=Z.of_nat w<num_windows] (from Hw_bd),
+                       Hlen4x/y/z, length bs_x4=bs_y4 via Lia, ditto
+                       y/z, Hn_len, Hlen_sx/xy/yz, distribute_inv
+                       entry (from Hid4 + skipn_all), ecancel on Hsep4,
+                       8 locals rewrites via map.get_put_diff,
+                       map.get_put_same for "i"... ]
+               ] ].
+
+       After L3's post is destructed (pattern [HF5 HL3], inner
+       [Htr5 [bs_x5 bs_y5 bs_z5 ...] ...]) and HF5 is inverted 10
+       times to extract Hlo5_* preservations, proceed to seg 6a/b
+       (HStoreZero calls), seg 7 (L4 reduce), seg 8 (HCurveAdd),
+       and seg 9 (Gallina closure via partial_msm_from's [S k] step
+       + reduce_buckets_eq_scaled_sum). *)
     admit.
   Admitted.
 

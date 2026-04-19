@@ -4443,9 +4443,36 @@ Section PippengerSpec.
       eexists; split; [reflexivity|].
 
       (* After segs 6a/6b: mem has [FElem tight runx/y/z Xi,Yi,Zi] and
-         [FElem tight wsx/y/z Xi,Yi,Zi] (all 6 at g1_identity coords).
-         Next: seg 7 (L4 reduce, with bucket tighten bridge) + seg 8
-         (final HCurveAdd) + seg 9 (outer_inv via partial_msm_from). *)
+         [FElem tight wsx/y/z Xi,Yi,Zi] (all 6 at g1_identity coords),
+         plus bucket arrays at [FElem tight] (from L3's strengthened
+         post) + ScalarsArray + G1Array3 + R.  Hsep6b captures this.
+
+         Seg 7 (L4 reduce): peel [cmd.set "i" num_buckets], then
+         Proper_cmd + frame_locals_wp_list (8 xs: outx/y/z, scalars,
+         pointsx/y/z, n, w) + L4 (msm_bls12_reduce_wp).  L4's post
+         gives (exists WXf WYf WZf) at tight_bounds for ws, existential
+         RXf/RYf/RZf for run, and tight buckets bs_x'/y'/z'.
+
+         Seg 8 (final HCurveAdd): direct HCurveAdd on
+         [outx;wsx;outy;wsy;outz;wsz;outx;outy;outz].  Post: outx/y/z
+         at tight_bounds with values g1_add_spec (Xf,Yf,Zf) (WXf,WYf,WZf).
+
+         Seg 9 (outer_inv closure):
+         - Unfold outer_inv to [out1 = partial_msm_from (num_windows -
+           w - 1) identity ss ps].
+         - Use Hw_bd: [num_windows - w - 1 = S (num_windows - S w - 1)].
+         - Apply partial_msm_from's S-step to [outer_inv (S w) out0].
+         - For the process_window match, bridge L4's WXf/WYf/WZf to
+           reduce_buckets via reduce_buckets_eq_scaled_sum (Qed in
+           IteratedSepPoints.v).  This is the load-bearing Gallina
+           step — L4's current post does NOT directly equate wsx/y/z
+           to reduce_buckets bs_x'/y'/z', so this bridge must be
+           established separately.
+
+         Sub-admit covers: L4 application + post destructuring +
+         HCurveAdd + outer_inv Gallina closure.  ~150 LoC of tactics
+         + 1 sub-lemma (bucket bounds bridge for L4→outer_inv via
+         reduce_buckets_eq_scaled_sum). *)
       admit.
   Admitted.
 

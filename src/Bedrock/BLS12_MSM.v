@@ -2903,7 +2903,9 @@ Section PippengerSpec.
         map.get l "buckets_y" = Some buckets_y /\
         map.get l "buckets_z" = Some buckets_z /\
         map.get l "i" = Some iw /\
-        tr = tr').
+        tr = tr' /\
+        reduce_inv (Z.of_nat v - 1) (RXc, RYc, RZc) (WXc, WYc, WZc)
+                   (points_of bs_x bs_y bs_z)).
     eapply (Loops.while_localsmap (measure:=nat) inv Nat.lt_wf_0
                                   (Z.to_nat num_buckets)).
     { (* Entry. *)
@@ -2921,7 +2923,26 @@ Section PippengerSpec.
                         || (now exact Hl_wsz)  || (now exact Hl_bx)
                         || (now exact Hl_by)   || (now exact Hl_bz)
                         || (now exact Hl_i))|]).
-      reflexivity. }
+      split; [reflexivity|].
+      (* reduce_inv entry: at v = Z.to_nat num_buckets,
+         Z.of_nat v - 1 = num_buckets - 1, and initial run/ws = g1_identity. *)
+      rewrite HRid, HWid.
+      assert (Hlen_po : Z.of_nat (length (points_of bs_x bs_y bs_z))
+                        = num_buckets).
+      { assert (Hlen_eq :
+          length (points_of bs_x bs_y bs_z) = length bs_x).
+        { clear - Hxy Hyz.
+          revert bs_y bs_z Hxy Hyz.
+          induction bs_x as [|x xs IH]; intros by_ bz Hxy Hyz; cbn in *.
+          - reflexivity.
+          - destruct by_ as [|y ys]; [discriminate|].
+            destruct bz as [|z zs]; [discriminate|].
+            cbn. f_equal. apply IH;
+              [cbn in Hxy; Lia.lia | cbn in Hyz; Lia.lia]. }
+        rewrite Hlen_eq. exact Hlen_x. }
+      replace (Z.of_nat (Z.to_nat num_buckets) - 1) with (num_buckets - 1)
+        by (rewrite Z2Nat.id by (cbv; discriminate); reflexivity).
+      apply reduce_inv_entry. exact Hlen_po. }
     { (* Body step. *)
       intros vi tr1 m1 l1 Hinv.
       subst inv; cbv beta in Hinv.
@@ -2930,7 +2951,7 @@ Section PippengerSpec.
          Hvi_le & Hiw & Hm1 &
          Hlrunx & Hlruny & Hlrunz &
          Hlwsx & Hlwsy & Hlwsz &
-         Hlbx1 & Hlby1 & Hlbz1 & Hli1 & Htreq).
+         Hlbx1 & Hlby1 & Hlbz1 & Hli1 & Htreq & Hrinv).
       subst tr1.
       exists iw.
       split.
@@ -3213,7 +3234,46 @@ Section PippengerSpec.
             rewrite map.get_put_diff by congruence.
             rewrite map.get_put_diff by congruence.
             rewrite map.get_put_same. reflexivity. }
-          reflexivity. }
+          split; [reflexivity|].
+          (* reduce_inv step at j := Z.of_nat n. *)
+          assert (Hlen_po_bs :
+            length (points_of bs_x bs_y bs_z) = length bs_x).
+          { clear - Hxy Hyz.
+            revert bs_y bs_z Hxy Hyz.
+            induction bs_x as [|x xs IH]; intros by_ bz Hxy Hyz; cbn in *.
+            - reflexivity.
+            - destruct by_ as [|y ys]; [discriminate|].
+              destruct bz as [|z zs]; [discriminate|].
+              cbn. f_equal. apply IH;
+                [cbn in Hxy; Lia.lia | cbn in Hyz; Lia.lia]. }
+          assert (Hn_lt_po : (n < length (points_of bs_x bs_y bs_z))%nat)
+            by (rewrite Hlen_po_bs; exact Hn_lt_x).
+          (* Rewrite nth n (points_of ...) g1_identity as the per-coord tuple. *)
+          assert (Hnth_po :
+            nth n (points_of bs_x bs_y bs_z) g1_identity
+            = (nth n bs_x RX0, nth n bs_y RX0, nth n bs_z RX0)).
+          { rewrite (List.nth_indep _ _ (RX0, RX0, RX0) Hn_lt_po).
+            rewrite (nth_points_of_eq n bs_x bs_y bs_z (RX0, RX0, RX0)
+                                      Hn_lt_x Hxy Hyz).
+            reflexivity. }
+          (* Pre-reduce_inv at j = Z.of_nat n. *)
+          assert (Hrinv_n :
+            reduce_inv (Z.of_nat n) (RXc, RYc, RZc) (WXc, WYc, WZc)
+                       (points_of bs_x bs_y bs_z)).
+          { replace (Z.of_nat n) with (Z.of_nat (S n) - 1)
+              by (rewrite Nat2Z.inj_succ; Lia.lia).
+            exact Hrinv. }
+          (* Apply reduce_inv_step with j := Z.of_nat n. *)
+          pose proof (reduce_inv_step (Z.of_nat n)
+                        (RXc, RYc, RZc) (WXc, WYc, WZc)
+                        (points_of bs_x bs_y bs_z)
+                        ltac:(split; [Lia.lia|Lia.lia]) Hrinv_n) as Hstep.
+          cbv zeta in Hstep.
+          replace (Z.to_nat (Z.of_nat n)) with n in Hstep by Lia.lia.
+          rewrite Hnth_po in Hstep.
+          fold st1 in Hstep. rewrite Hst1 in Hstep.
+          fold st2 in Hstep. rewrite Hst2 in Hstep.
+          exact Hstep. }
         Lia.lia.
       - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post. *)
         intro Hbr.
@@ -3263,14 +3323,17 @@ Section PippengerSpec.
         split; [exact Hlwsx|].
         split; [exact Hlwsy|].
         split; [exact Hlwsz|].
-        (* NEW 2026-04-19: [mk_point WXf WYf WZf = reduce_buckets ...].
-           The current invariant does NOT carry [reduce_inv]; to close
-           this we need to thread reduce_inv through the loop (entry,
-           step, exit).  Partial staging: admit here, making L4 Admitted
-           temporarily.  Planned re-proof adds reduce_inv to inv and
-           uses reduce_inv_entry/step/exit. *)
-        admit. }
-  Admitted.
+        (* [mk_point WXc WYc WZc = reduce_buckets ...] via reduce_inv_exit
+           + reduce_inv_at_exit. *)
+        assert (Hrinv_neg1 :
+          reduce_inv (-1) (RXc, RYc, RZc) (WXc, WYc, WZc)
+                     (points_of bs_x bs_y bs_z)).
+        { replace (-1) with (Z.of_nat 0 - 1) by reflexivity.
+          exact Hrinv. }
+        pose proof (reduce_inv_exit _ _ _ Hrinv_neg1) as (Hlen_po & Hrp & Hwp).
+        unfold mk_point.
+        apply (reduce_inv_at_exit _ _ _ Hlen_po Hrp Hwp). }
+  Qed.
 
   (* =================================================================== *)
   (** ** Leaf 5: outer-loop body.                                         *)

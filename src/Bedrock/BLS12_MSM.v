@@ -3425,6 +3425,50 @@ Section PippengerSpec.
     intros v ->. exact Hbnd.
   Qed.
 
+  (** Gallina helper: [points_of] length is the minimum of the three
+      coordinate-list lengths; with all three equal, the zip-3 has that
+      common length. *)
+  Lemma length_points_of_eq :
+    forall px py pz : list F,
+      length px = length py -> length py = length pz ->
+      length (points_of px py pz) = length px.
+  Proof.
+    induction px as [|x px' IH]; intros py pz Hxy Hyz; cbn in *.
+    - reflexivity.
+    - destruct py as [|y py']; [discriminate|].
+      destruct pz as [|z pz']; [discriminate|].
+      cbn. f_equal. apply IH; [cbn in Hxy; Lia.lia | cbn in Hyz; Lia.lia].
+  Qed.
+
+  Lemma length_scalars_to_Z :
+    forall ss, length (scalars_to_Z ss) = length ss.
+  Proof. intros. unfold scalars_to_Z. apply List.map_length. Qed.
+
+  (** Entry condition for L3's [distribute_inv]: when [i = length scalars]
+      and every bucket cell is [g1_identity], the invariant holds because
+      [skipn (length) full_list = nil] makes the fold_left trivial. *)
+  Lemma distribute_inv_entry :
+    forall (w : Z) (n_w : word) (bs : list G1_F)
+           (ss : list (list word)) (ps : list G1_F),
+      word.unsigned n_w = Z.of_nat (length ss) ->
+      length ss = length ps ->
+      Z.of_nat (length bs) = num_buckets ->
+      (forall k, (k < Z.to_nat num_buckets)%nat ->
+         nth k bs g1_identity = g1_identity) ->
+      distribute_inv w (word.unsigned n_w) bs (scalars_to_Z ss) ps.
+  Proof.
+    intros w n_w bs ss ps Hn_len Hlen Hbs_len Hid.
+    unfold distribute_inv.
+    split; [exact Hbs_len|].
+    intros k Hk.
+    rewrite Hid by exact Hk.
+    (* Show: g1_identity = fold_left _ (map snd (filter ... (skipn ... (combine ...)))) g1_identity. *)
+    rewrite Hn_len, Nat2Z.id.
+    rewrite List.skipn_all2.
+    2: { rewrite List.combine_length, length_scalars_to_Z, <- Hlen, Nat.min_id. Lia.lia. }
+    cbn. reflexivity.
+  Qed.
+
   (** Leaf 5: outer-loop body.  Composes leaves 1-4 + final [curve_add].
       Maintains [outer_inv]; the Gallina window counter advances from
       [S w] (pre) to [w] (post) by the header decrement at the top of
@@ -4286,7 +4330,14 @@ Section PippengerSpec.
               | Lia.lia | Lia.lia
               | exact Hn_len
               | exact Hlen_sx | exact Hlen_xy | exact Hlen_yz
-              | (* distribute_inv entry *) admit
+              | (* distribute_inv entry via helper *)
+                apply distribute_inv_entry with (ss := scalars) (ps := points_of px py pz);
+                [ exact Hn_len
+                | rewrite length_points_of_eq by Lia.lia; exact Hlen_sx
+                | rewrite length_points_of_eq by Lia.lia;
+                  apply (f_equal Z.to_nat) in Hlen4x;
+                  rewrite Nat2Z.id in Hlen4x; Lia.lia
+                | exact Hid4 ]
               | (* sep *) ecancel_assumption
               | rewrite map.get_put_diff by congruence; exact Hlo4_bx
               | rewrite map.get_put_diff by congruence; exact Hlo4_by

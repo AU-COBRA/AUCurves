@@ -4395,6 +4395,60 @@ Section PippengerSpec.
       (* Post-L3 state: l5 has all 18 locals set, mem5 has bucket arrays
          post-distribute + 11-cell frame, Hdist5 gives distribute_inv w 0
          (the "all scalars processed" state).  Segs 6a/6b/7/8/9 follow. *)
+
+      (* ============================================================
+         Segment 6a: store_zero [runx; runy; runz].
+         ============================================================ *)
+      unfold1_cmd_goal; cbv beta match delta [cmd_body].
+      cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+      fold WeakestPrecondition.cmd.
+      eexists; split.
+      { cbv [WeakestPrecondition.dexprs list_map list_map_body
+             WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hlo5_rx|].
+        eexists; split; [exact Hlo5_ry|].
+        eexists; split; [exact Hlo5_rz|].
+        reflexivity. }
+      eapply Semantics.weaken_call.
+      { eapply (HStoreZero runx runy runz run0x run0y run0z).
+        ecancel_assumption. }
+      cbv beta.
+      intros tr6a mem6a rets6a [Hrets6a [Htr6a Hm6a]].
+      subst rets6a tr6a.
+      destruct g1_identity as [[Xi Yi] Zi] eqn:HgI.
+      cbv match in Hm6a.
+      cbv [map.putmany_of_list_zip].
+      eexists; split; [reflexivity|].
+
+      (* ============================================================
+         Segment 6b: store_zero [wsx; wsy; wsz].
+         ============================================================ *)
+      cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+      fold WeakestPrecondition.cmd.
+      eexists; split.
+      { cbv [WeakestPrecondition.dexprs list_map list_map_body
+             WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hlo5_wx|].
+        eexists; split; [exact Hlo5_wy|].
+        eexists; split; [exact Hlo5_wz|].
+        reflexivity. }
+      eapply Semantics.weaken_call.
+      { eapply (HStoreZero wsx wsy wsz ws0x ws0y ws0z).
+        ecancel_assumption. }
+      cbv beta.
+      intros tr6b mem6b rets6b [Hrets6b [Htr6b Hm6b]].
+      subst rets6b tr6b.
+      rewrite HgI in Hm6b.
+      cbv match in Hm6b.
+      cbv [map.putmany_of_list_zip].
+      eexists; split; [reflexivity|].
+
+      (* After segs 6a/6b: mem has [FElem tight runx/y/z Xi,Yi,Zi] and
+         [FElem tight wsx/y/z Xi,Yi,Zi] (all 6 at g1_identity coords).
+         Next: seg 7 (L4 reduce, with bucket tighten bridge) + seg 8
+         (final HCurveAdd) + seg 9 (outer_inv via partial_msm_from). *)
       admit.
   Admitted.
 

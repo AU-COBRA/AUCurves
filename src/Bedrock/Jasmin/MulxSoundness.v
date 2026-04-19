@@ -77,6 +77,37 @@ Section Predicates.
         || expr_reads x a || expr_reads x b
     end.
 
+  (** True if command [c] WRITES to variable [x] anywhere (reads do
+      not count).  This is the right predicate for environment-
+      preservation arguments, since reads do not mutate the env.
+      [cmd_writes x c = true -> cmd_touches x c = true] but not the
+      converse. *)
+  Fixpoint cmd_writes (x : string) (c : jasmin_cmd) : bool :=
+    match c with
+    | JCskip => false
+    | JCseq c1 c2 => cmd_writes x c1 || cmd_writes x c2
+    | JCset y _ => String.eqb x y
+    | JCstore _ _ _ => false
+    | JCcall _ _ => false
+    | JCif _ ct cf => cmd_writes x ct || cmd_writes x cf
+    | JCwhile _ body => cmd_writes x body
+    | JCdecl _ _ body => cmd_writes x body
+    | JCadd_flags cf r _ _ => String.eqb x cf || String.eqb x r
+    | JCadcx co r _ _ _ => String.eqb x co || String.eqb x r
+    | JCmulx h l _ _ => String.eqb x h || String.eqb x l
+    | JCsub_flags cf r _ _ => String.eqb x cf || String.eqb x r
+    | JCsbb co r _ _ _ => String.eqb x co || String.eqb x r
+    end.
+
+  Lemma cmd_writes_implies_cmd_touches :
+    forall x c, cmd_writes x c = true -> cmd_touches x c = true.
+  Proof.
+    intros x c; induction c; simpl; intros H;
+      try discriminate;
+      repeat (rewrite Bool.orb_true_iff in *);
+      intuition.
+  Qed.
+
   (** No statement at positions strictly between [mul_idx] and
       [mulhuu_idx] touches [hi].  [n] is the running position. *)
   Fixpoint stmts_between_safe (hi : string)
@@ -362,6 +393,39 @@ Section WithWordCmd.
       apply update_other. exact Aco.
   Qed.
 
+  (** Weaker preservation: only writes matter for value preservation.
+      [cmd_writes x c = false → jeval env c env' → env' x = env x]. *)
+  Theorem cmd_writes_preserves_var :
+    forall c e e' x,
+      cmd_writes x c = false ->
+      jeval e c e' ->
+      e' x = e x.
+  Proof.
+    intros c e e' x Hnw H. revert x Hnw.
+    induction H; intros y Hnw; simpl in Hnw.
+    - reflexivity.
+    - apply orb_false_iff in Hnw as [A B].
+      specialize (IHjeval1 _ A). specialize (IHjeval2 _ B). congruence.
+    - apply update_other. exact Hnw.
+    - apply IHjeval. exact Hnw.
+    - apply orb_false_iff in Hnw as [A _]. apply IHjeval. exact A.
+    - apply orb_false_iff in Hnw as [_ B]. apply IHjeval. exact B.
+    - reflexivity.
+    - specialize (IHjeval1 _ Hnw). specialize (IHjeval2 _ Hnw). congruence.
+    - reflexivity.
+    - reflexivity.
+    - apply orb_false_iff in Hnw as [Acf Ar].
+      rewrite update_other by exact Ar. apply update_other. exact Acf.
+    - apply orb_false_iff in Hnw as [Aco Ar].
+      rewrite update_other by exact Ar. apply update_other. exact Aco.
+    - apply orb_false_iff in Hnw as [Ah Al].
+      rewrite update_other by exact Al. apply update_other. exact Ah.
+    - apply orb_false_iff in Hnw as [Acf Ar].
+      rewrite update_other by exact Ar. apply update_other. exact Acf.
+    - apply orb_false_iff in Hnw as [Aco Ar].
+      rewrite update_other by exact Ar. apply update_other. exact Aco.
+  Qed.
+
   (** All-statements version: if no statement in the list touches [x],
       then [x]'s value is preserved by [jeval_list]. *)
   Theorem jeval_list_unaffected :
@@ -571,8 +635,8 @@ Section WithWordCmd.
     /\ (forall c i, (mul_idx < i < mulhuu_idx)%nat ->
           nth_error cs i = Some c ->
           cmd_touches hi c = false
-          /\ (forall x, expr_reads x a = true -> cmd_touches x c = false)
-          /\ (forall x, expr_reads x b = true -> cmd_touches x c = false))
+          /\ (forall x, expr_reads x a = true -> cmd_writes x c = false)
+          /\ (forall x, expr_reads x b = true -> cmd_writes x c = false))
     /\ expr_reads lo a = false
     /\ expr_reads lo b = false
     /\ hi <> lo.
@@ -680,10 +744,10 @@ Section WithWordCmd.
                                 (a'' b'' : jasmin_expr),
       (* middle doesn't touch hi (soundness of moving hi-write earlier) *)
       (forall c, In c middle -> cmd_touches hi c = false) ->
-      (* middle doesn't touch any var read by a (so a's eval stable) *)
-      (forall c x, In c middle -> expr_reads x a = true -> cmd_touches x c = false) ->
-      (* middle doesn't touch any var read by b *)
-      (forall c x, In c middle -> expr_reads x b = true -> cmd_touches x c = false) ->
+      (* middle doesn't write any var read by a (so a's eval stable) *)
+      (forall c x, In c middle -> expr_reads x a = true -> cmd_writes x c = false) ->
+      (* middle doesn't write any var read by b *)
+      (forall c x, In c middle -> expr_reads x b = true -> cmd_writes x c = false) ->
       (* a'' and a have same eval under any env — post-def_map resolution *)
       (forall (ev : env), eval_jexpr ev a = eval_jexpr ev a'') ->
       (forall (ev : env), eval_jexpr ev b = eval_jexpr ev b'') ->
@@ -1044,7 +1108,7 @@ Section WithWordCmd.
       evaluation is preserved. *)
   Lemma eval_preserved_through_cmd :
     forall c expr env env',
-      (forall x, expr_reads x expr = true -> cmd_touches x c = false) ->
+      (forall x, expr_reads x expr = true -> cmd_writes x c = false) ->
       jeval env c env' ->
       eval_jexpr env' expr = eval_jexpr env expr.
   Proof.
@@ -1054,7 +1118,7 @@ Section WithWordCmd.
       specialize (Hsafe x).
       destruct (String.eqb x x) eqn:Heq; [|rewrite String.eqb_refl in Heq; discriminate].
       specialize (Hsafe eq_refl).
-      apply (cmd_touches_preserves_var _ _ _ _ Hsafe) in Hev. congruence.
+      apply (cmd_writes_preserves_var _ _ _ _ Hsafe) in Hev. congruence.
     - (* JEadd, JEsub, ..., JEmulhuu — all binary *)
       rewrite IHexpr1, IHexpr2; try reflexivity;
         simpl in Hsafe; intros x Hr; apply Hsafe;
@@ -1094,7 +1158,7 @@ Section WithWordCmd.
   (** Lift to jeval_list. *)
   Lemma eval_preserved_through_list :
     forall cs expr env env',
-      (forall c x, In c cs -> expr_reads x expr = true -> cmd_touches x c = false) ->
+      (forall c x, In c cs -> expr_reads x expr = true -> cmd_writes x c = false) ->
       jeval_list env cs env' ->
       eval_jexpr env' expr = eval_jexpr env expr.
   Proof.
@@ -1430,12 +1494,12 @@ Section WithWordCmd.
     (* m1's inserted JCmulx does not touch hi2 *)
     hi2 <> hi1 /\ hi2 <> lo1
     /\ expr_reads hi2 a1 = false /\ expr_reads hi2 b1 = false
-    /\ (* m1's inserted JCmulx does not touch any var read by a2 *)
+    /\ (* m1's inserted JCmulx does not write any var read by a2 *)
        (forall x, expr_reads x a2 = true ->
-          x <> hi1 /\ x <> lo1 /\ expr_reads x a1 = false /\ expr_reads x b1 = false)
+          x <> hi1 /\ x <> lo1)
     /\ (* ...or by b2 *)
        (forall x, expr_reads x b2 = true ->
-          x <> hi1 /\ x <> lo1 /\ expr_reads x a1 = false /\ expr_reads x b1 = false).
+          x <> hi1 /\ x <> lo1).
 
   (** Strong pairwise-disjointness: position AND name. *)
   Definition matches_strong_disjoint (ms : list mulx_match) : Prop :=
@@ -1660,14 +1724,26 @@ Section WithWordCmd.
     | JEload base _ => cmd_touches_any_read c base
     end.
 
-  (** No statement between [mi, mj] touches any var read by [op]. *)
+  (** Does command [c] write any variable read by expression [op]? *)
+  Fixpoint cmd_writes_any_read (c : jasmin_cmd) (op : jasmin_expr) : bool :=
+    match op with
+    | JEvar x => cmd_writes x c
+    | JElit _ => false
+    | JEadd a b | JEsub a b | JEmul a b | JEmulhuu a b
+    | JEand a b | JEor a b | JExor a b
+    | JEshr a b | JEshl a b | JEltu a b | JEeq a b =>
+        cmd_writes_any_read c a || cmd_writes_any_read c b
+    | JEload base _ => cmd_writes_any_read c base
+    end.
+
+  (** No statement between [mi, mj] writes any var read by [op]. *)
   Fixpoint stmts_between_operand_safe (op : jasmin_expr)
       (mi mj n : nat) (cs : list jasmin_cmd) : bool :=
     match cs with
     | nil => true
     | c :: rest =>
         let is_between := Nat.ltb mi n && Nat.ltb n mj in
-        (if is_between then negb (cmd_touches_any_read c op) else true)
+        (if is_between then negb (cmd_writes_any_read c op) else true)
         && stmts_between_operand_safe op mi mj (S n) rest
     end.
 
@@ -1714,6 +1790,36 @@ Section WithWordCmd.
     | JEload base _ => expr_reads_all_safe hi1 lo1 a1 b1 base
     end.
 
+  (** Every variable in [op] avoids both [hi] and [lo]. *)
+  Fixpoint expr_vars_avoid (hi lo : string) (op : jasmin_expr) : bool :=
+    match op with
+    | JEvar x => negb (String.eqb x hi) && negb (String.eqb x lo)
+    | JElit _ => true
+    | JEadd u v | JEsub u v | JEmul u v | JEmulhuu u v
+    | JEand u v | JEor u v | JExor u v
+    | JEshr u v | JEshl u v | JEltu u v | JEeq u v =>
+        expr_vars_avoid hi lo u && expr_vars_avoid hi lo v
+    | JEload base _ => expr_vars_avoid hi lo base
+    end.
+
+  Lemma expr_vars_avoid_sound :
+    forall hi lo op x,
+      expr_vars_avoid hi lo op = true ->
+      expr_reads x op = true ->
+      x <> hi /\ x <> lo.
+  Proof.
+    intros hi lo op. induction op; intros y Hav Hre; simpl in *;
+      try discriminate;
+      try (apply Bool.orb_true_iff in Hre as [Ha|Hb];
+           apply Bool.andb_true_iff in Hav as [Hca Hcb];
+           [apply IHop1; auto | apply IHop2; auto]).
+    - apply Bool.andb_true_iff in Hav as [Hhi Hlo].
+      apply String.eqb_eq in Hre. subst.
+      apply Bool.negb_true_iff in Hhi, Hlo.
+      apply String.eqb_neq in Hhi, Hlo. split; auto.
+    - apply IHop; auto.
+  Qed.
+
   (** Pairwise name-disjointness check (boolean).  Verifies
       [match_names_disjoint] structurally. *)
   Definition pair_names_disjoint_b (m1 m2 : mulx_match) : bool :=
@@ -1723,8 +1829,8 @@ Section WithWordCmd.
     && negb (String.eqb hi2 lo1)
     && negb (expr_reads hi2 a1)
     && negb (expr_reads hi2 b1)
-    && expr_reads_all_safe hi1 lo1 a1 b1 a2
-    && expr_reads_all_safe hi1 lo1 a1 b1 b2.
+    && expr_vars_avoid hi1 lo1 a2
+    && expr_vars_avoid hi1 lo1 b2.
 
   Fixpoint all_pair_names_disjoint_b (ms : list mulx_match) : bool :=
     match ms with
@@ -1794,6 +1900,21 @@ Section WithWordCmd.
     - apply IHop; auto.
   Qed.
 
+  Lemma cmd_writes_any_read_sound :
+    forall c op x,
+      cmd_writes_any_read c op = false ->
+      expr_reads x op = true ->
+      cmd_writes x c = false.
+  Proof.
+    intros c op. induction op; intros y Hcw Hre; simpl in *;
+      try discriminate;
+      try (apply Bool.orb_true_iff in Hre as [Ha|Hb];
+           apply Bool.orb_false_iff in Hcw as [Hca Hcb];
+           [apply IHop1; auto | apply IHop2; auto]).
+    - apply String.eqb_eq in Hre. subst. exact Hcw.
+    - apply IHop; auto.
+  Qed.
+
   (** [stmts_between_operand_safe] reflection. *)
   Lemma stmts_between_operand_safe_nth :
     forall op mi mj n cs i c x,
@@ -1801,7 +1922,7 @@ Section WithWordCmd.
       (mi < n + i < mj)%nat ->
       nth_error cs i = Some c ->
       expr_reads x op = true ->
-      cmd_touches x c = false.
+      cmd_writes x c = false.
   Proof.
     intros op mi mj n cs. revert n.
     induction cs as [|c0 cs IH]; intros n i c y Hsafe Hrange Hnth Hre.
@@ -1814,7 +1935,7 @@ Section WithWordCmd.
         rewrite Hrange' in Hsafe.
         apply andb_prop in Hsafe as [Hhd _].
         apply negb_true_iff in Hhd.
-        eapply cmd_touches_any_read_sound; eauto.
+        eapply cmd_writes_any_read_sound; eauto.
       + simpl in Hsafe. apply andb_prop in Hsafe as [_ Hsafe_tl].
         apply (IH (S n) i' c y); auto. lia.
   Qed.
@@ -1947,8 +2068,8 @@ Section WithWordCmd.
   Proof.
     intros [[[[[i1 j1] hi1] lo1] a1] b1] [[[[[i2 j2] hi2] lo2] a2] b2] H.
     unfold pair_names_disjoint_b in H.
-    apply Bool.andb_true_iff in H as [H Hsb].
-    apply Bool.andb_true_iff in H as [H Hsa].
+    apply Bool.andb_true_iff in H as [H Hb_av].
+    apply Bool.andb_true_iff in H as [H Ha_av].
     apply Bool.andb_true_iff in H as [H Hhi_b].
     apply Bool.andb_true_iff in H as [H Hhi_a].
     apply Bool.andb_true_iff in H as [Hhihi Hhilo].
@@ -1960,8 +2081,8 @@ Section WithWordCmd.
     split; [exact Hhi_a|].
     split; [exact Hhi_b|].
     split.
-    - intros y Hry. apply (expr_reads_all_safe_implies _ _ _ _ _ Hsa); auto.
-    - intros y Hry. apply (expr_reads_all_safe_implies _ _ _ _ _ Hsb); auto.
+    - intros y Hry. apply (expr_vars_avoid_sound _ _ _ _ Ha_av); auto.
+    - intros y Hry. apply (expr_vars_avoid_sound _ _ _ _ Hb_av); auto.
   Qed.
 
   (** Bridge: pairwise boolean disjoint implies matches_strong_disjoint. *)
@@ -2255,24 +2376,24 @@ Section WithWordCmd.
           destruct (String.eqb hi' lo) eqn:E2;
             [apply String.eqb_eq in E2; contradiction|].
           rewrite Hhi'a, Hhi'b. reflexivity.
-        + (* x reads a' -> x doesn't touch JCmulx hi lo a b *)
+        + (* x reads a' -> x not written by JCmulx hi lo a b *)
           intros x Hrx.
-          specialize (HRa x Hrx) as [Hxhi [Hxlo [Hxa Hxb]]].
+          specialize (HRa x Hrx) as [Hxhi Hxlo].
           cbn.
           destruct (String.eqb x hi) eqn:E1;
             [apply String.eqb_eq in E1; contradiction|].
           destruct (String.eqb x lo) eqn:E2;
             [apply String.eqb_eq in E2; contradiction|].
-          rewrite Hxa, Hxb. reflexivity.
+          reflexivity.
         + (* x reads b' -> similar *)
           intros x Hrx.
-          specialize (HRb x Hrx) as [Hxhi [Hxlo [Hxa Hxb]]].
+          specialize (HRb x Hrx) as [Hxhi Hxlo].
           cbn.
           destruct (String.eqb x hi) eqn:E1;
             [apply String.eqb_eq in E1; contradiction|].
           destruct (String.eqb x lo) eqn:E2;
             [apply String.eqb_eq in E2; contradiction|].
-          rewrite Hxa, Hxb. reflexivity.
+          reflexivity.
       - destruct (Nat.eq_dec i mj) as [Heq_mj | Hneq_mj].
         + (* i = mj: now JCskip *)
           subst i.

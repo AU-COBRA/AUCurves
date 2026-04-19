@@ -133,12 +133,30 @@ Eval vm_compute in length schoolbook_list.
 Eval vm_compute in length (scan_mulx_pairs schoolbook_list).
 Eval vm_compute in wf_mulx_list_strong_b schoolbook_list.
 
-(* Diagnostic: confirm the schoolbook triggers the pair-names-disjoint
-   limitation.  We don't Qed a soundness theorem for the full 16-pair
-   pattern because the strong check legitimately fails. *)
-Example schoolbook_strong_check_fails :
-  wf_mulx_list_strong_b schoolbook_list = false.
+(* After fixing pair_names_disjoint_b to only check writes (not reads),
+   the full 16-pair schoolbook now passes the strong check. *)
+Example schoolbook_strong_check_passes :
+  wf_mulx_list_strong_b schoolbook_list = true.
 Proof. vm_compute. reflexivity. Qed.
+
+Section SoundSchoolbook.
+  Context {width : Z} {BW : Bitwidth width}
+          {w : word.word width} {w_ok : word.ok w}.
+
+  (** Full 16-pair schoolbook lowering is sound: after fixing
+      pair_names_disjoint_b to only check writes, shared operands like
+      [e0] across all column-0 pairs are no longer falsely rejected. *)
+  Theorem schoolbook_lower_sound :
+    forall (e e' : string -> w),
+      @jeval_list width w e schoolbook_list e' ->
+      @jeval_list width w e (lower_mulx_pairs schoolbook_list) e'.
+  Proof.
+    intros e e' H.
+    apply lower_mulx_pairs_list_correct_via_scan_check; auto.
+    apply scan_mulx_pairs_valid_strong.
+    apply schoolbook_strong_check_passes.
+  Qed.
+End SoundSchoolbook.
 
 (* ----- 4-pair subset with distinct operands per pair --------------- *)
 

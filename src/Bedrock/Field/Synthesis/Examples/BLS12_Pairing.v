@@ -267,434 +267,13 @@ Section BLS12_Pairing.
            [expr_fp_snd (expr.var "out"); expr.var "tmp"; expr_fp_snd (expr.var "tmp")])
        ))).
 
-    Lemma bls12_Fp2_mul_xi_name_eq : fst bls12_Fp2_mul_xi = fp2_mul_xi_name.
-    Proof. reflexivity. Qed.
+    (* The bls12_Fp2_mul_xi WP correctness proofs (bls12_Fp2_mul_xi_nested,
+       array_scalar_precise, FElem_Fp_precise, FElem_Fp2_precise,
+       bls12_Fp2_mul_xi_ok) live in BLS12_Fp2_MulXi_Proof.v as a separately-
+       cached compilation unit.  Inlined here, the 301-line nested proof body
+       added ~30 min to every BLS12_Pairing.v rebuild.  Nothing downstream
+       consumes these lemmas, so they are not re-exported from this file. *)
 
-    (* The Fp2_mul_xi WP proof is mechanically the same as the old proof that was
-       in CubicFieldExtensions.v (git c2ebaf111, 342 lines). It steps through
-       2 felem_copy calls + 1 sub + 1 add, with sep logic frame management.
-       The proof was verified Qed in CubicFieldExtensions and is recoverable. *)
-    (* Fp-level spec instances needed by the mul_xi proof *)
-    Local Instance spec_of_fp_copy : spec_of PrimeField.felem_copy :=
-      AbstractField.spec_of_felem_copy (F:=Fp).
-    Local Instance spec_of_fp_sub : spec_of PrimeField.sub :=
-      AbstractField.binop_spec AbstractField.bin_sub (F:=Fp).
-    Local Instance spec_of_fp_add : spec_of PrimeField.add :=
-      AbstractField.binop_spec AbstractField.bin_add (F:=Fp).
-
-    Local Notation FElem_Fp := (@AbstractField.FElem _ _ _ _ _ _ bls12_fp_rep).
-    Local Notation fp_felem_offset_word := (word.of_Z fp_felem_offset).
-
-    (* ============================================================== *)
-    (* Nested-sep version of Fp2_mul_xi (combined sep precondition)   *)
-    (* ============================================================== *)
-    Local Notation FElem_Fp2 := (@AbstractField.FElem _ _ _ _ _ _ bls12_Fp2_rep).
-
-    Lemma bls12_Fp2_mul_xi_nested :
-      forall functions,
-        map.get functions fp2_mul_xi_name = Some (snd bls12_Fp2_mul_xi) ->
-        spec_of_fp_copy functions ->
-        spec_of_fp_sub functions ->
-        spec_of_fp_add functions ->
-        forall pout px old_out x Rr tr mem0,
-        @AbstractField.bounded_by _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep
-          (@AbstractField.tight_bounds _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep) x ->
-        (FElem_Fp2 px x ⋆ (FElem_Fp2 pout old_out ⋆ Rr)) mem0 ->
-        WeakestPrecondition.call functions fp2_mul_xi_name tr mem0 [pout; px]
-          (fun tr' mem' rets => rets = [] /\ tr = tr' /\
-            exists out',
-              @AbstractField.feval _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep out' =
-              BLS12Fp6Spec.fp2_mul_xi PrimeField.M_pos bls12_beta bls12_xi_re bls12_xi_im
-                (@AbstractField.feval _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep x) /\
-              @AbstractField.bounded_by _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep
-                (@AbstractField.loose_bounds _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep) out' /\
-              (FElem_Fp2 pout out' ⋆ (FElem_Fp2 px x ⋆ Rr)) mem').
-    Proof.
-      intros functions HEnv HFcopy HFsub HFadd.
-      intros pout px old_out x Rr tr mem0 Hbx Hsep.
-      eapply start_func; [exact HEnv | clear HEnv].
-      cbv match beta delta [WeakestPrecondition.func bls12_Fp2_mul_xi expr_fp_snd].
-      eexists. split. { exact eq_refl. }
-      repeat straightline.
-      (* === Stackalloc === *)
-      split. { apply Z_mod_mult. }
-      intros a_tmp mStack mCt HaSt HmSt.
-      (* Convert anybytes to Fp2 FElem *)
-      pose proof (@AbstractField.FElem_from_bytes _ (Fp2_field_parameters bls12_beta fp2_prefix)
-        _ _ _ _ (Fp2_field_representation bls12_beta fp2_prefix)
-        ltac:(exact _) ltac:(exact _) a_tmp) as Hfb.
-      unfold AbstractField.Placeholder in Hfb.
-      pose proof (proj1 (Hfb mStack) HaSt) as [tmp_val Htmp]. clear Hfb.
-      (* Decompose the combined sep *)
-      destruct Hsep as [m_x [m_or [[Heq_mem0 Hd_x_or] [Hfx Hor]]]].
-      destruct Hor as [m_o [m_rr [[Heq_or Hd_o_rr] [Hfe_out Hrr]]]]. subst m_or.
-      subst mem0.
-      (* Split Fp2 FElems into Fp halves *)
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_split _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep
-        bls12_beta fp2_prefix px x m_x Hfx)
-        as [m_x0 [m_x1 [Hsp_x01 [Hx0 Hx1]]]].
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_split _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep
-        bls12_beta fp2_prefix pout old_out m_o Hfe_out)
-        as [m_o0 [m_o1 [Hsp_o01 [Ho0 Ho1]]]].
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_split _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep
-        bls12_beta fp2_prefix a_tmp tmp_val mStack Htmp)
-        as [m_t0 [m_t1 [Hsp_t01 [Ht0 Ht1]]]].
-      destruct Hsp_x01 as [Heq_x01 Hd_x01]. subst m_x.
-      destruct Hsp_o01 as [Heq_o01 Hd_o01]. subst m_o.
-      destruct Hsp_t01 as [Heq_t01 Hd_t01]. subst mStack.
-      destruct HmSt as [Heq_mCt Hd_mCt].
-      subst mCt. rewrite <- !map.putmany_assoc.
-      (* Decompose Fp2 bounded_by into Fp halves *)
-      change (@AbstractField.bounded_by _ (Fp2_field_parameters bls12_beta fp2_prefix) _ _ _ _ (Fp2_field_representation bls12_beta fp2_prefix))
-        with (fun b ws => @AbstractField.bounded_by _ _ _ _ _ _ bls12_fp_rep b
-          (QuadraticFieldExtensionsSpecs.fst_felem ws)
-          /\ @AbstractField.bounded_by _ _ _ _ _ _ bls12_fp_rep b
-          (QuadraticFieldExtensionsSpecs.snd_felem ws)) in Hbx.
-      cbv beta in Hbx. destruct Hbx as [Hbx0 Hbx1].
-      (* Derive all pairwise disjointness *)
-      split_all_disjointness.
-      (* Build master sep at Fp level — all 7 atoms visible *)
-      assert (Hsep_fp :
-        (FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-         (FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x) ⋆
-          (FElem_Fp pout (QuadraticFieldExtensionsSpecs.fst_felem old_out) ⋆
-           (FElem_Fp (word.add pout fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem old_out) ⋆
-            (Rr ⋆
-             (FElem_Fp a_tmp (QuadraticFieldExtensionsSpecs.fst_felem tmp_val) ⋆
-              FElem_Fp (word.add a_tmp fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem tmp_val)))))))
-        (map.putmany m_x0 (map.putmany m_x1 (map.putmany m_o0 (map.putmany m_o1
-          (map.putmany m_rr (map.putmany m_t0 m_t1))))))).
-      { build_sep. }
-      (* === Call 1: copy(tmp, x) — tmp.c0 := x.c0 === *)
-      eexists. split. { solve_dexprs. }
-      eapply Semantics.weaken_call.
-      1: { eapply (HFcopy a_tmp px
-             (QuadraticFieldExtensionsSpecs.fst_felem tmp_val)
-             (QuadraticFieldExtensionsSpecs.fst_felem x)
-             (FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x) ⋆
-               (FElem_Fp pout (QuadraticFieldExtensionsSpecs.fst_felem old_out) ⋆
-                (FElem_Fp (word.add pout fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem old_out) ⋆
-                 (Rr ⋆
-                  FElem_Fp (word.add a_tmp fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem tmp_val)))))
-             (FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-               (FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x) ⋆
-                (FElem_Fp pout (QuadraticFieldExtensionsSpecs.fst_felem old_out) ⋆
-                 (FElem_Fp (word.add pout fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem old_out) ⋆
-                  (Rr ⋆
-                   FElem_Fp (word.add a_tmp fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem tmp_val))))))
-             tr).
-           split; pose proof Hsep_fp as H'; ecancel_assumption. }
-      intros t1 m1 rets1 [Hrets1 [Htr1 Hsep_c1]].
-      subst rets1. symmetry in Htr1. subst t1.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-      repeat straightline.
-      (* === Call 2: copy(tmp+off, x+off) — tmp.c1 := x.c1 === *)
-      eapply Semantics.weaken_call.
-      1: { eapply (HFcopy (word.add a_tmp fp_felem_offset_word)
-                           (word.add px fp_felem_offset_word)
-             (QuadraticFieldExtensionsSpecs.snd_felem tmp_val)
-             (QuadraticFieldExtensionsSpecs.snd_felem x)
-             (FElem_Fp a_tmp (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-               (FElem_Fp pout (QuadraticFieldExtensionsSpecs.fst_felem old_out) ⋆
-                (FElem_Fp (word.add pout fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem old_out) ⋆
-                 (Rr ⋆
-                  FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x)))))
-             (FElem_Fp a_tmp (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-               (FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-                (FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x) ⋆
-                 (FElem_Fp pout (QuadraticFieldExtensionsSpecs.fst_felem old_out) ⋆
-                  (FElem_Fp (word.add pout fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem old_out) ⋆
-                   Rr)))))
-             tr).
-           split; pose proof Hsep_c1 as H'; ecancel_assumption. }
-      intros t2 m2 rets2 [Hrets2 [Htr2 Hsep_c2]].
-      subst rets2. symmetry in Htr2. subst t2.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-      repeat straightline.
-      (* Call 3: sub(out, tmp, tmp+off) *)
-      eapply Semantics.weaken_call.
-      1: { eapply (HFsub pout a_tmp (word.add a_tmp fp_felem_offset_word)
-             (QuadraticFieldExtensionsSpecs.fst_felem old_out)
-             (QuadraticFieldExtensionsSpecs.fst_felem x)
-             (QuadraticFieldExtensionsSpecs.snd_felem x)
-             _ tr).
-           split; [exact Hbx0 |].
-           split; [exact Hbx1 |].
-           split.
-           { eexists. pose proof Hsep_c2 as H'. ecancel_assumption. }
-           split.
-           { eexists. pose proof Hsep_c2 as H'. ecancel_assumption. }
-           { pose proof Hsep_c2 as H'. ecancel_assumption. } }
-      intros t3 m3 rets3 [Hrets3 [Htr3 [sub_out [Hfeval_sub [Hbound_sub Hsep_s]]]]].
-      subst rets3. symmetry in Htr3. subst t3.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-      repeat straightline.
-      (* === Call 4: add(out+off, tmp, tmp+off) — out.c1 := x.c0 + x.c1 === *)
-      eapply Semantics.weaken_call.
-      1: { eapply (HFadd (word.add pout fp_felem_offset_word)
-                          a_tmp (word.add a_tmp fp_felem_offset_word)
-             (QuadraticFieldExtensionsSpecs.snd_felem old_out)
-             (QuadraticFieldExtensionsSpecs.fst_felem x)
-             (QuadraticFieldExtensionsSpecs.snd_felem x)
-             _ tr).
-           split; [exact Hbx0 |].
-           split; [exact Hbx1 |].
-           split.
-           { eexists. pose proof Hsep_s as H'. ecancel_assumption. }
-           split.
-           { eexists. pose proof Hsep_s as H'. ecancel_assumption. }
-           { pose proof Hsep_s as H'. ecancel_assumption. } }
-      intros t4 m4 rets4 [Hrets4 [Htr4 [add_out [Hfeval_add [Hbound_add Hsep_a]]]]].
-      subst rets4. symmetry in Htr4. subst t4.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-      (* === Stack dealloc === *)
-      assert (Hsep_split :
-        ((FElem_Fp pout sub_out ⋆
-          (FElem_Fp (word.add pout fp_felem_offset_word) add_out ⋆
-           (FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-            (FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x) ⋆ Rr)))) ⋆
-         (FElem_Fp a_tmp (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-          FElem_Fp (word.add a_tmp fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x)))
-        m4).
-      { pose proof Hsep_a as H'. ecancel_assumption. }
-      destruct Hsep_split as [m_rest [m_stack [[Heq_m4 Hd_rs] [Hrest Hstack]]]].
-      destruct Hstack as [m_st0 [m_st1 [[Heq_st Hd_st] [Hst0 Hst1]]]]. subst m_stack.
-      assert (Hlen_st0 : Datatypes.length (QuadraticFieldExtensionsSpecs.fst_felem x) =
-        @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-      { unfold AbstractField.FElem, Bignum.Bignum in Hst0.
-        destruct Hst0 as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-      assert (Hlen_st1 : Datatypes.length (QuadraticFieldExtensionsSpecs.snd_felem x) =
-        @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-      { unfold AbstractField.FElem, Bignum.Bignum in Hst1.
-        destruct Hst1 as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-      assert (Hjoin_st : (FElem_Fp a_tmp (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-        FElem_Fp (word.add a_tmp fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x))
-        (map.putmany m_st0 m_st1)).
-      { exists m_st0, m_st1. split; [split; [reflexivity | exact Hd_st] |].
-        split; [exact Hst0 | exact Hst1]. }
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_join _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep bls12_beta fp2_prefix
-        a_tmp (QuadraticFieldExtensionsSpecs.fst_felem x)
-        (QuadraticFieldExtensionsSpecs.snd_felem x)
-        (map.putmany m_st0 m_st1) Hlen_st0 Hlen_st1 Hjoin_st) as Hfp2_st.
-      pose proof (@AbstractField.FElem_to_bytes _ _ _ _ ltac:(exact _) ltac:(exact _) _
-        (Fp2_field_parameters bls12_beta fp2_prefix)
-        (Fp2_field_representation bls12_beta fp2_prefix)
-        a_tmp _ (map.putmany m_st0 m_st1) Hfp2_st) as Hanybytes_st.
-      unfold AbstractField.Placeholder in Hanybytes_st.
-      exists m_rest, (map.putmany m_st0 m_st1).
-      split. { exact Hanybytes_st. }
-      split. { split. { exact Heq_m4. } { exact Hd_rs. } }
-      cbv [list_map get]. split. { exact eq_refl. } split. { exact eq_refl. }
-      (* === Final postcondition === *)
-      exists (sub_out ++ add_out).
-      (* Get output lengths *)
-      assert (Hlen_sub : Datatypes.length sub_out = @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-      { pose proof Hrest as Hrest'.
-        destruct Hrest' as [m_A [m_B1 [[_ _] [HA _]]]].
-        unfold AbstractField.FElem, Bignum.Bignum in HA.
-        destruct HA as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-      assert (Hlen_add : Datatypes.length add_out = @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-      { pose proof Hrest as Hrest'.
-        destruct Hrest' as [m_A [m_B1 [[_ _] [_ HB1]]]].
-        destruct HB1 as [m_B [m_C1 [[_ _] [HB _]]]].
-        unfold AbstractField.FElem, Bignum.Bignum in HB.
-        destruct HB as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-      (* feval — reduce feval at Fp2 level to Fp components, then use ring *)
-      split.
-      { (* Step 1: Unfold feval of the output pair (sub_out ++ add_out) *)
-        assert (Hfeval_out :
-          @AbstractField.feval _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep (sub_out ++ add_out) =
-          (@AbstractField.feval _ _ _ _ _ _ bls12_fp_rep sub_out,
-           @AbstractField.feval _ _ _ _ _ _ bls12_fp_rep add_out)).
-        { unfold AbstractField.feval, bls12_Fp2_rep,
-                 QuadraticFieldExtensionsSpecs.Fp2_field_representation,
-                 QuadraticFieldExtensionsSpecs.fst_felem,
-                 QuadraticFieldExtensionsSpecs.snd_felem.
-          rewrite (QuadraticFieldExtensions.firstn_app' _ _ _ Hlen_sub).
-          rewrite (QuadraticFieldExtensions.skipn_app _ _ _ Hlen_sub).
-          reflexivity. }
-        (* Step 2: Unfold feval of the input x *)
-        assert (Hfeval_x :
-          @AbstractField.feval _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep x =
-          (@AbstractField.feval _ _ _ _ _ _ bls12_fp_rep (QuadraticFieldExtensionsSpecs.fst_felem x),
-           @AbstractField.feval _ _ _ _ _ _ bls12_fp_rep (QuadraticFieldExtensionsSpecs.snd_felem x))).
-        { unfold AbstractField.feval, bls12_Fp2_rep,
-                 QuadraticFieldExtensionsSpecs.Fp2_field_representation.
-          reflexivity. }
-        rewrite Hfeval_out, Hfeval_x.
-        (* Step 3: Unfold bin_model in Hfeval_sub and Hfeval_add to F.sub/F.add *)
-        cbv [AbstractField.bin_model AbstractField.bin_sub AbstractField.Fsub
-             AbstractField.bin_add AbstractField.Fadd] in Hfeval_sub, Hfeval_add.
-        rewrite Hfeval_sub, Hfeval_add.
-        (* Step 4: Unfold fp2_mul_xi and the constants, close with ring *)
-        cbv [BLS12Fp6Spec.fp2_mul_xi Crypto.Spec.BLS12Pairing.Fp6.fp2_mul_xi
-             bls12_xi_re bls12_xi_im fst snd].
-        assert (Hbeta_opp : bls12_beta = @F.opp PrimeField.M_pos (@F.one PrimeField.M_pos)).
-        { unfold bls12_beta. change (-1)%Z with (Z.opp 1%Z).
-          rewrite F.of_Z_opp. reflexivity. }
-        rewrite Hbeta_opp.
-        apply injective_projections; cbn [fst snd];
-        change bls12_M_pos with PrimeField.M_pos.
-        - ring_simplify. reflexivity.
-        - ring_simplify. reflexivity. }
-      (* bounded_by *)
-      split.
-      { unfold bounded_by, AbstractField.bounded_by, bls12_Fp2_rep, bls12_Fp2_params,
-          CubicFieldExtensions.Fp2_repr_inst, Fp2_field_representation. simpl.
-        unfold QuadraticFieldExtensionsSpecs.fst_felem, QuadraticFieldExtensionsSpecs.snd_felem.
-        rewrite <- Hlen_sub.
-        rewrite (QuadraticFieldExtensions.firstn_app' _ _ _ (eq_refl _)).
-        rewrite (QuadraticFieldExtensions.skipn_app _ _ _ (eq_refl _)).
-        split; assumption. }
-      (* sep: join output Fp halves to Fp2, reconstruct input Fp2, provide with Rr *)
-      { destruct Hrest as [m_sub [m_tail [[Heq_rest Hd_sub_tail] [Hsub_fe Htail]]]].
-        destruct Htail as [m_add [m_tail2 [[Heq_tail Hd_add_tail2] [Hadd_fe Htail2]]]].
-        subst m_tail.
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_sub_tail) as [Hd_sub_add Hd_sub_tail2].
-        destruct Htail2 as [m_px0 [m_tail3 [[Heq_tail2 Hd_px0_tail3] [Hpx0_fe Htail3]]]].
-        subst m_tail2.
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_add_tail2) as [Hd_add_px0 Hd_add_tail3].
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_sub_tail2) as [Hd_sub_px0 Hd_sub_tail3].
-        destruct Htail3 as [m_px1 [m_rr' [[Heq_tail3 Hd_px1_rr'] [Hpx1_fe Hrr']]]]. subst m_tail3.
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_px0_tail3) as [Hd_px0_px1 Hd_px0_rr'].
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_add_tail3) as [Hd_add_px1 Hd_add_rr'].
-        pose proof (proj1 (map.disjoint_putmany_r _ _ _) Hd_sub_tail3) as [Hd_sub_px1 Hd_sub_rr'].
-        (* Join output Fp halves *)
-        assert (Hjoin_out : (FElem_Fp pout sub_out ⋆
-          FElem_Fp (word.add pout fp_felem_offset_word) add_out) (map.putmany m_sub m_add)).
-        { exists m_sub, m_add. split; [split; [reflexivity | exact Hd_sub_add] |].
-          split; [exact Hsub_fe | exact Hadd_fe]. }
-        pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_join _ _ _ _
-          ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep bls12_beta fp2_prefix
-          pout sub_out add_out (map.putmany m_sub m_add) Hlen_sub Hlen_add Hjoin_out) as Hfp2_out.
-        (* Join input Fp halves *)
-        assert (Hlen_px0 : Datatypes.length (QuadraticFieldExtensionsSpecs.fst_felem x) =
-          @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-        { unfold AbstractField.FElem, Bignum.Bignum in Hpx0_fe.
-          destruct Hpx0_fe as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-        assert (Hlen_px1 : Datatypes.length (QuadraticFieldExtensionsSpecs.snd_felem x) =
-          @AbstractField.felem_size_in_words _ _ _ _ _ _ bls12_fp_rep).
-        { unfold AbstractField.FElem, Bignum.Bignum in Hpx1_fe.
-          destruct Hpx1_fe as [? [? [? [[? Hlen'] ?]]]]. exact Hlen'. }
-        assert (Hjoin_x : (FElem_Fp px (QuadraticFieldExtensionsSpecs.fst_felem x) ⋆
-          FElem_Fp (word.add px fp_felem_offset_word) (QuadraticFieldExtensionsSpecs.snd_felem x))
-          (map.putmany m_px0 m_px1)).
-        { exists m_px0, m_px1. split; [split; [reflexivity | exact Hd_px0_px1] |].
-          split; [exact Hpx0_fe | exact Hpx1_fe]. }
-        pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_join _ _ _ _
-          ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep bls12_beta fp2_prefix
-          px (QuadraticFieldExtensionsSpecs.fst_felem x) (QuadraticFieldExtensionsSpecs.snd_felem x)
-          (map.putmany m_px0 m_px1) Hlen_px0 Hlen_px1 Hjoin_x) as Hfp2_x.
-        (* Reassemble x from halves *)
-        assert (Hx_eq : x = List.app (QuadraticFieldExtensionsSpecs.fst_felem x)
-                                      (QuadraticFieldExtensionsSpecs.snd_felem x)).
-        { unfold QuadraticFieldExtensionsSpecs.fst_felem, QuadraticFieldExtensionsSpecs.snd_felem.
-          symmetry. apply List.firstn_skipn. }
-        rewrite Hx_eq.
-        (* Build final sep: FElem_Fp2 pout out' * (FElem_Fp2 px x * Rr) *)
-        exists (map.putmany m_sub m_add), (map.putmany (map.putmany m_px0 m_px1) m_rr').
-        split; [split |].
-        { subst m_rest. rewrite <- !map.putmany_assoc. reflexivity. }
-        { apply map.disjoint_putmany_r. split.
-          { apply map.disjoint_putmany_l. split.
-            { apply map.disjoint_putmany_r. split; [exact Hd_sub_px0 | exact Hd_sub_px1]. }
-            { apply map.disjoint_putmany_r. split; [exact Hd_add_px0 | exact Hd_add_px1]. } }
-          { apply map.disjoint_putmany_l. split; [exact Hd_sub_rr' | exact Hd_add_rr']. } }
-        split. { exact Hfp2_out. }
-        exists (map.putmany m_px0 m_px1), m_rr'.
-        split; [split; [reflexivity |] |].
-        { apply map.disjoint_putmany_l. split; [exact Hd_px0_rr' | exact Hd_px1_rr']. }
-        split. { exact Hfp2_x. }
-        exact Hrr'. }
-    Qed.
-
-    (* ============================================================== *)
-    (* Sep algebra helpers for the unop_spec wrapper                   *)
-    (* ============================================================== *)
-
-    Local Notation mem := (@map.rep _ _ BasicC64Semantics.mem).
-
-    Local Lemma array_scalar_precise : forall sz p v (m1 m2 : mem),
-      array scalar sz p v m1 -> array scalar sz p v m2 -> m1 = m2.
-    Proof.
-      intros sz p v. revert p. induction v; intros p m1 m2 H1 H2.
-      - simpl in *. destruct H1, H2. subst. reflexivity.
-      - simpl in H1, H2.
-        destruct H1 as [ms1 [mr1 [[? ?] [Hs1 Ha1]]]].
-        destruct H2 as [ms2 [mr2 [[? ?] [Hs2 Ha2]]]]. subst.
-        unfold scalar, truncated_scalar, truncated_word in Hs1, Hs2.
-        simpl in Hs1, Hs2. unfold truncated_scalar in Hs1, Hs2.
-        cbv [sepclause_of_map] in Hs1, Hs2. subst.
-        f_equal. eapply IHv; eassumption.
-    Qed.
-
-    Local Lemma FElem_Fp_precise : forall p v (m1 m2 : mem),
-      FElem_Fp p v m1 -> FElem_Fp p v m2 -> m1 = m2.
-    Proof.
-      intros p v m1 m2 H1 H2.
-      unfold AbstractField.FElem, bls12_fp_rep in *. simpl in *.
-      unfold Bignum.Bignum in *.
-      destruct H1 as [me1 [ma1 [Hsp1 [Hemp1 Harr1]]]].
-      destruct H2 as [me2 [ma2 [Hsp2 [Hemp2 Harr2]]]].
-      cbv [emp] in *. destruct Hemp1 as [? _]. destruct Hemp2 as [? _]. subst.
-      destruct Hsp1 as [? _]. destruct Hsp2 as [? _].
-      rewrite map.putmany_empty_l in *. subst.
-      eapply array_scalar_precise; eassumption.
-    Qed.
-
-    Local Lemma FElem_Fp2_precise : forall p v (m1 m2 : mem),
-      FElem_Fp2 p v m1 -> FElem_Fp2 p v m2 -> m1 = m2.
-    Proof.
-      intros p v m1 m2 H1 H2.
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_split _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep
-        bls12_beta fp2_prefix p v m1 H1)
-        as [m1a [m1b [Hsp1 [Ha1 Hb1]]]].
-      pose proof (@QuadraticFieldExtensions.Fp2_raw_FElem_split _ _ _ _
-        ltac:(exact _) ltac:(exact _) bls12_prime_params bls12_fp_rep
-        bls12_beta fp2_prefix p v m2 H2)
-        as [m2a [m2b [Hsp2 [Ha2 Hb2]]]].
-      destruct Hsp1 as [? Hd1]. destruct Hsp2 as [? Hd2]. subst.
-      f_equal; eapply FElem_Fp_precise; eassumption.
-    Qed.
-
-    (* ============================================================== *)
-    (* Fp2_mul_xi: unop_spec_nested wrapper                           *)
-    (* ============================================================== *)
-
-    (* Local UnOp matching CubicFieldExtensions.un_Fp2_mul_xi *)
-    Local Instance un_Fp2_mul_xi
-      : @AbstractField.UnOp _ _ _ _ (Fp*Fp)%type bls12_Fp2_params bls12_Fp2_rep
-          fp2_mul_xi_name :=
-      {| AbstractField.un_model := BLS12Fp6Spec.fp2_mul_xi PrimeField.M_pos bls12_beta bls12_xi_re bls12_xi_im;
-         AbstractField.un_xbounds := @AbstractField.tight_bounds _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep;
-         AbstractField.un_outbounds := @AbstractField.loose_bounds _ bls12_Fp2_params _ _ _ _ bls12_Fp2_rep |}.
-
-    Lemma bls12_Fp2_mul_xi_ok :
-      forall functions,
-        map.get functions fp2_mul_xi_name = Some (snd bls12_Fp2_mul_xi) ->
-        spec_of_fp_copy functions ->
-        spec_of_fp_sub functions ->
-        spec_of_fp_add functions ->
-        AbstractField.unop_spec_nested un_Fp2_mul_xi functions.
-    Proof.
-      intros functions HEnv HFcopy HFsub HFadd.
-      unfold AbstractField.unop_spec_nested.
-      intros pout px old_out x Rr tr mem0 [Hbx Hsep].
-      eapply Semantics.weaken_call.
-      1: { eapply bls12_Fp2_mul_xi_nested; try eassumption. }
-      cbv beta. intros t' m' rets Hpost.
-      destruct Hpost as [Hrets [Htr [out' [Hfeval [Hbounds Hsep']]]]].
-      split. { exact Hrets. }
-      split. { exact Htr. }
-      exists out'. split. { exact Hfeval. }
-      split. { exact Hbounds. }
-      exact Hsep'.
-    Qed.
 
     (* ============================================================== *)
     (* Fp6/Fp12/PairingOps function bodies from lower layers           *)
@@ -1003,7 +582,9 @@ Section BLS12_Pairing.
 
     Local Definition cyc_sqr_body (out f : string) : Syntax.cmd.cmd :=
       (* out = cyc_sqr(f) where f = (c0, c1) in Fp6 × Fp6
-         new_c0 = 1 + 2*v*c1^2,  new_c1 = 2*c0*c1 *)
+         new_c0 = 1 + 2*v*c1^2,  new_c1 = 2*c0*c1
+         Requires cyc_t0, cyc_t1 (Fp6 buffers) and cyc_one (Fp buffer holding
+         the field element 1) to be in scope, stackalloc'd by the caller. *)
       let c0 := expr.var f in
       let c1 := expr.op bopname.add (expr.var f) (expr.literal (AbstractField.felem_size_in_bytes (F:=Fp6))) in
       let out_c0 := expr.var out in
@@ -1017,8 +598,10 @@ Section BLS12_Pairing.
         cmd.call [] fp6_mul_by_v_name [expr.var "cyc_t0"; expr.var "cyc_t0"];
         (* out_c0 = 2*t0 *)
         cmd.call [] fp6_add_name [out_c0; expr.var "cyc_t0"; expr.var "cyc_t0"];
-        (* out_c0 += 1 (add Fp6 identity: just add 1 to first Fp element) *)
-        cmd.call [] (AbstractField.add (F:=Fp)) [out_c0; out_c0; expr.literal 1];
+        (* out_c0 += 1 (add 1 to the deepest Fp component of out_c0, which
+           corresponds to adding 1 to the Fp12 identity).  cyc_one is an Fp
+           buffer pre-loaded with 1 by the caller. *)
+        cmd.call [] (AbstractField.add (F:=Fp)) [out_c0; out_c0; expr.var "cyc_one"];
         (* out_c1 = 2*t1 *)
         cmd.call [] fp6_add_name [out_c1; expr.var "cyc_t1"; expr.var "cyc_t1"]
       ].
@@ -1076,12 +659,14 @@ Section BLS12_Pairing.
        Uses inline exp-by-x loops, not function calls, to avoid overhead.
        Each exp-by-x: 63 squarings + about 5 Fp12 multiplications. *)
 
-    (* Helper: inline exp-by-x loop body *)
+    (* Helper: inline exp-by-x loop body.
+       Uses cyclotomic squaring (cyc_sqr_body) instead of dense Fp12_sqr;
+       requires cyc_t0 and cyc_t1 (Fp6 buffers) to be in scope, stackalloc'd
+       by the caller bls12_final_exp_hard_dsd below. *)
     Local Definition dsd_exp_x_loop : Syntax.cmd.cmd :=
       cmd_seq_list [
         cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
-        cmd.call [] fp12_sqr_name  (* TODO: replace with cyc_sqr when bedrock2 function exists *)
-          [expr.var "result"; expr.var "result"];
+        cyc_sqr_body "result" "result";
         cmd.set "bit" (expr.op bopname.and
           (expr.op bopname.sru (expr.literal 0xd201000000010000) (expr.var "i"))
           (expr.literal 1));
@@ -1091,12 +676,11 @@ Section BLS12_Pairing.
           cmd.skip
       ].
 
-    (* Helper: inline exp-by-x/2 loop body *)
+    (* Helper: inline exp-by-x/2 loop body. Same cyc_sqr substitution. *)
     Local Definition dsd_exp_x_half_loop : Syntax.cmd.cmd :=
       cmd_seq_list [
         cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
-        cmd.call [] fp12_sqr_name
-          [expr.var "result"; expr.var "result"];
+        cyc_sqr_body "result" "result";
         cmd.set "bit" (expr.op bopname.and
           (expr.op bopname.sru (expr.literal 0x6900800000008000) (expr.var "i"))
           (expr.literal 1));
@@ -1218,7 +802,11 @@ Section BLS12_Pairing.
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as gamma1;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as gamma2;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as w_frob_c1;
-          coq:(final_exp_hard_dsd_body)
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t0;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t1;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as cyc_one;
+          coq:(cmd.seq (cmd.call [] from_word_name [expr.var "cyc_one"; expr.literal 1])
+                       final_exp_hard_dsd_body)
         ))).
 
     (* WP proof: see BLS12_FinalExp.v *)

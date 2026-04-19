@@ -15,6 +15,7 @@ Require Import bedrock2.SepCalls.
 Require Import bedrock2.SepAutoArray.
 Require Import bedrock2.Scalars.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_Pairing.
+Require Import Bedrock.Util.SepReflectiveAC.
 
 Import BinInt String List.ListNotations.
 
@@ -174,7 +175,34 @@ Section H3Store.
     end.
     (* Reduce empty arrays in hypothesis to emp True *)
     match goal with Hlast : (_ ⋆ _) _ |- _ => cbn [array] in Hlast end.
-    ecancel_assumption.
+    (* Reflective finishing strategy (avoids 9-hour ecancel hang):
+         1. Flatten both sides to seps [...] form (~0.1s)
+         2. Drop trailing emp True clauses from H via seps_emp_True_snoc
+         3. Drop the middle emp True from goal via seps_emp_True_split
+         4. Both sides now have 21 atoms with same atom set; ecancel_assumption
+            on the chained form completes in ~28 sec (vs 9+ hour hang). *)
+    flatten_seps_in_goal.
+    match goal with Hlast : (_ ⋆ _) _ |- _ => flatten_seps_in Hlast end.
+    (* Drop H's two trailing emp True clauses *)
+    match goal with H : seps ?l m19 |- _ =>
+      let l' := eval cbn in (List.removelast l) in
+      change (seps l m19) with (seps (l' ++ [emp True]) m19) in H
+    end;
+    apply (proj1 (seps_emp_True_snoc _ m19)) in H.
+    match goal with H : seps ?l m19 |- _ =>
+      let l' := eval cbn in (List.removelast l) in
+      change (seps l m19) with (seps (l' ++ [emp True]) m19) in H
+    end;
+    apply (proj1 (seps_emp_True_snoc _ m19)) in H.
+    (* Drop the goal's middle emp True (at position 20, between scalars and R) *)
+    match goal with
+    | |- seps ?l ?m =>
+        let pref := eval cbn in (List.firstn 20 l) in
+        let suf := eval cbn in (List.skipn 21 l) in
+        apply (proj2 (seps_emp_True_split pref suf m))
+    end.
+    cbn [List.app] in *.
+    cbv [seps] in *; ecancel_assumption.
   Qed.
 
 End H3Store.

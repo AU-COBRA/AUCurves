@@ -1,7 +1,24 @@
--R src ""
--R _build/default/src ""
+-R src/Theory Theory
+-R src/Implementations Implementations
+-R src/Bedrock Bedrock
+-R src/Hacspec Hacspec
+-R _build/default/src/Theory Theory
+-R _build/default/src/Implementations Implementations
+-R _build/default/src/Bedrock Bedrock
+-R _build/default/src/Hacspec Hacspec
+-Q _build/default/fiat-crypto/src Crypto
 -Q fiat-crypto/src Crypto
--Q fiat-crypto/_build/default/src Crypto
+
+# Opam-installed Rocq libraries (absolute paths needed for MCP/coq-lsp;
+# patched MCP server allows abs paths under $OPAM_SWITCH_PREFIX/lib/coq/).
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Stdlib Stdlib
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Ltac2 Ltac2
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/coqutil coqutil
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/bedrock2 bedrock2
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Rupicola Rupicola
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Bignums Bignums
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Coqprime Coqprime
+-Q $OPAM_ROOT/rocq-9/lib/coq/user-contrib/Rewriter Rewriter
 
 -docroot doc/
 # bedrock2, coqutil, Coqprime, Rewriter all from opam
@@ -93,6 +110,7 @@ src/Bedrock/Curve/Secp256k1Curve_G1_bedrock.v
 # Full point-add specs + demo
 src/Bedrock/Curve/Secp256k1_G1_Add_Spec.v
 src/Bedrock/Curve/Secp256k1_Demo.v
+src/Bedrock/Curve/P256_G1_Add_Spec.v
 
 # Safe Rust wrapper generator + bedrock2 spec_of reflection
 src/Bedrock/ToSafeRustString.v
@@ -129,3 +147,6 @@ src/Bedrock/SafeRustBN254Concrete.v
 
 # Concrete BLS12-381 instantiation of WBW wrapper
 src/Bedrock/SafeRustBLS12Concrete.v
+
+# BLS12-381 tower helpers (mul_xi for ξ=1+u, fp6 mul_by_v, fp12 conjugate)
+src/Bedrock/SafeRustBLS12TowerHelpers.v

@@ -4457,11 +4457,13 @@ Section PippengerSpec.
       (* Proper_cmd monotonicity: L3's enriched post implies REST. *)
       cbv beta.
       intros tr5 mem5 l5 [HF5 HL3].
+      (* L3 post order: buckets_x, buckets_y, buckets_z, pointsx,
+         pointsy, pointsz, scalars, w. *)
       destruct HL3 as
         [Htr5 [bs_x5 [bs_y5 [bs_z5 [Hlen5x [Hlen5y [Hlen5z
          [Hdist5 [Hsep5
-          [Hlo5_bx [Hlo5_by [Hlo5_bz [Hlo5_sc [Hlo5_px [Hlo5_py
-           [Hlo5_pz Hlo5_w]]]]]]]]]]]]]]]].
+          [Hlo5_bx [Hlo5_by [Hlo5_bz [Hlo5_px [Hlo5_py [Hlo5_pz
+           [Hlo5_sc Hlo5_w]]]]]]]]]]]]]]]].
       subst tr5.
       (* Extract 10 locals preservations from HF5 (Forall of l4'→l5). *)
       inversion HF5 as [|? ? Hp5_ox  HF5_1];  subst; clear HF5.
@@ -4674,19 +4676,67 @@ Section PippengerSpec.
             bedrock_func_body:(while ... ; curve_add(...))
           <{ post }>]. *)
       eapply WeakestPreconditionProperties.sound_cmd.
-      (* Step 7c/8/9 (admit): apply L4 [msm_bls12_reduce_wp] with
-         (RX0,RY0,RZ0)=(WX0,WY0,WZ0)=(Xi,Yi,Zi) inside
-         [WeakestPreconditionProperties.Proper_cmd] + [frame_locals_wp_list]
-         over 9 xs (outx/y/z, scalars, pointsx/y/z, n, w); destructure
-         L4's post to expose [Heq_ws: mk_point WXf WYf WZf =
-         reduce_buckets (points_of bs_x6 bs_y6 bs_z6)]; apply final
-         [HCurveAdd] on (outx,wsx),(outy,wsy),(outz,wsz); close
-         [outer_inv (Z.of_nat w) out1] via Houter_inv + partial_msm_from
-         S-step + new Gallina lemma [process_window_as_reduce_buckets]
-         (bridging Hdist5 + Heq_ws to the [process_window = reduce_buckets]
-         rhs).  Goal is now in WP form (not exec), ready for Proper_cmd
-         + L4.  See IteratedSepPoints.reduce_buckets_eq_scaled_sum for
-         the analogue on the sum-side. *)
+      (* Restore section variables' g1_identity form for L4's use.
+         seg 6a's destruct rewrote g1_add_identity_l and related. *)
+      rewrite <- HgI in g1_add_identity_l.
+      rewrite <- HgI in g1_double_identity.
+      (* Step 7c: apply L4 (msm_bls12_reduce_wp) inside Proper_cmd
+         with frame_locals_wp_list preserving 9 non-L4 locals. *)
+      eapply WeakestPreconditionProperties.Proper_cmd;
+        [ |
+          eapply frame_locals_wp_list with
+            (xs := ["outx"; "outy"; "outz";
+                    "scalars"; "pointsx"; "pointsy"; "pointsz";
+                    "n"; "w"]);
+            [ do 9 (apply List.Forall_cons; [cbn; intuition discriminate|]);
+              apply List.Forall_nil
+            | apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_ox|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_oy|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_oz|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_sc|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_px|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_py|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_pz|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_n|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo5_w|];
+              apply List.Forall_nil
+            | eapply msm_bls12_reduce_wp with
+                (buckets_x := bx_p) (buckets_y := by_p) (buckets_z := bz_p)
+                (runx := runx) (runy := runy) (runz := runz)
+                (wsx := wsx) (wsy := wsy) (wsz := wsz)
+                (bs_x := bs_x5) (bs_y := bs_y5) (bs_z := bs_z5)
+                (RX0 := Xi) (RY0 := Yi) (RZ0 := Zi)
+                (WX0 := Xi) (WY0 := Yi) (WZ0 := Zi)
+                (R := (FElem (Some tight_bounds) outx Xf
+                       * FElem (Some tight_bounds) outy Yf
+                       * FElem (Some tight_bounds) outz Zf
+                       * ScalarsArray scalars_p scalars
+                       * G1Array3 pointsx pointsy pointsz px py pz
+                       * R)%sep);
+              [ exact HCurveAdd
+              | exact Hlen5x | exact Hlen5y | exact Hlen5z
+              | apply (f_equal Z.to_nat) in Hlen5x;
+                apply (f_equal Z.to_nat) in Hlen5y;
+                rewrite Nat2Z.id in Hlen5x, Hlen5y; Lia.lia
+              | apply (f_equal Z.to_nat) in Hlen5y;
+                apply (f_equal Z.to_nat) in Hlen5z;
+                rewrite Nat2Z.id in Hlen5y, Hlen5z; Lia.lia
+              | rewrite HgI; reflexivity
+              | rewrite HgI; reflexivity
+              | ecancel_assumption
+              | rewrite map.get_put_diff by congruence; exact Hlo5_rx
+              | rewrite map.get_put_diff by congruence; exact Hlo5_ry
+              | rewrite map.get_put_diff by congruence; exact Hlo5_rz
+              | rewrite map.get_put_diff by congruence; exact Hlo5_wx
+              | rewrite map.get_put_diff by congruence; exact Hlo5_wy
+              | rewrite map.get_put_diff by congruence; exact Hlo5_wz
+              | rewrite map.get_put_diff by congruence; exact Hlo5_bx
+              | rewrite map.get_put_diff by congruence; exact Hlo5_by
+              | rewrite map.get_put_diff by congruence; exact Hlo5_bz
+              | rewrite map.get_put_same; reflexivity ]
+            ]
+        ].
+      (* Step 8/9: Proper_cmd monotonicity → HCurveAdd + outer_inv closure. *)
       admit.
   Admitted.
 

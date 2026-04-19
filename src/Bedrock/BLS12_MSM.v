@@ -4350,8 +4350,51 @@ Section PippengerSpec.
               | rewrite map.get_put_same; reflexivity ]
             ]
         ].
-      (* Proper_cmd monotonicity: L3's enriched post implies REST.
-         This is segs 6a/6b/7/8/9 — narrow admit. *)
+      (* Proper_cmd monotonicity: L3's enriched post implies REST. *)
+      cbv beta.
+      intros tr5 mem5 l5 [HF5 HL3].
+      destruct HL3 as
+        [Htr5 [bs_x5 [bs_y5 [bs_z5 [Hlen5x [Hlen5y [Hlen5z
+         [Hdist5 [Hsep5
+          [Hlo5_bx [Hlo5_by [Hlo5_bz [Hlo5_sc [Hlo5_px [Hlo5_py
+           [Hlo5_pz Hlo5_w]]]]]]]]]]]]]]]].
+      subst tr5.
+      (* Extract 10 locals preservations from HF5 (Forall of l4'→l5). *)
+      inversion HF5 as [|? ? Hp5_ox  HF5_1];  subst; clear HF5.
+      inversion HF5_1 as [|? ? Hp5_oy  HF5_2]; subst; clear HF5_1.
+      inversion HF5_2 as [|? ? Hp5_oz  HF5_3]; subst; clear HF5_2.
+      inversion HF5_3 as [|? ? Hp5_rx  HF5_4]; subst; clear HF5_3.
+      inversion HF5_4 as [|? ? Hp5_ry  HF5_5]; subst; clear HF5_4.
+      inversion HF5_5 as [|? ? Hp5_rz  HF5_6]; subst; clear HF5_5.
+      inversion HF5_6 as [|? ? Hp5_wx  HF5_7]; subst; clear HF5_6.
+      inversion HF5_7 as [|? ? Hp5_wy  HF5_8]; subst; clear HF5_7.
+      inversion HF5_8 as [|? ? Hp5_wz  HF5_9]; subst; clear HF5_8.
+      inversion HF5_9 as [|? ? Hp5_n   _];     subst; clear HF5_9.
+      (* Each Hp5_*: map.get (map.put l4 "i" n_w) x = map.get l5 x.
+         Combined with Hlo4_* (via put_diff over "i"), yields Hlo5_*. *)
+      assert (Hlo5_ox : map.get l5 "outx" = Some outx)
+        by (rewrite <- Hp5_ox, map.get_put_diff by congruence; exact Hlo4_ox).
+      assert (Hlo5_oy : map.get l5 "outy" = Some outy)
+        by (rewrite <- Hp5_oy, map.get_put_diff by congruence; exact Hlo4_oy).
+      assert (Hlo5_oz : map.get l5 "outz" = Some outz)
+        by (rewrite <- Hp5_oz, map.get_put_diff by congruence; exact Hlo4_oz).
+      assert (Hlo5_rx : map.get l5 "runx" = Some runx)
+        by (rewrite <- Hp5_rx, map.get_put_diff by congruence; exact Hlo4_rx).
+      assert (Hlo5_ry : map.get l5 "runy" = Some runy)
+        by (rewrite <- Hp5_ry, map.get_put_diff by congruence; exact Hlo4_ry).
+      assert (Hlo5_rz : map.get l5 "runz" = Some runz)
+        by (rewrite <- Hp5_rz, map.get_put_diff by congruence; exact Hlo4_rz).
+      assert (Hlo5_wx : map.get l5 "wsx" = Some wsx)
+        by (rewrite <- Hp5_wx, map.get_put_diff by congruence; exact Hlo4_wx).
+      assert (Hlo5_wy : map.get l5 "wsy" = Some wsy)
+        by (rewrite <- Hp5_wy, map.get_put_diff by congruence; exact Hlo4_wy).
+      assert (Hlo5_wz : map.get l5 "wsz" = Some wsz)
+        by (rewrite <- Hp5_wz, map.get_put_diff by congruence; exact Hlo4_wz).
+      assert (Hlo5_n : map.get l5 "n" = Some n_w)
+        by (rewrite <- Hp5_n, map.get_put_diff by congruence; exact Hlo4_n).
+      (* Post-L3 state: l5 has all 18 locals set, mem5 has bucket arrays
+         post-distribute + 11-cell frame, Hdist5 gives distribute_inv w 0
+         (the "all scalars processed" state).  Segs 6a/6b/7/8/9 follow. *)
       admit.
   Admitted.
 

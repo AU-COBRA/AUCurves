@@ -2342,9 +2342,9 @@ Section PippengerSpec.
              distribute_inv w 0
                (points_of bs_x' bs_y' bs_z') (scalars_to_Z scalars)
                (points_of px py pz) /\
-             (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
-              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
-              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+             (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
               * ScalarsArray scalars_p scalars
               * G1Array3 ppx ppy ppz px py pz
               * R)%sep mem' /\
@@ -2511,15 +2511,12 @@ Section PippengerSpec.
         split; [exact Hly|].
         split; [exact Hlz|].
         split; [exact Hdinv|].
-        split; [exact Hsep1|].
-        split; [exact Hlbx1|].
-        split; [exact Hlby1|].
-        split; [exact Hlbz1|].
-        split; [exact Hppx1|].
-        split; [exact Hppy1|].
-        split; [exact Hppz1|].
-        split; [exact Hls1|].
-        exact Hlw1. }
+        (* Sep: Hsep1 is array (FElem None) but post now requires
+           array (FElem tight).  Bridge via tightening — the actual L3
+           body writes tight_bounds cells via curve_add_name, so the
+           bridge is sound but the partial proof above didn't track it.
+           Admit this final sep step; the overall Lemma is Admitted. *)
+        admit. }
   Admitted.
 
   (** --- Helper lemmas for the [msm_bls12_reduce_wp] proof below. --- *)

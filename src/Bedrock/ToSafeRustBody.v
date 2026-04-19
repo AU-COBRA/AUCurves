@@ -385,20 +385,36 @@ Definition rust_bop (op : bopname) (a b : string) : string :=
   end.
 
 (** Print a scalar expression (u64-valued). Used for cmd.set RHS,
-    cmd.cond test, cmd.while test. *)
-Fixpoint scalar_expr (e : expr.expr) : string :=
+    cmd.cond test, cmd.while test.
+
+    The [c] context is consulted only for [expr.load _ ((var x) + off)]:
+    if [x] is a struct (Fp / Fp2 / Fp6 / Fp12 / unrecognized) then
+    [x.wrapping_add(_)] would call a u64 method on a struct, so the
+    address must go through the inner array's byte-pointer.  When [x]
+    is a [u64] pointer-typed local (the bedrock2 convention), the
+    direct cast is correct. *)
+Fixpoint scalar_expr (c : ctx) (e : expr.expr) : string :=
   match e with
   | expr.var x => esc x
   | expr.literal z => z_str z ++ "u64"
-  | expr.op op e1 e2 => rust_bop op (scalar_expr e1) (scalar_expr e2)
+  | expr.op op e1 e2 => rust_bop op (scalar_expr c e1) (scalar_expr c e2)
   | expr.load _ addr =>
       (* In the safe tower, loads from stackalloc'd u64 vars are just var reads *)
       match addr with
       | expr.var x => esc x  (* simple load: just read the variable *)
-      | _ => "unsafe { *(" ++ scalar_expr addr ++ " as *const u64) }"
+      | expr.op bopname.add (expr.var x) off =>
+          let xn := esc x in
+          let xt := match List.find (fun '(k,_) => seq k xn) c with
+                    | Some (_, t) => t | None => "Fp" end in
+          if seq xt "u64" then
+            "unsafe { *(" ++ xn ++ ".wrapping_add(" ++ scalar_expr c off ++ ") as *const u64) }"
+          else
+            "unsafe { *((" ++ xn ++ ".0.as_ptr() as *const u8).wrapping_add("
+            ++ scalar_expr c off ++ " as usize) as *const u64) }"
+      | _ => "unsafe { *(" ++ scalar_expr c addr ++ " as *const u64) }"
       end
-  | expr.ite c t f =>
-      "if " ++ scalar_expr c ++ " != 0 { " ++ scalar_expr t ++ " } else { " ++ scalar_expr f ++ " }"
+  | expr.ite cnd t f =>
+      "if " ++ scalar_expr c cnd ++ " != 0 { " ++ scalar_expr c t ++ " } else { " ++ scalar_expr c f ++ " }"
   | _ => "0u64 /* unsupported_expr */"
   end.
 
@@ -489,20 +505,20 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
       (* If x is not in context yet, declare it as a mutable u64 local *)
       let is_new := negb (List.existsb (fun '(k,_) => seq k xn) c) in
       let decl := if is_new then ind ++ "let mut " ++ xn ++ ": u64;" ++ LF else "" in
-      let s := ind ++ xn ++ " = " ++ scalar_expr ev ++ ";" ++ LF in
+      let s := ind ++ xn ++ " = " ++ scalar_expr c ev ++ ";" ++ LF in
       let c' := if is_new then (xn, "u64") :: c else c in
       (decl ++ s, c', ci)
 
   | cmd.cond test ct cf =>
       let '(st, _, ci1) := safe_cmd ("    " ++ ind) n c ci ct in
       let '(sf, _, ci2) := safe_cmd ("    " ++ ind) n c ci1 cf in
-      let cond_s := scalar_expr test in
+      let cond_s := scalar_expr c test in
       (ind ++ "if " ++ cond_s ++ " != 0 {" ++ LF ++
        st ++ ind ++ "} else {" ++ LF ++ sf ++ ind ++ "}" ++ LF, c, ci2)
 
   | cmd.while test body =>
       let '(body_s, _, ci') := safe_cmd ("    " ++ ind) n c ci body in
-      let test_s := scalar_expr test in
+      let test_s := scalar_expr c test in
       (ind ++ "while " ++ test_s ++ " != 0 {" ++ LF ++
        body_s ++ ind ++ "}" ++ LF, c, ci')
 
@@ -519,7 +535,7 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
       let fp_field := field_path n vt fp_aligned in
       let fp_field' := fp_field ++ drill (descend vt (path_depth fp_field)) "Fp" in
       let fp_path := vname ++ fp_field' in
-      let val_s := scalar_expr val in
+      let val_s := scalar_expr c val in
       if seq vt "u64" then
         (* Scalar store: just assign *)
         (ind ++ vname ++ " = " ++ val_s ++ ";" ++ LF, c, ci)

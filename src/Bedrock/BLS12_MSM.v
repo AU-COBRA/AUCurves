@@ -4736,7 +4736,51 @@ Section PippengerSpec.
               | rewrite map.get_put_same; reflexivity ]
             ]
         ].
-      (* Step 8/9: Proper_cmd monotonicity → HCurveAdd + outer_inv closure. *)
+      (* Step 8/9: Proper_cmd monotonicity.  Intro post-L4 state and
+         destructure L4's strengthened post. *)
+      cbv beta.
+      intros tr7 mem7 l7 [HF7 HL4].
+      destruct HL4 as
+        [Htr7 [bs_x6 [bs_y6 [bs_z6 [WXf [WYf [WZf
+         [Hlen6x [Hlen6y [Hlen6z [Hsep7
+          [Hlo7_bx [Hlo7_by [Hlo7_bz
+           [Hlo7_rx [Hlo7_ry [Hlo7_rz
+            [Hlo7_wx [Hlo7_wy [Hlo7_wz Heq_ws]]]]]]]]]]]]]]]]]]]].
+      subst tr7.
+      (* Extract the 9 non-L4-tracked locals from HF7. *)
+      inversion HF7 as [|? ? Hp7_ox HF7_1];  subst; clear HF7.
+      inversion HF7_1 as [|? ? Hp7_oy HF7_2]; subst; clear HF7_1.
+      inversion HF7_2 as [|? ? Hp7_oz HF7_3]; subst; clear HF7_2.
+      inversion HF7_3 as [|? ? Hp7_sc HF7_4]; subst; clear HF7_3.
+      inversion HF7_4 as [|? ? Hp7_px HF7_5]; subst; clear HF7_4.
+      inversion HF7_5 as [|? ? Hp7_py HF7_6]; subst; clear HF7_5.
+      inversion HF7_6 as [|? ? Hp7_pz HF7_7]; subst; clear HF7_6.
+      inversion HF7_7 as [|? ? Hp7_n  HF7_8]; subst; clear HF7_7.
+      inversion HF7_8 as [|? ? Hp7_w  _];     subst; clear HF7_8.
+      (* Each Hp7_* : map.get (put l5 "i" _) x = map.get l7 x.
+         Combine with Hlo5_* (via put_diff) to get Hlo7_* for non-L4 locals. *)
+      assert (Hlo7_ox : map.get l7 "outx" = Some outx)
+        by (rewrite <- Hp7_ox, map.get_put_diff by congruence; exact Hlo5_ox).
+      assert (Hlo7_oy : map.get l7 "outy" = Some outy)
+        by (rewrite <- Hp7_oy, map.get_put_diff by congruence; exact Hlo5_oy).
+      assert (Hlo7_oz : map.get l7 "outz" = Some outz)
+        by (rewrite <- Hp7_oz, map.get_put_diff by congruence; exact Hlo5_oz).
+      assert (Hlo7_sc : map.get l7 "scalars" = Some scalars_p)
+        by (rewrite <- Hp7_sc, map.get_put_diff by congruence; exact Hlo5_sc).
+      assert (Hlo7_px : map.get l7 "pointsx" = Some pointsx)
+        by (rewrite <- Hp7_px, map.get_put_diff by congruence; exact Hlo5_px).
+      assert (Hlo7_py : map.get l7 "pointsy" = Some pointsy)
+        by (rewrite <- Hp7_py, map.get_put_diff by congruence; exact Hlo5_py).
+      assert (Hlo7_pz : map.get l7 "pointsz" = Some pointsz)
+        by (rewrite <- Hp7_pz, map.get_put_diff by congruence; exact Hlo5_pz).
+      assert (Hlo7_n : map.get l7 "n" = Some n_w)
+        by (rewrite <- Hp7_n, map.get_put_diff by congruence; exact Hlo5_n).
+      assert (Hlo7_w : map.get l7 "w" = Some (word.of_Z (Z.of_nat w)))
+        by (rewrite <- Hp7_w, map.get_put_diff by congruence; exact Hlo5_w).
+      (* Now l7 has 18 locals; mem7 has L4's post sep (FElem tight
+         wsx/y/z WXf/WYf/WZf, buckets at tight, inner run exists, frame);
+         Heq_ws : mk_point WXf WYf WZf = reduce_buckets (points_of bs_x6 bs_y6 bs_z6).
+         Next: seg 8 (final HCurveAdd) + seg 9 (outer_inv closure). *)
       admit.
   Admitted.
 

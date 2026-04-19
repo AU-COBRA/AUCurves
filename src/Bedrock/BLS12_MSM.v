@@ -4241,16 +4241,66 @@ Section PippengerSpec.
     - cbv [dlet.dlet].
       unfold1_cmd_goal; cbv beta match delta [cmd_body].
       (* Apply L3 with frame_locals_wp_list preserving 10 outer locals
-         (outx/y/z + runx/y/z + wsx/y/z + n).  L3's statement tracks:
-         buckets_x/y/z, scalars, pointsx/y/z, w, i (8). *)
-      (* REMAINING WORK (segs 5 L3 premises + 6a/6b HStoreZero + 7 L4
-         reduce + 8 HCurveAdd + 9 outer_inv closure):
-         ~500 LoC of interdependent WP composition tactics + 2 sub-lemmas
-         (distribute_inv entry from Hid4; Forall (v = cv) bs_x5/y5/z5
-         extraction for bucket bounds bridge).  Scoped, compiled-in, but
-         not mechanised in this commit.  Structure above is proven to
-         unify via MCP (Proper_cmd + frame_locals_wp_list + L3 all
-         type-check at this point). *)
+         (outx/y/z + runx/y/z + wsx/y/z + n).  L3's statement tracks
+         the other 8 locals (buckets_x/y/z + scalars + pointsx/y/z + w). *)
+      eapply WeakestPreconditionProperties.Proper_cmd;
+        [ |
+          eapply frame_locals_wp_list with
+            (xs := ["outx"; "outy"; "outz";
+                    "runx"; "runy"; "runz";
+                    "wsx"; "wsy"; "wsz"; "n"]);
+            [ do 10 (apply List.Forall_cons; [cbn; intuition discriminate|]);
+              apply List.Forall_nil
+            | apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_ox|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_oy|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_oz|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_rx|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_ry|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_rz|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_wx|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_wy|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_wz|];
+              apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo4_n|];
+              apply List.Forall_nil
+            | eapply msm_bls12_distribute_wp with
+                (w := Z.of_nat w) (n_w := n_w)
+                (buckets_x := bx_p) (buckets_y := by_p) (buckets_z := bz_p)
+                (bs_x := bs_x4) (bs_y := bs_y4) (bs_z := bs_z4)
+                (scalars_p := scalars_p) (scalars := scalars)
+                (ppx := pointsx) (ppy := pointsy) (ppz := pointsz)
+                (px := px) (py := py) (pz := pz)
+                (R := (FElem (Some tight_bounds) outx Xf
+                       * FElem (Some tight_bounds) outy Yf
+                       * FElem (Some tight_bounds) outz Zf
+                       * FElem None runx run0x
+                       * FElem None runy run0y
+                       * FElem None runz run0z
+                       * FElem None wsx  ws0x
+                       * FElem None wsy  ws0y
+                       * FElem None wsz  ws0z
+                       * R)%sep);
+              [ exact HCurveAdd
+              | (* 0 <= Z.of_nat w < num_windows *)
+                unfold num_windows; cbv [c]; Lia.lia
+              | exact Hlen4x | exact Hlen4y | exact Hlen4z
+              | Lia.lia | Lia.lia
+              | exact Hn_len
+              | exact Hlen_sx | exact Hlen_xy | exact Hlen_yz
+              | (* distribute_inv entry *) admit
+              | (* sep *) ecancel_assumption
+              | rewrite map.get_put_diff by congruence; exact Hlo4_bx
+              | rewrite map.get_put_diff by congruence; exact Hlo4_by
+              | rewrite map.get_put_diff by congruence; exact Hlo4_bz
+              | rewrite map.get_put_diff by congruence; exact Hlo4_sc
+              | rewrite map.get_put_diff by congruence; exact Hlo4_px
+              | rewrite map.get_put_diff by congruence; exact Hlo4_py
+              | rewrite map.get_put_diff by congruence; exact Hlo4_pz
+              | rewrite map.get_put_diff by congruence; exact Hlo4_w
+              | rewrite map.get_put_same; reflexivity ]
+            ]
+        ].
+      (* Proper_cmd monotonicity: L3's enriched post implies REST.
+         This is segs 6a/6b/7/8/9 — narrow admit. *)
       admit.
   Admitted.
 

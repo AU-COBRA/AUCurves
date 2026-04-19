@@ -2258,11 +2258,15 @@ Section PippengerSpec.
                  (expr.op bopname.add (expr.var "scalars")
                     (expr.op bopname.mul (expr.var "i") (expr.literal 32))))
            (cmd.seq
+              (cmd.set "load_off1"
+                 (expr.op bopname.mul (expr.var "limb") (expr.literal 8)))
+           (cmd.seq
+              (cmd.set "load_addr1"
+                 (expr.op bopname.add (expr.var "scalar_ptr") (expr.var "load_off1")))
+           (cmd.seq
               (cmd.set "val"
                  (expr.op bopname.sru
-                    (expr.load access_size.word
-                       (expr.op bopname.add (expr.var "scalar_ptr")
-                          (expr.op bopname.mul (expr.var "limb") (expr.literal 8))))
+                    (expr.load access_size.word (expr.var "load_addr1"))
                     (expr.var "shift")))
            (cmd.seq
               (cmd.cond
@@ -2270,15 +2274,19 @@ Section PippengerSpec.
                     (expr.op bopname.add (expr.var "shift") (expr.literal c)))
                  (cmd.cond
                     (expr.op bopname.ltu (expr.var "limb") (expr.literal 3))
-                    (cmd.set "val"
-                       (expr.op bopname.or (expr.var "val")
-                          (expr.op bopname.slu
-                             (expr.load access_size.word
-                                (expr.op bopname.add (expr.var "scalar_ptr")
-                                   (expr.op bopname.mul
-                                      (expr.op bopname.add (expr.var "limb") (expr.literal 1))
-                                      (expr.literal 8))))
-                             (expr.op bopname.sub (expr.literal 64) (expr.var "shift")))))
+                    (cmd.seq
+                       (cmd.set "load_off2"
+                          (expr.op bopname.mul
+                             (expr.op bopname.add (expr.var "limb") (expr.literal 1))
+                             (expr.literal 8)))
+                    (cmd.seq
+                       (cmd.set "load_addr2"
+                          (expr.op bopname.add (expr.var "scalar_ptr") (expr.var "load_off2")))
+                       (cmd.set "val"
+                          (expr.op bopname.or (expr.var "val")
+                             (expr.op bopname.slu
+                                (expr.load access_size.word (expr.var "load_addr2"))
+                                (expr.op bopname.sub (expr.literal 64) (expr.var "shift")))))))
                     cmd.skip)
                  cmd.skip)
            (cmd.seq
@@ -2323,7 +2331,7 @@ Section PippengerSpec.
                         expr.var "bpy"; expr.var "ppy";
                         expr.var "bpz"; expr.var "ppz";
                         expr.var "bpx"; expr.var "bpy"; expr.var "bpz"]))))))))
-                 cmd.skip)))))))))))
+                 cmd.skip)))))))))))))
         tr mem0 l0
         (fun tr' mem' l' =>
            tr = tr' /\

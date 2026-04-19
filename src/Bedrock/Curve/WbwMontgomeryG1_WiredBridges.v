@@ -1,23 +1,28 @@
-(** Shared F ↔ Z/modular-arithmetic bridge lemmas used by the
-    per-curve G1 WiredSpecs transport proofs.
+(** Shared F ↔ Z/modular-arithmetic bridge lemmas for per-curve G1
+    WiredSpecs transport proofs.
 
-    Extracts the 6 [feval_*_bridge] lemmas that appear identically in:
-      - P256_Wired_Specs.v
-      - Pallas/Vesta/BLS12/BLS12_377/BN256/BN446 Curve_G1_WiredSpecs.v
+    The 6 bridges ([feval_toZ], [feval_{mul,add,sub,square,opp}_bridge])
+    appear identically in every per-curve `*Curve_G1_WiredSpecs.v`.
+    Extracting them saves ~90 LoC × each curve that adopts this file.
 
-    Each per-curve file saves ~90 LoC by importing these instead of
-    duplicating the boilerplate. Works for any fiat-crypto New-pipeline
-    field representation — the lemmas are purely about the
-    [feval ~ F.of_Z M_pos (eval (from_mont _))] bridge and Z modular
-    arithmetic. *)
+    **Design note:** the bridges rely on `feval ws` reducing to
+    `F.of_Z M_pos (eval (from_mont (toZ ws)))`. Over a fully abstract
+    `FieldRepresentation` Context variable, that definitional equality
+    is not available. Instead we take the WBW-specific representation
+    via `WordByWordMontgomery.field_representation m` and use it as a
+    `Local Instance`. Downstream curves define their `<curve>_frep` as
+    `:= field_representation m`, so typeclass resolution finds the same
+    instance up to definitional equality. *)
 
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Lists.List.
 Require Import Coq.micromega.Lia.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Bitwidth64.
+Require Import bedrock2.BasicC64Semantics.
 
 Require Import Crypto.Bedrock.Specs.Field.
+Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 
@@ -28,31 +33,30 @@ Section Bridges.
   Context {field_parameters : FieldParameters}.
   Context {field_representation : FieldRepresentation}.
 
-  (** Canonical setup at bw=64, n from the field representation. *)
   Local Notation bw := 64%Z.
   Local Notation n  := (felem_size_in_words (FieldRepresentation := field_representation)).
   Local Notation m  := (Z.pos M_pos).
   Local Notation m' := (@Field.m' bw field_parameters).
-
   Local Notation eval     := (@WordByWordMontgomery.WordByWordMontgomery.eval bw n).
   Local Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m m').
   Local Notation toZ       := (List.map Interface.word.unsigned).
 
-  (** Core decoding identity: [F.to_Z (feval ws) = eval (from_mont ws) mod m].
+  (** Per-curve files provide this as
+      [reflexivity] because their [<curve>_frep := field_representation m]
+      makes [feval] unfold to the RHS definitionally. *)
+  Variable feval_wbw_def :
+    forall (ws : list word.rep),
+      feval ws = F.of_Z M_pos (eval (from_mont (toZ ws))).
 
-      The [field_representation] on WBW makes [feval ws := F.of_Z M_pos (eval (from_mont (toZ ws)))].
-      This lemma unpacks the [F.to_Z ∘ F.of_Z] to the [mod m] form used in
-      Bignum-style specs. *)
+  (** Core decoding identity. *)
   Lemma feval_toZ (ws : list word.rep) :
     F.to_Z (feval ws) = eval (from_mont (toZ ws)) mod m.
   Proof.
-    change (feval ws) with (F.of_Z M_pos (eval (from_mont (toZ ws)))).
+    rewrite feval_wbw_def.
     rewrite F.to_Z_of_Z. unfold M. reflexivity.
   Qed.
 
-  (** ** Bridge lemmas: from [feval out = F.op …] to the Bignum
-      [eval/from_mont mod m] form. Each handles the mod arithmetic so
-      per-curve transport proofs stay clean. *)
+  (** ** Bridge lemmas *)
 
   Lemma feval_mul_bridge (wout wx wy : list word.rep) :
     feval wout = F.mul (feval wx) (feval wy) ->
@@ -125,22 +129,20 @@ Section Bridges.
 
 End Bridges.
 
-(** * Usage
+(** Usage:
 
-    In a per-curve WiredSpecs file, after the [Existing Instance <curve>_field_parameters.]
-    and [Existing Instance <curve>_frep.] declarations:
+    In a per-curve WiredSpecs file, after declaring [Existing Instance
+    <curve>_field_parameters] + [Existing Instance <curve>_frep]:
 
     {[
-      Require Import Bedrock.Curve.WbwMontgomeryG1_WiredBridges.
-      (* now [feval_mul_bridge], [feval_add_bridge], etc. are in scope
-         instantiated for this curve's parameters *)
+      Lemma curve_feval_def :
+        forall ws, feval ws =
+          F.of_Z M_pos (eval (from_mont (List.map word.unsigned ws))).
+      Proof. reflexivity. Qed.
 
-      Lemma <curve>_mul_bignum_correct : …
-      Proof.
-        …
-        - apply (feval_mul_bridge _ _ _ Hfeval_out).
-      Qed.
+      (* Bridges specialize automatically via typeclass resolution + hypothesis *)
+      Local Definition feval_mul_bridge' := feval_mul_bridge curve_feval_def.
+      (* …etc *)
     ]}
 
-    Net savings per curve: ~90 LoC (the 6 bridge lemmas including [feval_toZ]
-    and [Z_opp_mod]). Across 7 curves: ~630 LoC. *)
+    Saves ~90 LoC per curve (the 6 bridges + Z_opp_mod + feval_toZ). *)

@@ -1,151 +1,101 @@
+(** Vesta G1 addition -- bedrock2 WP proof (new fiat-crypto API).
+
+    Vesta analogue of [PallasCurve_G1_bedrock.v].  Uses the new
+    [Bedrock.Field.Synthesis.Examples.vesta_prime] synthesis
+    (instead of the deleted Generic/Specialized API).
+
+    The [Vesta_add] bedrock2 function body is UNCHANGED.  Only the
+    import list, typeclass setup, spec-of instances, and [next_call]
+    tactic are updated.  *)
+
 Require Import Coq.ZArith.ZArith.
 Require Import Coq.Strings.String.
 Require Import Coq.micromega.Lia.
-Require Import Crypto.Bedrock.Field.Common.Types.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery.
-Local Open Scope Z_scope.
-Require Import Crypto.Arithmetic.WordByWordMontgomery.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Strings.String.
 Require Import Coq.Lists.List.
-Require Import Crypto.Bedrock.Field.Common.Types.
-Require Crypto.Bedrock.Field.Translation.Parameters.Defaults32.
-Require Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
-Local Open Scope string_scope.
-Import ListNotations.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.Syntax.
-Require Crypto.Bedrock.Field.Translation.Parameters.Defaults32.
-Require Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
-Require Import Coq.ZArith.ZArith.
-Require Import bedrock2.Syntax.
-Require Import Coq.Lists.List.
 Require Import bedrock2.Array.
 Require Import bedrock2.ProgramLogic.
-Require Import bedrock2.Syntax.
 Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Tactics.Tactics.
-Require Import Crypto.COperationSpecifications.
-Require Import Crypto.UnsaturatedSolinasHeuristics.
-Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
-Require Import bedrock2.Semantics.
-Import ListNotations.
-Import Syntax.Coercions.
-Local Open Scope Z_scope.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.ReifiedOperation.
-Require Import Crypto.Bedrock.Field.Common.Names.VarnameGenerator.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Strings.String.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery.
-Local Open Scope Z_scope.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Strings.String.
-Require Import Coq.Lists.List.
-Require Import bedrock2.Array.
-Require Import bedrock2.ProgramLogic.
-Require Import bedrock2.Syntax.
-Require Import bedrock2.Map.Separation.
-Require Import bedrock2.Map.SeparationLogic.
-Require Import coqutil.Word.Interface.
-Require Import coqutil.Tactics.Tactics.
-Require Import Crypto.Spec.MxDH.
 Require Import Crypto.Arithmetic.Core.
-Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults.
-Require Import Crypto.Bedrock.Field.Common.Tactics.
-Require Import Crypto.Bedrock.Field.Common.Types.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.Operation.
-Require Import Crypto.Bedrock.Field.Translation.Parameters.SelectParameters.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.Tactics.
-Require Import Crypto.COperationSpecifications.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
+Require Import bedrock2.Memory.
 Require Import bedrock2.Semantics.
-Require Import Theory.Fields.QuadraticFieldExtensions.
-Import ListNotations.
-Import Syntax.Coercions.
-Local Open Scope Z_scope.
-Require Import Bedrock.Field.vestaprime.
+Require Import bedrock2.BasicC64Semantics.
+Require Import Crypto.Bedrock.Field.Common.Types.
+Require Import Crypto.Bedrock.Field.Common.Tactics.
+Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
+Require Import Crypto.Bedrock.Specs.Field.
+Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
+Require Import Crypto.Arithmetic.WordByWordMontgomery.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.UniformWeight.
+Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
-Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import coqutil.Map.Properties.
 Require Import bedrock2.Lift1Prop.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Bedrock.Util.Word.
-Require Import SOSReduction.
 Require Import Bedrock.Util.Util.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Tactics.
 Require Import Bedrock.Util.SeparationLogic.
+(* New API: vesta prime synthesis *)
+Require Import Bedrock.Field.Synthesis.Examples.vesta_prime.
+(* Bignum <-> FElem bridge specs *)
+Require Import Bedrock.Curve.VestaCurve_G1_WiredSpecs.
 
+Import ListNotations.
+Import Syntax.Coercions.
 Local Open Scope Z_scope.
+Local Open Scope string_scope.
 
 (*Parameters for the Vesta curve.*)
-    Local Notation m := vestaprime.m.
-    Local Definition prefix := "vesta_"%string.
-    Local Notation a := (0 mod m).
-    Local Notation b := (5 mod m).
+Local Notation m := 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001%Z.
+Local Definition prefix := "vesta_"%string.
+Local Notation a := (0 mod m).
+Local Notation b := (5 mod m).
 
-    Existing Instances Defaults64.default_parameters Defaults64.default_parameters_ok vesta_bedrock2_funcs
-    vesta_bedrock2_specs vesta_bedrock2_correctness.
+Existing Instances Defaults64.default_parameters Defaults64.default_parameters_ok.
+Existing Instances vesta_prime.vesta_field_parameters.
+Existing Instances vesta_prime.vesta_field_parameters_ok.
+Existing Instances vesta_prime.vesta_frep.
+Existing Instances vesta_prime.vesta_frep_ok.
+Existing Instances vesta_prime.vesta_ops.
 
-(*  We instantiate specs of all imported bedrock2 functions.
-    This needs to be done for typeclass inference to work properly.*)
+(*  We instantiate specs of all imported bedrock2 functions using the
+    Bignum-style bridge specs from VestaCurve_G1_WiredSpecs.  These
+    expose [vesta_mul]/[vesta_add]/[vesta_sub] under the right names
+    and give montmul/montadd/montsub postconditions after conversion. *)
 
-  Instance spec_of_reified_mul :
-  spec_of (append prefix "mul") := spec_of_mul.
+Instance spec_of_reified_mul :
+  spec_of (append prefix "mul") := spec_of_vesta_mul_bignum.
 
-  Instance spec_of_reified_square :
-  spec_of (append prefix "square") := spec_of_square.
+Instance spec_of_reified_add :
+  spec_of (append prefix "add") := spec_of_vesta_add_bignum.
 
-  Instance spec_of_reified_add :
-  spec_of (append prefix "add") := spec_of_add.
-
-  Instance spec_of_reified_sub :
-  spec_of (append prefix "sub") := spec_of_sub.
-
-  Instance spec_of_reified_opp :
-  spec_of (append prefix "opp") := spec_of_opp.
-
-  Instance spec_of_reified_to_montgomery :
-  spec_of (append prefix "to_montgomery") := spec_of_to_montgomery.
-
-  Instance spec_of_reified_from_montgomery :
-  spec_of (append prefix "from_montgomery") := spec_of_from_montgomery.
-
-  Instance spec_of_reified_nonzero :
-  spec_of (append prefix "nonzero") := spec_of_nonzero.
-
-  Instance spec_of_reified_selectznz :
-  spec_of (append prefix "selectznz") := spec_of_selectznz.
-
-  Instance spec_of_reified_to_bytes :
-  spec_of (append prefix "to_bytes") := spec_of_to_bytes.
-
-  Instance spec_of_reified_from_bytes :
-  spec_of (append prefix "from_bytes") := spec_of_from_bytes.
-(*Instantiation done.*)
+Instance spec_of_reified_sub :
+  spec_of (append prefix "sub") := spec_of_vesta_sub_bignum.
 
 (*Initializing parameters; do not touch*)
-Local Notation bw := width.
-Local Notation m' := (@WordByWordMontgomery.m' m bw).
-Notation n := (WordByWordMontgomery.n m (@width semantics)).
+Local Definition bw := 64%Z.
+Local Definition n := 4%nat.
+(* r' = modinv(r, m) satisfying (r * r') mod m = 1; r = 2^bw = 2^64 *)
+Local Definition r' :=
+  15862275224065379266880067976982664028064538988298471839914332893904070570340%Z.
+(* m' = modinv(-m, r) satisfying (m * m') mod r = (-1) mod r *)
+Local Definition m' := 10108024940646105087%Z.
 Local Notation eval := (@WordByWordMontgomery.WordByWordMontgomery.eval bw n).
 Local Notation valid := (@WordByWordMontgomery.valid bw n m).
 Local Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m m').
-Local Notation thisword := (@word semantics).
-Local Definition valid_words w := valid (List.map (@Interface.word.unsigned width thisword) w).
-Local Definition map_words := List.map (@Interface.word.unsigned width thisword).
+Local Notation thisword := (@Interface.word.rep 64 BasicC64Semantics.word).
+Local Definition valid_words w := valid (List.map (@Interface.word.unsigned 64 BasicC64Semantics.word) w).
+Local Definition map_words := List.map (@Interface.word.unsigned 64 BasicC64Semantics.word).
 Local Notation r := (WordByWordMontgomery.r bw).
-Local Notation r' := (WordByWordMontgomery.r' m bw).
+Local Notation word_size_in_bytes := (Memory.bytes_per_word bw).
 Local Definition num_bytes := Eval compute in (Z.of_nat (((Z.to_nat bw * n) / 8)%nat)).
 Local Notation three_b := (3 * b mod m).
 Local Notation uw := (uweight bw).
@@ -311,7 +261,7 @@ Proof.
 Qed.
 
 (*Bedrock2 Function Definition*)
-Definition Vesta_add : Syntax.func :=
+Definition Vesta_add : Syntax.func := Eval cbv in (
     let outx := "outx" in
     let outy := "outy" in
     let outz := "outz" in
@@ -334,62 +284,53 @@ Definition Vesta_add : Syntax.func :=
     let add := (append prefix "add") in
     let mul := (append prefix "mul") in
     let sub := (append prefix "sub") in
-    ("Vesta_add", (
-      [outx; outy; outz; X1; Y1; Z1; X2; Y2; Z2], [],
+    ([outx; outy; outz; X1; Y1; Z1; X2; Y2; Z2], []:list String.string,
       bedrock_func_body:(
-      stackalloc num_bytes as three_b{
-        stackalloc num_bytes as t0 {
-          stackalloc num_bytes as t1 {
-            stackalloc num_bytes as t2 {
-              stackalloc num_bytes as t3 {
-                stackalloc num_bytes as t4 {
-                  stackalloc num_bytes as t5 {
-                      store(three_b, (coq:(nth 0 three_b_mont 0)));
-                      store(three_b + coq:(8), coq:(nth 1 three_b_mont 0));
-                      store(three_b + coq:(16), coq:(nth 2 three_b_mont 0));
-                      store(three_b + coq:(24), coq:(nth 3 three_b_mont 0));
-                      mul (t0, X1, X2);
-                      mul (t1, Y1, Y2);
-                      mul (t2, Z1, Z2);
-                      add (t3, X1, Y1);
-                      add (t4, X2, Y2);
-                      mul (t3, t3, t4);
-                      add (t4, t0, t1);
-                      sub (t3, t3, t4);
-                      add (t4, X1, Z1);
-                      add (t5, X2, Z2);
-                      mul (t4, t4, t5);
-                      add (t5, t0, t2);
-                      sub (t4, t4, t5);
-                      add (t5, Y1, Z1);
-                      add (outx, Y2, Z2);
-                      mul (t5, t5, outx);
-                      add (outx, t1, t2);
-                      sub (t5, t5, outx);
-                      mul (outz, three_b, t2);
-                      sub (outx, t1, outz);
-                      add (outz, outz, t1);
-                      mul (outy, outx, outz);
-                      add (t1, t0, t0);
-                      add (t1, t1, t0);
-                      mul (t4, three_b, t4);
-                      mul (t0, t1, t4);
-                      add (outy, outy, t0);
-                      mul (t0, t5, t4);
-                      mul (outx, t3, outx);
-                      sub (outx, outx, t0);
-                      mul (t0, t3, t1);
-                      mul (outz, t5, outz);
-                      add (outz, outz, t0)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      )
-    )).
+      stackalloc num_bytes as three_b ;
+      stackalloc num_bytes as t0 ;
+      stackalloc num_bytes as t1 ;
+      stackalloc num_bytes as t2 ;
+      stackalloc num_bytes as t3 ;
+      stackalloc num_bytes as t4 ;
+      stackalloc num_bytes as t5 ;
+      store(three_b, (coq:(nth 0 three_b_mont 0)));
+      store(three_b + coq:(8), coq:(nth 1 three_b_mont 0));
+      store(three_b + coq:(16), coq:(nth 2 three_b_mont 0));
+      store(three_b + coq:(24), coq:(nth 3 three_b_mont 0));
+      $mul (t0, X1, X2);
+      $mul (t1, Y1, Y2);
+      $mul (t2, Z1, Z2);
+      $add (t3, X1, Y1);
+      $add (t4, X2, Y2);
+      $mul (t3, t3, t4);
+      $add (t4, t0, t1);
+      $sub (t3, t3, t4);
+      $add (t4, X1, Z1);
+      $add (t5, X2, Z2);
+      $mul (t4, t4, t5);
+      $add (t5, t0, t2);
+      $sub (t4, t4, t5);
+      $add (t5, Y1, Z1);
+      $add (outx, Y2, Z2);
+      $mul (t5, t5, outx);
+      $add (outx, t1, t2);
+      $sub (t5, t5, outx);
+      $mul (outz, three_b, t2);
+      $sub (outx, t1, outz);
+      $add (outz, outz, t1);
+      $mul (outy, outx, outz);
+      $add (t1, t0, t0);
+      $add (t1, t1, t0);
+      $mul (t4, three_b, t4);
+      $mul (t0, t1, t4);
+      $add (outy, outy, t0);
+      $mul (t0, t5, t4);
+      $mul (outx, t3, outx);
+      $sub (outx, outx, t0);
+      $mul (t0, t3, t1);
+      $mul (outz, t5, outz);
+      $add (outz, outz, t0)
+      ))).
 
 Local Open Scope string_scope.
 Local Infix "*" := sep : sep_scope.
@@ -397,8 +338,8 @@ Delimit Scope sep_scope with sep.
 Local Notation toZ x := (List.map Interface.word.unsigned x).
 
 (*Bedrock2 function Spec*)
-Instance spec_of_Vesta_add: spec_of Vesta_add :=
-fun functions : list (string * (list string * list string * cmd)) =>
+Instance spec_of_Vesta_add: spec_of "Vesta_add" :=
+fun functions =>
     forall (wX1 wY1 wZ1 wX2 wY2 wZ2 : list Interface.word.rep)
     (pX1 pY1 pZ1 pX2 pY2 pZ2  poutx pouty poutz: Interface.word.rep)
     (wold_outx wold_outy wold_outz: list Interface.word.rep) (t : Semantics.trace)
@@ -459,8 +400,7 @@ Notation S aw := (word.add (word.of_Z word_size_in_bytes) aw).
 
 Add Ring Mp : (MontgomeryRingTheory.mont_enc_ring VestaCurve_G1_bedrock.m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
 
-Local Notation wordof_Z := (@word.of_Z width
-(@word _)).
+Local Notation wordof_Z := (@word.of_Z 64 BasicC64Semantics.word).
 
 (*Tactics to cast from Bignum to bytes*)
 Ltac unfold_Bignum_list_step H l :=
@@ -472,7 +412,7 @@ Ltac unfold_Bignum_list H l :=
   apply length_nil;
   match goal with
   | [H : Datatypes.length _ = n|- _ ]
-    => repeat apply NPeano.Nat.succ_inj in H; auto
+    => repeat apply Nat.succ_inj in H; auto
   end); rewrite Hl in H; clear Hl.
 
 Ltac straightline' :=
@@ -510,9 +450,8 @@ Ltac Bignum_to_Scalars l := let Hsep := (fresh "Hsep") in
 eassert (Hsep : (Bignum n _ l * _)%sep _) by ecancel_assumption;
 apply Bignum_manyScalars_R in Hsep; sepsimpl_hyps; get_list_from_length l;
 lazymatch goal with
-| [H : (many_Scalars n _ _ * _)%sep _ |- _] => let Htemp := (fresh "Htemp") in
-  eassert (Htemp : many_Scalars n _ _ = many_Scalars _ _ _) by (vm_compute n; auto);
-  rewrite Htemp in H; clear Htemp;
+| [H : (many_Scalars n _ _ * _)%sep _ |- _] =>
+  cbv [n] in H;
   repeat rewrite many_Scalars_next in H;
   rewrite many_Scalars_nil in H
 | _ => fail
@@ -525,6 +464,15 @@ Ltac subst_vars :=
     try subst thisa
   end.
 
+Ltac clear_old_seps :=
+  lazymatch goal with
+  | H:sep _ _ ?mem |- context [?mem] =>
+    repeat
+      match goal with
+      | H':sep _ _ ?m |- _ => assert_fails unify m mem; clear H'
+      end
+  end.
+
 Ltac handle_store_step :=
   lazymatch goal with
     | [ |- ((Scalars.scalar ?thisa _) * _)%sep _ ] =>
@@ -535,7 +483,7 @@ Ltac handle_store :=
   repeat (subst_vars; eapply Scalars.store_word_of_sep; [handle_store_step|]; repeat straightline'); clear_old_seps.
 
 (*Tactics to handle stack allocation*)
-Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a m m0 m1, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m m0 m1 -> anybytes a n0 m1 -> R m0 -> exists l, (R * (Bignum n a l))%sep m.
+Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a m m0 m1, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m m0 m1 -> anybytes a n0 m1 -> R m0 -> exists (l : list BasicC64Semantics.word), (R * (Bignum n a l))%sep m.
 Proof.
   intros.
   pose proof (anybytes_Bignum n m1 n0 a).
@@ -632,11 +580,35 @@ Ltac remember_mont x := lazymatch goal with
   remember {| val := x; Hvalid := H1 |} as p
 end.
 
-(*For function calls*)
+(** Tactic to convert WiredSpecs postcondition format to
+    the [montmul]/[montadd]/[montsub] notation expected by [this_mod']. *)
+Ltac normalize_mont_hyps :=
+  repeat match goal with
+  | H : eval (from_mont ?a) mod m =
+        ((eval (from_mont ?b) mod m) * (eval (from_mont ?c) mod m)) mod m |- _ =>
+        rewrite <- Z.mul_mod in H by lia
+  | H : eval (from_mont ?a) mod m =
+        ((eval (from_mont ?b) mod m) + (eval (from_mont ?c) mod m)) mod m |- _ =>
+        rewrite <- Z.add_mod in H by lia
+  | H : eval (from_mont ?a) mod m =
+        ((eval (from_mont ?b) mod m) - (eval (from_mont ?c) mod m)) mod m |- _ =>
+        rewrite <- Zminus_mod in H
+  end.
+
+(*For function calls -- updated for WiredSpecs' 6-precondition format. *)
 Ltac next_call :=
   lazymatch goal with
     | [H' : (_ * _)%sep _ |- _] =>
-      straightline_call; [| ecancel_assumption| ecancel_assumption| ecancel_assumption| ]; [eauto| ]; repeat straightline'; clear H'; repeat clear_emps_step
+      straightline_call;
+      [ eauto             (* valid wsx *)
+      | eauto             (* valid wsy *)
+      | eauto             (* length old_out = n *)
+      | ecancel_assumption (* Bignum px wsx * Rx *)
+      | ecancel_assumption (* Bignum py wsy * Ry *)
+      | ecancel_assumption (* Bignum pout old_out * Rout *)
+      | ];
+      repeat straightline'; clear H'; repeat clear_emps_step;
+      normalize_mont_hyps
     end.
 
 (*For undoing memory fragmentation done by stack allocation*)
@@ -731,9 +703,7 @@ Proof.
   assert_valid' wZ1 Hvve.
   assert_valid' wZ2 Hvve.
 
-  (* Assert validity for output word lists.
-     The output variable names (x28, x25, x31 for BLS12) are
-     auto-generated by straightline; we match them generically. *)
+  (* Assert validity for output word lists. *)
   repeat match goal with
   | [ H : valid (map Interface.word.unsigned ?w) |- _ ] =>
     lazymatch goal with
@@ -747,7 +717,6 @@ Proof.
   apply Heq; clear Heq.
 
   (*Use return values from function calls*)
-  (* The last three valid' hypotheses correspond to output coords *)
   match goal with
   | [ |- BLS12_add_mont_spec _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ?ox ?oy ?oz ] =>
     this_mod' ox; this_mod' oy; this_mod' oz

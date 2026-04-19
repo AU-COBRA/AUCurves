@@ -13,16 +13,9 @@
      ExtractSafeTowerBN256
      ExtractSafeTowerBN446
      TestSafeBody
-     Field.bls12prime
-     Field.pallasprime
-     Field.vestaprime
-     Field.bw6prime
      Field.quadratic_extension_bls12
-     Field.testFp2
      Curve.BLS12Curve_G1
      Curve.BLS12Curve_G2
-     Curve.PallasCurve_G1_bedrock
-     Curve.VestaCurve_G1_bedrock
      Curve.BW6_761Curve_G1_bedrock
      Examples.felem_copy_32
      Examples.felem_copy_64

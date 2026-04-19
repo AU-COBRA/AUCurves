@@ -1,5 +1,5 @@
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.ZArith.Znumtheory.
+From Stdlib Require Import ZArith.ZArith.
+From Stdlib Require Import ZArith.Znumtheory.
 From Coqprime Require Import PocklingtonRefl.
 
 Local Open Scope positive_scope.
@@ -33,5 +33,5 @@ Proof.
      (Proof_certif 3 prime3) ::
      (Proof_certif 2 prime2) ::
       nil)).
-  native_cast_no_check (refl_equal true).
+  vm_cast_no_check (refl_equal true).
 Qed.

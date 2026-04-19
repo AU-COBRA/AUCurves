@@ -59,7 +59,7 @@ Section Field.
         Pock_certif 5 2 [(2,2)] 1;
         Proof_certif 3 prime_3;
         Proof_certif 2 prime_2] _)%positive.
-    native_cast_no_check (@eq_refl bool true).
+    vm_cast_no_check (@eq_refl bool true).
   Qed.
 
   Existing Instances

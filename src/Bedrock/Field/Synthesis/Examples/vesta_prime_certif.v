@@ -2,9 +2,9 @@
    Exports vesta_modulus and prime_vesta.
    Certificate from AUCurves/src/Bedrock/Curve/Vesta_prime_certif.v *)
 
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.ZArith.Znumtheory.
-Require Import Coq.Lists.List. Import ListNotations.
+From Stdlib Require Import ZArith.ZArith.
+From Stdlib Require Import ZArith.Znumtheory.
+From Stdlib Require Import Lists.List. Import ListNotations.
 From Coqprime Require Import PocklingtonRefl BasePrimes.
 
 Local Open Scope positive_scope.
@@ -31,5 +31,5 @@ Proof.
           (Proof_certif 359 prime359) ::
           (Proof_certif 2 prime2) ::
            nil)).
-  native_cast_no_check (refl_equal true).
+  vm_cast_no_check (refl_equal true).
 Qed.

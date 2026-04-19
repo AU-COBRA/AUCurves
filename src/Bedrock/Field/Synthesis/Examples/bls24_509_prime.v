@@ -2,7 +2,7 @@
     p(z) = (z-1)^2*(z^8-z^4+1)/3 + z, z = -0x800000ffff801.
     509 bits, p = 3 (mod 4). *)
 
-From Coq Require Import ZArith Znumtheory.
+From Stdlib Require Import ZArith.ZArith ZArith.Znumtheory.
 From Coqprime Require Import PocklingtonRefl.
 
 Local Open Scope Z_scope.
@@ -101,7 +101,7 @@ Proof.
      (Proof_certif 5179 prime5179) :: (Proof_certif 2447 prime2447) :: (Proof_certif 1877 prime1877) :: (Proof_certif 383 prime383) ::
      (Proof_certif 5 prime5) :: (Proof_certif 3 prime3) :: (Proof_certif 2 prime2) ::
       nil)).
-  native_cast_no_check (refl_equal true).
+  vm_cast_no_check (refl_equal true).
 Qed.
 
 Local Close Scope positive_scope.

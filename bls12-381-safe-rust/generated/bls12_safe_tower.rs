@@ -261,8 +261,8 @@ pub fn bls12_Fp12_add(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut ay: Fp12 = Fp12::zero();
     bls12_Fp12_felem_copy(&mut ax, &inx);
     bls12_Fp12_felem_copy(&mut ay, &iny);
-    bls12_Fp6_add(&mut out.c0, &ax.c0, &ay.c0);
-    bls12_Fp6_add(&mut out.c1, &ax.c1, &ay.c1);
+    bls12_Fp6_add_nocopy(&mut out.c0, &ax.c0, &ay.c0);
+    bls12_Fp6_add_nocopy(&mut out.c1, &ax.c1, &ay.c1);
 }
 
 #[inline]
@@ -271,8 +271,8 @@ pub fn bls12_Fp12_sub(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut ay: Fp12 = Fp12::zero();
     bls12_Fp12_felem_copy(&mut ax, &inx);
     bls12_Fp12_felem_copy(&mut ay, &iny);
-    bls12_Fp6_sub(&mut out.c0, &ax.c0, &ay.c0);
-    bls12_Fp6_sub(&mut out.c1, &ax.c1, &ay.c1);
+    bls12_Fp6_sub_nocopy(&mut out.c0, &ax.c0, &ay.c0);
+    bls12_Fp6_sub_nocopy(&mut out.c1, &ax.c1, &ay.c1);
 }
 
 #[inline]
@@ -303,15 +303,15 @@ pub fn bls12_Fp12_mul(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut u: Fp6 = Fp6::zero();
     bls12_Fp6_mul(&mut v0, &ax.c0, &ay.c0);
     bls12_Fp6_mul(&mut v1, &ax.c1, &ay.c1);
-    bls12_Fp6_add(&mut t, &ax.c0, &ax.c1);
-    bls12_Fp6_add(&mut u, &ay.c0, &ay.c1);
+    bls12_Fp6_add_nocopy(&mut t, &ax.c0, &ax.c1);
+    bls12_Fp6_add_nocopy(&mut u, &ay.c0, &ay.c1);
     let __ac0 = t.clone();
     bls12_Fp6_mul(&mut t, &__ac0, &u);
     bls12_Fp6_mul_by_v(&mut u, &v1);
-    bls12_Fp6_add(&mut out.c0, &v0, &u);
+    bls12_Fp6_add_nocopy(&mut out.c0, &v0, &u);
     let __ac1 = t.clone();
-    bls12_Fp6_sub(&mut t, &__ac1, &v0);
-    bls12_Fp6_sub(&mut out.c1, &t, &v1);
+    bls12_Fp6_sub_nocopy(&mut t, &__ac1, &v0);
+    bls12_Fp6_sub_nocopy(&mut out.c1, &t, &v1);
 }
 
 #[inline]
@@ -326,8 +326,8 @@ pub fn bls12_Fp12_square(mut out: &mut Fp12, x: &Fp12) {
     bls12_Fp6_mul(&mut t2, &allocx.c0, &allocx.c1);
     let __ac0 = t1.clone();
     bls12_Fp6_mul_by_v(&mut t1, &__ac0);
-    bls12_Fp6_add(&mut out.c0, &t0, &t1);
-    bls12_Fp6_add(&mut out.c1, &t2, &t2);
+    bls12_Fp6_add_nocopy(&mut out.c0, &t0, &t1);
+    bls12_Fp6_add_nocopy(&mut out.c1, &t2, &t2);
 }
 
 #[inline]
@@ -341,7 +341,7 @@ pub fn bls12_Fp12_inv(mut out: &mut Fp12, x: &Fp12) {
     let __ac0 = t1.clone();
     bls12_Fp6_mul_by_v(&mut t1, &__ac0);
     let __ac1 = t0.clone();
-    bls12_Fp6_sub(&mut t0, &__ac1, &t1);
+    bls12_Fp6_sub_nocopy(&mut t0, &__ac1, &t1);
     let __ac2 = t0.clone();
     bls12_Fp6_inv(&mut t0, &__ac2);
     bls12_Fp6_mul(&mut out.c0, &allocx.c0, &t0);
@@ -352,14 +352,14 @@ pub fn bls12_Fp12_inv(mut out: &mut Fp12, x: &Fp12) {
 
 #[inline]
 pub fn bls12_Fp12_add_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
-    bls12_Fp6_add(&mut out.c0, &inx.c0, &iny.c0);
-    bls12_Fp6_add(&mut out.c1, &inx.c1, &iny.c1);
+    bls12_Fp6_add_nocopy(&mut out.c0, &inx.c0, &iny.c0);
+    bls12_Fp6_add_nocopy(&mut out.c1, &inx.c1, &iny.c1);
 }
 
 #[inline]
 pub fn bls12_Fp12_sub_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
-    bls12_Fp6_sub(&mut out.c0, &inx.c0, &iny.c0);
-    bls12_Fp6_sub(&mut out.c1, &inx.c1, &iny.c1);
+    bls12_Fp6_sub_nocopy(&mut out.c0, &inx.c0, &iny.c0);
+    bls12_Fp6_sub_nocopy(&mut out.c1, &inx.c1, &iny.c1);
 }
 
 #[inline]
@@ -370,15 +370,15 @@ pub fn bls12_Fp12_mul_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut u: Fp6 = Fp6::zero();
     bls12_Fp6_mul(&mut v0, &inx.c0, &iny.c0);
     bls12_Fp6_mul(&mut v1, &inx.c1, &iny.c1);
-    bls12_Fp6_add(&mut t, &inx.c0, &inx.c1);
-    bls12_Fp6_add(&mut u, &iny.c0, &iny.c1);
+    bls12_Fp6_add_nocopy(&mut t, &inx.c0, &inx.c1);
+    bls12_Fp6_add_nocopy(&mut u, &iny.c0, &iny.c1);
     let __ac0 = t.clone();
     bls12_Fp6_mul(&mut t, &__ac0, &u);
     bls12_Fp6_mul_by_v(&mut u, &v1);
-    bls12_Fp6_add(&mut out.c0, &v0, &u);
+    bls12_Fp6_add_nocopy(&mut out.c0, &v0, &u);
     let __ac1 = t.clone();
-    bls12_Fp6_sub(&mut t, &__ac1, &v0);
-    bls12_Fp6_sub(&mut out.c1, &t, &v1);
+    bls12_Fp6_sub_nocopy(&mut t, &__ac1, &v0);
+    bls12_Fp6_sub_nocopy(&mut out.c1, &t, &v1);
 }
 
 #[inline]
@@ -593,7 +593,7 @@ pub fn bls12_Fp12_pow_x(mut out: &mut Fp12, base: &Fp12) {
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac1 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac1, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac1, &base);
         } else {
         }
     }
@@ -640,22 +640,22 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
         bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
         let __ac0 = cyc_t0.clone();
         bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac0);
-        bls12_Fp6_add(&mut result.c0, &cyc_t0, &cyc_t0);
+        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
         let __ac1 = result.c0.c0.c0.clone();
         bls12_add(&mut result.c0.c0.c0, &__ac1, &cyc_one);
-        bls12_Fp6_add(&mut result.c1, &cyc_t1, &cyc_t1);
+        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
         let mut bit: u64;
         bit = ((7566188111470821376u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac2 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac2, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac2, &base);
         } else {
         }
     }
     bls12_Fp12_conjugate(&mut t1, &result);
     bls12_Fp12_conjugate(&mut t2, &f);
     let __ac3 = t1.clone();
-    bls12_Fp12_mul(&mut t1, &__ac3, &t2);
+    bls12_Fp12_mul_nocopy(&mut t1, &__ac3, &t2);
     bls12_Fp12_felem_copy(&mut result, &t1);
     bls12_Fp12_felem_copy(&mut base, &t1);
     i = 63u64;
@@ -665,15 +665,15 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
         bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
         let __ac4 = cyc_t0.clone();
         bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac4);
-        bls12_Fp6_add(&mut result.c0, &cyc_t0, &cyc_t0);
+        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
         let __ac5 = result.c0.c0.c0.clone();
         bls12_add(&mut result.c0.c0.c0, &__ac5, &cyc_one);
-        bls12_Fp6_add(&mut result.c1, &cyc_t1, &cyc_t1);
+        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
         let mut bit: u64;
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac6 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac6, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac6, &base);
         } else {
         }
     }
@@ -681,7 +681,7 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
     let __ac7 = t1.clone();
     bls12_Fp12_conjugate(&mut t1, &__ac7);
     let __ac8 = t1.clone();
-    bls12_Fp12_mul(&mut t1, &__ac8, &t2);
+    bls12_Fp12_mul_nocopy(&mut t1, &__ac8, &t2);
     bls12_Fp12_felem_copy(&mut result, &t1);
     bls12_Fp12_felem_copy(&mut base, &t1);
     i = 63u64;
@@ -691,15 +691,15 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
         bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
         let __ac9 = cyc_t0.clone();
         bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac9);
-        bls12_Fp6_add(&mut result.c0, &cyc_t0, &cyc_t0);
+        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
         let __ac10 = result.c0.c0.c0.clone();
         bls12_add(&mut result.c0.c0.c0, &__ac10, &cyc_one);
-        bls12_Fp6_add(&mut result.c1, &cyc_t1, &cyc_t1);
+        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
         let mut bit: u64;
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac11 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac11, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac11, &base);
         } else {
         }
     }
@@ -707,8 +707,8 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
     let __ac12 = t1.clone();
     bls12_Fp12_frobenius(&mut t1, &__ac12, &gamma1, &gamma2, &w_frob_c1);
     let __ac13 = t1.clone();
-    bls12_Fp12_mul(&mut t1, &__ac13, &t2);
-    bls12_Fp12_mul(&mut t3, &f, &t0);
+    bls12_Fp12_mul_nocopy(&mut t1, &__ac13, &t2);
+    bls12_Fp12_mul_nocopy(&mut t3, &f, &t0);
     bls12_Fp12_felem_copy(&mut result, &t1);
     bls12_Fp12_felem_copy(&mut base, &t1);
     i = 63u64;
@@ -718,15 +718,15 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
         bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
         let __ac14 = cyc_t0.clone();
         bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac14);
-        bls12_Fp6_add(&mut result.c0, &cyc_t0, &cyc_t0);
+        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
         let __ac15 = result.c0.c0.c0.clone();
         bls12_add(&mut result.c0.c0.c0, &__ac15, &cyc_one);
-        bls12_Fp6_add(&mut result.c1, &cyc_t1, &cyc_t1);
+        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
         let mut bit: u64;
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac16 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac16, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac16, &base);
         } else {
         }
     }
@@ -740,15 +740,15 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
         bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
         let __ac17 = cyc_t0.clone();
         bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac17);
-        bls12_Fp6_add(&mut result.c0, &cyc_t0, &cyc_t0);
+        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
         let __ac18 = result.c0.c0.c0.clone();
         bls12_add(&mut result.c0.c0.c0, &__ac18, &cyc_one);
-        bls12_Fp6_add(&mut result.c1, &cyc_t1, &cyc_t1);
+        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
         let mut bit: u64;
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac19 = result.clone();
-            bls12_Fp12_mul(&mut result, &__ac19, &base);
+            bls12_Fp12_mul_nocopy(&mut result, &__ac19, &base);
         } else {
         }
     }
@@ -757,10 +757,10 @@ pub fn bls12_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, g
     let __ac20 = t1.clone();
     bls12_Fp12_conjugate(&mut t1, &__ac20);
     let __ac21 = t1.clone();
-    bls12_Fp12_mul(&mut t1, &__ac21, &t2);
+    bls12_Fp12_mul_nocopy(&mut t1, &__ac21, &t2);
     let __ac22 = t1.clone();
-    bls12_Fp12_mul(&mut t1, &__ac22, &t0);
-    bls12_Fp12_mul(&mut out, &t3, &t1);
+    bls12_Fp12_mul_nocopy(&mut t1, &__ac22, &t0);
+    bls12_Fp12_mul_nocopy(&mut out, &t3, &t1);
 }
 
 #[inline]
@@ -803,7 +803,7 @@ pub fn bls12_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
         let __ac3 = f.clone();
         bls12_Fp12_square(&mut f, &__ac3);
         let __ac4 = f.clone();
-        bls12_Fp12_mul(&mut f, &__ac4, &line);
+        bls12_Fp12_mul_nocopy(&mut f, &__ac4, &line);
         bls12_Fp2_square(&mut tmp1, &lambda);
         let __ac5 = tmp1.clone();
         bls12_Fp2_sub(&mut tmp1, &__ac5, &t_x);
@@ -824,7 +824,7 @@ pub fn bls12_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
             bls12_Fp2_mul(&mut lambda, &tmp1, &tmp2);
             bls12_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
             let __ac9 = f.clone();
-            bls12_Fp12_mul(&mut f, &__ac9, &line);
+            bls12_Fp12_mul_nocopy(&mut f, &__ac9, &line);
             bls12_Fp2_square(&mut tmp1, &lambda);
             let __ac10 = tmp1.clone();
             bls12_Fp2_sub(&mut tmp1, &__ac10, &t_x);
@@ -848,10 +848,10 @@ pub fn bls12_final_exp(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, gamma2_p2:
     bls12_Fp12_conjugate(&mut result, &f);
     bls12_Fp12_inv(&mut tmp, &f);
     let __ac0 = result.clone();
-    bls12_Fp12_mul(&mut result, &__ac0, &tmp);
+    bls12_Fp12_mul_nocopy(&mut result, &__ac0, &tmp);
     bls12_Fp12_frobenius_p2(&mut tmp, &result, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
     let __ac1 = result.clone();
-    bls12_Fp12_mul(&mut result, &tmp, &__ac1);
+    bls12_Fp12_mul_nocopy(&mut result, &tmp, &__ac1);
     bls12_final_exp_hard_dsd(&mut out, &result, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
 }
 
@@ -869,10 +869,10 @@ pub fn bls12_Fp12_mul_by_024(mut out: &mut Fp12, a: &Fp12, ell0: &Fp2, ell2: &Fp
     bls12_Fp6_mul(&mut t0, &a.c0, &b);
     bls12_Fp6_mul_fp2(&mut t1, &a.c1, &ell4);
     bls12_Fp6_mul_by_v(&mut u, &t1);
-    bls12_Fp6_add(&mut out.c0, &t0, &u);
+    bls12_Fp6_add_nocopy(&mut out.c0, &t0, &u);
     bls12_Fp6_mul(&mut t2, &a.c1, &b);
     bls12_Fp6_mul_fp2(&mut t1, &a.c0, &ell4);
-    bls12_Fp6_add(&mut out.c1, &t2, &t1);
+    bls12_Fp6_add_nocopy(&mut out.c1, &t2, &t1);
 }
 
 #[inline]

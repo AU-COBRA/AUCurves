@@ -454,12 +454,30 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
             | _, _ => nil
             end in
           let srcs := fmt_srcs src_cts src_es in
-          let call := ind ++ fname ++ "(&mut " ++ dest_full ++ ", " ++
+          (* B-3 copy elimination: when we already cloned dest, the aliasing
+             concern (out vs inx/iny) inside the leaf is no longer needed
+             because __ac is a fresh buffer.  If the leaf has a _nocopy
+             variant (skips its internal allocx/allocy felem_copies), use it.
+             Saves 2 felem_copy calls (2 * sizeof(out)) per cloned-dest call. *)
+          let nocopy_name := fname ++ "_nocopy" in
+          let fname_eff :=
+            if List.existsb (fun '(k,_) => seq k nocopy_name) param_table
+            then nocopy_name else fname in
+          let call := ind ++ fname_eff ++ "(&mut " ++ dest_full ++ ", " ++
                       join ", " srcs ++ ");" ++ LF in
           (copy ++ call, c, S ci)
         else
           let srcs := List.map (fun '(ct, e) => fmt_src n c ct e) (List.combine src_cts src_es) in
-          let call := ind ++ fname ++ "(&mut " ++ dest_full ++ ", " ++
+          (* B-3 copy elimination: even when there is no caller-side aliasing,
+             the regular leaf wraps inputs in allocx/allocy felem_copies for
+             defensive aliasing handling.  When dest provably differs from
+             every source (the current branch), use _nocopy to skip those
+             redundant internal copies. *)
+          let nocopy_name := fname ++ "_nocopy" in
+          let fname_eff :=
+            if List.existsb (fun '(k,_) => seq k nocopy_name) param_table
+            then nocopy_name else fname in
+          let call := ind ++ fname_eff ++ "(&mut " ++ dest_full ++ ", " ++
                       join ", " srcs ++ ");" ++ LF in
           (call, c, ci)
       | _, _ =>

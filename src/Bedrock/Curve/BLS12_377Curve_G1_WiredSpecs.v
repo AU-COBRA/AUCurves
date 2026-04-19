@@ -49,122 +49,16 @@ Notation eval := (@WordByWordMontgomery.WordByWordMontgomery.eval bw n).
 Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m bls12_377_m').
 Local Notation toZ := (List.map Interface.word.unsigned).
 
-(** ** Concrete spec_of instances *)
+(** ** Concrete spec_of instances — use shared predicate bodies from
+    [WbwMontgomeryG1_BignumSpecBodies]. *)
 
-Instance spec_of_bls12_377_mul_bignum : spec_of "bls12_377_coord_mul" :=
-  fun functions =>
-    forall (wsx wsy old_out : list word.rep)
-           (px py pout : word.rep)
-           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
-           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
-      WordByWordMontgomery.valid bw n m (toZ wsx) ->
-      WordByWordMontgomery.valid bw n m (toZ wsy) ->
-      Datatypes.length old_out = n ->
-      (Bignum n px wsx * Rx)%sep mem0 ->
-      (Bignum n py wsy * Ry)%sep mem0 ->
-      (Bignum n pout old_out * Rout)%sep mem0 ->
-      call functions Field.mul tr mem0
-        [pout; px; py]
-        (fun tr' mem' rets =>
-           tr = tr' /\ rets = nil /\
-           exists wsout : list word.rep,
-             Datatypes.length wsout = n /\
-             WordByWordMontgomery.valid bw n m (toZ wsout) /\
-             (Bignum n pout wsout * Rout)%sep mem' /\
-             (eval (from_mont (toZ wsout))) mod m =
-             ((eval (from_mont (toZ wsx))) mod m *
-              (eval (from_mont (toZ wsy))) mod m) mod m).
+Require Import Bedrock.Curve.WbwMontgomeryG1_BignumSpecBodies.
 
-Instance spec_of_bls12_377_add_bignum : spec_of "bls12_377_coord_add" :=
-  fun functions =>
-    forall (wsx wsy old_out : list word.rep)
-           (px py pout : word.rep)
-           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
-           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
-      WordByWordMontgomery.valid bw n m (toZ wsx) ->
-      WordByWordMontgomery.valid bw n m (toZ wsy) ->
-      Datatypes.length old_out = n ->
-      (Bignum n px wsx * Rx)%sep mem0 ->
-      (Bignum n py wsy * Ry)%sep mem0 ->
-      (Bignum n pout old_out * Rout)%sep mem0 ->
-      call functions Field.add tr mem0
-        [pout; px; py]
-        (fun tr' mem' rets =>
-           tr = tr' /\ rets = nil /\
-           exists wsout : list word.rep,
-             Datatypes.length wsout = n /\
-             WordByWordMontgomery.valid bw n m (toZ wsout) /\
-             (Bignum n pout wsout * Rout)%sep mem' /\
-             (eval (from_mont (toZ wsout))) mod m =
-             ((eval (from_mont (toZ wsx))) mod m +
-              (eval (from_mont (toZ wsy))) mod m) mod m).
-
-Instance spec_of_bls12_377_sub_bignum : spec_of "bls12_377_coord_sub" :=
-  fun functions =>
-    forall (wsx wsy old_out : list word.rep)
-           (px py pout : word.rep)
-           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
-           (Rx Ry Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
-      WordByWordMontgomery.valid bw n m (toZ wsx) ->
-      WordByWordMontgomery.valid bw n m (toZ wsy) ->
-      Datatypes.length old_out = n ->
-      (Bignum n px wsx * Rx)%sep mem0 ->
-      (Bignum n py wsy * Ry)%sep mem0 ->
-      (Bignum n pout old_out * Rout)%sep mem0 ->
-      call functions Field.sub tr mem0
-        [pout; px; py]
-        (fun tr' mem' rets =>
-           tr = tr' /\ rets = nil /\
-           exists wsout : list word.rep,
-             Datatypes.length wsout = n /\
-             WordByWordMontgomery.valid bw n m (toZ wsout) /\
-             (Bignum n pout wsout * Rout)%sep mem' /\
-             (eval (from_mont (toZ wsout))) mod m =
-             ((eval (from_mont (toZ wsx))) mod m -
-              (eval (from_mont (toZ wsy))) mod m) mod m).
-
-Instance spec_of_bls12_377_square_bignum : spec_of "bls12_377_coord_square" :=
-  fun functions =>
-    forall (wsx old_out : list word.rep)
-           (px pout : word.rep)
-           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
-           (Rx Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
-      WordByWordMontgomery.valid bw n m (toZ wsx) ->
-      Datatypes.length old_out = n ->
-      (Bignum n px wsx * Rx)%sep mem0 ->
-      (Bignum n pout old_out * Rout)%sep mem0 ->
-      call functions Field.square tr mem0
-        [pout; px]
-        (fun tr' mem' rets =>
-           tr = tr' /\ rets = nil /\
-           exists wsout : list word.rep,
-             Datatypes.length wsout = n /\
-             WordByWordMontgomery.valid bw n m (toZ wsout) /\
-             (Bignum n pout wsout * Rout)%sep mem' /\
-             (eval (from_mont (toZ wsout))) mod m =
-             (((eval (from_mont (toZ wsx))) mod m) *
-              ((eval (from_mont (toZ wsx))) mod m)) mod m).
-
-Instance spec_of_bls12_377_opp_bignum : spec_of "bls12_377_coord_opp" :=
-  fun functions =>
-    forall (wsx old_out : list word.rep)
-           (px pout : word.rep)
-           (tr : trace) (mem0 : @map.rep _ _ BasicC64Semantics.mem)
-           (Rx Rout : @map.rep _ _ BasicC64Semantics.mem -> Prop),
-      WordByWordMontgomery.valid bw n m (toZ wsx) ->
-      Datatypes.length old_out = n ->
-      (Bignum n px wsx * Rx)%sep mem0 ->
-      (Bignum n pout old_out * Rout)%sep mem0 ->
-      call functions Field.opp tr mem0
-        [pout; px]
-        (fun tr' mem' rets =>
-           tr = tr' /\ rets = nil /\
-           exists wsout : list word.rep,
-             Datatypes.length wsout = n /\
-             WordByWordMontgomery.valid bw n m (toZ wsout) /\
-             (Bignum n pout wsout * Rout)%sep mem' /\
-             (eval (from_mont (toZ wsout))) mod m =
-             (- (eval (from_mont (toZ wsx))) mod m) mod m).
+Instance spec_of_bls12_377_mul_bignum    : spec_of "bls12_377_coord_mul"    := binop_mul_body.
+Instance spec_of_bls12_377_add_bignum    : spec_of "bls12_377_coord_add"    := binop_add_body.
+Instance spec_of_bls12_377_sub_bignum    : spec_of "bls12_377_coord_sub"    := binop_sub_body.
+Instance spec_of_bls12_377_square_bignum : spec_of "bls12_377_coord_square" := unop_square_body.
+Instance spec_of_bls12_377_opp_bignum    : spec_of "bls12_377_coord_opp"    := unop_opp_body.
 
 (** ** Bridge lemmas — use shared WbwMontgomeryG1_WiredBridges functor.
     Replaces ~80 LoC of identical-per-curve bridge lemmas with a functor

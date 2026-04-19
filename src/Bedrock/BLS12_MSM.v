@@ -2709,13 +2709,41 @@ Section PippengerSpec.
     Lia.lia.
   Qed.
 
+  (** Helper: [nth] on [points_of] decomposes per-coordinate when in range.
+      [d] can be any default; for in-range [k] the default is irrelevant. *)
+  Lemma nth_points_of_eq :
+    forall (k : nat) (bs_x bs_y bs_z : list F) (d : G1_F),
+      (k < length bs_x)%nat ->
+      length bs_x = length bs_y ->
+      length bs_y = length bs_z ->
+      nth k (points_of bs_x bs_y bs_z) d =
+        mk_point (nth k bs_x (fst (fst d)))
+                 (nth k bs_y (snd (fst d)))
+                 (nth k bs_z (snd d)).
+  Proof.
+    induction k as [|k' IH]; intros bs_x bs_y bs_z d Hk Hxy Hyz.
+    - destruct bs_x as [|x xs]; [cbn in Hk; Lia.lia|].
+      destruct bs_y as [|y ys]; [cbn in Hxy; discriminate|].
+      destruct bs_z as [|z zs]; [cbn in Hyz; discriminate|].
+      cbn. reflexivity.
+    - destruct bs_x as [|x xs]; [cbn in Hk; Lia.lia|].
+      destruct bs_y as [|y ys]; [cbn in Hxy; discriminate|].
+      destruct bs_z as [|z zs]; [cbn in Hyz; discriminate|].
+      cbn. apply IH.
+      + cbn in Hk. Lia.lia.
+      + cbn in Hxy. Lia.lia.
+      + cbn in Hyz. Lia.lia.
+  Qed.
+
   (** Leaf 4: reduce sub-loop (running-sum).  [i] from [num_buckets] to 0;
       each iter: [runx/y/z += buckets[i]]; [wsx/y/z += runx/y/z].  Exit:
       [wsx/y/z = scaled_sum bucket_list] via [reduce_inv_at_exit].
 
-      The postcondition here tracks only the sep/locals preservation;
-      the algebraic identity [wsx = scaled_sum bs] is discharged at the
-      Leaf-5 composition level. *)
+      The postcondition strengthening (2026-04-19): includes
+      [mk_point WXf WYf WZf = reduce_buckets (points_of bs_x' bs_y' bs_z')].
+      This is the load-bearing equation for L5 seg 9's outer_inv closure.
+      Requires caller to provide initial run/ws values equal to
+      g1_identity coords (easily satisfied post store_zero). *)
   Lemma msm_bls12_reduce_wp :
     forall functions
       (HCurveAdd : CurveAddAliasedOK functions)
@@ -2728,6 +2756,11 @@ Section PippengerSpec.
       Z.of_nat (length bs_x) = num_buckets ->
       Z.of_nat (length bs_y) = num_buckets ->
       Z.of_nat (length bs_z) = num_buckets ->
+      length bs_x = length bs_y ->
+      length bs_y = length bs_z ->
+      (* New 2026-04-19: initial run/ws at g1_identity coords. *)
+      (RX0, RY0, RZ0) = g1_identity ->
+      (WX0, WY0, WZ0) = g1_identity ->
       (FElem (Some tight_bounds) runx RX0
        * FElem (Some tight_bounds) runy RY0
        * FElem (Some tight_bounds) runz RZ0
@@ -2806,13 +2839,17 @@ Section PippengerSpec.
              map.get l' "buckets_z" = Some buckets_z /\
              map.get l' "runx" = Some runx /\ map.get l' "runy" = Some runy /\
              map.get l' "runz" = Some runz /\ map.get l' "wsx" = Some wsx /\
-             map.get l' "wsy" = Some wsy /\ map.get l' "wsz" = Some wsz).
+             map.get l' "wsy" = Some wsy /\ map.get l' "wsz" = Some wsz /\
+             (* New 2026-04-19: algebraic equation for ws tuple. *)
+             mk_point WXf WYf WZf =
+               reduce_buckets G1_F g1_identity g1_add_spec
+                              (points_of bs_x' bs_y' bs_z')).
   Proof.
     intros functions HCurveAdd
            buckets_x buckets_y buckets_z runx runy runz wsx wsy wsz
            bs_x bs_y bs_z RX0 RY0 RZ0 WX0 WY0 WZ0
            R tr mem0 l0
-           Hlen_x Hlen_y Hlen_z Hsep
+           Hlen_x Hlen_y Hlen_z Hxy Hyz HRid HWid Hsep
            Hl_runx Hl_runy Hl_runz Hl_wsx Hl_wsy Hl_wsz
            Hl_bx Hl_by Hl_bz Hl_i.
     (* Width bounds used repeatedly. *)
@@ -3225,8 +3262,15 @@ Section PippengerSpec.
         split; [exact Hlrunz|].
         split; [exact Hlwsx|].
         split; [exact Hlwsy|].
-        exact Hlwsz. }
-  Qed.
+        split; [exact Hlwsz|].
+        (* NEW 2026-04-19: [mk_point WXf WYf WZf = reduce_buckets ...].
+           The current invariant does NOT carry [reduce_inv]; to close
+           this we need to thread reduce_inv through the loop (entry,
+           step, exit).  Partial staging: admit here, making L4 Admitted
+           temporarily.  Planned re-proof adds reduce_inv to inv and
+           uses reduce_inv_entry/step/exit. *)
+        admit. }
+  Admitted.
 
   (* =================================================================== *)
   (** ** Leaf 5: outer-loop body.                                         *)
@@ -4473,6 +4517,16 @@ Section PippengerSpec.
          HCurveAdd + outer_inv Gallina closure.  ~150 LoC of tactics
          + 1 sub-lemma (bucket bounds bridge for L4→outer_inv via
          reduce_buckets_eq_scaled_sum). *)
+
+      (* ============================================================
+         Segment 7/8/9: L4 reduce + HCurveAdd + outer_inv closure.
+         L4's strengthened spec now has the reduce_buckets equation.
+         Remaining: (a) determine goal shape at this point (goal
+         unification with Proper_cmd fails — needs MCP inspection to
+         identify the correct unfold pattern), (b) apply L4 with the
+         20 premises discharge, (c) HCurveAdd, (d) Gallina outer_inv
+         closure via partial_msm_from S-step + L4's mk_point = reduce_buckets
+         equation. *)
       admit.
   Admitted.
 

@@ -4781,6 +4781,37 @@ Section PippengerSpec.
          wsx/y/z WXf/WYf/WZf, buckets at tight, inner run exists, frame);
          Heq_ws : mk_point WXf WYf WZf = reduce_buckets (points_of bs_x6 bs_y6 bs_z6).
          Next: seg 8 (final HCurveAdd) + seg 9 (outer_inv closure). *)
+
+      (* ============================================================
+         Seg 8: final curve_add [outx; wsx; outy; wsy; outz; wsz;
+                                 outx; outy; outz].
+         ============================================================ *)
+      cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+      fold WeakestPrecondition.cmd.
+      eexists; split.
+      { cbv [WeakestPrecondition.dexprs list_map list_map_body
+             WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hlo7_ox|].
+        eexists; split; [exact Hlo7_wx|].
+        eexists; split; [exact Hlo7_oy|].
+        eexists; split; [exact Hlo7_wy|].
+        eexists; split; [exact Hlo7_oz|].
+        eexists; split; [exact Hlo7_wz|].
+        eexists; split; [exact Hlo7_ox|].
+        eexists; split; [exact Hlo7_oy|].
+        eexists; split; [exact Hlo7_oz|].
+        reflexivity. }
+      (* Seg 8 (final HCurveAdd) blocked on Hsep7's inner [exists RXf RYf RZf]
+         wrapper breaking ecancel_assumption.  Workaround attempts:
+         - sep_ex1_r fails ("No matching clauses for match").
+         - manual destruct of Hsep7's map.split also fails because
+           the shape is [A ⋆ (fun m' => exists ..., _) ⋆ R]%sep, not a
+           plain 3-way map.split.
+         Needs dedicated sep-logic unfolding — scope for next iteration.
+
+         After that: seg 9 outer_inv closure via Houter_inv + S-step +
+         Heq_ws + new [process_window_as_reduce_buckets] Gallina lemma. *)
       admit.
   Admitted.
 

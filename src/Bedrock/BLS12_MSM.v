@@ -3693,34 +3693,64 @@ Section PippengerSpec.
     destruct out0 as [[Ox Oy] Oz].
     unfold1_cmd_goal; cbv beta match delta [cmd_body].
     (* Goal: cmd e W3 tr mem0 l2 (fun tr' m' l' => cmd e REST tr' m' l' post).
-       The inner post is our REST continuation; weaken to L1's shape. *)
+       Wrap L1 with frame_locals_wp_list on the 15 non-L1 locals, so
+       the post also includes their preservation across L1's execution. *)
     eapply WeakestPreconditionProperties.Proper_cmd;
-      [ | eapply msm_bls12_double_shift_wp with
-            (Xe := Ox) (Ye := Oy) (Ze := Oz)
-            (R := (array (FElem None) (word.of_Z felem_size_in_bytes) bx_p bs_x
-                   * array (FElem None) (word.of_Z felem_size_in_bytes) by_p bs_y
-                   * array (FElem None) (word.of_Z felem_size_in_bytes) bz_p bs_z
-                   * FElem None runx run0x
-                   * FElem None runy run0y
-                   * FElem None runz run0z
-                   * FElem None wsx  ws0x
-                   * FElem None wsy  ws0y
-                   * FElem None wsz  ws0z
-                   * ScalarsArray scalars_p scalars
-                   * G1Array3 pointsx pointsy pointsz px py pz
-                   * R)%sep);
-        [ exact HCurveDouble
-        | (* Pre-sep L1: reshape Hsep into (outx,outy,outz) head + frame. *)
-          ecancel_assumption
-        | (* "outx" local: after two put's of "w" and "i" *)
-          rewrite !map.get_put_diff by congruence; exact Hloutx
-        | rewrite !map.get_put_diff by congruence; exact Hlouty
-        | rewrite !map.get_put_diff by congruence; exact Hloutz
-        | (* "i" local = word.of_Z c *)
-          rewrite map.get_put_same; reflexivity ] ].
-    (* L1 post available; feed it to REST. *)
+      [ |
+        eapply frame_locals_wp_list with
+          (xs := ["buckets_x"; "buckets_y"; "buckets_z";
+                  "runx"; "runy"; "runz";
+                  "wsx";  "wsy";  "wsz";
+                  "scalars"; "pointsx"; "pointsy"; "pointsz";
+                  "n"; "w"]);
+          [ (* Forall (~ In x (cmd_writes L1)): cmd_writes = ["i"]. *)
+            do 15 (apply List.Forall_cons; [cbn; intuition discriminate|]);
+            apply List.Forall_nil
+          | (* Forall (exists v, map.get l2 x = Some v).  First 14
+               locals (non-"w") use !map.get_put_diff to skip both puts.
+               "w" was put by seg 1, so map.get_put_diff (once) then
+               map.get_put_same. *)
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlbx|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlby|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlbz|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlrx|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlry|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlrz|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlwx|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlwy|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlwz|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlsc|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlpx|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlpy|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hlpz|];
+            apply List.Forall_cons; [eexists; rewrite !map.get_put_diff by congruence; exact Hln|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence;
+                                     rewrite map.get_put_same; reflexivity|];
+            apply List.Forall_nil
+          | eapply msm_bls12_double_shift_wp with
+              (Xe := Ox) (Ye := Oy) (Ze := Oz)
+              (R := (array (FElem None) (word.of_Z felem_size_in_bytes) bx_p bs_x
+                     * array (FElem None) (word.of_Z felem_size_in_bytes) by_p bs_y
+                     * array (FElem None) (word.of_Z felem_size_in_bytes) bz_p bs_z
+                     * FElem None runx run0x
+                     * FElem None runy run0y
+                     * FElem None runz run0z
+                     * FElem None wsx  ws0x
+                     * FElem None wsy  ws0y
+                     * FElem None wsz  ws0z
+                     * ScalarsArray scalars_p scalars
+                     * G1Array3 pointsx pointsy pointsz px py pz
+                     * R)%sep);
+              [ exact HCurveDouble
+              | ecancel_assumption
+              | rewrite !map.get_put_diff by congruence; exact Hloutx
+              | rewrite !map.get_put_diff by congruence; exact Hlouty
+              | rewrite !map.get_put_diff by congruence; exact Hloutz
+              | rewrite map.get_put_same; reflexivity ]
+          ]
+      ].
     cbv beta.
-    intros tr3 mem3 l3 HL1.
+    intros tr3 mem3 l3 [HF HL1].
     destruct HL1 as [Htr3 [Hsep3 [Hlo3x [Hlo3y Hlo3z]]]].
     subst tr3.
     (* Name the post state (Xf,Yf,Zf) from the iter result. *)
@@ -3777,25 +3807,59 @@ Section PippengerSpec.
        We cite [frame_locals_wp] as the trust target and provide the
        conclusions via [admit]; the citation below is a ghost reference
        proving the lemma we would apply. *)
-    pose proof (@frame_locals_wp width BW word mem locals ext_spec word_ok
-                  mem_ok locals_ok ext_spec_ok) as Hframe_sig.
-    assert (Hlo3_bx : map.get l3 "buckets_x" = Some bx_p) by admit.
-    assert (Hlo3_by : map.get l3 "buckets_y" = Some by_p) by admit.
-    assert (Hlo3_bz : map.get l3 "buckets_z" = Some bz_p) by admit.
-    assert (Hlo3_rx : map.get l3 "runx"      = Some runx) by admit.
-    assert (Hlo3_ry : map.get l3 "runy"      = Some runy) by admit.
-    assert (Hlo3_rz : map.get l3 "runz"      = Some runz) by admit.
-    assert (Hlo3_wx : map.get l3 "wsx"       = Some wsx)  by admit.
-    assert (Hlo3_wy : map.get l3 "wsy"       = Some wsy)  by admit.
-    assert (Hlo3_wz : map.get l3 "wsz"       = Some wsz)  by admit.
-    assert (Hlo3_sc : map.get l3 "scalars"   = Some scalars_p) by admit.
-    assert (Hlo3_px : map.get l3 "pointsx"   = Some pointsx) by admit.
-    assert (Hlo3_py : map.get l3 "pointsy"   = Some pointsy) by admit.
-    assert (Hlo3_pz : map.get l3 "pointsz"   = Some pointsz) by admit.
-    assert (Hlo3_n  : map.get l3 "n"         = Some n_w) by admit.
-    assert (Hlo3_w  : map.get l3 "w"         = Some (word.of_Z (Z.of_nat w)))
+    (* Extract the 15 locals-preservation hypotheses from HF (a Forall
+       of 15 [map.get l2 x = map.get l3 x] facts).  Destructure one at
+       a time; each combined with the pre-condition Hl* (via map.get_put_diff
+       to skip the "w" and "i" puts in l2) yields Hlo3_*. *)
+    inversion HF as [|? ? Hp_bx HF1]; subst; clear HF.
+    inversion HF1 as [|? ? Hp_by HF2]; subst; clear HF1.
+    inversion HF2 as [|? ? Hp_bz HF3]; subst; clear HF2.
+    inversion HF3 as [|? ? Hp_rx HF4]; subst; clear HF3.
+    inversion HF4 as [|? ? Hp_ry HF5]; subst; clear HF4.
+    inversion HF5 as [|? ? Hp_rz HF6]; subst; clear HF5.
+    inversion HF6 as [|? ? Hp_wx HF7]; subst; clear HF6.
+    inversion HF7 as [|? ? Hp_wy HF8]; subst; clear HF7.
+    inversion HF8 as [|? ? Hp_wz HF9]; subst; clear HF8.
+    inversion HF9 as [|? ? Hp_sc HF10]; subst; clear HF9.
+    inversion HF10 as [|? ? Hp_px HF11]; subst; clear HF10.
+    inversion HF11 as [|? ? Hp_py HF12]; subst; clear HF11.
+    inversion HF12 as [|? ? Hp_pz HF13]; subst; clear HF12.
+    inversion HF13 as [|? ? Hp_n  HF14]; subst; clear HF13.
+    inversion HF14 as [|? ? Hp_w  _]; subst; clear HF14.
+    assert (Hlo3_bx : map.get l3 "buckets_x" = Some bx_p).
+    { rewrite <- Hp_bx, !map.get_put_diff by congruence. exact Hlbx. }
+    assert (Hlo3_by : map.get l3 "buckets_y" = Some by_p).
+    { rewrite <- Hp_by, !map.get_put_diff by congruence. exact Hlby. }
+    assert (Hlo3_bz : map.get l3 "buckets_z" = Some bz_p).
+    { rewrite <- Hp_bz, !map.get_put_diff by congruence. exact Hlbz. }
+    assert (Hlo3_rx : map.get l3 "runx" = Some runx).
+    { rewrite <- Hp_rx, !map.get_put_diff by congruence. exact Hlrx. }
+    assert (Hlo3_ry : map.get l3 "runy" = Some runy).
+    { rewrite <- Hp_ry, !map.get_put_diff by congruence. exact Hlry. }
+    assert (Hlo3_rz : map.get l3 "runz" = Some runz).
+    { rewrite <- Hp_rz, !map.get_put_diff by congruence. exact Hlrz. }
+    assert (Hlo3_wx : map.get l3 "wsx" = Some wsx).
+    { rewrite <- Hp_wx, !map.get_put_diff by congruence. exact Hlwx. }
+    assert (Hlo3_wy : map.get l3 "wsy" = Some wsy).
+    { rewrite <- Hp_wy, !map.get_put_diff by congruence. exact Hlwy. }
+    assert (Hlo3_wz : map.get l3 "wsz" = Some wsz).
+    { rewrite <- Hp_wz, !map.get_put_diff by congruence. exact Hlwz. }
+    assert (Hlo3_sc : map.get l3 "scalars" = Some scalars_p).
+    { rewrite <- Hp_sc, !map.get_put_diff by congruence. exact Hlsc. }
+    assert (Hlo3_px : map.get l3 "pointsx" = Some pointsx).
+    { rewrite <- Hp_px, !map.get_put_diff by congruence. exact Hlpx. }
+    assert (Hlo3_py : map.get l3 "pointsy" = Some pointsy).
+    { rewrite <- Hp_py, !map.get_put_diff by congruence. exact Hlpy. }
+    assert (Hlo3_pz : map.get l3 "pointsz" = Some pointsz).
+    { rewrite <- Hp_pz, !map.get_put_diff by congruence. exact Hlpz. }
+    assert (Hlo3_n  : map.get l3 "n" = Some n_w).
+    { rewrite <- Hp_n, !map.get_put_diff by congruence. exact Hln. }
+    (* "w" is the exception: segment 1 put l0 "w" (word.sub (word.of_Z
+       (Z.of_nat (S w))) (word.of_Z 1)), which equals word.of_Z (Z.of_nat w)
+       by word arithmetic; the bridging needs a word.sub simplification
+       that's deferred. *)
+    assert (Hlo3_w : map.get l3 "w" = Some (word.of_Z (Z.of_nat w)))
       by admit.
-    clear Hframe_sig.
 
     (* ================================================================
        Segment 4 (= L2 bucket_clear):  cmd.set "i" num_buckets;
@@ -3814,55 +3878,114 @@ Section PippengerSpec.
     cbv [dlet.dlet].
     unfold1_cmd_goal; cbv beta match delta [cmd_body].
     eapply WeakestPreconditionProperties.Proper_cmd;
-      [ | eapply msm_bls12_bucket_clear_wp with
-            (R := (FElem (Some tight_bounds) outx Xf
-                   * FElem (Some tight_bounds) outy Yf
-                   * FElem (Some tight_bounds) outz Zf
-                   * FElem None runx run0x
-                   * FElem None runy run0y
-                   * FElem None runz run0z
-                   * FElem None wsx  ws0x
-                   * FElem None wsy  ws0y
-                   * FElem None wsz  ws0z
-                   * ScalarsArray scalars_p scalars
-                   * G1Array3 pointsx pointsy pointsz px py pz
-                   * R)%sep);
-        [ exact HStoreZero
-        | exact Hbs_x_len
-        | exact Hbs_y_len
-        | exact Hbs_z_len
-        | (* Pre-sep L2: the three bucket arrays + 11-cell frame. *)
-          ecancel_assumption
-        | rewrite map.get_put_diff by congruence; exact Hlo3_bx
-        | rewrite map.get_put_diff by congruence; exact Hlo3_by
-        | rewrite map.get_put_diff by congruence; exact Hlo3_bz
-        | rewrite map.get_put_same; reflexivity ] ].
+      [ |
+        eapply frame_locals_wp_list with
+          (xs := ["outx"; "outy"; "outz";
+                  "runx"; "runy"; "runz";
+                  "wsx";  "wsy";  "wsz";
+                  "scalars"; "pointsx"; "pointsy"; "pointsz";
+                  "n"; "w"]);
+          [ (* Forall (~ In x (cmd_writes L2)): L2's cmd_writes is
+               ["i"; "bpx"; "bpy"; "bpz"]; none of our 15 match. *)
+            do 15 (apply List.Forall_cons; [cbn; intuition discriminate|]);
+            apply List.Forall_nil
+          | (* Forall (exists v, map.get l3_after_seti x = Some v).
+               l3' = map.put l3 "i" _; skip via map.get_put_diff. *)
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3x|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3y|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3z|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_rx|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_ry|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_rz|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_wx|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_wy|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_wz|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_sc|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_px|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_py|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_pz|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_n|];
+            apply List.Forall_cons; [eexists; rewrite map.get_put_diff by congruence; exact Hlo3_w|];
+            apply List.Forall_nil
+          | eapply msm_bls12_bucket_clear_wp with
+              (R := (FElem (Some tight_bounds) outx Xf
+                     * FElem (Some tight_bounds) outy Yf
+                     * FElem (Some tight_bounds) outz Zf
+                     * FElem None runx run0x
+                     * FElem None runy run0y
+                     * FElem None runz run0z
+                     * FElem None wsx  ws0x
+                     * FElem None wsy  ws0y
+                     * FElem None wsz  ws0z
+                     * ScalarsArray scalars_p scalars
+                     * G1Array3 pointsx pointsy pointsz px py pz
+                     * R)%sep);
+              [ exact HStoreZero
+              | exact Hbs_x_len
+              | exact Hbs_y_len
+              | exact Hbs_z_len
+              | ecancel_assumption
+              | rewrite map.get_put_diff by congruence; exact Hlo3_bx
+              | rewrite map.get_put_diff by congruence; exact Hlo3_by
+              | rewrite map.get_put_diff by congruence; exact Hlo3_bz
+              | rewrite map.get_put_same; reflexivity ]
+          ]
+      ].
     cbv beta.
-    intros tr4 mem4 l4 HL2.
+    intros tr4 mem4 l4 [HF4 HL2].
     destruct HL2 as
       [Htr4 [bs_x4 [bs_y4 [bs_z4 [Hlen4x [Hlen4y [Hlen4z
        [Hid4 [Hsep4 [Hlo4_bx [Hlo4_by Hlo4_bz]]]]]]]]]]].
     subst tr4.
 
-    (* Same frame-locals story for L2: post only preserves "buckets_*".
-       Re-assert the 14 non-L2-touched locals at [l4].  Each
-       by-[frame_locals_wp] citation, currently stubbed. *)
-    assert (Hlo4_ox : map.get l4 "outx" = Some outx) by admit.
-    assert (Hlo4_oy : map.get l4 "outy" = Some outy) by admit.
-    assert (Hlo4_oz : map.get l4 "outz" = Some outz) by admit.
-    assert (Hlo4_rx : map.get l4 "runx" = Some runx) by admit.
-    assert (Hlo4_ry : map.get l4 "runy" = Some runy) by admit.
-    assert (Hlo4_rz : map.get l4 "runz" = Some runz) by admit.
-    assert (Hlo4_wx : map.get l4 "wsx"  = Some wsx)  by admit.
-    assert (Hlo4_wy : map.get l4 "wsy"  = Some wsy)  by admit.
-    assert (Hlo4_wz : map.get l4 "wsz"  = Some wsz)  by admit.
-    assert (Hlo4_sc : map.get l4 "scalars" = Some scalars_p) by admit.
-    assert (Hlo4_px : map.get l4 "pointsx" = Some pointsx) by admit.
-    assert (Hlo4_py : map.get l4 "pointsy" = Some pointsy) by admit.
-    assert (Hlo4_pz : map.get l4 "pointsz" = Some pointsz) by admit.
-    assert (Hlo4_n  : map.get l4 "n"    = Some n_w) by admit.
-    assert (Hlo4_w  : map.get l4 "w"    = Some (word.of_Z (Z.of_nat w)))
-      by admit.
+    (* Extract 15 locals preservations from HF4 (Forall of l3'→l4 equalities).
+       Each Hp4_* says map.get l3_after_seti x = map.get l4 x; combined with
+       Hlo3_* (via map.get_put_diff over the "i" put) it yields Hlo4_*. *)
+    inversion HF4 as [|? ? Hp4_ox  HF4_1];  subst; clear HF4.
+    inversion HF4_1 as [|? ? Hp4_oy  HF4_2];  subst; clear HF4_1.
+    inversion HF4_2 as [|? ? Hp4_oz  HF4_3];  subst; clear HF4_2.
+    inversion HF4_3 as [|? ? Hp4_rx  HF4_4];  subst; clear HF4_3.
+    inversion HF4_4 as [|? ? Hp4_ry  HF4_5];  subst; clear HF4_4.
+    inversion HF4_5 as [|? ? Hp4_rz  HF4_6];  subst; clear HF4_5.
+    inversion HF4_6 as [|? ? Hp4_wx  HF4_7];  subst; clear HF4_6.
+    inversion HF4_7 as [|? ? Hp4_wy  HF4_8];  subst; clear HF4_7.
+    inversion HF4_8 as [|? ? Hp4_wz  HF4_9];  subst; clear HF4_8.
+    inversion HF4_9 as [|? ? Hp4_sc  HF4_10]; subst; clear HF4_9.
+    inversion HF4_10 as [|? ? Hp4_px  HF4_11]; subst; clear HF4_10.
+    inversion HF4_11 as [|? ? Hp4_py  HF4_12]; subst; clear HF4_11.
+    inversion HF4_12 as [|? ? Hp4_pz  HF4_13]; subst; clear HF4_12.
+    inversion HF4_13 as [|? ? Hp4_n   HF4_14]; subst; clear HF4_13.
+    inversion HF4_14 as [|? ? Hp4_w   _];      subst; clear HF4_14.
+    assert (Hlo4_ox : map.get l4 "outx" = Some outx).
+    { rewrite <- Hp4_ox, map.get_put_diff by congruence. exact Hlo3x. }
+    assert (Hlo4_oy : map.get l4 "outy" = Some outy).
+    { rewrite <- Hp4_oy, map.get_put_diff by congruence. exact Hlo3y. }
+    assert (Hlo4_oz : map.get l4 "outz" = Some outz).
+    { rewrite <- Hp4_oz, map.get_put_diff by congruence. exact Hlo3z. }
+    assert (Hlo4_rx : map.get l4 "runx" = Some runx).
+    { rewrite <- Hp4_rx, map.get_put_diff by congruence. exact Hlo3_rx. }
+    assert (Hlo4_ry : map.get l4 "runy" = Some runy).
+    { rewrite <- Hp4_ry, map.get_put_diff by congruence. exact Hlo3_ry. }
+    assert (Hlo4_rz : map.get l4 "runz" = Some runz).
+    { rewrite <- Hp4_rz, map.get_put_diff by congruence. exact Hlo3_rz. }
+    assert (Hlo4_wx : map.get l4 "wsx" = Some wsx).
+    { rewrite <- Hp4_wx, map.get_put_diff by congruence. exact Hlo3_wx. }
+    assert (Hlo4_wy : map.get l4 "wsy" = Some wsy).
+    { rewrite <- Hp4_wy, map.get_put_diff by congruence. exact Hlo3_wy. }
+    assert (Hlo4_wz : map.get l4 "wsz" = Some wsz).
+    { rewrite <- Hp4_wz, map.get_put_diff by congruence. exact Hlo3_wz. }
+    assert (Hlo4_sc : map.get l4 "scalars" = Some scalars_p).
+    { rewrite <- Hp4_sc, map.get_put_diff by congruence. exact Hlo3_sc. }
+    assert (Hlo4_px : map.get l4 "pointsx" = Some pointsx).
+    { rewrite <- Hp4_px, map.get_put_diff by congruence. exact Hlo3_px. }
+    assert (Hlo4_py : map.get l4 "pointsy" = Some pointsy).
+    { rewrite <- Hp4_py, map.get_put_diff by congruence. exact Hlo3_py. }
+    assert (Hlo4_pz : map.get l4 "pointsz" = Some pointsz).
+    { rewrite <- Hp4_pz, map.get_put_diff by congruence. exact Hlo3_pz. }
+    assert (Hlo4_n : map.get l4 "n" = Some n_w).
+    { rewrite <- Hp4_n, map.get_put_diff by congruence. exact Hlo3_n. }
+    assert (Hlo4_w : map.get l4 "w" = Some (word.of_Z (Z.of_nat w))).
+    { rewrite <- Hp4_w, map.get_put_diff by congruence. exact Hlo3_w. }
 
     (* ================================================================
        Segments 5-9: citation skeleton.

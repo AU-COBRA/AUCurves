@@ -166,90 +166,23 @@ Instance spec_of_bn446_opp_bignum : spec_of "bn446_coord_opp" :=
              (eval (from_mont (toZ wsout))) mod m =
              (- (eval (from_mont (toZ wsx))) mod m) mod m).
 
-(** ** Helper: feval -> eval/from_mont/mod m bridge *)
+(** ** Bridge lemmas — use shared WbwMontgomeryG1_WiredBridges functor.
+    Replaces ~80 LoC of identical-per-curve bridge lemmas with a functor
+    application. *)
 
-(** For the WBW Montgomery representation, [feval ws] is definitionally
-    [F.of_Z M_pos (eval (from_mont (toZ ws)))]. Therefore
-    [F.to_Z (feval ws) = eval (from_mont (toZ ws)) mod m]. *)
-Local Lemma feval_toZ (ws : list word.rep) :
-  F.to_Z (feval ws) = eval (from_mont (toZ ws)) mod m.
-Proof.
-  change (feval ws) with (F.of_Z M_pos (eval (from_mont (toZ ws)))).
-  rewrite F.to_Z_of_Z. unfold M. reflexivity.
-Qed.
+Require Import Bedrock.Curve.WbwMontgomeryG1_WiredBridges.
 
-(** Bridge lemmas: from [feval out = F.op ...] to the [eval/from_mont mod m]
-    form used in the Bignum-style specs.  Each handles the Z modular
-    arithmetic so the transport proofs stay clean. *)
+Local Lemma feval_wbw_def :
+  forall ws, feval ws = F.of_Z M_pos (eval (from_mont (toZ ws))).
+Proof. reflexivity. Qed.
 
-Local Lemma feval_mul_bridge (wout wx wy : list word.rep) :
-  feval wout = F.mul (feval wx) (feval wy) ->
-  eval (from_mont (toZ wout)) mod m =
-  ((eval (from_mont (toZ wx))) mod m *
-   (eval (from_mont (toZ wy))) mod m) mod m.
-Proof.
-  intros H. apply (f_equal F.to_Z) in H.
-  rewrite F.to_Z_mul in H. rewrite !feval_toZ in H.
-  change (Z.pos M_pos) with m in H.
-  rewrite Z.mul_mod_idemp_r in H by discriminate.
-  rewrite Zmod_mod. exact H.
-Qed.
-
-Local Lemma feval_add_bridge (wout wx wy : list word.rep) :
-  feval wout = F.add (feval wx) (feval wy) ->
-  eval (from_mont (toZ wout)) mod m =
-  ((eval (from_mont (toZ wx))) mod m +
-   (eval (from_mont (toZ wy))) mod m) mod m.
-Proof.
-  intros H. apply (f_equal F.to_Z) in H.
-  rewrite F.to_Z_add in H. rewrite !feval_toZ in H.
-  change (Z.pos M_pos) with m in H. exact H.
-Qed.
-
-Local Lemma feval_sub_bridge (wout wx wy : list word.rep) :
-  feval wout = F.sub (feval wx) (feval wy) ->
-  eval (from_mont (toZ wout)) mod m =
-  ((eval (from_mont (toZ wx))) mod m -
-   (eval (from_mont (toZ wy))) mod m) mod m.
-Proof.
-  intros H. apply (f_equal F.to_Z) in H.
-  cbv [F.sub] in H.
-  rewrite F.to_Z_add, F.to_Z_opp in H. rewrite !feval_toZ in H.
-  change (Z.pos M_pos) with m in H.
-  rewrite Zdiv.Zplus_mod_idemp_r in H. exact H.
-Qed.
-
-Local Lemma feval_square_bridge (wout wx : list word.rep) :
-  feval wout = F.pow (feval wx) 2 ->
-  eval (from_mont (toZ wout)) mod m =
-  ((eval (from_mont (toZ wx))) mod m *
-   (eval (from_mont (toZ wx))) mod m) mod m.
-Proof.
-  intros H. apply (f_equal F.to_Z) in H.
-  rewrite F.to_Z_pow in H. simpl Z.of_N in H.
-  rewrite Z.pow_2_r in H. rewrite !feval_toZ in H.
-  change (Z.pos M_pos) with m in H.
-  rewrite Z.mul_mod_idemp_r in H by discriminate.
-  rewrite Zmod_mod. exact H.
-Qed.
-
-Local Lemma Z_opp_mod (a n : Z) : (- (a mod n)) mod n = (- a) mod n.
-Proof.
-  replace (- (a mod n)) with (0 - (a mod n)) by lia.
-  replace (- a) with (0 - a) by lia.
-  apply Zminus_mod_idemp_r.
-Qed.
-
-Local Lemma feval_opp_bridge (wout wx : list word.rep) :
-  feval wout = F.opp (feval wx) ->
-  eval (from_mont (toZ wout)) mod m =
-  (- (eval (from_mont (toZ wx))) mod m) mod m.
-Proof.
-  intros H. apply (f_equal F.to_Z) in H.
-  rewrite F.to_Z_opp in H. rewrite !feval_toZ in H.
-  change (Z.pos M_pos) with m in H.
-  rewrite Z_opp_mod in H. rewrite Zmod_mod. exact H.
-Qed.
+Local Definition feval_toZ         := feval_toZ         feval_wbw_def.
+Local Definition feval_mul_bridge  := feval_mul_bridge  feval_wbw_def.
+Local Definition feval_add_bridge  := feval_add_bridge  feval_wbw_def.
+Local Definition feval_sub_bridge  := feval_sub_bridge  feval_wbw_def.
+Local Definition feval_square_bridge := feval_square_bridge feval_wbw_def.
+Local Definition feval_opp_bridge  := feval_opp_bridge  feval_wbw_def.
+(* [Z_opp_mod] is now available unqualified from the functor import. *)
 
 (** ** Transport lemmas -- proved via FElem bridge *)
 

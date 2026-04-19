@@ -4653,14 +4653,40 @@ Section PippengerSpec.
          [reduce_buckets_eq_scaled_sum] (in IteratedSepPoints.v).
 
          STATUS 2026-04-19: the sound_cmd bridge (step 7a-7b) is
-         verified to work via MCP.  The remaining 200+ LoC of tactics
-         (steps 7c, 8, 9) plus the new [process_window_as_reduce_buckets]
-         Gallina lemma are out of scope for the current fix window.
+         verified to work via MCP and is now mechanized below.  The
+         remaining ~200 LoC of tactics (steps 7c, 8, 9) plus the new
+         [process_window_as_reduce_buckets] Gallina lemma are out of
+         scope for the current fix window — a single bare admit is
+         preserved after the bridge.
 
-         Single bare admit preserved: it remains the only obstacle
-         to L5 [msm_bls12_outer_body_wp] Qed.  Admitted count on this
-         file is 3 (L3 [msm_bls12_distribute_wp], L5 [this], and
-         [msm_bls12_prelude_wp]) + 1 internal admit (in L3). *)
+         Admitted count on this file is 3 (L3 [msm_bls12_distribute_wp],
+         L5 [this], and [msm_bls12_prelude_wp]) + 1 internal admit (in L3). *)
+      (* Step 7a: peel [cmd.set "i" num_buckets] — the DEXPR for the
+         literal [num_buckets] is discharged by structural econstructor. *)
+      eexists; split; [solve [repeat econstructor]|].
+      cbv [dlet.dlet].
+      (* Step 7b: bridge [Semantics.exec.exec ...] → [WeakestPrecondition.cmd ...]
+         via [sound_cmd] (the Proper adjoint of [Semantics.exec.exec] for
+         a full-WP postcondition).  After this, the goal has shape
+         [<{ Trace := tr; Memory := mem6b;
+             Locals := #{ … l5; "i" => word.of_Z num_buckets }#;
+             Functions := functions }>
+            bedrock_func_body:(while ... ; curve_add(...))
+          <{ post }>]. *)
+      eapply WeakestPreconditionProperties.sound_cmd.
+      (* Step 7c/8/9 (admit): apply L4 [msm_bls12_reduce_wp] with
+         (RX0,RY0,RZ0)=(WX0,WY0,WZ0)=(Xi,Yi,Zi) inside
+         [WeakestPreconditionProperties.Proper_cmd] + [frame_locals_wp_list]
+         over 9 xs (outx/y/z, scalars, pointsx/y/z, n, w); destructure
+         L4's post to expose [Heq_ws: mk_point WXf WYf WZf =
+         reduce_buckets (points_of bs_x6 bs_y6 bs_z6)]; apply final
+         [HCurveAdd] on (outx,wsx),(outy,wsy),(outz,wsz); close
+         [outer_inv (Z.of_nat w) out1] via Houter_inv + partial_msm_from
+         S-step + new Gallina lemma [process_window_as_reduce_buckets]
+         (bridging Hdist5 + Heq_ws to the [process_window = reduce_buckets]
+         rhs).  Goal is now in WP form (not exec), ready for Proper_cmd
+         + L4.  See IteratedSepPoints.reduce_buckets_eq_scaled_sum for
+         the analogue on the sum-side. *)
       admit.
   Admitted.
 

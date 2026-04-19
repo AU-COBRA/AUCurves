@@ -3854,12 +3854,17 @@ Section PippengerSpec.
     { rewrite <- Hp_pz, !map.get_put_diff by congruence. exact Hlpz. }
     assert (Hlo3_n  : map.get l3 "n" = Some n_w).
     { rewrite <- Hp_n, !map.get_put_diff by congruence. exact Hln. }
-    (* "w" is the exception: segment 1 put l0 "w" (word.sub (word.of_Z
-       (Z.of_nat (S w))) (word.of_Z 1)), which equals word.of_Z (Z.of_nat w)
-       by word arithmetic; the bridging needs a word.sub simplification
-       that's deferred. *)
-    assert (Hlo3_w : map.get l3 "w" = Some (word.of_Z (Z.of_nat w)))
-      by admit.
+    (* "w" path: l2's "w" is [word.sub (word.of_Z (Z.of_nat (S w)))
+       (word.of_Z 1)], which equals [word.of_Z (Z.of_nat w)] by the
+       word-ring morphism.  Bridge via Hp_w and simplify. *)
+    assert (Hlo3_w : map.get l3 "w" = Some (word.of_Z (Z.of_nat w))).
+    { rewrite <- Hp_w.
+      rewrite map.get_put_diff by congruence.
+      rewrite map.get_put_same.
+      f_equal.
+      cbn [Semantics.interp_binop].
+      rewrite <- word.ring_morph_sub.
+      f_equal. rewrite Nat2Z.inj_succ. ring. }
 
     (* ================================================================
        Segment 4 (= L2 bucket_clear):  cmd.set "i" num_buckets;

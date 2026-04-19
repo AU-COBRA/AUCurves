@@ -13,28 +13,42 @@ impl Fp6 { #[inline] pub const fn zero() -> Self { Fp6 { c0: Fp2::zero(), c1: Fp
 #[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fp12 { pub c0: Fp6, pub c1: Fp6 }
 impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }
-
 extern "C" {
-    fn _bn254_add(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_sub(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_mul(out: *mut u64, x: *const u64, y: *const u64);
-    fn _bn254_square(out: *mut u64, x: *const u64);
-    fn _bn254_opp(out: *mut u64, x: *const u64);
-    fn _bn254_felem_copy(out: *mut u64, x: *const u64);
-    fn _bn254_from_word(out: *mut u64, w: u64);
-    fn _bn254_select_znz(out: *mut u64, c: u64, x: *const u64, y: *const u64);
-    fn _bn254_inv(out: *mut u64, x: *const u64);
+    fn _bn254_add(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_sub(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_mul(o: *mut u64, x: *const u64, y: *const u64);
+    fn _bn254_square(o: *mut u64, x: *const u64);
+    fn _bn254_opp(o: *mut u64, x: *const u64);
+    fn _bn254_felem_copy(o: *mut u64, x: *const u64);
+    fn _bn254_from_word(o: *mut u64, w: u64);
+    fn _bn254_select_znz(o: *mut u64, c: u64, x: *const u64, y: *const u64);
+    fn _bn254_inv(o: *mut u64, x: *const u64);
 }
-#[inline] pub fn bn254_add(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_add(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_sub(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_sub(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_mul(out: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_mul(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_square(out: &mut Fp, x: &Fp) { unsafe { _bn254_square(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_opp(out: &mut Fp, x: &Fp) { unsafe { _bn254_opp(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_felem_copy(out: &mut Fp, x: &Fp) { unsafe { _bn254_felem_copy(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-#[inline] pub fn bn254_from_word(out: &mut Fp, w: u64) { unsafe { _bn254_from_word(out.0.as_mut_ptr(), w) } }
-#[inline] pub fn bn254_select_znz(out: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(out.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
-#[inline] pub fn bn254_inv(out: &mut Fp, x: &Fp) { unsafe { _bn254_inv(out.0.as_mut_ptr(), x.0.as_ptr()) } }
-
+#[inline] pub fn bn254_add(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_add(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_sub(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_sub(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_mul(o: &mut Fp, x: &Fp, y: &Fp) { unsafe { _bn254_mul(o.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_square(o: &mut Fp, x: &Fp) { unsafe { _bn254_square(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_opp(o: &mut Fp, x: &Fp) { unsafe { _bn254_opp(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_felem_copy(o: &mut Fp, x: &Fp) { unsafe { _bn254_felem_copy(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_from_word(o: &mut Fp, w: u64) { unsafe { _bn254_from_word(o.0.as_mut_ptr(), w) } }
+#[inline] pub fn bn254_select_znz(o: &mut Fp, c: u64, x: &Fp, y: &Fp) { unsafe { _bn254_select_znz(o.0.as_mut_ptr(), c, x.0.as_ptr(), y.0.as_ptr()) } }
+#[inline] pub fn bn254_inv(o: &mut Fp, x: &Fp) { unsafe { _bn254_inv(o.0.as_mut_ptr(), x.0.as_ptr()) } }
+#[inline] pub fn bn254_Fp2_opp(o: &mut Fp2, x: &Fp2) { bn254_opp(&mut o.c0, &x.c0); bn254_opp(&mut o.c1, &x.c1); }
+#[inline]
+pub fn bn254_Fp2_inv(out: &mut Fp2, x: &Fp2) {
+    let mut asq = Fp::zero();
+    let mut bsq = Fp::zero();
+    let mut norm = Fp::zero();
+    bn254_square(&mut asq, &x.c0);
+    bn254_square(&mut bsq, &x.c1);
+    bn254_add(&mut norm, &asq, &bsq);
+    let n_copy = norm;
+    bn254_inv(&mut norm, &n_copy);
+    bn254_mul(&mut out.c0, &x.c0, &norm);
+    let mut neg_b = Fp::zero();
+    bn254_opp(&mut neg_b, &x.c1);
+    bn254_mul(&mut out.c1, &neg_b, &norm);
+}
 
 #[inline]
 pub fn bn254_Fp2_felem_copy(mut out: &mut Fp2, x: &Fp2) {
@@ -82,27 +96,6 @@ pub fn bn254_Fp2_square(mut out: &mut Fp2, inx: &Fp2) {
     let __ac0 = out.c1.clone();
     bn254_add(&mut out.c1, &__ac0, &__ac0);
     bn254_sub(&mut out.c0, &v0, &v1);
-}
-
-#[inline]
-pub fn bn254_Fp2_inv(mut out: &mut Fp2, inx: &Fp2) {
-    let mut asq: Fp = Fp::zero();
-    let mut bsq: Fp = Fp::zero();
-    let mut norm: Fp = Fp::zero();
-    bn254_square(&mut asq, &inx.c0);
-    bn254_square(&mut bsq, &inx.c1);
-    bn254_add(&mut norm, &asq, &bsq);
-    let __ac0 = norm.clone();
-    bn254_inv(&mut norm, &__ac0);
-    bn254_mul(&mut out.c0, &inx.c0, &norm);
-    bn254_opp(&mut asq, &inx.c1);
-    bn254_mul(&mut out.c1, &asq, &norm);
-}
-
-#[inline]
-pub fn bn254_Fp2_opp(mut out: &mut Fp2, x: &Fp2) {
-    bn254_opp(&mut out.c0, &x.c0);
-    bn254_opp(&mut out.c1, &x.c1);
 }
 
 #[inline]
@@ -315,8 +308,8 @@ pub fn bn254_Fp12_add(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut ay: Fp12 = Fp12::zero();
     bn254_Fp12_felem_copy(&mut ax, &inx);
     bn254_Fp12_felem_copy(&mut ay, &iny);
-    bn254_Fp6_add(&mut out.c0, &ax.c0, &ay.c0);
-    bn254_Fp6_add(&mut out.c1, &ax.c1, &ay.c1);
+    bn254_Fp6_add_nocopy(&mut out.c0, &ax.c0, &ay.c0);
+    bn254_Fp6_add_nocopy(&mut out.c1, &ax.c1, &ay.c1);
 }
 
 #[inline]
@@ -325,8 +318,8 @@ pub fn bn254_Fp12_sub(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut ay: Fp12 = Fp12::zero();
     bn254_Fp12_felem_copy(&mut ax, &inx);
     bn254_Fp12_felem_copy(&mut ay, &iny);
-    bn254_Fp6_sub(&mut out.c0, &ax.c0, &ay.c0);
-    bn254_Fp6_sub(&mut out.c1, &ax.c1, &ay.c1);
+    bn254_Fp6_sub_nocopy(&mut out.c0, &ax.c0, &ay.c0);
+    bn254_Fp6_sub_nocopy(&mut out.c1, &ax.c1, &ay.c1);
 }
 
 #[inline]
@@ -357,15 +350,15 @@ pub fn bn254_Fp12_mul(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut u: Fp6 = Fp6::zero();
     bn254_Fp6_mul(&mut v0, &ax.c0, &ay.c0);
     bn254_Fp6_mul(&mut v1, &ax.c1, &ay.c1);
-    bn254_Fp6_add(&mut t, &ax.c0, &ax.c1);
-    bn254_Fp6_add(&mut u, &ay.c0, &ay.c1);
+    bn254_Fp6_add_nocopy(&mut t, &ax.c0, &ax.c1);
+    bn254_Fp6_add_nocopy(&mut u, &ay.c0, &ay.c1);
     let __ac0 = t.clone();
     bn254_Fp6_mul(&mut t, &__ac0, &u);
     bn254_Fp6_mul_by_v(&mut u, &v1);
-    bn254_Fp6_add(&mut out.c0, &v0, &u);
+    bn254_Fp6_add_nocopy(&mut out.c0, &v0, &u);
     let __ac1 = t.clone();
-    bn254_Fp6_sub(&mut t, &__ac1, &v0);
-    bn254_Fp6_sub(&mut out.c1, &t, &v1);
+    bn254_Fp6_sub_nocopy(&mut t, &__ac1, &v0);
+    bn254_Fp6_sub_nocopy(&mut out.c1, &t, &v1);
 }
 
 #[inline]
@@ -380,8 +373,8 @@ pub fn bn254_Fp12_square(mut out: &mut Fp12, x: &Fp12) {
     bn254_Fp6_mul(&mut t2, &allocx.c0, &allocx.c1);
     let __ac0 = t1.clone();
     bn254_Fp6_mul_by_v(&mut t1, &__ac0);
-    bn254_Fp6_add(&mut out.c0, &t0, &t1);
-    bn254_Fp6_add(&mut out.c1, &t2, &t2);
+    bn254_Fp6_add_nocopy(&mut out.c0, &t0, &t1);
+    bn254_Fp6_add_nocopy(&mut out.c1, &t2, &t2);
 }
 
 #[inline]
@@ -395,7 +388,7 @@ pub fn bn254_Fp12_inv(mut out: &mut Fp12, x: &Fp12) {
     let __ac0 = t1.clone();
     bn254_Fp6_mul_by_v(&mut t1, &__ac0);
     let __ac1 = t0.clone();
-    bn254_Fp6_sub(&mut t0, &__ac1, &t1);
+    bn254_Fp6_sub_nocopy(&mut t0, &__ac1, &t1);
     let __ac2 = t0.clone();
     bn254_Fp6_inv(&mut t0, &__ac2);
     bn254_Fp6_mul(&mut out.c0, &allocx.c0, &t0);
@@ -406,14 +399,14 @@ pub fn bn254_Fp12_inv(mut out: &mut Fp12, x: &Fp12) {
 
 #[inline]
 pub fn bn254_Fp12_add_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
-    bn254_Fp6_add(&mut out.c0, &inx.c0, &iny.c0);
-    bn254_Fp6_add(&mut out.c1, &inx.c1, &iny.c1);
+    bn254_Fp6_add_nocopy(&mut out.c0, &inx.c0, &iny.c0);
+    bn254_Fp6_add_nocopy(&mut out.c1, &inx.c1, &iny.c1);
 }
 
 #[inline]
 pub fn bn254_Fp12_sub_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
-    bn254_Fp6_sub(&mut out.c0, &inx.c0, &iny.c0);
-    bn254_Fp6_sub(&mut out.c1, &inx.c1, &iny.c1);
+    bn254_Fp6_sub_nocopy(&mut out.c0, &inx.c0, &iny.c0);
+    bn254_Fp6_sub_nocopy(&mut out.c1, &inx.c1, &iny.c1);
 }
 
 #[inline]
@@ -424,15 +417,15 @@ pub fn bn254_Fp12_mul_nocopy(mut out: &mut Fp12, inx: &Fp12, iny: &Fp12) {
     let mut u: Fp6 = Fp6::zero();
     bn254_Fp6_mul(&mut v0, &inx.c0, &iny.c0);
     bn254_Fp6_mul(&mut v1, &inx.c1, &iny.c1);
-    bn254_Fp6_add(&mut t, &inx.c0, &inx.c1);
-    bn254_Fp6_add(&mut u, &iny.c0, &iny.c1);
+    bn254_Fp6_add_nocopy(&mut t, &inx.c0, &inx.c1);
+    bn254_Fp6_add_nocopy(&mut u, &iny.c0, &iny.c1);
     let __ac0 = t.clone();
     bn254_Fp6_mul(&mut t, &__ac0, &u);
     bn254_Fp6_mul_by_v(&mut u, &v1);
-    bn254_Fp6_add(&mut out.c0, &v0, &u);
+    bn254_Fp6_add_nocopy(&mut out.c0, &v0, &u);
     let __ac1 = t.clone();
-    bn254_Fp6_sub(&mut t, &__ac1, &v0);
-    bn254_Fp6_sub(&mut out.c1, &t, &v1);
+    bn254_Fp6_sub_nocopy(&mut t, &__ac1, &v0);
+    bn254_Fp6_sub_nocopy(&mut out.c1, &t, &v1);
 }
 
 #[inline]
@@ -637,7 +630,7 @@ pub fn bn254_Fp12_pow_u(mut out: &mut Fp12, base: &Fp12) {
         bit = ((4965661367192848881u64 >> (i & 63)) & 1u64);
         if bit != 0 {
             let __ac1 = result.clone();
-            bn254_Fp12_mul(&mut result, &__ac1, &base);
+            bn254_Fp12_mul_nocopy(&mut result, &__ac1, &base);
         } else {
         }
     }
@@ -661,48 +654,48 @@ pub fn bn254_final_exp_hard_dsd(mut out: &mut Fp12, f: &Fp12) {
     bn254_Fp12_pow_u(&mut t2, &t1);
     bn254_Fp12_frobenius(&mut t3, &t2, &gamma1, &gamma2, &w_frob_c1);
     let __ac0 = t2.clone();
-    bn254_Fp12_mul(&mut t2, &__ac0, &t3);
+    bn254_Fp12_mul_nocopy(&mut t2, &__ac0, &t3);
     let __ac1 = t2.clone();
     bn254_Fp12_conjugate(&mut t2, &__ac1);
     bn254_Fp12_square(&mut out, &t2);
     bn254_Fp12_frobenius(&mut t3, &t1, &gamma1, &gamma2, &w_frob_c1);
-    bn254_Fp12_mul(&mut t2, &t0, &t3);
+    bn254_Fp12_mul_nocopy(&mut t2, &t0, &t3);
     let __ac2 = t2.clone();
     bn254_Fp12_conjugate(&mut t2, &__ac2);
     let __ac3 = out.clone();
-    bn254_Fp12_mul(&mut out, &__ac3, &t2);
+    bn254_Fp12_mul_nocopy(&mut out, &__ac3, &t2);
     let __ac4 = t1.clone();
     bn254_Fp12_conjugate(&mut t1, &__ac4);
     let __ac5 = out.clone();
-    bn254_Fp12_mul(&mut out, &__ac5, &t1);
+    bn254_Fp12_mul_nocopy(&mut out, &__ac5, &t1);
     bn254_Fp12_frobenius(&mut t2, &t0, &gamma1, &gamma2, &w_frob_c1);
     let __ac6 = t2.clone();
     bn254_Fp12_conjugate(&mut t2, &__ac6);
-    bn254_Fp12_mul(&mut t0, &out, &t2);
+    bn254_Fp12_mul_nocopy(&mut t0, &out, &t2);
     let __ac7 = t0.clone();
-    bn254_Fp12_mul(&mut t0, &__ac7, &t1);
+    bn254_Fp12_mul_nocopy(&mut t0, &__ac7, &t1);
     bn254_Fp12_frobenius(&mut t1, &t3, &gamma1, &gamma2, &w_frob_c1);
     let __ac8 = out.clone();
-    bn254_Fp12_mul(&mut out, &__ac8, &t1);
+    bn254_Fp12_mul_nocopy(&mut out, &__ac8, &t1);
     bn254_Fp12_square(&mut t1, &t0);
     let __ac9 = t1.clone();
-    bn254_Fp12_mul(&mut t1, &__ac9, &out);
+    bn254_Fp12_mul_nocopy(&mut t1, &__ac9, &out);
     let __ac10 = t1.clone();
     bn254_Fp12_square(&mut t1, &__ac10);
     bn254_Fp12_frobenius(&mut t0, &f, &gamma1, &gamma2, &w_frob_c1);
     bn254_Fp12_frobenius(&mut t2, &t0, &gamma1, &gamma2, &w_frob_c1);
     bn254_Fp12_frobenius(&mut t3, &t2, &gamma1, &gamma2, &w_frob_c1);
     let __ac11 = t0.clone();
-    bn254_Fp12_mul(&mut t0, &__ac11, &t2);
+    bn254_Fp12_mul_nocopy(&mut t0, &__ac11, &t2);
     let __ac12 = t0.clone();
-    bn254_Fp12_mul(&mut t0, &__ac12, &t3);
-    bn254_Fp12_mul(&mut t2, &t1, &t0);
+    bn254_Fp12_mul_nocopy(&mut t0, &__ac12, &t3);
+    bn254_Fp12_mul_nocopy(&mut t2, &t1, &t0);
     bn254_Fp12_conjugate(&mut t0, &f);
     let __ac13 = t0.clone();
-    bn254_Fp12_mul(&mut t0, &t1, &__ac13);
+    bn254_Fp12_mul_nocopy(&mut t0, &t1, &__ac13);
     let __ac14 = t0.clone();
     bn254_Fp12_square(&mut t0, &__ac14);
-    bn254_Fp12_mul(&mut out, &t0, &t2);
+    bn254_Fp12_mul_nocopy(&mut out, &t0, &t2);
 }
 
 #[inline]
@@ -712,10 +705,10 @@ pub fn bn254_final_exp_dsd(mut out: &mut Fp12, f: &Fp12, gamma1_p2: &Fp2, gamma2
     bn254_Fp12_conjugate(&mut result, &f);
     bn254_Fp12_inv(&mut tmp, &f);
     let __ac0 = result.clone();
-    bn254_Fp12_mul(&mut result, &__ac0, &tmp);
+    bn254_Fp12_mul_nocopy(&mut result, &__ac0, &tmp);
     bn254_Fp12_frobenius_p2(&mut tmp, &result, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
     let __ac1 = result.clone();
-    bn254_Fp12_mul(&mut result, &tmp, &__ac1);
+    bn254_Fp12_mul_nocopy(&mut result, &tmp, &__ac1);
     bn254_final_exp_hard_dsd(&mut out, &result);
 }
 
@@ -765,7 +758,7 @@ pub fn bn254_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
         let __ac3 = f.clone();
         bn254_Fp12_square(&mut f, &__ac3);
         let __ac4 = f.clone();
-        bn254_Fp12_mul(&mut f, &__ac4, &line);
+        bn254_Fp12_mul_nocopy(&mut f, &__ac4, &line);
         bn254_Fp2_square(&mut tmp1, &lambda);
         let __ac5 = tmp1.clone();
         bn254_Fp2_sub(&mut tmp1, &__ac5, &t_x);
@@ -784,7 +777,7 @@ pub fn bn254_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
             bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
             bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
             let __ac9 = f.clone();
-            bn254_Fp12_mul(&mut f, &__ac9, &line);
+            bn254_Fp12_mul_nocopy(&mut f, &__ac9, &line);
             bn254_Fp2_square(&mut tmp1, &lambda);
             let __ac10 = tmp1.clone();
             bn254_Fp2_sub(&mut tmp1, &__ac10, &t_x);
@@ -852,7 +845,7 @@ pub fn bn254_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &F
         let __ac3 = f.clone();
         bn254_Fp12_square(&mut f, &__ac3);
         let __ac4 = f.clone();
-        bn254_Fp12_mul(&mut f, &__ac4, &line);
+        bn254_Fp12_mul_nocopy(&mut f, &__ac4, &line);
         bn254_Fp2_square(&mut tmp1, &lambda);
         let __ac5 = tmp1.clone();
         bn254_Fp2_sub(&mut tmp1, &__ac5, &t_x);
@@ -871,7 +864,7 @@ pub fn bn254_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &F
             bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
             bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
             let __ac9 = f.clone();
-            bn254_Fp12_mul(&mut f, &__ac9, &line);
+            bn254_Fp12_mul_nocopy(&mut f, &__ac9, &line);
             bn254_Fp2_square(&mut tmp1, &lambda);
             let __ac10 = tmp1.clone();
             bn254_Fp2_sub(&mut tmp1, &__ac10, &t_x);
@@ -899,7 +892,7 @@ pub fn bn254_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &F
     bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
     bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
     let __ac14 = f.clone();
-    bn254_Fp12_mul(&mut f, &__ac14, &line);
+    bn254_Fp12_mul_nocopy(&mut f, &__ac14, &line);
     bn254_Fp2_square(&mut tmp1, &lambda);
     let __ac15 = tmp1.clone();
     bn254_Fp2_sub(&mut tmp1, &__ac15, &t_x);
@@ -918,7 +911,7 @@ pub fn bn254_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &F
     bn254_Fp2_mul(&mut lambda, &tmp1, &tmp2);
     bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
     let __ac19 = f.clone();
-    bn254_Fp12_mul(&mut f, &__ac19, &line);
+    bn254_Fp12_mul_nocopy(&mut f, &__ac19, &line);
     bn254_Fp12_felem_copy(&mut out, &f);
 }
 
@@ -947,4 +940,3 @@ pub fn bn254_pairing_dsd_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &F
     bn254_miller_loop_optimal(&mut tmp, &p_x, &p_y, &q_x, &q_y);
     bn254_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
 }
-

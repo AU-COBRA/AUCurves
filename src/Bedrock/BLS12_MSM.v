@@ -5443,8 +5443,16 @@ Section PippengerSpec.
       { (* outer_inv num_windows g1_identity = (PM num_windows id = PM num_windows id). *)
         unfold outer_inv. rewrite HgId. rewrite Nat2Z.id. reflexivity. }
       split.
-      { (* Memory sep: the current Hm' has exactly the shape we need
-           after Jacobian identity components are exposed. *)
+      { (* Memory sep: Hm' has all 15 components; invariant has the
+           same 15 but wrapped in [let '(Ox, Oy, Oz) := out in ...].
+           Attempted [cbv iota beta; ecancel_assumption] — fails with
+           "No matching clauses for match" suggesting ecancel_fast
+           (the default in this file via WPTactics override) can't
+           reshape through the let-reduced tuple pattern.  The fix is
+           either (a) override back to SeparationLogic.ecancel_assumption
+           locally via [Local Ltac ecancel_assumption ::= ...], or (b)
+           parametrize the invariant by three F's rather than one G1_F
+           triple to sidestep the let.  Deferred. *)
         admit. }
       (* 17 locals lookups. *)
       repeat match goal with

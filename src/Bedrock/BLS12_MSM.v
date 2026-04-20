@@ -4839,16 +4839,40 @@ Section PippengerSpec.
              RXf, RYf, RZf, WXf, WYf, WZf.
 
       (* ============================================================
-         Seg 9: outer_inv closure + bucket bounds downgrade + sep + locals.
-         Remaining:
-         - outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) — seg 9 Gallina, needs
-           partial_msm_from S-step on Houter_inv + process_window_as_reduce_buckets
-           bridging Heq_ws + Hdist5.
-         - lengths (Hlen6x/y/z direct).
-         - sep: need tight→None downgrade on bucket arrays via
-           array_FElem_drop_bounds_impl1.
-         - 15 locals via Hlo7_*. *)
-      admit.
+         Seg 9: outer_inv + lengths + sep downgrade + 15 locals.
+         ============================================================ *)
+      split.
+      { (* outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) ss ps.
+           Unfold outer_inv to partial_msm_from equation; bridge
+           via Houter_inv + partial_msm_from S-step + Heq_ws + Hdist5.
+           This is the load-bearing Gallina admit. *)
+        admit. }
+      split; [exact Hlen6x|].
+      split; [exact Hlen6y|].
+      split; [exact Hlen6z|].
+      split.
+      { (* Sep: from Hm8 (tight buckets) to target (None buckets).
+           Bridge via array_FElem_drop_bounds_impl1 pointwise.
+           Deferred: requires Proper_sep_impl1 congruence chain. *)
+        admit. }
+      split; [exact Hlo7_ox|].
+      split; [exact Hlo7_oy|].
+      split; [exact Hlo7_oz|].
+      split; [exact Hlo7_bx|].
+      split; [exact Hlo7_by|].
+      split; [exact Hlo7_bz|].
+      split; [exact Hlo7_rx|].
+      split; [exact Hlo7_ry|].
+      split; [exact Hlo7_rz|].
+      split; [exact Hlo7_wx|].
+      split; [exact Hlo7_wy|].
+      split; [exact Hlo7_wz|].
+      split; [exact Hlo7_sc|].
+      split; [exact Hlo7_px|].
+      split; [exact Hlo7_py|].
+      split; [exact Hlo7_pz|].
+      split; [exact Hlo7_n|].
+      exact Hlo7_w.
   Admitted.
 
   (** Main WP obligation: full function body as a [WeakestPrecondition.cmd]

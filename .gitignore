@@ -54,6 +54,42 @@ EXTRACTION_AUDIT.md
 PERF_OPTIMIZATION_PLAN.md
 PLAN_FORMAL_REFINEMENT.md
 TODO.md
+PASTA_COMPLETION_PLAN.md
+PLAN_PAIRING_SPECS.md
+
+# Process monitor / temp logs
+Crypto
+
+# Generated Rust extraction outputs (top-level)
+bls12_381_safe_inner.rs
+bls12_safe_tower.rs
+bls12_safe_tower_fixed.rs
+
+# BLS12-381 safe-rust crate: generated files and build artifacts
+bls12-381-safe-rust/generated/
+bls12-381-safe-rust/Cargo.lock
+bls12-381-safe-rust/target/
+
+# CryptOpt benchmark result data
+src/Implementations/C/cryptopt/mul_results*/
+src/Implementations/C/cryptopt/sqr_results*/
+
+# Compiled C binaries
+src/Implementations/C/bench_full_vs_blst
+src/Implementations/C/test_pairing
+
+# Compiled safegcd measurement binaries
+src/Arithmetic/safegcd/interval_check
+src/Arithmetic/safegcd/interval_measure
+src/Arithmetic/safegcd/measure_d
+src/Arithmetic/safegcd/measure_states
+
+# Misc
+_CoqProject.bak
+_build/
+.claude/
+main.fdb_latexmk
+texput.*
 
 # MCP cache files
 rocq_mcp_cache_*.v

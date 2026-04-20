@@ -1,6 +1,6 @@
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Strings.String.
-Require Import Coq.micromega.Lia.
+From Stdlib Require Import ZArith.ZArith.
+From Stdlib Require Import Strings.String.
+From Stdlib Require Import micromega.Lia.
 Require Import Crypto.Bedrock.Field.Common.Types.
 Require Import Crypto.Util.ZUtil.ModInv.
 Require Import bedrock2.Memory.
@@ -18,11 +18,11 @@ Require Import coqutil.Byte.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Util.
-Require Import Coq.Lists.List.
+From Stdlib Require Import Lists.List.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.Syntax.
-Require Import Coq.Lists.List.
+From Stdlib Require Import Lists.List.
 Require Import bedrock2.Array.
 Require Import bedrock2.ProgramLogic.
 Require Import bedrock2.Syntax.
@@ -35,7 +35,7 @@ Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
 Require Import bedrock2.Semantics.
 Require Import bedrock2.BasicC64Semantics.
 Require Import Crypto.Bedrock.Field.Common.Names.VarnameGenerator.
-Require Import Coq.Lists.List.
+From Stdlib Require Import Lists.List.
 Require Import bedrock2.Array.
 Require Import bedrock2.ProgramLogic.
 Require Import bedrock2.Syntax.
@@ -55,6 +55,7 @@ Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
 
 Import ListNotations.
 Import Syntax.Coercions.
+Import coqutil.Map.Interface.
 
 Section Spec.
   Local Open Scope Z_scope.
@@ -694,7 +695,15 @@ Section Spec.
                   valid (List.map Interface.word.unsigned wouti)) /\
               ((Bignum n poutr woutr) * (Bignum n pouti wouti) * Rout * Routnew)%sep m'))).
 
-  Theorem Fp2_add_alt2_okay: program_logic_goal_for_function! Fp2_add_alt2.
+  Theorem Fp2_add_alt2_okay : program_logic_goal_for Fp2_add_alt2
+    (forall (functions : @map.rep _ _ Semantics.env),
+     coqutil.Map.Interface.map.get functions "Fp2_add_alt2" = Some Fp2_add_alt2 ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_my_add functions ->
+     spec_of_my_add_alt2 functions).
   Proof.
     do 7 straightline'.
     
@@ -799,7 +808,15 @@ Section Spec.
                   valid (List.map Interface.word.unsigned wouti)) /\
               ((Bignum n poutr woutr) * (Bignum n pouti wouti) * Rout * Routnew)%sep m'))).
 
-  Theorem Fp2_sub_alt2_okay: program_logic_goal_for_function! Fp2_sub_alt2.
+  Theorem Fp2_sub_alt2_okay : program_logic_goal_for Fp2_sub_alt2
+    (forall (functions : @map.rep _ _ Semantics.env),
+     coqutil.Map.Interface.map.get functions "Fp2_sub_alt2" = Some Fp2_sub_alt2 ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_my_sub functions ->
+     spec_of_my_sub_alt2 functions).
   Proof.
     do 7 straightline'.
 
@@ -901,7 +918,15 @@ Section Spec.
                   valid (List.map Interface.word.unsigned wouti)) /\
               ((Bignum n poutr woutr) * (Bignum n pouti wouti) * Rout * Routnew)%sep m'))).
 
-  Theorem Fp2_mul_alt2_okay: program_logic_goal_for_function! Fp2_mul_alt2.
+  Theorem Fp2_mul_alt2_okay : program_logic_goal_for Fp2_mul_alt2
+    (forall (functions : @map.rep _ _ Semantics.env),
+     coqutil.Map.Interface.map.get functions "Fp2_mul_alt2" = Some Fp2_mul_alt2 ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_my_mul functions ->
+     spec_of_my_mul_alt2 functions).
   Proof.
     do 7 straightline'.
 
@@ -991,7 +1016,13 @@ Section Spec.
                   valid (List.map Interface.word.unsigned wouti)) /\
               ((Bignum n poutr woutr) * (Bignum n pouti wouti) * Routnew)%sep m'))).
 
-  Theorem Fp2_square_alt2_okay: program_logic_goal_for_function! Fp2_square_alt2.
+  Theorem Fp2_square_alt2_okay : program_logic_goal_for Fp2_square_alt2
+    (forall (functions : @map.rep _ _ Semantics.env),
+     coqutil.Map.Interface.map.get functions "Fp2_square_alt2" = Some Fp2_square_alt2 ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_felem_copy_64 functions ->
+     spec_of_my_square functions ->
+     spec_of_my_square_alt2 functions).
   Proof.
     do 4 straightline'.
 

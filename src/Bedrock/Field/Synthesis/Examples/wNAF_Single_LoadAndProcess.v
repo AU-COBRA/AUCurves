@@ -125,7 +125,8 @@ Section SingleLoadAndProcess.
   (** Tactics copied from BLS12_wNAF_LoadAndProcess.v (Local Ltac not exported). *)
   Local Ltac solve_mapget :=
     first [ apply map.get_put_same
-          | rewrite !map.get_put_diff by congruence; eassumption ].
+          | rewrite !map.get_put_diff by congruence;
+            first [apply map.get_put_same | eassumption] ].
 
   Local Ltac eval_dexprs_here :=
     cbv [dexprs list_map list_map_body
@@ -167,6 +168,27 @@ Section SingleLoadAndProcess.
       subst;
       cbv [map.putmany_of_list_zip];
       try (eexists; split; [exact eq_refl | ]) ].
+
+  (* Normalize interp_binop/v2 in hypotheses so ecancel_assumption can match
+     table addresses after wp_direct_call postconditions. *)
+  Local Ltac normalize_sep_addrs :=
+    cbn [Semantics.interp_binop] in *;
+    repeat match goal with H : ?v = word.of_Z _ |- _ => is_var v; rewrite H in * end;
+    repeat rewrite <- (word.ring_morph_add word_ok) in *;
+    repeat match goal with
+    | H : context [word.of_Z (0 + ?b)] |- _ =>
+        replace (0 + b) with b in H by ring
+    | H : context [word.of_Z (?a + 0)] |- _ =>
+        replace (a + 0) with a in H by ring
+    | H : context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] |- _ =>
+        let ab := eval cbv in (a + b) in
+        replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+          with (ab * felem_size_in_bytes) in H by ring
+    | H : context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] |- _ =>
+        let ap1 := eval cbv in (a + 1) in
+        replace (a * felem_size_in_bytes + felem_size_in_bytes)
+          with (ap1 * felem_size_in_bytes) in H by ring
+    end.
 
   Local Lemma word_add_of_Z_assoc (p : word) (a b : Z) :
     word.add (word.add p (word.of_Z a)) (word.of_Z b) = word.add p (word.of_Z (a + b)).
@@ -448,6 +470,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -494,6 +517,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -540,6 +564,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -586,6 +611,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -726,6 +752,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -771,6 +798,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -816,6 +844,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -861,6 +890,7 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               normalize_sep_addrs.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.

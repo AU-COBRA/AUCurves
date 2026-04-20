@@ -1,0 +1,14 @@
+(include_subdirs qualified)
+
+(env
+ (_
+  (coq
+   (flags -w -all -native-compiler ondemand))))
+
+(coq.theory
+ (name JasminBridge)
+ (mode vo)
+ (plugins rocq-elpi.elpi)
+ (theories Stdlib Ltac2 coqutil bedrock2 Crypto Bedrock
+           HB elpi elpi_elpi mathcomp extructures deriving Equations ITree ExtLib Paco
+           Jasmin))

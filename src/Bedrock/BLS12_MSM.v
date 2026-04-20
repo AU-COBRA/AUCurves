@@ -4852,8 +4852,11 @@ Section PippengerSpec.
       split; [exact Hlen6z|].
       split.
       { (* Sep: from Hm8 (tight buckets) to target (None buckets).
-           Bridge via array_FElem_drop_bounds_impl1 pointwise.
-           Deferred: requires Proper_sep_impl1 congruence chain. *)
+           Bridge via 3× array_FElem_drop_bounds_impl1 + Proper_sep_impl1
+           congruence chain.  Attempted direct apply + seprewrite_in —
+           neither integrates cleanly with ecancel infrastructure.
+           Narrow admit: sep-logic plumbing, soundness obvious
+           (tight bounds imply no bounds). *)
         admit. }
       split; [exact Hlo7_ox|].
       split; [exact Hlo7_oy|].

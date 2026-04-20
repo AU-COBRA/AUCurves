@@ -5360,6 +5360,10 @@ Section PippengerSpec.
     (* Expose the Jacobian identity coordinates as [(Xi, Yi, Zi)]. *)
     destruct g1_identity as [[Xi Yi] Zi] eqn:HgId.
     cbv match in Hm'.
+    (* [destruct g1_identity] substitutes (Xi, Yi, Zi) for g1_identity in the
+       section axioms' types; restore them so downstream lemma citations
+       (e.g. [msm_bls12_outer_body_wp]) find the original variable. *)
+    rewrite <- HgId in g1_add_identity_l, g1_double_identity.
     (* Continue the enclosing cmd: provide l' for [putmany_of_list_zip [] []]
        (identity, since retnames is []), then cmd.set "w" := num_windows,
        then the outer while and 9 deallocs. *)
@@ -5443,31 +5447,109 @@ Section PippengerSpec.
       { (* outer_inv num_windows g1_identity = (PM num_windows id = PM num_windows id). *)
         unfold outer_inv. rewrite HgId. rewrite Nat2Z.id. reflexivity. }
       split.
-      { (* Memory sep: Hm' has all 15 components; invariant has the
-           same 15 but wrapped in [let '(Ox, Oy, Oz) := out in ...].
-           Attempted [cbv iota beta; ecancel_assumption] — fails with
-           "No matching clauses for match" suggesting ecancel_fast
-           (the default in this file via WPTactics override) can't
-           reshape through the let-reduced tuple pattern.  The fix is
-           either (a) override back to SeparationLogic.ecancel_assumption
-           locally via [Local Ltac ecancel_assumption ::= ...], or (b)
-           parametrize the invariant by three F's rather than one G1_F
-           triple to sidestep the let.  Deferred. *)
-        admit. }
-      (* 17 locals lookups. *)
-      repeat match goal with
-        | |- _ /\ _ => split
-        end; try reflexivity.
-      (* Last goals: the 17 specific map.get entries.  Each is a
-         put-chain lookup — follows from map.get_put_{same,diff}. *)
-      all: admit.
+      { (* Memory sep: Hm' has the 15 components [FElem tight outx/y/z] +
+           6 [FElem None run/ws] + 3 [array None buckets] + ScalarsArray
+           + G1Array3 + R.  The invariant wraps the tight outputs in
+           [let '(Ox, Oy, Oz) := out in ...]; [cbv iota beta] in the
+           [exists (Xi, Yi, Zi)] context reduces the let, making the
+           invariant's sep a left-associative chain of the same 15
+           predicates in a different order.
+           [ecancel_assumption] (fast) fails with "No matching clauses"
+           because the hypothesis uses [Compilation2.FElem] (qualified
+           from the stackalloc conversion) while the goal uses [FElem]
+           (locally imported).  Fold the qualifier, then the general
+           [use_sep_assumption; cancel] handles associativity +
+           commutativity + permutation. *)
+        change Compilation2.FElem with FElem in *.
+        use_sep_assumption; cancel. }
+      (* 17 locals lookups.  All are put-chain resolutions: the key
+         is somewhere in the enriched [l0] (or at the top put for "w").
+         Tactic: split the conjunctions, then for each map.get-subgoal
+         try put_same first (works if key is topmost), else peel a
+         put_diff layer and retry. *)
+      repeat split; repeat first [
+        rewrite map.get_put_same; reflexivity
+      | rewrite map.get_put_diff by congruence
+      ].
     }
     { (* Body step (v > 0) + exit (v = 0).  Takes (vi, tr1, m1, l1)
          plus Hinv, produces the while-header DEXPR + TRUE/FALSE split.
          TRUE: decrement measure, apply msm_bls12_outer_body_wp.
          FALSE: vi = 0, close the outer while's post (9 deallocs +
          final postcondition). *)
-      admit.
+      intros v tr1 m1 l1 Hinv.
+      subst inv_outer. cbv beta in Hinv.
+      destruct Hinv as (out & bs_x & bs_y & bs_z & rx & ry & rz & wx & wy & wz &
+                        Hv_le & Hlen_bx & Hlen_by & Hlen_bz & Hoinv & Hm1 &
+                        Hl_outx & Hl_outy & Hl_outz & Hl_bx & Hl_by & Hl_bz &
+                        Hl_rx & Hl_ry & Hl_rz & Hl_wx & Hl_wy & Hl_wz &
+                        Hl_sc & Hl_px & Hl_py & Hl_pz & Hl_n & Hl_w & Htr).
+      subst tr1.
+      exists (word.of_Z (Z.of_nat v)).
+      split.
+      { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hl_w|]. exact eq_refl. }
+      split.
+      - (* TRUE branch: v > 0, apply msm_bls12_outer_body_wp. *)
+        intro Hbr.
+        assert (Hv_pos : (v > 0)%nat).
+        { destruct v as [|n]; [|Lia.lia].
+          exfalso. apply Hbr. change (Z.of_nat 0) with 0.
+          apply word.unsigned_of_Z_0. }
+        destruct v as [|w']; [Lia.lia|].
+        (* Apply msm_bls12_outer_body_wp via [Proper_cmd] to weaken its
+           post to the while-body post (exists v', inv v' /\ v' < S w'). *)
+        eapply WeakestPreconditionProperties.Proper_cmd;
+          [ | eapply msm_bls12_outer_body_wp with (w := w') (out0 := out);
+              [exact HCurveAdd | exact HCurveDouble | exact HStoreZero
+              | exact Hv_le | exact Hn_len | exact Hlen_sx | exact Hlen_xy | exact Hlen_yz
+              | exact Hlen_bx | exact Hlen_by | exact Hlen_bz | exact Hoinv | exact Hm1
+              | exact Hl_outx | exact Hl_outy | exact Hl_outz
+              | exact Hl_bx | exact Hl_by | exact Hl_bz
+              | exact Hl_rx | exact Hl_ry | exact Hl_rz
+              | exact Hl_wx | exact Hl_wy | exact Hl_wz
+              | exact Hl_sc | exact Hl_px | exact Hl_py | exact Hl_pz | exact Hl_n | exact Hl_w] ].
+        (* Monotonicity: L5's post ==> while-body-post.  Remaining
+           obligations: (a) weaken [Some tight_bounds → None] for 6
+           run/ws FElems, (b) 17 locals lookups in l_a (all preserved
+           since L5 restores them), (c) instantiate the measure
+           decrement [w' < S w']. *)
+        intros tr_a m_a l_a Hpost.
+        destruct Hpost as (Htra & out1 & bs_x' & bs_y' & bs_z' & r1x & r1y & r1z &
+                           w1x & w1y & w1z & Hoinv' & Hlen_bx' & Hlen_by' & Hlen_bz' &
+                           Hm_a & Hl_outx' & Hl_outy' & Hl_outz' & Hl_bx' & Hl_by' &
+                           Hl_bz' & Hl_rx' & Hl_ry' & Hl_rz' & Hl_wx' & Hl_wy' &
+                           Hl_wz' & Hl_sc' & Hl_px' & Hl_py' & Hl_pz' & Hl_n' & Hl_w').
+        subst tr_a.
+        exists w'. split; [|Lia.lia].
+        cbv beta.
+        exists out1, bs_x', bs_y', bs_z', r1x, r1y, r1z, w1x, w1y, w1z.
+        split; [Lia.lia|].
+        split; [exact Hlen_bx'|].
+        split; [exact Hlen_by'|].
+        split; [exact Hlen_bz'|].
+        split; [exact Hoinv'|].
+        (* Sep closure: Hm_a has [FElem (Some tight) run/ws]; invariant
+           has [FElem None run/ws].  Need to apply [drop_bounds_FElem] 6
+           times under the sep context.  Plus 17 locals lookups + trace
+           equality.  Tedious mechanical; left admitted. *)
+        admit.
+      - (* FALSE branch: v = 0, close the outer while's post.  Steps:
+           1. v = 0, so outer_inv 0 out = (out = PM num_windows identity ss ps).
+           2. Apply [msm_pippenger_as_partial_msm_from] to get
+              out = msm_spec_output scalars (points_of px py pz).
+           3. Execute 9 deallocations (wz → ... → bx) via [P_to_bytes] for
+              felem cells and a companion [felem_array_to_anybytes] for
+              bucket arrays; each produces [anybytes p_k size mS_k] matched
+              with the saved [Hsplit_k]/[Hany_k].
+           4. Close [exists rets, getmany_of_list l' [] = Some rets /\ rets = []]
+              trivially (retnames is []).
+           5. Witness [outx_f outy_f outz_f] from out's coordinates.
+           6. Final sep: [FElem (Some tight_bounds) outx/y/z *
+                          ScalarsArray * G1Array3 * R] m' — Hm1 supplies
+              this plus the now-discarded run/ws + buckets sep. *)
+        admit.
     }
     (* Remaining obligations: outer while + 9 deallocs + postcondition.
 

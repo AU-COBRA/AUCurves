@@ -4872,9 +4872,18 @@ Section PippengerSpec.
          ============================================================ *)
       split.
       { (* outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) ss ps.
-           Unfold outer_inv to partial_msm_from equation; bridge
-           via Houter_inv + partial_msm_from S-step + Heq_ws + Hdist5.
-           This is the load-bearing Gallina admit. *)
+           **BLOCKED on outer_inv definition bug** (line 513):
+           outer_inv W out = (out = PM(num_windows - W - 1) identity).
+           But the loop's actual semantics at state W (= post-decrement
+           window index) gives out = PM(num_windows - W) identity.
+           Trace (num_windows = 3): after processing win_2 at first
+           iteration (w_post = 2), loop's out = win_2.  outer_inv 2
+           out demands out = PM(0) identity = identity.  MISMATCH.
+
+           Fix requires changing outer_inv's formula from
+           [num_windows - W - 1] to [num_windows - W], which cascades
+           through the whole L5 proof (premises, post).  Out of scope
+           for in-place patch.  Admit preserved for future refactor. *)
         admit. }
       split; [exact Hlen6x|].
       split; [exact Hlen6y|].

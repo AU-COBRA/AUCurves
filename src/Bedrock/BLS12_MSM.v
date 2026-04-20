@@ -5290,13 +5290,26 @@ Section PippengerSpec.
     pose proof (P_from_bytes a_wx mS_wx Hany_wx) as [WX0_init Hfe_wx].
     pose proof (P_from_bytes a_wy mS_wy Hany_wy) as [WY0_init Hfe_wy].
     pose proof (P_from_bytes a_wz mS_wz Hany_wz) as [WZ0_init Hfe_wz].
-    (* 3 bucket-sized conversions: require [anybytes_to_felem_array] with
-       size-rewrite bookkeeping to match the [bucket_bytes]
-       ([num_buckets * felem_size_in_bytes]) shape.  Deferred. *)
+    (* 3 bucket-sized conversions via [anybytes_to_felem_array].
+       The stackalloc size [(2^9 - 1) * felem_size_in_bytes] is rewritten
+       to [Z.of_nat (Z.to_nat (2^9-1)) * felem_size_in_bytes] to match
+       the lemma's shape, which requires a [Z.of_nat n] coefficient. *)
+    assert (Hbb_sz : (2 ^ 9 - 1) * felem_size_in_bytes
+                     = Z.of_nat (Z.to_nat (2 ^ 9 - 1)) * felem_size_in_bytes).
+    { rewrite Z2Nat.id by (vm_compute; discriminate). reflexivity. }
+    rewrite Hbb_sz in Hany_bx, Hany_by, Hany_bz.
+    destruct (anybytes_to_felem_array a_bx (Z.to_nat (2^9 - 1)) mS_bx Hany_bx)
+      as [bs_x_init [Hlen_bx_init Harr_bx]].
+    destruct (anybytes_to_felem_array a_by (Z.to_nat (2^9 - 1)) mS_by Hany_by)
+      as [bs_y_init [Hlen_by_init Harr_by]].
+    destruct (anybytes_to_felem_array a_bz (Z.to_nat (2^9 - 1)) mS_bz Hany_bz)
+      as [bs_z_init [Hlen_bz_init Harr_bz]].
     (* Next: combine 9 FElem/array chunks with [mem0] sep via the
-       [map.split] chain into a unified sep hypothesis on [mComb_wz],
-       then the initial [store_zero] call via [HStoreZero], outer while,
-       9 deallocs, postcondition.  Deferred. *)
+       [map.split] chain into a unified sep hypothesis on [mC_wz],
+       then the initial [store_zero] call via [HStoreZero], outer while
+       via [msm_bls12_outer_body_wp] (Qed), exit via
+       [msm_pippenger_as_partial_msm_from] (Qed), 9 deallocs via
+       [P_to_bytes], postcondition.  Deferred. *)
   Admitted.
 
   (** [msm_bls12_exec_correct] now follows by applying                     *)

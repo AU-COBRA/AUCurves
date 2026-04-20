@@ -14,7 +14,6 @@
      ExtractSafeTowerBN446
      TestSafeBody
      Curve.BLS12Curve_G1
-     Curve.BLS12Curve_G2
      Curve.BW6_761Curve_G1_bedrock
      Examples.felem_copy_32
      Examples.felem_copy_64

@@ -237,6 +237,4 @@ End BN254_wNAF_Instance.
     - Algebraic hypotheses (Horner step, weighted-sum non-negativity)
     And proves the full WP for wnaf_single_func_body.
 
-    Status: Depends on [single_load_and_process_ok] (Admitted).
-    Once that proof is filled (8-case mechanical WP), this file
-    is fully Qed. The composition itself is proved. *)
+    Status: Qed, 0 Admitted. [single_load_and_process_ok] Qed 2026-04-20. *)

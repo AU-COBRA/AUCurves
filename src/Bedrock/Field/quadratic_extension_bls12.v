@@ -301,8 +301,20 @@ Section Spec.
     spec_of (append prefix "to_bytes") := fun _ => True.
   Instance spec_of_reified_from_bytes :
     spec_of (append prefix "from_bytes") := fun _ => True.
-  Instance spec_of_felem_copy_64 :
-    spec_of "felem_copy_64" := fun _ => True.
+  Instance spec_of_felem_copy_64 : spec_of ("felem_copy" ++ felem_suffix) :=
+  fun functions =>
+      forall (welem : list word.rep)
+      (pout pelem: word.rep)
+      (wold_out: list word.rep) (t : Semantics.trace)
+      (m0 : mem_type) (R Relem P : mem_type -> Prop),
+      ( (fun m => (Bignum n pelem welem * Relem)%sep m /\ P m) * (Bignum n pout wold_out) * R)%sep m0 ->
+      WeakestPrecondition.call functions ("felem_copy" ++ felem_suffix) t m0
+      ([pout; pelem])
+      (fun (t' : Semantics.trace) (m' : mem_type)
+          (rets : list word.rep) =>
+      t = t' /\
+      rets = nil /\
+      ((P * (Bignum n pout welem) * R)%sep m')).
 
   Ltac postcondition_pre := repeat (split; [solve [reflexivity]| ]); repeat (
     lazymatch goal with
@@ -581,8 +593,8 @@ Section Spec.
       lazymatch goal with
       | [Hminit : ?mcond (?minit)
           |- forall (_ : @word.rep _ _)
-                    (_ _ : @mem _ _ _),
-              anybytes _ ?numbytes _ -> msplit _ ?minit _ -> _ ] => 
+                    (_ _ : @Interface.map.rep _ _ _),
+              anybytes _ ?numbytes _ -> msplit _ ?minit _ -> _ ] =>
           let a := (fresh "a") in
           let mStack := (fresh "mStack") in
           let mnew := (fresh "mnew") in
@@ -600,7 +612,7 @@ Section Spec.
 
       Ltac defrag_in_context := lazymatch goal with
   | [
-      |- exists (_ _ : @mem _ _ _),
+      |- exists (_ _ : @Interface.map.rep _ _ _),
         (anybytes ?addr _ _) /\ (msplit ?mem _ _) /\ _ ] =>
         repeat lazymatch goal with 
         | [ H : (?Rl * ((Bignum _ addr ?aval) * ?Rr))%sep mem |- _ ] => 
@@ -624,7 +636,7 @@ Section Spec.
 
   Ltac defrag_in_context' := lazymatch goal with
   | [
-      |- exists (_ _ : @mem _ _ _),
+      |- exists (_ _ : @Interface.map.rep _ _ _),
         (anybytes ?addr _ _) /\ (msplit ?mem _ _) /\ _ ] =>
         match goal with 
         | [ H : _ mem |- _ ] => cleanup_hyp H mem
@@ -650,7 +662,7 @@ Section Spec.
     let yrsep := "yrsep" in
     let yisep := "yisep" in
     let add := (append prefix "add") in
-    let felem_copy := "felem_copy_64" in
+    let felem_copy := ("felem_copy" ++ felem_suffix) in
     let fp2_add := "Fp2_add" in
     ([outr; outi; xr; xi; yr; yi], [],
       bedrock_func_body:(
@@ -658,11 +670,11 @@ Section Spec.
         stackalloc num_bytes as xisep;
         stackalloc num_bytes as yrsep;
         stackalloc num_bytes as yisep;
-        felem_copy (xrsep, xr);
-        felem_copy (yrsep, yr);
-        felem_copy (xisep, xi);
-        felem_copy (yisep, yi);
-        fp2_add (outr, outi, xrsep, xisep, yrsep, yisep)
+        $felem_copy (xrsep, xr);
+        $felem_copy (yrsep, yr);
+        $felem_copy (xisep, xi);
+        $felem_copy (yisep, yi);
+        $fp2_add (outr, outi, xrsep, xisep, yrsep, yisep)
       )).
 
   Instance spec_of_my_add_alt2: spec_of "Fp2_add_alt2" :=
@@ -714,14 +726,11 @@ Section Spec.
     remember (Bignum n pyi wyi * Ryi)%sep as Ryi'.
     remember ((Bignum n poutr wold_outr * Bignum n pouti wold_outi * Rout)%sep) as Rout'.
 
-    assert (
-        id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0).
-    {
-      cbv [id]. split; auto.
-    }
+    assert (id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0)
+      as HAssert by (cbv [id]; auto).
 
     (*Allocate memory on stack. *)
-    repeat straightline'. clear H1 Hmnew Hmnew0 Hmnew1. cbv [id] in *.
+    repeat straightline'. clear HAssert Hmnew Hmnew0 Hmnew1. cbv [id] in *.
 
   (*Handle calls to felem_copy*)
 
@@ -734,10 +743,7 @@ Section Spec.
   repeat straightline.
   straightline_call.
   2:
-  {
-    assert (Hnumlimbs : n = num_limbs) by auto.
-    repeat rewrite Hnumlimbs. repeat rewrite Hnumlimbs in H15. ecancel_assumption.
-  }
+  { ecancel_assumption. }
   1: split; auto.
 
   (*Defragment memory in context after stack allocation. *)
@@ -762,7 +768,7 @@ Section Spec.
     let yrsep := "yrsep" in
     let yisep := "yisep" in
     let add := (append prefix "add") in
-    let felem_copy := "felem_copy_64" in
+    let felem_copy := ("felem_copy" ++ felem_suffix) in
     let fp2_sub := "Fp2_sub" in
     ([outr; outi; xr; xi; yr; yi], [],
       bedrock_func_body:(
@@ -770,11 +776,11 @@ Section Spec.
         stackalloc num_bytes as xisep;
         stackalloc num_bytes as yrsep;
         stackalloc num_bytes as yisep;
-        felem_copy (xrsep, xr);
-        felem_copy (yrsep, yr);
-        felem_copy (xisep, xi);
-        felem_copy (yisep, yi);
-        fp2_sub (outr, outi, xrsep, xisep, yrsep, yisep)
+        $felem_copy (xrsep, xr);
+        $felem_copy (yrsep, yr);
+        $felem_copy (xisep, xi);
+        $felem_copy (yisep, yi);
+        $fp2_sub (outr, outi, xrsep, xisep, yrsep, yisep)
       )).
 
   Instance spec_of_my_sub_alt2: spec_of "Fp2_sub_alt2" :=
@@ -827,14 +833,11 @@ Section Spec.
     remember (Bignum n pyi wyi * Ryi)%sep as Ryi'.
     remember ((Bignum n poutr wold_outr * Bignum n pouti wold_outi * Rout)%sep) as Rout'.
 
-    assert (
-        id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0).
-    {
-      cbv [id]. split; auto.
-    }
+    assert (id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0)
+      as HAssert by (cbv [id]; auto).
 
     (*Allocate memory on stack. *)
-    repeat straightline'. clear H1 Hmnew Hmnew0 Hmnew1. cbv [id] in *.
+    repeat straightline'. clear HAssert Hmnew Hmnew0 Hmnew1. cbv [id] in *.
 
   (*Handle calls to felem_copy*)
     copy_next Rxr' (fun m => Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m) mnew2 pxr wxr Rxr a Hmnew2.
@@ -845,9 +848,7 @@ Section Spec.
   (*Handle function call*)
   repeat straightline.
   straightline_call.
-  2: {
-    assert (Hnumlimbs : n = num_limbs) by auto. rewrite !Hnumlimbs. rewrite !Hnumlimbs in H15. ecancel_assumption.
-  }
+  2: { ecancel_assumption. }
   1: split; auto.
 
   (*Defragment memory in context after stack allocation. *)
@@ -872,7 +873,7 @@ Section Spec.
     let yrsep := "yrsep" in
     let yisep := "yisep" in
     let add := (append prefix "add") in
-    let felem_copy := "felem_copy_64" in
+    let felem_copy := ("felem_copy" ++ felem_suffix) in
     let fp2_mul := "Fp2_mul" in
     ([outr; outi; xr; xi; yr; yi], [],
       bedrock_func_body:(
@@ -880,11 +881,11 @@ Section Spec.
         stackalloc num_bytes as xisep;
         stackalloc num_bytes as yrsep;
         stackalloc num_bytes as yisep;
-        felem_copy (xrsep, xr);
-        felem_copy (yrsep, yr);
-        felem_copy (xisep, xi);
-        felem_copy (yisep, yi);
-        fp2_mul (outr, outi, xrsep, xisep, yrsep, yisep)
+        $felem_copy (xrsep, xr);
+        $felem_copy (yrsep, yr);
+        $felem_copy (xisep, xi);
+        $felem_copy (yisep, yi);
+        $fp2_mul (outr, outi, xrsep, xisep, yrsep, yisep)
       )).
 
   Instance spec_of_my_mul_alt2: spec_of "Fp2_mul_alt2" :=
@@ -937,15 +938,11 @@ Section Spec.
     remember (Bignum n pyi wyi * Ryi)%sep as Ryi'.
     remember ((Bignum n poutr wold_outr * Bignum n pouti wold_outi * Rout)%sep) as Rout'.
 
-    assert (
-        id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0).
-    {
-      cbv [id]. split; auto.
-    }
-
+    assert (id (fun m => (Rxr' m /\ Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m)) m0)
+      as HAssert by (cbv [id]; auto).
 
     (*Allocate memory on stack. *)
-    repeat straightline'. clear H1 Hmnew Hmnew0 Hmnew1. cbv [id] in *.
+    repeat straightline'. clear HAssert Hmnew Hmnew0 Hmnew1. cbv [id] in *.
 
   (*Handle calls to felem_copy*)
     copy_next Rxr' (fun m => Ryr' m /\ Rxi' m /\ Ryi' m /\ Rout' m) mnew2 pxr wxr Rxr a Hmnew2.
@@ -956,10 +953,7 @@ Section Spec.
   (*Handle function call*)
   repeat straightline.
   straightline_call.
-  2: {
-    assert (Hnumlimbs : n = num_limbs) by auto. rewrite !Hnumlimbs. rewrite !Hnumlimbs in H15.
-    ecancel_assumption.
-  }
+  2: { ecancel_assumption. }
   1: split; auto.
 
   (*Defragment memory in context after stack allocation. *)
@@ -979,15 +973,15 @@ Section Spec.
     let xi := "xi" in
     let xrsep := "xrsep" in
     let xisep := "xisep" in
-    let felem_copy := "felem_copy_64" in
+    let felem_copy := ("felem_copy" ++ felem_suffix) in
     let fp2_square := "Fp2_square" in
     ([outr; outi; xr; xi], [],
       bedrock_func_body:(
         stackalloc num_bytes as xrsep;
         stackalloc num_bytes as xisep;
-        felem_copy (xrsep, xr);
-        felem_copy (xisep, xi);
-        fp2_square (outi, outr, xrsep, xisep)
+        $felem_copy (xrsep, xr);
+        $felem_copy (xisep, xi);
+        $fp2_square (outi, outr, xrsep, xisep)
       )).
 
   Instance spec_of_my_square_alt2: spec_of "Fp2_square_alt2" :=
@@ -1031,26 +1025,20 @@ Section Spec.
     remember (Bignum n pxi wxi * Rxi)%sep as Rxi'.
     remember ((Bignum n poutr wold_outr * Bignum n pouti wold_outi * Rout)%sep) as Rout'.
 
-    assert (
-        id (fun m => (Rxr' m /\ Rxi' m /\ Rout' m)) m0).
-    {
-      cbv [id]. split; auto.
-    }
-
+    assert (id (fun m => (Rxr' m /\ Rxi' m /\ Rout' m)) m0)
+      as HAssert by (cbv [id]; auto).
 
     (*Allocate memory on stack. *)
-    repeat straightline'. clear Hmnew. cbv [id] in *.
+    repeat straightline'. clear HAssert Hmnew. cbv [id] in *.
 
   (*Handle calls to felem_copy*)
     copy_next Rxr' (fun m => Rxi' m /\ Rout' m) mnew0 pxr wxr Rxr a Hmnew0.
-    copy_next Rxi' (fun m => Rout' m) a2 pxi wxi Rxi a0 H10.
+    copy_next Rxi' (fun m => Rout' m) a2 pxi wxi Rxi a0 H9.
 
   (*Handle function call*)
   repeat straightline.
   straightline_call.
-  2: {
-    assert (Hnumlimbs : n = num_limbs) by auto. rewrite !Hnumlimbs. rewrite !Hnumlimbs in H10. ecancel_assumption.
-  }
+  2: { ecancel_assumption. }
   1: split; auto.
 
   (*Defragment memory in context after stack allocation. *)
@@ -1059,7 +1047,7 @@ Section Spec.
 
   (*Postcondition*)
   postcondition_pre.
-  split; [auto| destruct H13 as [ Hvalid [Hvalid' _]]; split; auto].
+  split; [auto| destruct H10 as [ Hvalid [Hvalid' _]]; split; auto].
   Qed.
 
   (* From bedrock2 Require Import ToCString Bytedump.

@@ -1,36 +1,30 @@
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Strings.String.
-Require Import Coq.micromega.Lia.
+From Stdlib Require Import ZArith.ZArith.
+From Stdlib Require Import Strings.String.
+From Stdlib Require Import micromega.Lia.
 Require Import Crypto.Bedrock.Field.Common.Types.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.WordByWordMontgomery.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.WordByWordMontgomery. 
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
-Require Import Coq.Lists.List.
-Require Crypto.Bedrock.Field.Translation.Parameters.Defaults32.
+Require Import Crypto.Util.ZUtil.ModInv.
+From Stdlib Require Import Lists.List.
 Require Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.Syntax.
 Require Import bedrock2.Array.
 Require Import bedrock2.ProgramLogic.
+Require Import bedrock2.Memory.
 Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Tactics.Tactics.
 Require Import Crypto.COperationSpecifications.
-Require Import Crypto.UnsaturatedSolinasHeuristics.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
 Require Import bedrock2.Semantics.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.ReifiedOperation.
-Require Import Crypto.Bedrock.Field.Common.Names.VarnameGenerator.
+Require Import bedrock2.BasicC64Semantics.
 Require Import Crypto.Spec.MxDH.
 Require Import Crypto.Arithmetic.Core.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults.
 Require Import Crypto.Bedrock.Field.Common.Tactics.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
-Require Import Crypto.Bedrock.Field.Synthesis.Generic.Operation.
-Require Import Crypto.Bedrock.Field.Translation.Parameters.SelectParameters.
-Require Import Crypto.Bedrock.Field.Synthesis.Specialized.Tactics.
-Require Import Bedrock.Field.bls12prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Bedrock.Field.quadratic_extension_bls12.
@@ -41,7 +35,7 @@ Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
 Require Import Bedrock.Util.Util.
-Require Import MontgomeryCurveSpecs.
+Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Bedrock.Util.Tactics.
 Require Import Bedrock.Util.Bignum.
 Require Import Bedrock.Util.Word.
@@ -53,17 +47,15 @@ Local Open Scope Z_scope.
 Section Spec.
 
 (*Parameters to be changed: specify prime and import reification from cache.*)
-    Require Import Bedrock.Examples.felem_copy_64.
-    Local Definition felem_suffix := felem_copy_64.aff.
-    Local Notation m := bls12prime.m.
+    Local Definition felem_suffix : string := "_64".
+    Local Notation m := bls12_prime.m.
     Local Definition prefix := "bls12_"%string. (* placed before function names *)
     Local Notation ar := (0 mod m).
     Local Notation ai := (0 mod m).
     Local Notation br := (4 mod m).
     Local Notation bi := (4 mod m).
- 
-    Existing Instances Defaults64.default_parameters bls12_bedrock2_funcs
-    bls12_bedrock2_specs bls12_bedrock2_correctness.
+
+    Existing Instances Defaults64.default_parameters.
 
     Existing Instance spec_of_my_add_alt2.
     Existing Instance spec_of_my_sub_alt2.
@@ -76,64 +68,29 @@ Section Spec.
     Instance spec_of_reified_Fp2_sub :
     spec_of (append prefix "Fp2_sub") := spec_of_my_sub_alt2.
 
-(*  We instantiate specs of all imported bedrock2 functions.
-    This needs to be done for typeclass inference to work properly.*)
-  Instance spec_of_reified_mul :
-  spec_of (append prefix "mul") := spec_of_mul.
-
-  Instance spec_of_reified_square :
-  spec_of (append prefix "square") := spec_of_square.
-
-  Instance spec_of_reified_add :
-  spec_of (append prefix "add") := spec_of_add.
-
-  Instance spec_of_reified_sub :
-  spec_of (append prefix "sub") := spec_of_sub.
-
-  Instance spec_of_reified_opp :
-  spec_of (append prefix "opp") := spec_of_opp.
-
-  Instance spec_of_reified_to_montgomery :
-  spec_of (append prefix "to_montgomery") := spec_of_to_montgomery.
-
-  Instance spec_of_reified_from_montgomery :
-  spec_of (append prefix "from_montgomery") := spec_of_from_montgomery.
-
-  Instance spec_of_reified_nonzero :
-  spec_of (append prefix "nonzero") := spec_of_nonzero.
-
-  Instance spec_of_reified_selectznz :
-  spec_of (append prefix "selectznz") := spec_of_selectznz.
-
-  Instance spec_of_reified_to_bytes :
-  spec_of (append prefix "to_bytes") := spec_of_to_bytes.
-
-  Instance spec_of_reified_from_bytes :
-  spec_of (append prefix "from_bytes") := spec_of_from_bytes.
-
   (*Instantiation done.*)
 
   (*Initializing parameters; do not touch*)
-  Local Notation bw := (@width (semantics)).
-  Local Notation m' := (@WordByWordMontgomery.m' m bw).
+  Local Notation bw := 64%Z.
+  Local Definition r' : Z := 2156816034988248299223634177047345702538962612379673219452923152950375310472428071793735684427918902921017369797640.
+  Local Definition m' : Z := 9940570264628428797.
   Notation n := (WordByWordMontgomery.n m bw).
   Local Notation eval := (@WordByWordMontgomery.WordByWordMontgomery.eval bw n).
   Local Notation valid := (@WordByWordMontgomery.valid bw n m).
   Local Notation from_mont := (@WordByWordMontgomery.from_montgomerymod bw n m m').
   Local Notation to_mont := (@WordByWordMontgomery.to_montgomerymod bw n m m').
-  Local Notation thisword := (@word semantics).
-  Local Definition valid_words w := valid (List.map (@Interface.word.unsigned width thisword) w).
-  Local Definition map_words := List.map (@Interface.word.unsigned width thisword).
+  Local Notation thisword := BasicC64Semantics.word.
+  Local Definition valid_words w := valid (List.map (@Interface.word.unsigned bw thisword) w).
+  Local Definition map_words := List.map (@Interface.word.unsigned bw thisword).
   Local Notation r := (WordByWordMontgomery.r bw).
-  Local Notation r' := (WordByWordMontgomery.r' m bw).
   Local Definition num_bytes := Eval compute in (Z.of_nat (((Z.to_nat bw * n) / 8)%nat)).
   Local Notation three_br := (3 * br mod m).
   Local Notation three_bi := (3 * bi mod m).
   Local Notation uw := (uweight 64).
   Definition three_br_list := (Partition.partition uw 6 (three_br)).
-  Definition three_br_mont := Eval native_compute in (WordByWordMontgomery.to_montgomerymod bw n m m' three_br_list).
+  Definition three_br_mont : list Z := [4933130441833534766; 15904462746612662304; 8034115857496836953; 12755092135412849606; 7007796720291435703; 252692002104915169].
   Definition three_bi_list := (Partition.partition uw 6 three_bi).
-  Definition three_bi_mont := Eval native_compute in (WordByWordMontgomery.to_montgomerymod bw n m m' three_bi_list).
+  Definition three_bi_mont : list Z := [4933130441833534766; 15904462746612662304; 8034115857496836953; 12755092135412849606; 7007796720291435703; 252692002104915169].
 
   (*Some Notation*)
   Local Notation evfrom x := ((eval (from_mont (fst x)), eval (from_mont (snd x)))).
@@ -143,7 +100,7 @@ Section Spec.
   Local Infix "+p2" := (addp2 m) (at level 90).
   Local Infix "-p2" := (subp2 m) (at level 90).
 
-  Local Notation evfrom_mod' := (@evfrom_mod'  m width n r' m' r'_correct m'_correct bw_big n_nz m_big m_small).
+  Local Notation evfrom_mod' := (@evfrom_mod'  m bw n r' m' r'_correct m'_correct bw_big n_nz m_big m_small).
   Notation mod_pair x := ((fst x) mod m, (snd x) mod m).
   Definition small x := 0 <= x < m.
   Notation valid_pair x := ((valid (fst x)) /\ (valid (snd x))).
@@ -153,6 +110,7 @@ Section Spec.
   Local Infix "*Fp" := (montFp2_mul m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) (at level 200).
   Local Infix "-Fp" := (montFp2_sub m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) (at level 200).
 
+  Local Notation word_size_in_bytes := (Memory.bytes_per_word bw).
   Notation S aw := (word.add (word.of_Z word_size_in_bytes) aw).
 
   Notation montsub a b c :=
@@ -172,13 +130,13 @@ Section Spec.
 
   (*Lemmas of correctness of parameters to be used for montgomery arithmetic.*)
   Lemma r'_correct : (2 ^ bw * r') mod Spec.m = 1.
-  Proof. auto with zarith. Qed.
+  Proof. cbv; auto. Qed.
 
   Lemma m'_correct : (Spec.m * m') mod 2 ^ bw = -1 mod 2 ^ bw.
-  Proof. auto with zarith. Qed.
+  Proof. cbv; auto. Qed.
 
   Lemma bw_big : 0 < bw.
-  Proof. unfold bw; simpl; lia. Qed.
+  Proof. lia. Qed.
 
   Lemma m_big : 1 < Spec.m.
   Proof. unfold m; lia. Qed.
@@ -216,7 +174,7 @@ Section Spec.
   Local Notation evfrom_mod := (evfrom_mod' m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
   Local Notation eval_from_mont_inj := (eval_from_mont_inj m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
   Local Notation mont_zero := (mont_zero m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-  Local Notation wordof_Z := (@word.of_Z width (@word (@semantics Defaults64.default_parameters))).
+  Local Notation wordof_Z := (@word.of_Z bw BasicC64Semantics.word).
 
 
   (*Lemmas/Tactics for parameters a and b*)
@@ -298,7 +256,7 @@ Section Spec.
     @BLS12_G2_add_Gallina_spec m bw n m' 0 0 three_br three_bi (X1r, X1i) (Y1r, Y1i) (Z1r, Z1i) (X2r, X2i) (Y2r, Y2i) (Z2r, Z2i) (outxr, outxi) (outyr, outyi) (outzr, outzi).
 
   (*Bedrock2 Function Definition*)
-  Definition BLS12_add : Syntax.func :=
+  Definition BLS12_add : Syntax.func := Eval cbv in (
       let outxr := "outxr" in
       let outyr := "outyr" in
       let outzr := "outzr" in
@@ -342,92 +300,76 @@ Section Spec.
       let add := ("Fp2_add_alt2") in
       let mul := ("Fp2_mul_alt2") in
       let sub := ("Fp2_sub_alt2") in  
-      ("BLS12_G2_add", (
-        [outxr; outxi; outyr; outyi; outzr; outzi; X1r; X1i; Y1r; Y1i; Z1r; Z1i; X2r; X2i; Y2r; Y2i; Z2r; Z2i], [],
+      ([outxr; outxi; outyr; outyi; outzr; outzi; X1r; X1i; Y1r; Y1i; Z1r; Z1i; X2r; X2i; Y2r; Y2i; Z2r; Z2i], []:list String.string,
         bedrock_func_body:(
-        stackalloc num_bytes as three_br{
-          stackalloc num_bytes as t0r {
-            stackalloc num_bytes as t1r {
-              stackalloc num_bytes as t2r {
-                stackalloc num_bytes as t3r {
-                  stackalloc num_bytes as t4r {
-                    stackalloc num_bytes as t5r {
-                      stackalloc num_bytes as three_bi{
-                        stackalloc num_bytes as t0i {
-                          stackalloc num_bytes as t1i {
-                            stackalloc num_bytes as t2i {
-                              stackalloc num_bytes as t3i {
-                                stackalloc num_bytes as t4i {
-                                  stackalloc num_bytes as t5i {
-                                    store(three_br, (coq:(nth 0 three_br_mont 0)));
-                                    store(three_br + coq:(8), coq:(nth 1 three_br_mont 0));
-                                    store(three_br + coq:(16), coq:(nth 2 three_br_mont 0));
-                                    store(three_br + coq:(24), coq:(nth 3 three_br_mont 0));
-                                    store(three_br + coq:(32), coq:(nth 4 three_br_mont 0));
-                                    store(three_br + coq:(40), coq:(nth 5 three_br_mont 0));
-                                    store(three_bi, (coq:(nth 0 three_bi_mont 0)));
-                                    store(three_bi + coq:(8), coq:(nth 1 three_bi_mont 0));
-                                    store(three_bi + coq:(16), coq:(nth 2 three_bi_mont 0));
-                                    store(three_bi + coq:(24), coq:(nth 3 three_bi_mont 0));
-                                    store(three_bi + coq:(32), coq:(nth 4 three_bi_mont 0));
-                                    store(three_bi + coq:(40), coq:(nth 5 three_bi_mont 0));
-                                    mul (t0r, t0i, X1r, X1i, X2r, X2i);
-                                    mul (t1r, t1i, Y1r, Y1i, Y2r, Y2i);
-                                    mul (t2r, t2i, Z1r, Z1i, Z2r, Z2i);
-                                    add (t3r, t3i, X1r, X1i, Y1r, Y1i);
-                                    add (t4r, t4i, X2r, X2i, Y2r, Y2i);
-                                    mul (t3r, t3i, t3r, t3i, t4r, t4i);
-                                    add (t4r, t4i, t0r, t0i, t1r, t1i);
-                                    sub (t3r, t3i, t3r, t3i, t4r, t4i);
-                                    add (t4r, t4i, X1r, X1i, Z1r, Z1i);
-                                    add (t5r, t5i, X2r, X2i, Z2r, Z2i);
-                                    mul (t4r, t4i, t4r, t4i, t5r, t5i);
-                                    add (t5r, t5i, t0r, t0i, t2r, t2i);
-                                    sub (t4r, t4i, t4r, t4i, t5r, t5i);
-                                    add (t5r, t5i, Y1r, Y1i, Z1r, Z1i);
-                                    add (outxr, outxi, Y2r, Y2i, Z2r, Z2i);
-                                    mul (t5r, t5i, t5r, t5i, outxr, outxi);
-                                    add (outxr, outxi, t1r, t1i, t2r, t2i);
-                                    sub (t5r, t5i, t5r, t5i, outxr, outxi);
-                                    mul (outzr, outzi, three_br, three_bi, t2r, t2i);
-                                    sub (outxr, outxi, t1r, t1i, outzr, outzi);
-                                    add (outzr, outzi, outzr, outzi, t1r, t1i);
-                                    mul (outyr, outyi, outxr, outxi, outzr, outzi);
-                                    add (t1r, t1i, t0r, t0i, t0r, t0i);
-                                    add (t1r, t1i, t1r, t1i, t0r, t0i);
-                                    mul (t4r, t4i, three_br, three_bi, t4r, t4i);
-                                    mul (t0r, t0i, t1r, t1i, t4r, t4i);
-                                    add (outyr, outyi, outyr, outyi, t0r, t0i);
-                                    mul (t0r, t0i, t5r, t5i, t4r, t4i);
-                                    mul (outxr, outxi, t3r, t3i, outxr, outxi);
-                                    sub (outxr, outxi, outxr, outxi, t0r, t0i);
-                                    mul (t0r, t0i, t3r, t3i, t1r, t1i);
-                                    mul (outzr, outzi, t5r, t5i, outzr, outzi);
-                                    add (outzr, outzi, outzr, outzi, t0r, t0i)
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        )
-      )).
+          stackalloc num_bytes as $ three_br;
+          stackalloc num_bytes as $ t0r;
+          stackalloc num_bytes as $ t1r;
+          stackalloc num_bytes as $ t2r;
+          stackalloc num_bytes as $ t3r;
+          stackalloc num_bytes as $ t4r;
+          stackalloc num_bytes as $ t5r;
+          stackalloc num_bytes as $ three_bi;
+          stackalloc num_bytes as $ t0i;
+          stackalloc num_bytes as $ t1i;
+          stackalloc num_bytes as $ t2i;
+          stackalloc num_bytes as $ t3i;
+          stackalloc num_bytes as $ t4i;
+          stackalloc num_bytes as $ t5i;
+          store($three_br, (coq:(nth 0 three_br_mont 0)));
+          store($three_br + coq:(8), coq:(nth 1 three_br_mont 0));
+          store($three_br + coq:(16), coq:(nth 2 three_br_mont 0));
+          store($three_br + coq:(24), coq:(nth 3 three_br_mont 0));
+          store($three_br + coq:(32), coq:(nth 4 three_br_mont 0));
+          store($three_br + coq:(40), coq:(nth 5 three_br_mont 0));
+          store($three_bi, (coq:(nth 0 three_bi_mont 0)));
+          store($three_bi + coq:(8), coq:(nth 1 three_bi_mont 0));
+          store($three_bi + coq:(16), coq:(nth 2 three_bi_mont 0));
+          store($three_bi + coq:(24), coq:(nth 3 three_bi_mont 0));
+          store($three_bi + coq:(32), coq:(nth 4 three_bi_mont 0));
+          store($three_bi + coq:(40), coq:(nth 5 three_bi_mont 0));
+          $mul ($t0r, $t0i, $X1r, $X1i, $X2r, $X2i);
+          $mul ($t1r, $t1i, $Y1r, $Y1i, $Y2r, $Y2i);
+          $mul ($t2r, $t2i, $Z1r, $Z1i, $Z2r, $Z2i);
+          $add ($t3r, $t3i, $X1r, $X1i, $Y1r, $Y1i);
+          $add ($t4r, $t4i, $X2r, $X2i, $Y2r, $Y2i);
+          $mul ($t3r, $t3i, $t3r, $t3i, $t4r, $t4i);
+          $add ($t4r, $t4i, $t0r, $t0i, $t1r, $t1i);
+          $sub ($t3r, $t3i, $t3r, $t3i, $t4r, $t4i);
+          $add ($t4r, $t4i, $X1r, $X1i, $Z1r, $Z1i);
+          $add ($t5r, $t5i, $X2r, $X2i, $Z2r, $Z2i);
+          $mul ($t4r, $t4i, $t4r, $t4i, $t5r, $t5i);
+          $add ($t5r, $t5i, $t0r, $t0i, $t2r, $t2i);
+          $sub ($t4r, $t4i, $t4r, $t4i, $t5r, $t5i);
+          $add ($t5r, $t5i, $Y1r, $Y1i, $Z1r, $Z1i);
+          $add ($outxr, $outxi, $Y2r, $Y2i, $Z2r, $Z2i);
+          $mul ($t5r, $t5i, $t5r, $t5i, $outxr, $outxi);
+          $add ($outxr, $outxi, $t1r, $t1i, $t2r, $t2i);
+          $sub ($t5r, $t5i, $t5r, $t5i, $outxr, $outxi);
+          $mul ($outzr, $outzi, $three_br, $three_bi, $t2r, $t2i);
+          $sub ($outxr, $outxi, $t1r, $t1i, $outzr, $outzi);
+          $add ($outzr, $outzi, $outzr, $outzi, $t1r, $t1i);
+          $mul ($outyr, $outyi, $outxr, $outxi, $outzr, $outzi);
+          $add ($t1r, $t1i, $t0r, $t0i, $t0r, $t0i);
+          $add ($t1r, $t1i, $t1r, $t1i, $t0r, $t0i);
+          $mul ($t4r, $t4i, $three_br, $three_bi, $t4r, $t4i);
+          $mul ($t0r, $t0i, $t1r, $t1i, $t4r, $t4i);
+          $add ($outyr, $outyi, $outyr, $outyi, $t0r, $t0i);
+          $mul ($t0r, $t0i, $t5r, $t5i, $t4r, $t4i);
+          $mul ($outxr, $outxi, $t3r, $t3i, $outxr, $outxi);
+          $sub ($outxr, $outxi, $outxr, $outxi, $t0r, $t0i);
+          $mul ($t0r, $t0i, $t3r, $t3i, $t1r, $t1i);
+          $mul ($outzr, $outzi, $t5r, $t5i, $outzr, $outzi);
+          $add ($outzr, $outzi, $outzr, $outzi, $t0r, $t0i)
+      ))).
 
   Local Open Scope string_scope.
   Local Infix "*" := sep : sep_scope.
   Delimit Scope sep_scope with sep.
 
   (*Bedrock2 function Spec*)
-  Instance spec_of_BLS12_add: spec_of BLS12_add :=
-  fun functions : list (string * (list string * list string * cmd)) =>
+  Instance spec_of_BLS12_add: spec_of "BLS12_add" :=
+  fun functions =>
       forall (wX1r wY1r wZ1r wX2r wY2r wZ2r wX1i wY1i wZ1i wX2i wY2i wZ2i : list Interface.word.rep)
       (pX1r pY1r pZ1r pX2r pY2r pZ2r pX1i pY1i pZ1i pX2i pY2i pZ2i poutxr poutyr poutzr poutxi poutyi poutzi: Interface.word.rep)
       (wold_outxr wold_outyr wold_outzr wold_outxi wold_outyi wold_outzi: list Interface.word.rep) (t : Semantics.trace)
@@ -458,7 +400,7 @@ Section Spec.
       (Bignum n pZ2i wZ2i) *
       (Bignum n poutxr wold_outxr) * (Bignum n poutyr wold_outyr) * (Bignum n poutzr wold_outzr) *
       (Bignum n poutxi wold_outxi) * (Bignum n poutyi wold_outyi) * (Bignum n poutzi wold_outzi) * Rout)%sep m0 ->
-      WeakestPrecondition.call functions ( "BLS12_G2_add") t m0
+      WeakestPrecondition.call functions "BLS12_add" t m0
       ([poutxr; poutxi; poutyr; poutyi; poutzr; poutzi; pX1r; pX1i; pY1r; pY1i; pZ1r; pZ1i; pX2r; pX2i; pY2r; pY2i; pZ2r; pZ2i])
       (fun (t' : Semantics.trace) (m' : Interface.map.rep)
           (rets : list Interface.word.rep) =>
@@ -491,12 +433,12 @@ Section Spec.
     (repeat (destruct l; [discriminate| ])); destruct l; [| discriminate].
 
   Ltac Bignum_to_Scalars l := let Hsep := (fresh "Hsep") in
-  eassert (Hsep : (Bignum n _ l * _)%sep _) by ecancel_assumption;
+  eassert (Hsep : (Bignum _ _ l * _)%sep _) by ecancel_assumption;
   apply Bignum_manyScalars_R in Hsep; sepsimpl_hyps; get_list_from_length l;
   lazymatch goal with
-  | [H : (many_Scalars n _ _ * _)%sep _ |- _] => let Htemp := (fresh "Htemp") in
-    eassert (Htemp : many_Scalars n _ _ = many_Scalars _ _ _) by (vm_compute n; auto);
-    rewrite Htemp in H; clear Htemp;
+  | [H : (many_Scalars _ _ _ * _)%sep _ |- _] =>
+    assert (Hn6 : n = 6%nat) by reflexivity;
+    try rewrite Hn6 in H; clear Hn6;
     repeat rewrite many_Scalars_next in H;
     rewrite many_Scalars_nil in H
   | _ => fail
@@ -537,6 +479,15 @@ Section Spec.
       try subst thisa; repeat (rewrite next_word'; try (rewrite word_add_0)); ecancel_assumption
     end.
 
+  Ltac clear_old_seps :=
+    lazymatch goal with
+    | H:sep _ _ ?mem |- context [?mem] =>
+      repeat
+        match goal with
+        | H':sep _ _ ?m |- _ => assert_fails unify m mem; clear H'
+        end
+    end.
+
   Ltac handle_store :=
     repeat (subst_vars; eapply Scalars.store_word_of_sep; [handle_store_step|]; repeat straightline'); clear_old_seps.
 
@@ -545,13 +496,14 @@ Section Spec.
   Ltac next_call :=
     lazymatch goal with
       | [H' : (_ * _)%sep _ |- _] =>
-      straightline_call; [|ecancel_assumption | ecancel_assumption| ecancel_assumption| ecancel_assumption| ecancel_assumption|]; [split; [assumption| split; [assumption| split; assumption]]|]; repeat straightline; clear H'
+        change 6%nat with n in H';
+        straightline_call; [|ecancel_assumption | ecancel_assumption| ecancel_assumption| ecancel_assumption| ecancel_assumption|]; [split; [assumption| split; [assumption| split; assumption]]|]; repeat straightline; clear H'
       | _ => idtac
         end.
 
 
   (*Tactics to handle stack allocation*)
-  Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a m m0 m1, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m m0 m1 -> anybytes a n0 m1 -> R m0 -> exists l, (R * (Bignum n a l))%sep m.
+  Lemma alloc_anybytes_Bignum n0 : forall (R : Interface.map.rep -> Prop) a m m0 m1, n0 = Z.of_nat (n * Z.to_nat word_size_in_bytes) -> msplit m m0 m1 -> anybytes a n0 m1 -> R m0 -> exists (l : list BasicC64Semantics.word), (R * (Bignum n a l))%sep m.
   Proof.
     intros.
     pose proof (anybytes_Bignum n m1 n0 a).
@@ -578,67 +530,85 @@ Section Spec.
 
 
   (*Lemmas and tactics casting return values from function calls to Mp2 elements*)
-  Lemma montmul_to_Mp2 : forall x y z Hx Hy Hz, Fp2_mul_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_mul m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big 
+  Lemma montmul_to_Mp2 : forall x y z Hx Hy Hz, Fp2_mul_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_mul m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big
   (enc_mont_pair m bw n x Hx) (enc_mont_pair m bw n y Hy).
   Proof.
-    intros [pr pi] [yr yi] [zr zi] Hx Hy Hz [_ [_ [H'1 H'2]]].
-    apply pair_equal_spec; split; apply eval_from_mont_inj.
-      - rewrite mont_enc_val. rewrite Prod.fst_pair. rewrite Prod.fst_pair in H'1.
-        rewrite H'1. rewrite !Prod.fst_pair, !Prod.snd_pair.
-        pose proof (mont_sub_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H. rewrite !mont_mul_spec.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempfst, !Htempsnd. apply Zminus_mod.
-      - rewrite mont_enc_val. rewrite Prod.snd_pair. rewrite Prod.snd_pair in H'2.
-        rewrite H'2. rewrite !Prod.fst_pair, !Prod.snd_pair.
-        pose proof (mont_add_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H. rewrite !mont_mul_spec.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempfst, !Htempsnd. rewrite <- Zplus_mod. apply (f_equal (fun y => y mod m)). ring.  
+  intros x y z Hx Hy Hz Hspec.
+  unfold Fp2_mul_Gallina_spec in Hspec.
+  destruct Hspec as [Hvalz_fst [Hvalz_snd [Hfst Hsnd]]].
+  change quadratic_extension_bls12.m' with m' in Hfst, Hsnd.
+  set (Hx'r := proj2 (valid_valid'_equiv (fst x)) (proj1 Hx)).
+  set (Hx'i := proj2 (valid_valid'_equiv (snd x)) (proj2 Hx)).
+  set (Hy'r := proj2 (valid_valid'_equiv (fst y)) (proj1 Hy)).
+  set (Hy'i := proj2 (valid_valid'_equiv (snd y)) (proj2 Hy)).
+  destruct (mul_mod_correct m 64 n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) as [Hmul Hvmul].
+  destruct (sub_mod_correct m 64 n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) as [Hsub Hvsub].
+  destruct (add_mod_correct m 64 n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) as [Hadd Hvadd].
+  unfold enc_mont_pair, montFp2_mul.
+  apply pair_equal_spec; split; apply eval_from_mont_inj; simpl.
+  - set (Hvm1 := Hvmul (fst x) Hx'r (fst y) Hy'r).
+    set (Hvm2 := Hvmul (snd x) Hx'i (snd y) Hy'i).
+    set (Hsv := Hvsub _ Hvm1 _ Hvm2).
+    rewrite Hfst, <- (valid_mod Hsv), (Hsub _ Hvm1 _ Hvm2).
+    rewrite <- (valid_mod Hvm1), <- (valid_mod Hvm2).
+    rewrite (Hmul (fst x) Hx'r (fst y) Hy'r), (Hmul (snd x) Hx'i (snd y) Hy'i).
+    rewrite Zminus_mod. reflexivity.
+  - set (Hvm3 := Hvmul (fst x) Hx'r (snd y) Hy'i).
+    set (Hvm4 := Hvmul (snd x) Hx'i (fst y) Hy'r).
+    set (Hsa := Hvadd _ Hvm3 _ Hvm4).
+    rewrite Hsnd, <- (valid_mod Hsa), (Hadd _ Hvm3 _ Hvm4).
+    rewrite <- (valid_mod Hvm3), <- (valid_mod Hvm4).
+    rewrite (Hmul (fst x) Hx'r (snd y) Hy'i), (Hmul (snd x) Hx'i (fst y) Hy'r).
+    rewrite <- (Z.mul_comm (eval (from_mont (snd x))) (eval (from_mont (fst y)))).
+    rewrite Z.add_mod. reflexivity. discriminate.
   Qed.
 
-  Lemma montsub_to_Mp2 : forall x y z Hx Hy Hz, Fp2_sub_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_sub m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big 
+  Lemma montsub_to_Mp2 : forall x y z Hx Hy Hz, Fp2_sub_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_sub m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big
       (enc_mont_pair m bw n x Hx) (enc_mont_pair m bw n y Hy).
   Proof.
-    intros [pr pi] [yr yi] [zr zi] Hx Hy Hz [_ [_ [H'1 H'2]]].
-    apply pair_equal_spec; split; apply eval_from_mont_inj.
-      - rewrite mont_enc_val. rewrite Prod.fst_pair. rewrite Prod.fst_pair in H'1.
-        rewrite H'1. rewrite !Prod.fst_pair.
-        pose proof (mont_sub_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempfst. reflexivity.
-      - rewrite mont_enc_val. rewrite Prod.snd_pair. rewrite Prod.snd_pair in H'2.
-        rewrite H'2. rewrite !Prod.snd_pair.
-        pose proof (mont_sub_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempsnd. reflexivity.
+  intros x y z Hx Hy Hz Hspec.
+  unfold Fp2_sub_Gallina_spec in Hspec.
+  destruct Hspec as [Hvalz_fst [Hvalz_snd [Hfst Hsnd]]].
+  change quadratic_extension_bls12.m' with m' in Hfst, Hsnd.
+  set (Hx'r := proj2 (valid_valid'_equiv (fst x)) (proj1 Hx)).
+  set (Hx'i := proj2 (valid_valid'_equiv (snd x)) (proj2 Hx)).
+  set (Hy'r := proj2 (valid_valid'_equiv (fst y)) (proj1 Hy)).
+  set (Hy'i := proj2 (valid_valid'_equiv (snd y)) (proj2 Hy)).
+  destruct (sub_mod_correct m 64 n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) as [Hsub Hvsub].
+  unfold enc_mont_pair, montFp2_sub.
+  apply pair_equal_spec; split; apply eval_from_mont_inj; simpl.
+  - set (Hsv := Hvsub (fst x) Hx'r (fst y) Hy'r).
+    rewrite Hfst, <- (valid_mod Hsv), (Hsub (fst x) Hx'r (fst y) Hy'r).
+    rewrite <- (valid_mod Hx'r), <- (valid_mod Hy'r).
+    rewrite Zminus_mod. reflexivity.
+  - set (Hsv := Hvsub (snd x) Hx'i (snd y) Hy'i).
+    rewrite Hsnd, <- (valid_mod Hsv), (Hsub (snd x) Hx'i (snd y) Hy'i).
+    rewrite <- (valid_mod Hx'i), <- (valid_mod Hy'i).
+    rewrite Zminus_mod. reflexivity.
   Qed.
 
-  Lemma montadd_to_Mp2 : forall x y z Hx Hy Hz, Fp2_add_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_add m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big 
+  Lemma montadd_to_Mp2 : forall x y z Hx Hy Hz, Fp2_add_Gallina_spec x y z -> enc_mont_pair m bw n z Hz = montFp2_add m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big
   (enc_mont_pair m bw n x Hx) (enc_mont_pair m bw n y Hy).
   Proof.
-    intros [pr pi] [yr yi] [zr zi] Hx Hy Hz [_ [_ [H'1 H'2]]].
-    apply pair_equal_spec; split; apply eval_from_mont_inj.
-      - rewrite mont_enc_val. rewrite Prod.fst_pair. rewrite Prod.fst_pair in H'1.
-        rewrite H'1. rewrite !Prod.fst_pair.
-        pose proof (mont_add_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempfst. reflexivity.
-      - rewrite mont_enc_val. rewrite Prod.snd_pair. rewrite Prod.snd_pair in H'2.
-        rewrite H'2. rewrite !Prod.snd_pair.
-        pose proof (mont_add_spec m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big).
-        rewrite H.
-        assert (Htempfst : forall y z H, val m bw n (fst (enc_mont_pair m bw n (y, z) H)) = y) by reflexivity.
-        assert (Htempsnd : forall y z H, val m bw n (snd (enc_mont_pair m bw n (y, z) H)) = z) by reflexivity.
-        rewrite !Htempsnd. reflexivity.
+  intros x y z Hx Hy Hz Hspec.
+  unfold Fp2_add_Gallina_spec in Hspec.
+  destruct Hspec as [Hvalz_fst [Hvalz_snd [Hfst Hsnd]]].
+  change quadratic_extension_bls12.m' with m' in Hfst, Hsnd.
+  set (Hx'r := proj2 (valid_valid'_equiv (fst x)) (proj1 Hx)).
+  set (Hx'i := proj2 (valid_valid'_equiv (snd x)) (proj2 Hx)).
+  set (Hy'r := proj2 (valid_valid'_equiv (fst y)) (proj1 Hy)).
+  set (Hy'i := proj2 (valid_valid'_equiv (snd y)) (proj2 Hy)).
+  destruct (add_mod_correct m 64 n r' m' r'_correct m'_correct bw_big n_nz m_small m_big) as [Hadd Hvadd].
+  unfold enc_mont_pair, montFp2_add.
+  apply pair_equal_spec; split; apply eval_from_mont_inj; simpl.
+  - set (Hsa := Hvadd (fst x) Hx'r (fst y) Hy'r).
+    rewrite Hfst, <- (valid_mod Hsa), (Hadd (fst x) Hx'r (fst y) Hy'r).
+    rewrite <- (valid_mod Hx'r), <- (valid_mod Hy'r).
+    rewrite Z.add_mod. reflexivity. discriminate.
+  - set (Hsa2 := Hvadd (snd x) Hx'i (snd y) Hy'i).
+    rewrite Hsnd, <- (valid_mod Hsa2), (Hadd (snd x) Hx'i (snd y) Hy'i).
+    rewrite <- (valid_mod Hx'i), <- (valid_mod Hy'i).
+    rewrite Z.add_mod. reflexivity. discriminate.
   Qed.
 
   Ltac assert_valid_pair xr xi := let Hv := (fresh "Hv") in
@@ -720,8 +690,6 @@ Section Spec.
     repeat straightline.
     
     (*Postcondition*)
-    (*Trivial subgoals are handled first*)
-    do 2 (split; [reflexivity| ]).
     do 7 eexists; split; [| ecancel_assumption].
 
     (*Gallina specification part of postcondition*)
@@ -770,7 +738,7 @@ Section Spec.
 
 (*Variant that allows overlapping inputs/outputs*)
   (*Bedrock2 Function Definition*)
-  Definition BLS12_add_alt : Syntax.func :=
+  Definition BLS12_add_alt : Syntax.func := Eval cbv in (
       let outxr := "outxr" in
       let outyr := "outyr" in
       let outzr := "outzr" in
@@ -811,45 +779,39 @@ Section Spec.
       let Y2isep := "Y2isep" in
       let Z2isep := "Z2isep" in
   
-      let BLS12_G2_add := "BLS12_G2_add" in
-      let felem_copy := ("felem_copy" ++ felem_suffix) in  
-      ("BLS12_G2_add_alt", (
-        [outxr; outxi; outyr; outyi; outzr; outzi; X1r; X1i; Y1r; Y1i; Z1r; Z1i;
-            X2r; X2i; Y2r; Y2i; Z2r; Z2i], [],
+      let BLS12_G2_add := "BLS12_add" in
+      let felem_copy := ("felem_copy" ++ felem_suffix) in
+      ([outxr; outxi; outyr; outyi; outzr; outzi; X1r; X1i; Y1r; Y1i; Z1r; Z1i;
+          X2r; X2i; Y2r; Y2i; Z2r; Z2i], []:list String.string,
         bedrock_func_body:(
-
-        stackalloc num_bytes as X1rsep {
-        stackalloc num_bytes as X1isep {
-        stackalloc num_bytes as Y1rsep {
-        stackalloc num_bytes as Y1isep {
-        stackalloc num_bytes as Z1rsep {
-        stackalloc num_bytes as Z1isep {
-        stackalloc num_bytes as X2rsep {
-        stackalloc num_bytes as X2isep {
-        stackalloc num_bytes as Y2rsep {
-        stackalloc num_bytes as Y2isep {
-        stackalloc num_bytes as Z2rsep {
-        stackalloc num_bytes as Z2isep {
-          
-            (*copying X1*)
-            felem_copy( X1rsep, X1r);
-            felem_copy( X1isep, X1i);
-            felem_copy( Y1rsep, Y1r);
-            felem_copy( Y1isep, Y1i);
-            felem_copy( Z1rsep, Z1r);
-            felem_copy( Z1isep, Z1i);
-            felem_copy( X2rsep, X2r);
-            felem_copy( X2isep, X2i);
-            felem_copy( Y2rsep, Y2r);
-            felem_copy( Y2isep, Y2i);
-            felem_copy( Z2rsep, Z2r);
-            felem_copy( Z2isep, Z2i);
-
-            BLS12_G2_add (outxr, outxi, outyr, outyi, outzr, outzi, X1rsep, X1isep, Y1rsep, Y1isep,
-              Z1rsep, Z1isep, X2rsep, X2isep, Y2rsep, Y2isep, Z2rsep, Z2isep)
-          }}}}}}}}}}}}
-        )
-      )).
+          stackalloc num_bytes as $ X1rsep;
+          stackalloc num_bytes as $ X1isep;
+          stackalloc num_bytes as $ Y1rsep;
+          stackalloc num_bytes as $ Y1isep;
+          stackalloc num_bytes as $ Z1rsep;
+          stackalloc num_bytes as $ Z1isep;
+          stackalloc num_bytes as $ X2rsep;
+          stackalloc num_bytes as $ X2isep;
+          stackalloc num_bytes as $ Y2rsep;
+          stackalloc num_bytes as $ Y2isep;
+          stackalloc num_bytes as $ Z2rsep;
+          stackalloc num_bytes as $ Z2isep;
+          (*copying X1*)
+          $felem_copy ($X1rsep, $X1r);
+          $felem_copy ($X1isep, $X1i);
+          $felem_copy ($Y1rsep, $Y1r);
+          $felem_copy ($Y1isep, $Y1i);
+          $felem_copy ($Z1rsep, $Z1r);
+          $felem_copy ($Z1isep, $Z1i);
+          $felem_copy ($X2rsep, $X2r);
+          $felem_copy ($X2isep, $X2i);
+          $felem_copy ($Y2rsep, $Y2r);
+          $felem_copy ($Y2isep, $Y2i);
+          $felem_copy ($Z2rsep, $Z2r);
+          $felem_copy ($Z2isep, $Z2i);
+          $BLS12_G2_add ($outxr, $outxi, $outyr, $outyi, $outzr, $outzi, $X1rsep, $X1isep, $Y1rsep, $Y1isep,
+            $Z1rsep, $Z1isep, $X2rsep, $X2isep, $Y2rsep, $Y2isep, $Z2rsep, $Z2isep)
+      ))).
 
 Local Open Scope string_scope.
 Local Infix "*" := sep : sep_scope.
@@ -857,8 +819,8 @@ Delimit Scope sep_scope with sep.
 
 (*Bedrock2 function Spec*)
 
-Instance spec_of_BLS12_add_alt: spec_of BLS12_add_alt :=
-fun functions : list (string * (list string * list string * cmd)) =>
+Instance spec_of_BLS12_add_alt: spec_of "BLS12_add_alt" :=
+fun functions =>
     forall (wX1r wY1r wZ1r wX2r wY2r wZ2r wX1i wY1i wZ1i wX2i wY2i wZ2i : list Interface.word.rep)
     (pX1r pY1r pZ1r pX2r pY2r pZ2r pX1i pY1i pZ1i pX2i pY2i pZ2i poutxr poutyr poutzr poutxi poutyi poutzi: Interface.word.rep)
     (wold_outxr wold_outyr wold_outzr wold_outxi wold_outyi wold_outzi: list Interface.word.rep) (t : Semantics.trace)
@@ -890,7 +852,7 @@ fun functions : list (string * (list string * list string * cmd)) =>
     ((Bignum n pZ2i wZ2i) * RZ2i)%sep m0 ->
     ((Bignum n poutxr wold_outxr) * (Bignum n poutyr wold_outyr) * (Bignum n poutzr wold_outzr) *
     (Bignum n poutxi wold_outxi) * (Bignum n poutyi wold_outyi) * (Bignum n poutzi wold_outzi) * Rout)%sep m0 ->
-    WeakestPrecondition.call functions ( "BLS12_G2_add_alt") t m0
+    WeakestPrecondition.call functions "BLS12_add_alt" t m0
     ([poutxr; poutxi; poutyr; poutyi; poutzr; poutzi; pX1r; pX1i; pY1r; pY1i; pZ1r; pZ1i; pX2r; pX2i; pY2r; pY2i; pZ2r; pZ2i])
     (fun (t' : Semantics.trace) (m' : Interface.map.rep)
         (rets : list Interface.word.rep) =>
@@ -925,6 +887,7 @@ fun functions : list (string * (list string * list string * cmd)) =>
   | _ => straightline
   end.
               
+  Local Instance spec_of_felem_copy_string : spec_of "felem_copy_64" := spec_of_felem_copy_64.
   Theorem G1_add_alt_func_ok : program_logic_goal_for_function! BLS12_add_alt.
   Proof.
     do 12 straightline.
@@ -947,11 +910,9 @@ fun functions : list (string * (list string * list string * cmd)) =>
           Bignum n poutyi wold_outyi * Bignum n poutzi wold_outzi * Rout)%sep) as Rout'.
 
     assert (
-        id (fun m => (RX1r' m /\ RX1i' m /\ RY1r' m /\ RY1i' m /\ RZ1r' m /\ RZ1i' m /\ 
-        RX2r' m /\ RX2i' m /\ RY2r' m /\ RY2i' m /\ RZ2r' m /\ RZ2i' m /\ Rout' m)) m0).
-    {
-      cbv [id]. split; auto. repeat (split; auto); auto.
-    }
+        id (fun m => (RX1r' m /\ RX1i' m /\ RY1r' m /\ RY1i' m /\ RZ1r' m /\ RZ1i' m /\
+        RX2r' m /\ RX2i' m /\ RY2r' m /\ RY2i' m /\ RZ2r' m /\ RZ2i' m /\ Rout' m)) m0)
+        by (cbv [id]; split; auto; repeat (split; auto); auto).
 
     (*Allocate memory on stack. *)
     repeat straightline''. clear H37 Hmnew Hmnew0 Hmnew1 Hmnew2 Hmnew3 Hmnew4 Hmnew5 Hmnew6 Hmnew7 Hmnew8 Hmnew9.
@@ -1002,7 +963,7 @@ fun functions : list (string * (list string * list string * cmd)) =>
     (*Handle function call*)
     repeat straightline.
     straightline_call.
-    2: assert (nval : num_limbs = n) by (cbv; auto); rewrite nval in *; ecancel_assumption.
+    2: ecancel_assumption.
     1: repeat (split; auto).
 
     (*Defragment memory in context after stack allocation. *)
@@ -1010,7 +971,7 @@ fun functions : list (string * (list string * list string * cmd)) =>
     repeat (defrag_in_context (WordByWordMontgomery.n Spec.m bw)).
 
     (*Postcondition*)
-    repeat straightline. do 2 split; auto.
+    repeat straightline.
     do 7 eexists. split.
     2: ecancel_assumption.
     auto.

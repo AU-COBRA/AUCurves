@@ -748,17 +748,182 @@ Section PippengerSpec.
       [process_window] runs a single fold_left over [combine ss ps]
       updating the bucket at [get_window s w c - 1] per (s,p).  The
       [distribute_inv w 0 bs ss ps] predicate characterizes any such
-      bucket list pointwise by the per-bucket filter-fold formula.  Two
-      lists of length [num_buckets] that both satisfy [distribute_inv w
-      0 _ ss ps] are therefore pointwise equal, hence equal as lists; the
-      [process_window] output satisfies [distribute_inv] by correctness
-      of the filter-fold decomposition; therefore
-      [reduce_buckets bs = reduce_buckets (process_window-output) =
-       process_window ss ps w c num_buckets].  The corresponding WP
-      leaf [msm_bls12_distribute_wp] (L3, Admitted) discharges the
-      programmatic side; this Gallina bridge is left as a companion
-      Admitted lemma, to be closed by induction on [combine ss ps]
-      alongside L3's own closure. *)
+      bucket list pointwise by the per-bucket filter-fold formula.
+      The [process_window] output itself satisfies that pointwise
+      formula (proved by induction on [combine ss ps] — see
+      [fold_left_bucket_nth]).  List extensionality
+      ([nth_ext] with both lists of length [num_buckets]) then
+      concludes.  Closed 2026-04-20 via auxiliary helpers
+      [bucket_update_fn], [fold_left_bucket_{len,nth}],
+      [fold_left_bucket_update_eq]. *)
+
+  (** Helper: the [get_window] Gallina decoding always fits in [2^c]. *)
+  Lemma get_window_lt_2c : forall s w cn,
+    (Z.to_nat (get_window s w cn) < Nat.pow 2 cn)%nat.
+  Proof.
+    intros s w cn. unfold get_window.
+    set (val' := if Nat.ltb 64 _ then _ else _).
+    rewrite Z.land_ones by Lia.lia.
+    assert (Hpos : 0 < 2 ^ Z.of_nat cn) by (apply Z.pow_pos_nonneg; Lia.lia).
+    pose proof (Z.mod_pos_bound val' (2 ^ Z.of_nat cn) Hpos) as [Hlo Hhi].
+    apply Nat2Z.inj_lt. rewrite Z2Nat.id by exact Hlo.
+    rewrite Nat2Z.inj_pow. cbn. exact Hhi.
+  Qed.
+
+  (** The per-iteration bucket update function from [process_window]. *)
+  Definition bucket_update_fn (w_n : nat)
+             (bkts : list G1_F) (sp : list Z * G1_F) : list G1_F :=
+    match sp with
+    | (s, p) =>
+      let idx := Z.to_nat (get_window s w_n (Z.to_nat c)) in
+      if (idx =? 0)%nat then bkts
+      else List.firstn (idx - 1) bkts ++
+           [g1_add_spec (nth (idx - 1) bkts g1_identity) p] ++
+           List.skipn idx bkts
+    end%list.
+
+  Lemma bucket_update_fn_zero : forall w_n bkts s p,
+    (Z.to_nat (get_window s w_n (Z.to_nat c)) = 0)%nat ->
+    bucket_update_fn w_n bkts (s, p) = bkts.
+  Proof.
+    intros. unfold bucket_update_fn. rewrite H. reflexivity.
+  Qed.
+
+  Lemma bucket_update_fn_nz : forall w_n bkts s p idx,
+    idx = Z.to_nat (get_window s w_n (Z.to_nat c)) ->
+    (idx <> 0)%nat ->
+    bucket_update_fn w_n bkts (s, p) =
+      (List.firstn (idx - 1) bkts ++
+       [g1_add_spec (nth (idx - 1) bkts g1_identity) p] ++
+       List.skipn idx bkts)%list.
+  Proof.
+    intros w_n bkts s p idx Heq Hnz. unfold bucket_update_fn. rewrite <- Heq.
+    destruct (Nat.eqb_spec idx 0); [contradiction|]. reflexivity.
+  Qed.
+
+  Lemma bucket_update_fn_len : forall w_n bkts sp,
+    Datatypes.length bkts = Z.to_nat num_buckets ->
+    Datatypes.length (bucket_update_fn w_n bkts sp) = Z.to_nat num_buckets.
+  Proof.
+    intros w_n bkts [s p] Hlen.
+    pose proof (get_window_lt_2c s w_n (Z.to_nat c)) as Hbd.
+    assert (Hnb : Z.to_nat num_buckets = (Nat.pow 2 (Z.to_nat c) - 1)%nat)
+      by (vm_compute; reflexivity).
+    set (idx := Z.to_nat (get_window s w_n (Z.to_nat c))) in *.
+    assert (Hle : (idx <= Z.to_nat num_buckets)%nat) by (rewrite Hnb; Lia.lia).
+    destruct (Nat.eqb_spec idx 0) as [Hz|Hnz].
+    - rewrite bucket_update_fn_zero by exact Hz. exact Hlen.
+    - erewrite bucket_update_fn_nz by (reflexivity + exact Hnz).
+      rewrite !length_app, length_firstn, length_skipn.
+      cbn [length]. rewrite Hlen.
+      rewrite Nat.min_l by Lia.lia. Lia.lia.
+  Qed.
+
+  Lemma fold_left_bucket_len : forall w_n pairs bkts0,
+    Datatypes.length bkts0 = Z.to_nat num_buckets ->
+    Datatypes.length (fold_left (bucket_update_fn w_n) pairs bkts0)
+    = Z.to_nat num_buckets.
+  Proof.
+    intros w_n pairs. induction pairs as [|sp rest IH]; intros bkts0 Hlen.
+    - cbn. exact Hlen.
+    - cbn [fold_left]. apply IH. apply bucket_update_fn_len. exact Hlen.
+  Qed.
+
+  (** Pointwise characterization of [fold_left bucket_update_fn].  This
+      matches [distribute_inv]'s filter-fold formula verbatim. *)
+  Lemma fold_left_bucket_nth :
+    forall (w_n : nat) (pairs : list (list Z * G1_F)) (bkts0 : list G1_F),
+      Datatypes.length bkts0 = Z.to_nat num_buckets ->
+      forall k, (k < Z.to_nat num_buckets)%nat ->
+        nth k (fold_left (bucket_update_fn w_n) pairs bkts0) g1_identity =
+        fold_left g1_add_spec
+          (List.map snd
+             (filter
+                (fun sp : list Z * G1_F =>
+                   Nat.eqb (Z.to_nat (get_window (fst sp) w_n (Z.to_nat c))) (S k))
+                pairs))
+          (nth k bkts0 g1_identity).
+  Proof.
+    intros w_n. induction pairs as [|[s p] rest IH]; intros bkts0 Hlen0 k Hk.
+    - cbn. reflexivity.
+    - cbn [fold_left List.filter List.map fst snd].
+      pose proof (get_window_lt_2c s w_n (Z.to_nat c)) as Hbd.
+      assert (Hnb : Z.to_nat num_buckets = (Nat.pow 2 (Z.to_nat c) - 1)%nat)
+        by (vm_compute; reflexivity).
+      set (idx := Z.to_nat (get_window s w_n (Z.to_nat c))) in *.
+      assert (Hle : (idx <= Z.to_nat num_buckets)%nat) by (rewrite Hnb; Lia.lia).
+      destruct (Nat.eqb_spec idx 0) as [Hz|Hnz].
+      + rewrite bucket_update_fn_zero by exact Hz.
+        destruct (Nat.eqb_spec idx (S k)); [Lia.lia|].
+        apply IH; assumption.
+      + erewrite bucket_update_fn_nz by (reflexivity + exact Hnz).
+        fold idx.
+        assert (Hidx_ge1 : (idx >= 1)%nat) by Lia.lia.
+        assert (Hidx1_le_bkts : (idx - 1 <= Datatypes.length bkts0)%nat) by Lia.lia.
+        assert (Hidx_le_bkts : (idx <= Datatypes.length bkts0)%nat) by Lia.lia.
+        assert (Hfirstn_len :
+                  Datatypes.length (List.firstn (idx - 1)%nat bkts0) = (idx - 1)%nat)
+          by (rewrite length_firstn, Nat.min_l by exact Hidx1_le_bkts; reflexivity).
+        set (bkts1 :=
+          (List.firstn (idx - 1)%nat bkts0 ++
+           [g1_add_spec (nth (idx - 1)%nat bkts0 g1_identity) p] ++
+           List.skipn idx bkts0)%list).
+        assert (Hlen1 : Datatypes.length bkts1 = Z.to_nat num_buckets).
+        { subst bkts1. rewrite !length_app, Hfirstn_len, length_skipn.
+          cbn [length]. Lia.lia. }
+        rewrite (IH bkts1 Hlen1 k Hk).
+        destruct (Nat.eqb_spec idx (S k)) as [Heq|Hne].
+        * cbn [fold_left].
+          assert (Hk_lt : (k < Datatypes.length bkts0)%nat) by (rewrite Hlen0; exact Hk).
+          assert (Hk_eq : (idx - 1 = k)%nat) by Lia.lia.
+          replace (nth k bkts1 g1_identity)
+            with (g1_add_spec (nth k bkts0 g1_identity) p).
+          2:{ subst bkts1. rewrite Hk_eq.
+              assert (Hfirstn_k : Datatypes.length (List.firstn k bkts0) = k)
+                by (rewrite length_firstn, Nat.min_l by Lia.lia; reflexivity).
+              rewrite app_nth2 by (rewrite Hfirstn_k; Lia.lia).
+              rewrite Hfirstn_k.
+              rewrite Nat.sub_diag. cbn [nth]. reflexivity. }
+          reflexivity.
+        * f_equal.
+          assert (Hk_lt : (k < Datatypes.length bkts0)%nat) by (rewrite Hlen0; exact Hk).
+          subst bkts1.
+          destruct (Nat.lt_ge_cases k (idx - 1)) as [Hlt|Hge].
+          -- rewrite app_nth1 by (rewrite Hfirstn_len; exact Hlt).
+             rewrite nth_firstn by exact Hlt. reflexivity.
+          -- assert (k_ge_idx : (k >= idx)%nat) by Lia.lia.
+             rewrite app_nth2 by (rewrite Hfirstn_len; Lia.lia).
+             rewrite Hfirstn_len.
+             assert (Hk_off : (k - (idx - 1) = S (k - idx))%nat) by Lia.lia.
+             rewrite Hk_off.
+             change ([g1_add_spec (nth (idx - 1) bkts0 g1_identity) p] ++
+                     List.skipn idx bkts0)%list
+               with (g1_add_spec (nth (idx - 1) bkts0 g1_identity) p
+                     :: List.skipn idx bkts0).
+             cbn [nth].
+             rewrite nth_skipn. f_equal. Lia.lia.
+  Qed.
+
+  (** [process_window]'s fold is definitionally equal to
+      [fold_left bucket_update_fn]. *)
+  Lemma fold_left_bucket_update_eq :
+    forall (w_n : nat) (pairs : list (list Z * G1_F)) (acc : list G1_F),
+      fold_left
+        (fun (bkts : list G1_F) '(s, p) =>
+           if (Z.to_nat (get_window s w_n (Z.to_nat c)) =? 0)%nat
+           then bkts
+           else (List.firstn (Z.to_nat (get_window s w_n (Z.to_nat c)) - 1) bkts ++
+                 [g1_add_spec (nth (Z.to_nat (get_window s w_n (Z.to_nat c)) - 1)
+                                   bkts g1_identity) p] ++
+                 List.skipn (Z.to_nat (get_window s w_n (Z.to_nat c))) bkts)%list)
+        pairs acc
+      = fold_left (bucket_update_fn w_n) pairs acc.
+  Proof.
+    intros w_n pairs. induction pairs as [|[s p] rest IH]; intros acc.
+    - reflexivity.
+    - cbn [fold_left]. rewrite IH. unfold bucket_update_fn at 2. reflexivity.
+  Qed.
+
   Lemma process_window_as_reduce_buckets :
     forall (w : nat) (ss : list (list Z)) (ps : list G1_F) (bs : list G1_F),
       (Z.of_nat w < num_windows)%Z ->
@@ -767,7 +932,27 @@ Section PippengerSpec.
       process_window G1_F g1_identity g1_add_spec
                      ss ps w (Z.to_nat c) (Z.to_nat num_buckets)
       = reduce_buckets G1_F g1_identity g1_add_spec bs.
-  Admitted.
+  Proof.
+    intros w ss ps bs _ Hlen_ss [Hlen_bs Hinv_bs].
+    unfold process_window.
+    rewrite fold_left_bucket_update_eq.
+    assert (Hlen_fl :
+      Datatypes.length (fold_left (bucket_update_fn w) (combine ss ps)
+                          (repeat g1_identity (Z.to_nat num_buckets)))
+      = Z.to_nat num_buckets).
+    { apply fold_left_bucket_len. apply repeat_length. }
+    assert (Hlen_bs_nat : Datatypes.length bs = Z.to_nat num_buckets).
+    { rewrite <- Hlen_bs. rewrite Nat2Z.id. reflexivity. }
+    f_equal.
+    apply (@nth_ext _ _ _ g1_identity g1_identity).
+    { rewrite Hlen_fl, Hlen_bs_nat. reflexivity. }
+    intros k Hk. rewrite Hlen_fl in Hk.
+    rewrite fold_left_bucket_nth by (try apply repeat_length; exact Hk).
+    rewrite nth_repeat.
+    rewrite Hinv_bs by exact Hk.
+    cbn [skipn]. rewrite Nat2Z.id. reflexivity.
+    exact Hk.
+  Qed.
 
   (** ---- partial_msm_from — collapse at exit ---- *)
 

@@ -4802,16 +4802,52 @@ Section PippengerSpec.
         eexists; split; [exact Hlo7_oy|].
         eexists; split; [exact Hlo7_oz|].
         reflexivity. }
-      (* Seg 8 (final HCurveAdd) blocked on Hsep7's inner [exists RXf RYf RZf]
-         wrapper breaking ecancel_assumption.  Workaround attempts:
-         - sep_ex1_r fails ("No matching clauses for match").
-         - manual destruct of Hsep7's map.split also fails because
-           the shape is [A ⋆ (fun m' => exists ..., _) ⋆ R]%sep, not a
-           plain 3-way map.split.
-         Needs dedicated sep-logic unfolding — scope for next iteration.
+      (* Pull out the inner [exists RXf RYf RZf] via SeparationLogic.sep_ex1_r
+         (needs explicit unification hint on the outer P). *)
+      apply (fun P => @SeparationLogic.sep_ex1_r _ _ _ _ P _) in Hsep7.
+      destruct Hsep7 as [RXf Hsep7].
+      destruct Hsep7 as [mL [mR [Hspl7 [HL7 HR7]]]].
+      destruct HR7 as [RYf [RZf HR7]].
+      (* Combine HL7 + HR7 into a flat sep on mem7 for HCurveAdd. *)
+      assert (Hsep7_full :
+        ((FElem (Some tight_bounds) wsx WXf
+          ⋆ FElem (Some tight_bounds) wsy WYf
+          ⋆ FElem (Some tight_bounds) wsz WZf
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bx_p bs_x6
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) by_p bs_y6
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bz_p bs_z6)
+         ⋆ (FElem (Some tight_bounds) runx RXf
+            ⋆ FElem (Some tight_bounds) runy RYf
+            ⋆ FElem (Some tight_bounds) runz RZf
+            ⋆ (FElem (Some tight_bounds) outx Xf
+               ⋆ FElem (Some tight_bounds) outy Yf
+               ⋆ FElem (Some tight_bounds) outz Zf
+               ⋆ ScalarsArray scalars_p scalars
+               ⋆ G1Array3 pointsx pointsy pointsz px py pz ⋆ R)))%sep mem7)
+        by (exists mL, mR; split; [exact Hspl7|]; split; [exact HL7|exact HR7]).
+      (* Apply HCurveAdd with aliasing: pb_i=out_i, pp_i=ws_i. *)
+      eapply Semantics.weaken_call.
+      { eapply (HCurveAdd outx wsx outy wsy outz wsz Xf WXf Yf WYf Zf WZf).
+        ecancel_assumption. }
+      cbv beta. intros tr8 mem8 rets8 [Hrets8 [Htr8 Hm8]].
+      subst rets8 tr8.
+      set (out_tup := g1_add_spec (Xf, Yf, Zf) (WXf, WYf, WZf)) in Hm8.
+      destruct out_tup as [[OXf1 OYf1] OZf1] eqn:Hout1.
+      cbv match in Hm8.
+      exists l7. split; [reflexivity|]. split; [reflexivity|].
+      exists (OXf1, OYf1, OZf1), bs_x6, bs_y6, bs_z6,
+             RXf, RYf, RZf, WXf, WYf, WZf.
 
-         After that: seg 9 outer_inv closure via Houter_inv + S-step +
-         Heq_ws + new [process_window_as_reduce_buckets] Gallina lemma. *)
+      (* ============================================================
+         Seg 9: outer_inv closure + bucket bounds downgrade + sep + locals.
+         Remaining:
+         - outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) — seg 9 Gallina, needs
+           partial_msm_from S-step on Houter_inv + process_window_as_reduce_buckets
+           bridging Heq_ws + Hdist5.
+         - lengths (Hlen6x/y/z direct).
+         - sep: need tight→None downgrade on bucket arrays via
+           array_FElem_drop_bounds_impl1.
+         - 15 locals via Hlo7_*. *)
       admit.
   Admitted.
 

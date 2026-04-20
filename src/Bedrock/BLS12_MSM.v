@@ -5185,7 +5185,9 @@ Section PippengerSpec.
       triple, given the three callee specs and initial memory/locals. *)
   Lemma msm_bls12_prelude_wp :
     forall functions
-      (HStoreZero : StoreZero3OK functions)
+      (HCurveAdd    : CurveAddAliasedOK    functions)
+      (HCurveDouble : CurveDoubleInplaceOK functions)
+      (HStoreZero   : StoreZero3OK         functions)
       (outx outy outz scalars_p ppx ppy ppz n_w : word)
       (outx0 outy0 outz0 : F)
       (scalars : list (list word))
@@ -5228,7 +5230,7 @@ Section PippengerSpec.
                    * G1Array3 ppx ppy ppz px py pz
                    * R)%sep mem').
   Proof.
-    intros functions HStoreZero
+    intros functions HCurveAdd HCurveDouble HStoreZero
            outx outy outz scalars_p ppx ppy ppz n_w
            outx0 outy0 outz0 scalars px py pz
            R tr mem0 l0
@@ -5353,7 +5355,7 @@ Section PippengerSpec.
            Hn_len Hlen_sx Hlen_xy Hlen_yz Hsep Hzip.
     (** [msm_bls12_prelude_wp] has exactly the same goal shape — it
         internally composes the prelude + outer loop + post-loop. *)
-    apply (msm_bls12_prelude_wp functions HStoreZero
+    apply (msm_bls12_prelude_wp functions HCurveAdd HCurveDouble HStoreZero
              outx outy outz scalars_p ppx ppy ppz n_w
              outx0 outy0 outz0 scalars px py pz R tr mem0 l0
              Hn_len Hlen_sx Hlen_xy Hlen_yz Hsep Hzip).

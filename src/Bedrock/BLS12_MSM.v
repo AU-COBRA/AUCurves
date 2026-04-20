@@ -5355,10 +5355,24 @@ Section PippengerSpec.
     eapply Semantics.weaken_call.
     { eapply (HStoreZero outx outy outz outx0 outy0 outz0).
       ecancel_assumption. }
-    (* Continuation: after store_zero, outx/y/z hold g1_identity at tight
-       bounds.  Remaining obligations: cmd.set "w" := num_windows,
-       outer while via [Loops.while_localsmap] + [msm_bls12_outer_body_wp],
-       9 deallocs via P_to_bytes, postcondition.  Deferred. *)
+    (* HStoreZero's post: outx/y/z tight at g1_identity components + big frame. *)
+    intros tr' m' rets (Hrets & Htr' & Hm'). subst rets tr'.
+    (* Expose the Jacobian identity coordinates as [(Xi, Yi, Zi)]. *)
+    destruct g1_identity as [[Xi Yi] Zi] eqn:HgId.
+    cbv match in Hm'.
+    (* Continue the enclosing cmd: provide l' for [putmany_of_list_zip [] []]
+       (identity, since retnames is []), then cmd.set "w" := num_windows,
+       then the outer while and 9 deallocs. *)
+    eexists. split; [reflexivity|].
+    (* cmd.set "w" := num_windows: evaluate the literal expression, bind to local "w". *)
+    eexists. split.
+    { cbv [DEXPR WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet].
+      reflexivity. }
+    (* Remaining obligations: outer while via [Loops.while_localsmap] +
+       [msm_bls12_outer_body_wp] (Qed), exit via
+       [msm_pippenger_as_partial_msm_from] (Qed), 9 deallocs via
+       [P_to_bytes], postcondition.  Deferred. *)
   Admitted.
 
   (** [msm_bls12_exec_correct] now follows by applying                     *)

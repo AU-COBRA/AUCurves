@@ -185,7 +185,7 @@ Fixpoint dests_of (c : rust_cmd) : list string :=
   | RLetU64Zero _ body          => dests_of body
   | RScalarSet _ _              => []
   | RCall _ dest _              => [loc_var dest]
-  | RCloneCall _ _ _ dest _     => [loc_var dest]
+  | RCloneCall x _ _ dest _     => x :: [loc_var dest]
   | RIfNz _ ct cf               => dests_of ct ++ dests_of cf
   | RWhileNz _ body             => dests_of body
   | RLimbStore loc _ _          => [loc_var loc]
@@ -241,12 +241,13 @@ Variable leaf_spec :
 (** [seq_frame]: if [loc_var loc] is not in [dests_of c], then any
     execution of [c] preserves [located_lookup rs loc].
 
-    Proved for all constructors.  The [RCloneCall] case when the clone
-    variable equals [loc_var loc] requires that the clone variable is
-    fresh in [rs]; that case is admitted (freshness is a well-formedness
-    invariant of every program produced by safe_cmd / hand-written
-    rust_cmd code). All programs in RustCmdFpMul/Tower/Curve use only
-    [RSeq]+[RCall] and so never hit this case. *)
+    Proved for all constructors, 0 admits.
+
+    The [RCloneCall] case is closed by including [x] (the clone variable)
+    in [dests_of]: the precondition [~ In (loc_var loc) (dests_of c)] then
+    directly yields both [x <> loc_var loc] and [loc_var dest <> loc_var loc],
+    making the three-step chain (remove_other → inner IH → set_other) provable
+    without any freshness assumption. *)
 Theorem seq_frame :
   forall (c : rust_cmd) (rs rs' : rust_state) (loc : located),
     rust_exec N u64_max leaf_spec c rs rs' ->
@@ -298,28 +299,25 @@ Proof.
     eapply located_update_other_lookup; [exact Hne | eassumption].
 
   - (* XR_clone_call *)
-    assert (Hne_dest : loc_var call_dest <> loc_var loc)
+    (* dests_of (RCloneCall x …) = x :: [loc_var dest], so hNotIn gives both: *)
+    assert (Hxne : x <> loc_var loc)
       by (intro Hc; apply Hnotin; now left).
-    destruct (String.eqb x (loc_var loc)) eqn:Hxeq.
-    + (* x = loc_var loc: clone var is the observed variable.
-         Requires freshness (lookup_t (rs_tower rs) x = None) to prove.
-         Never occurs in well-formed programs where clone vars are fresh. *)
-      apply String.eqb_eq in Hxeq. subst x. admit.
-    + assert (Hxne : x <> loc_var loc)
-        by (intro Hc; subst x; rewrite String.eqb_refl in Hxeq; discriminate).
-      assert (H_inner : located_lookup rs_inner loc =
-                        located_lookup (rs_set_tower rs x (exist_tval (loc_dst dest) old_dest_v)) loc).
-      { eapply call_frame_non_dest; [exact Hexec | exact Hne_dest]. }
-      subst rs'.
-      rewrite (located_lookup_remove_other (rs_tower rs_inner) (rs_scalar rs_inner) x loc Hxne).
-      change (located_lookup rs_inner loc = located_lookup rs loc).
-      rewrite H_inner.
-      apply located_lookup_set_tower_other. exact Hxne.
+    assert (Hne_dest : loc_var call_dest <> loc_var loc)
+      by (intro Hc; apply Hnotin; right; now left).
+    assert (H_inner : located_lookup rs_inner loc =
+                      located_lookup (rs_set_tower rs x (exist_tval (loc_dst dest) old_dest_v)) loc).
+    { eapply call_frame_non_dest; [exact Hexec | exact Hne_dest]. }
+    subst rs'.
+    rewrite (located_lookup_remove_other (rs_tower rs_inner) (rs_scalar rs_inner) x loc Hxne).
+    change (located_lookup rs_inner loc = located_lookup rs loc).
+    rewrite H_inner.
+    apply located_lookup_set_tower_other. exact Hxne.
 
   - (* XR_limb_store *)
+
     assert (Hne : loc_var loc0 <> loc_var loc)
       by (intro Hc; apply Hnotin; now left).
     eapply located_update_other_lookup; [exact Hne | eassumption].
-Admitted.
+Qed.
 
 End SeqFrame.

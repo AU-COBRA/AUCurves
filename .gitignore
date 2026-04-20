@@ -84,6 +84,9 @@ src/Arithmetic/safegcd/interval_measure
 src/Arithmetic/safegcd/measure_d
 src/Arithmetic/safegcd/measure_states
 
+# Script logs
+scripts/*.log
+
 # Misc
 _CoqProject.bak
 _build/

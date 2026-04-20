@@ -5329,10 +5329,36 @@ Section PippengerSpec.
       exists mS_by, mC_bx; split; [apply map.split_comm; exact Hsplit_by|split;[exact Harr_by|]].
       exists mS_bx, mem0; split; [apply map.split_comm; exact Hsplit_bx|split;[exact Harr_bx|]].
       exact Hsep. }
-    (* Next: initial [store_zero] call via [HStoreZero], outer while
-       via [msm_bls12_outer_body_wp] (Qed), exit via
-       [msm_pippenger_as_partial_msm_from] (Qed), 9 deallocs via
-       [P_to_bytes], postcondition.  Deferred. *)
+    (* Invert Hzip to get l0 as a concrete put-chain; resolves the
+       outx/y/z locals lookups for the upcoming dexprs. *)
+    cbn in Hzip. injection Hzip as Hzip_eq. subst l0.
+    assert (Hlo_outx :
+      map.get #{ "outx" => outx; "outy" => outy; "outz" => outz;
+                 "scalars" => scalars_p; "pointsx" => ppx; "pointsy" => ppy;
+                 "pointsz" => ppz; "n" => n_w; "buckets_x" => a_bx;
+                 "buckets_y" => a_by; "buckets_z" => a_bz; "runx" => a_rx;
+                 "runy" => a_ry; "runz" => a_rz; "wsx" => a_wx;
+                 "wsy" => a_wy; "wsz" => a_wz }# "outx" = Some outx).
+    { rewrite !map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+    (* Initial [store_zero(outx, outy, outz)] — writes g1_identity via HStoreZero. *)
+    exists [outx; outy; outz]. split.
+    { (* dexprs for the three args. *)
+      cbv [dexprs list_map list_map_body
+           WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get dlet.dlet].
+      eexists; split; [exact Hlo_outx|].
+      eexists; split.
+      { rewrite !map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+      eexists; split.
+      { rewrite !map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+      reflexivity. }
+    eapply Semantics.weaken_call.
+    { eapply (HStoreZero outx outy outz outx0 outy0 outz0).
+      ecancel_assumption. }
+    (* Continuation: after store_zero, outx/y/z hold g1_identity at tight
+       bounds.  Remaining obligations: cmd.set "w" := num_windows,
+       outer while via [Loops.while_localsmap] + [msm_bls12_outer_body_wp],
+       9 deallocs via P_to_bytes, postcondition.  Deferred. *)
   Admitted.
 
   (** [msm_bls12_exec_correct] now follows by applying                     *)

@@ -1436,6 +1436,35 @@ Section PippengerSpec.
         [ apply Compilation2.drop_bounds_FElem | apply IH ].
   Qed.
 
+  (** Triple-bucket sep downgrade: used at L5 seg 9 to bridge the
+      post-L4 tight-bucket sep to the outer_body_wp's None-bucket
+      post.  Follows the L2 pattern but packaged as a single Qed
+      helper to avoid re-proving in-place. *)
+  Lemma triple_bucket_drop_bounds_impl1 :
+    forall (sz : word) (p1 p2 p3 : word) (xs1 xs2 xs3 : list F)
+           (Frame : mem -> Prop),
+      Lift1Prop.impl1
+        (array (FElem (Some tight_bounds)) sz p1 xs1
+         * array (FElem (Some tight_bounds)) sz p2 xs2
+         * array (FElem (Some tight_bounds)) sz p3 xs3
+         * Frame)%sep
+        (array (FElem None) sz p1 xs1
+         * array (FElem None) sz p2 xs2
+         * array (FElem None) sz p3 xs3
+         * Frame)%sep.
+  Proof.
+    intros sz p1 p2 p3 xs1 xs2 xs3 Frame m Hm.
+    destruct Hm as (mABC & mR & HsAR & HABC & HR_val).
+    destruct HABC as (mAB & mC & HsAB & HAB & Hz_val).
+    destruct HAB as (mA & mB & HsA & Hx_val & Hy_val).
+    apply (array_FElem_drop_bounds_impl1 sz p1 xs1) in Hx_val.
+    apply (array_FElem_drop_bounds_impl1 sz p2 xs2) in Hy_val.
+    apply (array_FElem_drop_bounds_impl1 sz p3 xs3) in Hz_val.
+    exists mABC, mR. split; [exact HsAR|]. split; [|exact HR_val].
+    exists mAB, mC. split; [exact HsAB|]. split; [|exact Hz_val].
+    exists mA, mB. split; [exact HsA|]. split; [exact Hx_val|exact Hy_val].
+  Qed.
+
   (** Leaf 2: bucket-clear sub-loop.  [i] counts from [num_buckets] down;
       each iter computes address [bp_k = buckets_k + i*48] for k ∈ {x,y,z}
       then calls [store_zero] on the triple.  Exit: every bucket =
@@ -4851,13 +4880,32 @@ Section PippengerSpec.
       split; [exact Hlen6y|].
       split; [exact Hlen6z|].
       split.
-      { (* Sep: from Hm8 (tight buckets) to target (None buckets).
-           Bridge via 3× array_FElem_drop_bounds_impl1 + Proper_sep_impl1
-           congruence chain.  Attempted direct apply + seprewrite_in —
-           neither integrates cleanly with ecancel infrastructure.
-           Narrow admit: sep-logic plumbing, soundness obvious
-           (tight bounds imply no bounds). *)
-        admit. }
+      { (* Sep: Hm8 (tight buckets) → target (None buckets).
+           Repackage into the triple_bucket_drop_bounds_impl1 shape,
+           apply the downgrade, then match the goal via ecancel. *)
+        assert (Hrepacked : (array (FElem (Some tight_bounds))
+                               (word.of_Z felem_size_in_bytes) bx_p bs_x6
+                             * array (FElem (Some tight_bounds))
+                                 (word.of_Z felem_size_in_bytes) by_p bs_y6
+                             * array (FElem (Some tight_bounds))
+                                 (word.of_Z felem_size_in_bytes) bz_p bs_z6
+                             * (FElem (Some tight_bounds) outx OXf1
+                                * FElem (Some tight_bounds) outy OYf1
+                                * FElem (Some tight_bounds) outz OZf1
+                                * FElem (Some tight_bounds) runx RXf
+                                * FElem (Some tight_bounds) runy RYf
+                                * FElem (Some tight_bounds) runz RZf
+                                * FElem (Some tight_bounds) wsx WXf
+                                * FElem (Some tight_bounds) wsy WYf
+                                * FElem (Some tight_bounds) wsz WZf
+                                * ScalarsArray scalars_p scalars
+                                * G1Array3 pointsx pointsy pointsz px py pz
+                                * R))%sep mem8)
+          by ecancel_assumption.
+        apply (triple_bucket_drop_bounds_impl1
+                 (word.of_Z felem_size_in_bytes) bx_p by_p bz_p
+                 bs_x6 bs_y6 bs_z6) in Hrepacked.
+        ecancel_assumption. }
       split; [exact Hlo7_ox|].
       split; [exact Hlo7_oy|].
       split; [exact Hlo7_oz|].

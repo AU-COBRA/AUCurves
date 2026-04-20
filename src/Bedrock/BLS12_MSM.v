@@ -5369,6 +5369,59 @@ Section PippengerSpec.
     { cbv [DEXPR WeakestPrecondition.expr WeakestPrecondition.expr_body
            WeakestPrecondition.literal dlet.dlet].
       reflexivity. }
+    (* Convert the [exec.exec] continuation to WP so we can apply
+       [Loops.while_localsmap] and the WP-flavored leaves.  The post
+       of this inner WP produces the [exec] shape expected by the
+       enclosing store_zero continuation. *)
+    apply WeakestPreconditionProperties.sound_cmd.
+    (* Set up the outer-while invariant.  Measure [v : nat] counts
+       down from [Z.to_nat num_windows] to 0. *)
+    pose (inv_outer :=
+      fun (v : nat) (tr' : Semantics.trace) (m : mem) (l : locals) =>
+        exists (out : G1_F) (bs_x bs_y bs_z : list F)
+               (rx ry rz wx wy wz : F),
+          (v <= Z.to_nat num_windows)%nat /\
+          Z.of_nat (length bs_x) = num_buckets /\
+          Z.of_nat (length bs_y) = num_buckets /\
+          Z.of_nat (length bs_z) = num_buckets /\
+          outer_inv (Z.of_nat v) out
+                    (scalars_to_Z scalars) (points_of px py pz) /\
+          (let '(Ox, Oy, Oz) := out in
+           FElem (Some tight_bounds) outx Ox
+           * FElem (Some tight_bounds) outy Oy
+           * FElem (Some tight_bounds) outz Oz
+           * array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           * array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           * array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           * FElem None a_rx rx * FElem None a_ry ry * FElem None a_rz rz
+           * FElem None a_wx wx * FElem None a_wy wy * FElem None a_wz wz
+           * ScalarsArray scalars_p scalars
+           * G1Array3 ppx ppy ppz px py pz
+           * R)%sep m /\
+          map.get l "outx" = Some outx /\
+          map.get l "outy" = Some outy /\
+          map.get l "outz" = Some outz /\
+          map.get l "buckets_x" = Some a_bx /\
+          map.get l "buckets_y" = Some a_by /\
+          map.get l "buckets_z" = Some a_bz /\
+          map.get l "runx" = Some a_rx /\
+          map.get l "runy" = Some a_ry /\
+          map.get l "runz" = Some a_rz /\
+          map.get l "wsx" = Some a_wx /\
+          map.get l "wsy" = Some a_wy /\
+          map.get l "wsz" = Some a_wz /\
+          map.get l "scalars" = Some scalars_p /\
+          map.get l "pointsx" = Some ppx /\
+          map.get l "pointsy" = Some ppy /\
+          map.get l "pointsz" = Some ppz /\
+          map.get l "n" = Some n_w /\
+          map.get l "w" = Some (word.of_Z (Z.of_nat v)) /\
+          tr = tr').
+    (* Outer-while composition via [Loops.while_localsmap].  Body step
+       cites [msm_bls12_outer_body_wp] (Qed); exit cites
+       [msm_pippenger_as_partial_msm_from] (Qed); 9 deallocs via
+       [P_to_bytes] in reverse allocation order. *)
+    clear inv_outer.  (* placeholder — concrete application deferred *)
     (* Remaining obligations: outer while + 9 deallocs + postcondition.
 
        [Outer while] via [Loops.while_localsmap] with measure [w : nat],

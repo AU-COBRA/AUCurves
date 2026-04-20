@@ -2687,24 +2687,143 @@ Section PippengerSpec.
           cbv [word.wrap]. rewrite Nat2Z.inj_succ.
           rewrite (Z.mod_small 1 (2 ^ width)) by Lia.lia.
           rewrite Z.mod_small by Lia.lia. Lia.lia. }
-        (* Remaining body: 6 cmd.sets + cmd.cond (cross-limb) + cmd.set "idx"
-           + cmd.cond on idx containing a curve_add call.  Obligations:
+        (* Close the 6 mechanical cmd.set prefix (bit_offset, limb, shift,
+           mask, scalar_ptr, load_off1) — no memory dependencies, purely
+           local-arithmetic.  The hard tail follows the [admit] below. *)
+        (* cmd.set "bit_offset" := w * c. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence. exact Hlw1. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "limb" := bit_offset >> 6. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "shift" := bit_offset & 63. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "mask" := (1 << c) - 1. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "scalar_ptr" := scalars + i * 32. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { repeat rewrite map.get_put_diff by congruence. exact Hls1. }
+          eexists; split.
+          { repeat rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "load_off1" := limb * 8. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* cmd.set "load_addr1" := scalar_ptr + load_off1. *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        (* Remaining body: cmd.set "val" := LOAD64(load_addr1) >> shift;
+           cmd.cond (64 < shift + c) [cross-limb read];
+           cmd.set "idx" := val & mask;
+           cmd.cond "idx" [curve_add call].
+           Obligations:
              (a) [DONE] decrement i to Z.of_nat n.
-             (b) compute the get_window digit in local idx, proving it
-                 equals Gallina get_window of the scalar at index n.
-                 Requires a helper [get_window_word_correct] that
-                 decomposes [Bignum scalar_limbs p ws] into per-limb
-                 [scalar] cells, loads the appropriate cell, and equates
-                 the bedrock2 word-arithmetic to the Gallina [get_window].
-             (c) if idx = 0: invoke [distribute_inv_step_zero] to advance
+             (a') [DONE] 7 mechanical cmd.sets above (bit_offset, limb,
+                  shift, mask, scalar_ptr, load_off1, load_addr1).
+             (b) [val] requires a memory load: decompose
+                 [ScalarsArray scalars_p scalars] to expose the [limb]-th
+                 [scalar]-cell at [scalar_ptr + limb*8].  Helper needed:
+                 [scalars_array_index_limb] — split the Bignum at offset
+                 [(n*32 + limb*8)] to expose one [scalar]-cell, keep the
+                 rest as a frame.  This plus a word-level shift produces
+                 [word.unsigned val = (nth_limb scalars n limb) >> shift].
+             (c) Cross-limb [cmd.cond]: same load machinery for
+                 [load_addr2 = scalar_ptr + (limb+1)*8] when
+                 [word.unsigned shift + c > 64] AND [word.unsigned limb < 3].
+                 Note: for c=9 and w∈[0,29), limb∈[0,4] and shift∈[0,63].
+                 Cross-limb fires when shift > 55.  For limb=4 (the top
+                 word), [limb < 3] is false so the inner cond is
+                 [cmd.skip], and bits in the w=28 window come only from
+                 limb 4 (no second load).  This corresponds to Gallina
+                 [get_window]'s [match nth_error scalar (limb+1)] fallback
+                 to [val] when limb+1 is out of bounds.
+             (d) [idx := val & mask] plus proof that
+                 [word.unsigned idx = get_window (nth n scalars) w c]
+                 (the Gallina decoder).  Helper needed:
+                 [get_window_word_correct] — ties bedrock2 word-arithmetic
+                 to Gallina [get_window] via [Z.shiftr], [Z.lor],
+                 [Z.land]+[Z.ones] equivalences (~100 LoC of [ZnWords]).
+             (e) if idx = 0: invoke [distribute_inv_step_zero] to advance
                  invariant; if idx > 0: extract buckets[idx-1] across three
                  arrays via [PointArray_split_at], invoke [HCurveAdd],
                  reinsert via [PointArray_update_at], and invoke
-                 [distribute_inv_step_pos] to advance invariant.
-             (d) Re-establish [distribute_inv w (Z.of_nat n) ...].
+                 [distribute_inv_step_pos] to advance invariant.  The
+                 idx-bound comes from [get_window_lt_2c] (already Qed),
+                 giving [Z.to_nat (get_window ...) <= num_buckets], so
+                 [bucket_index = idx - 1 < num_buckets] is valid.
+             (f) Re-establish [distribute_inv w (Z.of_nat n) ...]
+                 and maintain all locals.  Locals that must be preserved
+                 include "buckets_x/y/z", "scalars", "pointsx/y/z", "w".
            Closure cites [distribute_inv_step_zero] / [distribute_inv_step_pos]
-           (both Qed), [PointArray_split_at/update_at] (both Qed), and the
-           [HCurveAdd] callee spec. *)
+           (both Qed), [PointArray_split_at/update_at] (both Qed),
+           [get_window_lt_2c] (Qed), plus TWO new narrow helpers — neither
+           yet stated as separate lemmas but clearly scoped:
+             - [scalars_array_index_limb] : sep-logic split (~30 LoC).
+             - [get_window_word_correct]  : word-arith identity (~100 LoC).
+           and the [HCurveAdd] callee spec (assumption). *)
         admit.
       - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post.
            After structural fix (2026-04-20), the invariant's sep shape

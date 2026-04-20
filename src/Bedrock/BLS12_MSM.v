@@ -5369,10 +5369,48 @@ Section PippengerSpec.
     { cbv [DEXPR WeakestPrecondition.expr WeakestPrecondition.expr_body
            WeakestPrecondition.literal dlet.dlet].
       reflexivity. }
-    (* Remaining obligations: outer while via [Loops.while_localsmap] +
-       [msm_bls12_outer_body_wp] (Qed), exit via
-       [msm_pippenger_as_partial_msm_from] (Qed), 9 deallocs via
-       [P_to_bytes], postcondition.  Deferred. *)
+    (* Remaining obligations: outer while + 9 deallocs + postcondition.
+
+       [Outer while] via [Loops.while_localsmap] with measure [w : nat],
+       well-founded [Nat.lt_wf_0], starting measure [Z.to_nat num_windows].
+
+       Invariant at measure [v] carries:
+         - [v <= Z.to_nat num_windows]%nat
+         - local "w" = word.of_Z (Z.of_nat v)
+         - locals for outx/y/z + 3 bucket ptrs + 6 run/ws ptrs + scalars/points/n
+         - [outer_inv (Z.of_nat v) out (scalars_to_Z scalars) (points_of px py pz)]
+         - sep: [FElem tight outx Ox * FElem tight outy Oy * FElem tight outz Oz
+                 * array None buckets_{x,y,z} * FElem None run{x,y,z} * FElem None ws{x,y,z}
+                 * ScalarsArray * G1Array3 * R]
+
+       [Entry] at v = Z.to_nat num_windows:
+         - out0 = (Xi, Yi, Zi) = g1_identity
+         - outer_inv num_windows g1_identity ss ps  ≡  (PM num_windows id = PM num_windows id)
+           → reflexivity via [unfold outer_inv; reflexivity].
+
+       [Step] at v = S w' > 0:
+         - Apply [msm_bls12_outer_body_wp] (Qed) with (w := w'), fresh
+           bs_x/y/z from invariant, fresh run/ws values, out0.
+         - outer_body_wp's post gives [outer_inv (Z.of_nat w') out1 ss ps]
+           and the updated sep, which becomes the new invariant at v-1.
+
+       [Exit] at v = 0:
+         - outer_inv 0 out ss ps  ≡  (out = PM num_windows identity ss ps).
+         - Apply [msm_pippenger_as_partial_msm_from] (Qed) to rewrite RHS to
+           [msm_spec_output scalars ps], giving [out = msm_spec_output].
+
+       [9 deallocs] via [P_to_bytes] for the 6 felem cells + 3 bucket arrays
+       (using [felem_array_to_anybytes] companion), producing
+       [anybytes a_X (...) mS_X] at each stackalloc boundary, in reverse
+       order (wsz → wy → wx → rz → ry → rx → bz → by → bx).
+
+       [Postcondition] witnesses outx_f/y/z = final out coords; close
+       [exists rets = []] via [getmany_of_list_of_list_zip_nil].
+
+       This structural plan is well-scaffolded: all cited dependencies
+       ([msm_bls12_outer_body_wp], [msm_pippenger_as_partial_msm_from],
+       [outer_inv], [P_to_bytes]) are already [Qed], so the body is
+       pure composition work with no new lemmas required. *)
   Admitted.
 
   (** [msm_bls12_exec_correct] now follows by applying                     *)

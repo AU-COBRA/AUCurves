@@ -507,13 +507,15 @@ Section PippengerSpec.
   Definition bucket_sum_prefix (bs : list G1_F) (i : nat) : G1_F :=
     plain_sum G1_F g1_identity g1_add_spec (firstn i bs).
 
-  (** Outer window loop invariant: after the header decrement, local [w]
-      is the window index we're about to process, and [out] holds the
-      partial MSM for windows [[w+1, num_windows)]. *)
+  (** Outer window loop invariant: [out] is the current accumulator
+      with [w] windows left to process via the PM recursion.  Running
+      PM with fuel [w] starting from [out] yields the full MSM.
+      Corrected 2026-04-20 from [num_windows - w - 1] form which
+      didn't track the loop's actual state. *)
   Definition outer_inv (w : Z) (out : G1_F)
              (ss : list (list Z)) (ps : list G1_F) : Prop :=
-    out = partial_msm_from (Z.to_nat num_windows - Z.to_nat w - 1)%nat
-                           g1_identity ss ps.
+    partial_msm_from (Z.to_nat w) out ss ps =
+      partial_msm_from (Z.to_nat num_windows) g1_identity ss ps.
 
   (** Bucket-clear loop invariant: buckets at indices [[i, num_buckets)]
       are still arbitrary; buckets at [[0, i)] are [g1_identity]. *)
@@ -740,6 +742,32 @@ Section PippengerSpec.
     - reflexivity.
     - rewrite length_combine. rewrite Nat2Z.id. Lia.lia.
   Qed.
+
+  (** ---- process_window ↔ reduce_buckets bridge ----
+
+      [process_window] runs a single fold_left over [combine ss ps]
+      updating the bucket at [get_window s w c - 1] per (s,p).  The
+      [distribute_inv w 0 bs ss ps] predicate characterizes any such
+      bucket list pointwise by the per-bucket filter-fold formula.  Two
+      lists of length [num_buckets] that both satisfy [distribute_inv w
+      0 _ ss ps] are therefore pointwise equal, hence equal as lists; the
+      [process_window] output satisfies [distribute_inv] by correctness
+      of the filter-fold decomposition; therefore
+      [reduce_buckets bs = reduce_buckets (process_window-output) =
+       process_window ss ps w c num_buckets].  The corresponding WP
+      leaf [msm_bls12_distribute_wp] (L3, Admitted) discharges the
+      programmatic side; this Gallina bridge is left as a companion
+      Admitted lemma, to be closed by induction on [combine ss ps]
+      alongside L3's own closure. *)
+  Lemma process_window_as_reduce_buckets :
+    forall (w : nat) (ss : list (list Z)) (ps : list G1_F) (bs : list G1_F),
+      (Z.of_nat w < num_windows)%Z ->
+      length ss = length ps ->
+      distribute_inv (Z.of_nat w) 0 bs ss ps ->
+      process_window G1_F g1_identity g1_add_spec
+                     ss ps w (Z.to_nat c) (Z.to_nat num_buckets)
+      = reduce_buckets G1_F g1_identity g1_add_spec bs.
+  Admitted.
 
   (** ---- partial_msm_from — collapse at exit ---- *)
 
@@ -2872,7 +2900,13 @@ Section PippengerSpec.
              (* New 2026-04-19: algebraic equation for ws tuple. *)
              mk_point WXf WYf WZf =
                reduce_buckets G1_F g1_identity g1_add_spec
-                              (points_of bs_x' bs_y' bs_z')).
+                              (points_of bs_x' bs_y' bs_z') /\
+             (* New 2026-04-20: buckets are read-only in the reduce
+                loop (only [runx/y/z] and [wsx/y/z] are written), so
+                the output bucket lists equal the inputs — exposed so
+                L5 can bridge [distribute_inv (_) bs_x5] and [Heq_ws]
+                via the equalities below. *)
+             bs_x' = bs_x /\ bs_y' = bs_y /\ bs_z' = bs_z).
   Proof.
     intros functions HCurveAdd
            buckets_x buckets_y buckets_z runx runy runz wsx wsy wsz
@@ -3352,16 +3386,21 @@ Section PippengerSpec.
         split; [exact Hlwsx|].
         split; [exact Hlwsy|].
         split; [exact Hlwsz|].
-        (* [mk_point WXc WYc WZc = reduce_buckets ...] via reduce_inv_exit
-           + reduce_inv_at_exit. *)
-        assert (Hrinv_neg1 :
-          reduce_inv (-1) (RXc, RYc, RZc) (WXc, WYc, WZc)
-                     (points_of bs_x bs_y bs_z)).
-        { replace (-1) with (Z.of_nat 0 - 1) by reflexivity.
-          exact Hrinv. }
-        pose proof (reduce_inv_exit _ _ _ Hrinv_neg1) as (Hlen_po & Hrp & Hwp).
-        unfold mk_point.
-        apply (reduce_inv_at_exit _ _ _ Hlen_po Hrp Hwp). }
+        split.
+        { (* [mk_point WXc WYc WZc = reduce_buckets ...] via reduce_inv_exit
+             + reduce_inv_at_exit. *)
+          assert (Hrinv_neg1 :
+            reduce_inv (-1) (RXc, RYc, RZc) (WXc, WYc, WZc)
+                       (points_of bs_x bs_y bs_z)).
+          { replace (-1) with (Z.of_nat 0 - 1) by reflexivity.
+            exact Hrinv. }
+          pose proof (reduce_inv_exit _ _ _ Hrinv_neg1) as (Hlen_po & Hrp & Hwp).
+          unfold mk_point.
+          apply (reduce_inv_at_exit _ _ _ Hlen_po Hrp Hwp). }
+        (* bs_x' = bs_x /\ bs_y' = bs_y /\ bs_z' = bs_z (buckets read-only). *)
+        split; [reflexivity|].
+        split; [reflexivity|].
+        reflexivity. }
   Qed.
 
   (* =================================================================== *)
@@ -4646,7 +4685,7 @@ Section PippengerSpec.
          and (WX0,WY0,WZ0) := (Xi,Yi,Zi).  L4's post gives
              mk_point WXf WYf WZf =
                reduce_buckets _ g1_identity g1_add_spec
-                              (points_of bs_x6 bs_y6 bs_z6).
+                              (points_of bs_x5 bs_y5 bs_z5).
 
          Step 8 (final HCurveAdd): destruct L4's post to get Hsep7
          and Heq_ws; apply [HCurveAdd] with
@@ -4675,7 +4714,7 @@ Section PippengerSpec.
                                    w c num_buckets
                  = reduce_buckets (fold_left ...).
          The [Heq_ws] from L4's new post
-           mk_point WXf WYf WZf = reduce_buckets (points_of bs_x6 bs_y6 bs_z6)
+           mk_point WXf WYf WZf = reduce_buckets (points_of bs_x5 bs_y5 bs_z5)
          combined with [Hdist5 : distribute_inv w 0 ...] (which after
          [distribute_inv_exit] matches the fold_left shape of
          process_window) closes the equation.  The intermediate
@@ -4774,7 +4813,9 @@ Section PippengerSpec.
          [Hlen6x [Hlen6y [Hlen6z [Hsep7
           [Hlo7_bx [Hlo7_by [Hlo7_bz
            [Hlo7_rx [Hlo7_ry [Hlo7_rz
-            [Hlo7_wx [Hlo7_wy [Hlo7_wz Heq_ws]]]]]]]]]]]]]]]]]]]].
+            [Hlo7_wx [Hlo7_wy [Hlo7_wz
+             [Heq_ws [Heq_bs_x [Heq_bs_y Heq_bs_z]]]]]]]]]]]]]]]]]]]]]]].
+      subst bs_x6 bs_y6 bs_z6. (* bucket lists unchanged by reduce loop *)
       subst tr7.
       (* Extract the 9 non-L4-tracked locals from HF7. *)
       inversion HF7 as [|? ? Hp7_ox HF7_1];  subst; clear HF7.
@@ -4808,7 +4849,7 @@ Section PippengerSpec.
         by (rewrite <- Hp7_w, map.get_put_diff by congruence; exact Hlo5_w).
       (* Now l7 has 18 locals; mem7 has L4's post sep (FElem tight
          wsx/y/z WXf/WYf/WZf, buckets at tight, inner run exists, frame);
-         Heq_ws : mk_point WXf WYf WZf = reduce_buckets (points_of bs_x6 bs_y6 bs_z6).
+         Heq_ws : mk_point WXf WYf WZf = reduce_buckets (points_of bs_x5 bs_y5 bs_z5).
          Next: seg 8 (final HCurveAdd) + seg 9 (outer_inv closure). *)
 
       (* ============================================================
@@ -4842,9 +4883,9 @@ Section PippengerSpec.
         ((FElem (Some tight_bounds) wsx WXf
           ⋆ FElem (Some tight_bounds) wsy WYf
           ⋆ FElem (Some tight_bounds) wsz WZf
-          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bx_p bs_x6
-          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) by_p bs_y6
-          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bz_p bs_z6)
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bx_p bs_x5
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) by_p bs_y5
+          ⋆ array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bz_p bs_z5)
          ⋆ (FElem (Some tight_bounds) runx RXf
             ⋆ FElem (Some tight_bounds) runy RYf
             ⋆ FElem (Some tight_bounds) runz RZf
@@ -4864,27 +4905,44 @@ Section PippengerSpec.
       destruct out_tup as [[OXf1 OYf1] OZf1] eqn:Hout1.
       cbv match in Hm8.
       exists l7. split; [reflexivity|]. split; [reflexivity|].
-      exists (OXf1, OYf1, OZf1), bs_x6, bs_y6, bs_z6,
+      exists (OXf1, OYf1, OZf1), bs_x5, bs_y5, bs_z5,
              RXf, RYf, RZf, WXf, WYf, WZf.
 
       (* ============================================================
          Seg 9: outer_inv + lengths + sep downgrade + 15 locals.
          ============================================================ *)
       split.
-      { (* outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) ss ps.
-           **BLOCKED on outer_inv definition bug** (line 513):
-           outer_inv W out = (out = PM(num_windows - W - 1) identity).
-           But the loop's actual semantics at state W (= post-decrement
-           window index) gives out = PM(num_windows - W) identity.
-           Trace (num_windows = 3): after processing win_2 at first
-           iteration (w_post = 2), loop's out = win_2.  outer_inv 2
-           out demands out = PM(0) identity = identity.  MISMATCH.
-
-           Fix requires changing outer_inv's formula from
-           [num_windows - W - 1] to [num_windows - W], which cascades
-           through the whole L5 proof (premises, post).  Out of scope
-           for in-place patch.  Admit preserved for future refactor. *)
-        admit. }
+      { (* outer_inv (Z.of_nat w) (OXf1,OYf1,OZf1) ss ps, i.e.,
+           PM(w) (OXf1,OYf1,OZf1) ss ps = PM(num_windows) identity ss ps.
+           Houter_inv: PM(S w) (Ox,Oy,Oz) = PM(num_windows) identity.
+           Unfold PM at S w: = PM(w) (iter c double (Ox,Oy,Oz) + win_w).
+           Our out1 = iter c double (Ox,Oy,Oz) + mk_point WXf WYf WZf.
+           Bridge: mk_point WXf WYf WZf = process_window ss ps w c num_buckets
+           via [process_window_as_reduce_buckets] on [Hdist5] + [Heq_ws]. *)
+        unfold outer_inv in *.
+        rewrite Nat2Z.id in *.
+        rewrite <- Houter_inv.
+        cbn [partial_msm_from].
+        f_equal.
+        change (Nat.iter (Z.to_nat c) g1_double_spec (Ox, Oy, Oz)) with st3.
+        rewrite Hst3.
+        unfold out_tup in Hout1. rewrite <- Hout1.
+        f_equal.
+        (* Goal: (WXf, WYf, WZf) = process_window ss ps w c num_buckets *)
+        change (WXf, WYf, WZf) with (mk_point WXf WYf WZf).
+        rewrite Heq_ws.
+        symmetry.
+        assert (Hnb : (Nat.pow 2 (Z.to_nat c) - 1)%nat = Z.to_nat num_buckets).
+        { vm_compute. reflexivity. }
+        rewrite Hnb.
+        apply process_window_as_reduce_buckets.
+        - (* Z.of_nat w < num_windows *)
+          rewrite <- (Z2Nat.id num_windows) by (vm_compute; discriminate).
+          apply Nat2Z.inj_lt. Lia.lia.
+        - (* length ss = length ps *)
+          rewrite length_scalars_to_Z, length_points_of_eq by Lia.lia.
+          exact Hlen_sx.
+        - exact Hdist5. }
       split; [exact Hlen6x|].
       split; [exact Hlen6y|].
       split; [exact Hlen6z|].
@@ -4893,11 +4951,11 @@ Section PippengerSpec.
            Repackage into the triple_bucket_drop_bounds_impl1 shape,
            apply the downgrade, then match the goal via ecancel. *)
         assert (Hrepacked : (array (FElem (Some tight_bounds))
-                               (word.of_Z felem_size_in_bytes) bx_p bs_x6
+                               (word.of_Z felem_size_in_bytes) bx_p bs_x5
                              * array (FElem (Some tight_bounds))
-                                 (word.of_Z felem_size_in_bytes) by_p bs_y6
+                                 (word.of_Z felem_size_in_bytes) by_p bs_y5
                              * array (FElem (Some tight_bounds))
-                                 (word.of_Z felem_size_in_bytes) bz_p bs_z6
+                                 (word.of_Z felem_size_in_bytes) bz_p bs_z5
                              * (FElem (Some tight_bounds) outx OXf1
                                 * FElem (Some tight_bounds) outy OYf1
                                 * FElem (Some tight_bounds) outz OZf1
@@ -4913,7 +4971,7 @@ Section PippengerSpec.
           by ecancel_assumption.
         apply (triple_bucket_drop_bounds_impl1
                  (word.of_Z felem_size_in_bytes) bx_p by_p bz_p
-                 bs_x6 bs_y6 bs_z6) in Hrepacked.
+                 bs_x5 bs_y5 bs_z5) in Hrepacked.
         ecancel_assumption. }
       split; [exact Hlo7_ox|].
       split; [exact Hlo7_oy|].
@@ -4933,7 +4991,7 @@ Section PippengerSpec.
       split; [exact Hlo7_pz|].
       split; [exact Hlo7_n|].
       exact Hlo7_w.
-  Admitted.
+  Qed.
 
   (** Main WP obligation: full function body as a [WeakestPrecondition.cmd]
       triple, given the three callee specs and initial memory/locals. *)

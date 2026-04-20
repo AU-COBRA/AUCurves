@@ -1776,9 +1776,15 @@ Section PippengerSpec.
              (forall k, (k < Z.to_nat num_buckets)%nat ->
                         nth k (points_of bs_x' bs_y' bs_z') g1_identity
                         = g1_identity) /\
-             (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
-              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
-              * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+             (* L2 post strengthened 2026-04-20: each bucket cell was written
+                by [store_zero] which produces [Some tight_bounds].  The
+                stronger post propagates tight bucket bounds all the way to
+                L3's pre and L4's pre (which already required [Some
+                tight_bounds]).  [array_FElem_drop_bounds_impl1] lets any
+                None-consumer downgrade at its use site. *)
+             (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+              * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+              * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
               * R)%sep mem' /\
              map.get l' "buckets_x" = Some buckets_x /\
              map.get l' "buckets_y" = Some buckets_y /\
@@ -2181,128 +2187,32 @@ Section PippengerSpec.
           - destruct nn as [|nn']; [reflexivity|].
             cbn [repeat nth]. apply IH. }
         split.
-        { (* Memory: drop tight_bounds to None on the three full arrays. *)
+        { (* Memory: 3 None-prefix arrays are nil (emp True), 3 tight-suffix
+             arrays cover [repeat K_i num_buckets].  Normalize the [+ v*sz]
+             offset to [+ 0] and collapse to match the strengthened post
+             shape [array tight buckets_k (repeat K_i ...)]. *)
+          cbn [Datatypes.length Z.of_nat] in Hm1.
           replace (Z.to_nat num_buckets - 0)%nat with (Z.to_nat num_buckets) in Hm1
             by Lia.lia.
-          (* Hm1 has:
-             array None sz buckets_k nil (= emp True) * array tight (buckets_k + 0) (repeat K_i ...) * R.
-             [word.of_Z (wsz * 0) = 0]. *)
-          (* Drop bounds on each of the three tight arrays. *)
-          assert (Hdrop_x :
-            Lift1Prop.impl1
-              (array (FElem (Some tight_bounds))
-                     (word.of_Z felem_size_in_bytes)
-                     (word.add buckets_x
-                        (word.of_Z (word.unsigned
-                                      (word.of_Z (width:=width) felem_size_in_bytes)
-                                      * Z.of_nat 0)))
-                     (repeat Xi (Z.to_nat num_buckets)))
-              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x
-                     (repeat Xi (Z.to_nat num_buckets)))).
-          { replace (word.unsigned
-                       (word.of_Z (width:=width) felem_size_in_bytes)
-                     * Z.of_nat 0) with 0 by Lia.lia.
-            replace (word.add buckets_x (word.of_Z 0)) with buckets_x.
-            2:{ apply word.unsigned_inj.
-                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
-                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
-                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
-            apply array_FElem_drop_bounds_impl1. }
-          assert (Hdrop_y :
-            Lift1Prop.impl1
-              (array (FElem (Some tight_bounds))
-                     (word.of_Z felem_size_in_bytes)
-                     (word.add buckets_y
-                        (word.of_Z (word.unsigned
-                                      (word.of_Z (width:=width) felem_size_in_bytes)
-                                      * Z.of_nat 0)))
-                     (repeat Yi (Z.to_nat num_buckets)))
-              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y
-                     (repeat Yi (Z.to_nat num_buckets)))).
-          { replace (word.unsigned
-                       (word.of_Z (width:=width) felem_size_in_bytes)
-                     * Z.of_nat 0) with 0 by Lia.lia.
-            replace (word.add buckets_y (word.of_Z 0)) with buckets_y.
-            2:{ apply word.unsigned_inj.
-                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
-                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
-                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
-            apply array_FElem_drop_bounds_impl1. }
-          assert (Hdrop_z :
-            Lift1Prop.impl1
-              (array (FElem (Some tight_bounds))
-                     (word.of_Z felem_size_in_bytes)
-                     (word.add buckets_z
-                        (word.of_Z (word.unsigned
-                                      (word.of_Z (width:=width) felem_size_in_bytes)
-                                      * Z.of_nat 0)))
-                     (repeat Zi (Z.to_nat num_buckets)))
-              (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z
-                     (repeat Zi (Z.to_nat num_buckets)))).
-          { replace (word.unsigned
-                       (word.of_Z (width:=width) felem_size_in_bytes)
-                     * Z.of_nat 0) with 0 by Lia.lia.
-            replace (word.add buckets_z (word.of_Z 0)) with buckets_z.
-            2:{ apply word.unsigned_inj.
-                rewrite word.unsigned_add. rewrite word.unsigned_of_Z.
-                cbv [word.wrap]. rewrite Z.mod_0_l by Lia.lia.
-                rewrite Z.add_0_r. symmetry. apply word.wrap_unsigned. }
-            apply array_FElem_drop_bounds_impl1. }
-          (* Combine the 3 drops via impl1 transitivity applied on the full sep
-             shape.  We state the combined lemma [Hfull] and prove it by
-             Proper_sep_impl1.  Then transform Hm1's sep shape to match
-             Hfull's LHS using [ecancel_assumption] (after manually bundling). *)
-          (* Build one big impl1 covering all 3 arrays + the R frame. *)
-          assert (Hfull : Lift1Prop.impl1
-            (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
-               (word.add buckets_x
-                  (word.of_Z (word.unsigned
-                                (word.of_Z (width:=width) felem_size_in_bytes)
-                                * Z.of_nat 0)))
-               (repeat Xi (Z.to_nat num_buckets))
-             * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
-               (word.add buckets_y
-                  (word.of_Z (word.unsigned
-                                (word.of_Z (width:=width) felem_size_in_bytes)
-                                * Z.of_nat 0)))
-               (repeat Yi (Z.to_nat num_buckets))
-             * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes)
-               (word.add buckets_z
-                  (word.of_Z (word.unsigned
-                                (word.of_Z (width:=width) felem_size_in_bytes)
-                                * Z.of_nat 0)))
-               (repeat Zi (Z.to_nat num_buckets))
-             * R)%sep
-            (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x
-               (repeat Xi (Z.to_nat num_buckets))
-             * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y
-               (repeat Yi (Z.to_nat num_buckets))
-             * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z
-               (repeat Zi (Z.to_nat num_buckets))
-             * R)%sep).
-          { intros m' Hm'.
-            (* Left-assoc sep: [(((A * B) * C) * R)].
-               Destructure fully, transform each piece, then rebuild. *)
-            destruct Hm' as (mABC & mR & HsAR & HABC & HR_val).
-            destruct HABC as (mAB & mC & HsAB & HAB & Hz_val).
-            destruct HAB as (mA & mB & HsA & Hx_val & Hy_val).
-            apply Hdrop_x in Hx_val.
-            apply Hdrop_y in Hy_val.
-            apply Hdrop_z in Hz_val.
-            exists mABC, mR. split; [exact HsAR|]. split; [|exact HR_val].
-            exists mAB, mC. split; [exact HsAB|]. split; [|exact Hz_val].
-            exists mA, mB. split; [exact HsA|]. split; [exact Hx_val|exact Hy_val]. }
-          eapply Hfull.
-          (* Hm1 after [cbn [array]] was (emp_x * tight_x * emp_y * tight_y
-             * emp_z * tight_z * R) m1; ecancel should match. *)
+          (* Addresses: [+ (wsz * 0)] = [+ 0] = no-op.  Rewrite addr in Hm1. *)
+          assert (Hzero_add : forall bp : word,
+            word.add bp
+              (word.of_Z (word.unsigned (width:=width)
+                            (word.of_Z felem_size_in_bytes) * Z.of_nat 0))
+            = bp).
+          { intro bp. cbn [Z.of_nat]. rewrite Z.mul_0_r.
+            apply word.unsigned_inj.
+            rewrite word.unsigned_add, word.unsigned_of_Z.
+            unfold word.wrap.
+            rewrite Z.mod_0_l by Lia.lia.
+            rewrite Z.add_0_r.
+            rewrite Z.mod_small; [reflexivity|].
+            apply word.unsigned_range. }
+          rewrite (Hzero_add buckets_x),
+                  (Hzero_add buckets_y),
+                  (Hzero_add buckets_z) in Hm1.
           cbn [array] in Hm1.
-          use_sep_assumption. cancel. cancel_seps_at_indices 0%nat 0%nat;
-            [reflexivity|].
-          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
-          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
-          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|].
-          (* Remaining: 3 [emp True] on the left, nothing on the right. *)
-          reflexivity. }
+          ecancel_assumption. }
         split; [exact Hlbx1|].
         split; [exact Hlby1|].
         exact Hlbz1. }
@@ -2512,9 +2422,13 @@ Section PippengerSpec.
       distribute_inv w (word.unsigned n_w)
         (points_of bs_x bs_y bs_z) (scalars_to_Z scalars)
         (points_of px py pz) ->
-      (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x
-       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y
-       * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z
+      (* L3 pre strengthened 2026-04-20: bucket arrays now [Some tight_bounds]
+         (matching L2's strengthened post, and aligning with L4's existing
+         tight pre).  L3's loop body writes via [HCurveAdd] which produces
+         tight cells; no None → tight bridge is needed anymore. *)
+      (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x
+       * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y
+       * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z
        * ScalarsArray scalars_p scalars
        * G1Array3 ppx ppy ppz px py pz
        * R)%sep mem0 ->
@@ -2669,9 +2583,11 @@ Section PippengerSpec.
         distribute_inv w (Z.of_nat v)
           (points_of bs_x' bs_y' bs_z') (scalars_to_Z scalars)
           (points_of px py pz) /\
-        (array (FElem None) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
-         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
-         * array (FElem None) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+        (* Invariant strengthened to [Some tight_bounds] bucket arrays to
+           match the strengthened pre and post (and L4's expected pre). *)
+        (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
          * ScalarsArray scalars_p scalars
          * G1Array3 ppx ppy ppz px py pz
          * R)%sep m /\
@@ -2790,7 +2706,10 @@ Section PippengerSpec.
            (both Qed), [PointArray_split_at/update_at] (both Qed), and the
            [HCurveAdd] callee spec. *)
         admit.
-      - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post. *)
+      - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post.
+           After structural fix (2026-04-20), the invariant's sep shape
+           is now [Some tight_bounds] — matching the post directly, no
+           bridging needed. *)
         intro Hbr.
         assert (Hvi0 : vi = 0%nat).
         { destruct vi as [|n]; [reflexivity|].
@@ -2803,12 +2722,15 @@ Section PippengerSpec.
         split; [exact Hly|].
         split; [exact Hlz|].
         split; [exact Hdinv|].
-        (* Sep: Hsep1 is array (FElem None) but post now requires
-           array (FElem tight).  Bridge via tightening — the actual L3
-           body writes tight_bounds cells via curve_add_name, so the
-           bridge is sound but the partial proof above didn't track it.
-           Admit this final sep step; the overall Lemma is Admitted. *)
-        admit. }
+        split; [exact Hsep1|].
+        split; [exact Hlbx1|].
+        split; [exact Hlby1|].
+        split; [exact Hlbz1|].
+        split; [exact Hppx1|].
+        split; [exact Hppy1|].
+        split; [exact Hppz1|].
+        split; [exact Hls1|].
+        exact Hlw1. }
   Admitted.
 
   (** --- Helper lemmas for the [msm_bls12_reduce_wp] proof below. --- *)

@@ -1068,11 +1068,21 @@ Section BLS12_Pairing.
            expr.var "w_frob_p2_c1"];
         cmd.call [] fp12_mul_name
           [expr.var "result"; expr.var "tmp"; expr.var "result"];
-        (* Hard part: DSD = result^{3*h3} *)
-        cmd.call [] "bls12_final_exp_hard_dsd"
-          [expr.var "out"; expr.var "result";
-           expr.var "gamma1_p2"; expr.var "gamma2_p2";
-           expr.var "w_frob_p2_c1"]
+        (* Hard part: square-and-multiply with 1268-bit h3 exponent.
+           Save easy-part result to base, set result to 1, then iterate
+           1280 bits of h3.  The fp12_set_one is used by the WP proof in
+           BLS12_FinalExp.v to anchor the loop invariant on result=1; the
+           started flag preserves the leading-zero-skip optimisation
+           (overwriting result on the first set bit). *)
+        cmd.call [] fp12_copy_name
+          [expr.var "base"; expr.var "result"];
+        fp12_set_one "result";
+        h3_store_limbs;
+        cmd.set "started" (expr.literal 0);
+        cmd.set "i" (expr.literal 1280);
+        cmd.while (expr.var "i") h3_loop_body;
+        cmd.call [] fp12_copy_name
+          [expr.var "out"; expr.var "result"]
       ].
 
     Definition bls12_final_exp : function_t :=
@@ -1082,6 +1092,8 @@ Section BLS12_Pairing.
         bedrock_func_body:(
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as result;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as tmp;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as base;
+          stackalloc 160 as h3;
           coq:(final_exp_full_body)
         ))).
 

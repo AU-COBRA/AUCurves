@@ -40,6 +40,7 @@ output-tests/*.expected.processed
 *.cmxs
 *.o
 *.cmti
+*.native
 
 # Rust static libs and build dirs
 *.rlib

@@ -620,15 +620,15 @@ Proof. intros [[] []] [[] []] onc1 onc2.
     + destruct ((f1, f2, false) =.? (f, f0, false)) eqn:E3. rewrite eqb_leibniz in E3. 
       rewrite E3 in E. rewrite g1_eqb_true in E. discriminate.
       destruct (f =.? f1) eqn:E1.  
-      * destruct (f0 =.? nat_mod_zero -% f2) eqn:E2.
-        -- apply eqb_leibniz in E1, E2. subst. field_simplify (nat_mod_zero -% (nat_mod_zero -% f2)). repeat rewrite fp_eq_true.
+      * destruct (f0 =.? (nat_mod_zero -% f2)) eqn:E2.
+        -- rewrite eqb_leibniz in E1. rewrite eqb_leibniz in E2. subst. field_simplify (nat_mod_zero -% (nat_mod_zero -% f2)). repeat rewrite fp_eq_true.
         reflexivity.
-        -- apply eqb_leibniz in E1. subst.
+        -- rewrite eqb_leibniz in E1. subst.
         pose proof (symmetrical_x_axis _ _ _ _ onc1 onc2 eq_refl).
         destruct H.
           ++ subst. rewrite g1_eqb_true in E. discriminate.
           ++ subst. field_simplify (nat_mod_zero -% f2) in E2. rewrite fp_eq_true in E2. discriminate.
-      * destruct (f1 =.? f) eqn:E4. apply eqb_leibniz in E4. rewrite E4, fp_eq_true in E1. discriminate.
+      * destruct (f1 =.? f) eqn:E4. rewrite eqb_leibniz in E4. subst. rewrite fp_eq_true in E1. discriminate.
         cbn. repeat rewrite exp2ismul.  split; auto; split; rewrite fp_eq_ok; field; split; intro c; rewrite sub_eq_zero_means_same in c; subst; rewrite fp_eq_true in E1; discriminate.
 Qed.      
         
@@ -809,7 +809,7 @@ Qed.
 
 Lemma helper1: forall a b : fp', ((a *% a) +% (b *% b)) = nat_mod_zero -> a = nat_mod_zero /\ b = nat_mod_zero.
 Proof. intros. destruct (b =.? nat_mod_zero) eqn:E.
-  - apply eqb_leibniz in E. split. rewrite E in H. field_simplify in H. 
+  - rewrite eqb_leibniz in E. split. rewrite E in H. field_simplify in H.
   apply helper0 in H. apply H.  apply E.
   - apply fp_eqb_neq in E. assert ((a *% a) /% (b *% b) = (nat_mod_neg nat_mod_one)). 
   { symmetry in H. generalize fp_field_theory. intros [[]]. rewrite Radd_comm in H. 
@@ -1009,16 +1009,16 @@ Proof. Opaque "=.?". Opaque fp2zero. Opaque fp2add. intros [[f f0]] [[f1 f2]] H 
   (generalize fp_field_theory). intros [[]].
   destruct b eqn:E, b0 eqn:E1; auto. 
   unfold dec. destruct (g2_dec f f1) as [e|e]. 
-  2:{ destruct ((f, f0, false) =.? (f1, f2, false)) eqn:N; [ apply eqb_leibniz in N; inversion N; contradiction |]. 
-    destruct (f =.? f1)eqn:N1; [apply eqb_leibniz in N1; contradiction|]. cbn.  
+  2:{ destruct ((f, f0, false) =.? (f1, f2, false)) eqn:N; [ rewrite eqb_leibniz in N; inversion N; contradiction |].
+    destruct (f =.? f1)eqn:N1; [rewrite eqb_leibniz in N1; contradiction|]. cbn.
     split; split; auto; field. }
   destruct (g2_dec f2 (fp2neg f0)) as [e0 |e0]; subst; cbn; destruct (f0 =.? fp2zero) eqn:k.
-  - apply eqb_leibniz in k as ->. assert (fp2neg fp2zero = fp2zero) as -> by field.
+  - rewrite eqb_leibniz in k. subst. assert (fp2neg fp2zero = fp2zero) as -> by field.
     rewrite g2_eqb_true. reflexivity.
   - destruct ((f1, f0, false) =.? (f1, fp2neg f0, false)) eqn: eqb;
-    [apply eqb_leibniz in eqb; inversion eqb; apply fp2_negation_eq_implies_zero in H2; subst; rewrite fp2_eq_true in k; discriminate|]. 
+    [rewrite eqb_leibniz in eqb; inversion eqb; apply fp2_negation_eq_implies_zero in H2; subst; rewrite fp2_eq_true in k; discriminate|].
     field_simplify (fp2neg (fp2neg f0)). repeat rewrite fp2_eq_true. cbn. reflexivity.
-  - apply eqb_leibniz in k. subst. pose proof (fp2_symmetrical_x_axis _ _ _ _ H0 H eq_refl).
+  - rewrite eqb_leibniz in k. subst. pose proof (fp2_symmetrical_x_axis _ _ _ _ H0 H eq_refl).
     destruct H1; [ field_simplify (@nat_mod_neg prime nat_mod_zero) in e0; contradiction | contradiction].
   - pose proof (fp2_symmetrical_x_axis _ _ _ _ H0 H eq_refl). destruct H1; [| contradiction].
     subst. rewrite g2_eqb_true. cbn. rewrite fp2three_equiv, fp2two_equiv.

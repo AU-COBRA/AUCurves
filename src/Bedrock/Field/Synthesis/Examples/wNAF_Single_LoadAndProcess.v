@@ -125,17 +125,54 @@ Section SingleLoadAndProcess.
   (** Tactics copied from BLS12_wNAF_LoadAndProcess.v (Local Ltac not exported). *)
   Local Ltac solve_mapget :=
     first [ apply map.get_put_same
-          | rewrite map.get_put_diff by congruence; assumption
-          | rewrite map.get_put_diff by congruence; solve_mapget ].
+          | rewrite !map.get_put_diff by congruence; eassumption ].
 
   Local Ltac eval_dexprs_here :=
     cbv [dexprs list_map list_map_body
+         WeakestPrecondition.dexpr
          WeakestPrecondition.expr WeakestPrecondition.expr_body
          WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet];
     repeat (first
       [ exact eq_refl
       | eexists; split; [solve_mapget |]
       | eexists; split; [exact eq_refl |] ]).
+
+  Local Ltac wp_direct_call spec :=
+    letexists; split; [solve [eval_dexprs_here] |];
+    eapply Semantics.weaken_call;
+    [ eapply spec;
+      repeat match goal with
+      | H : ?v = word.of_Z _ |- _ => is_var v; rewrite H
+      end;
+      cbn [Semantics.interp_binop];
+      repeat rewrite <- word.ring_morph_add;
+      repeat match goal with
+      | |- context [word.of_Z (0 + ?b)] =>
+          replace (0 + b) with b by ring
+      | |- context [word.of_Z (?a + 0)] =>
+          replace (a + 0) with a by ring
+      | |- context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] =>
+          let ab := eval cbv in (a + b) in
+          replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+            with (ab * felem_size_in_bytes) by ring
+      | |- context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] =>
+          let ap1 := eval cbv in (a + 1) in
+          replace (a * felem_size_in_bytes + felem_size_in_bytes)
+            with (ap1 * felem_size_in_bytes) by ring
+      end;
+      ecancel_assumption
+    | intros ? ? ? ?;
+      cbv beta in *;
+      repeat match goal with H : _ /\ _ |- _ => destruct H end;
+      subst;
+      cbv [map.putmany_of_list_zip];
+      try (eexists; split; [exact eq_refl | ]) ].
+
+  Local Lemma word_add_of_Z_assoc (p : word) (a b : Z) :
+    word.add (word.add p (word.of_Z a)) (word.of_Z b) = word.add p (word.of_Z (a + b)).
+  Proof.
+    rewrite <- word.add_assoc. rewrite <- word.ring_morph_add. reflexivity.
+  Qed.
 
   (** Word-level arithmetic: the bedrock2 sequence
         tab_idx = (lookup_d - 1) >> 1
@@ -153,16 +190,24 @@ Section SingleLoadAndProcess.
     = (word.of_Z (((d - 1) / 2) * (3 * felem_size_in_bytes)) : word).
   Proof.
     intros Hd.
-    (* Plan (to fill in):
-       apply word.unsigned_inj.
-       rewrite word.unsigned_mul, word.unsigned_sru_shamtZ by lia.
-       rewrite word.unsigned_sub_mod, ?word.unsigned_of_Z_nowrap by lia.
-       rewrite word.unsigned_of_Z_nowrap by
-         (pose proof Hfs_pos; pose proof Hfs_small; lia).
-       rewrite !Z.mod_small by
-         (split; try apply Z.shiftr_nonneg; try nia; nia).
-       rewrite Z.shiftr_div_pow2 by lia. reflexivity. *)
-  Admitted.
+    assert (Hbound : 0 <= (d - 1) / 2 * (3 * felem_size_in_bytes) < 2^width).
+    { clear - Hd Hfs_pos Hfs_small.
+      assert (h1 : 0 <= (d - 1) / 2 <= 3) by lia.
+      split; nia. }
+    clear dk num_iters Hlen Hdigits_bounded table_entries Htable_len Hdigit_load.
+    apply word.unsigned_inj.
+    rewrite word.unsigned_mul.
+    rewrite word.unsigned_sru_shamtZ with (a := 1%Z) by
+      (destruct BW; destruct width_cases as [-> | ->]; lia).
+    rewrite word.unsigned_sub_nowrap by
+      (rewrite !word.unsigned_of_Z_nowrap by lia; lia).
+    rewrite ?word.unsigned_of_Z_nowrap by nia.
+    unfold word.wrap.
+    rewrite Z.shiftr_div_pow2 by lia.
+    change (2^1) with (2:Z).
+    rewrite Z.mod_small by (split; nia).
+    reflexivity.
+  Qed.
 
   (** Main theorem: load digit d from array, then process_one_digit.
       Postcondition: if d=0 then accumulator unchanged,
@@ -372,7 +417,7 @@ Section SingleLoadAndProcess.
            wp_direct_call HFelemCopy;
            wp_direct_call HFelemCopy.
          { (* idx = 0, d < 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros _.
              wp_direct_call HOppInplace.
@@ -418,7 +463,7 @@ Section SingleLoadAndProcess.
                unfold word.swrap in Elt.
                destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
          { (* idx = 1, d < 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros _.
              wp_direct_call HOppInplace.
@@ -464,7 +509,7 @@ Section SingleLoadAndProcess.
                unfold word.swrap in Elt.
                destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
          { (* idx = 2, d < 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros _.
              wp_direct_call HOppInplace.
@@ -510,7 +555,7 @@ Section SingleLoadAndProcess.
                unfold word.swrap in Elt.
                destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
          { (* idx = 3, d < 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros _.
              wp_direct_call HOppInplace.
@@ -642,7 +687,7 @@ Section SingleLoadAndProcess.
            wp_direct_call HFelemCopy;
            wp_direct_call HFelemCopy.
          { (* idx = 0, d >= 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros Hcontra. exfalso. subst v.
              cbn [Semantics.interp_binop] in Hcontra.
@@ -687,7 +732,7 @@ Section SingleLoadAndProcess.
                repeat (rewrite map.get_put_diff by auto).
                exact Hgk. } }
          { (* idx = 1, d >= 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros Hcontra. exfalso. subst v.
              cbn [Semantics.interp_binop] in Hcontra.
@@ -732,7 +777,7 @@ Section SingleLoadAndProcess.
                repeat (rewrite map.get_put_diff by auto).
                exact Hgk. } }
          { (* idx = 2, d >= 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros Hcontra. exfalso. subst v.
              cbn [Semantics.interp_binop] in Hcontra.
@@ -777,7 +822,7 @@ Section SingleLoadAndProcess.
                repeat (rewrite map.get_put_diff by auto).
                exact Hgk. } }
          { (* idx = 3, d >= 0 *)
-           letexists; split; [eval_dexprs_here|].
+           letexists; split; [solve [eval_dexprs_here] |].
            split.
            { intros Hcontra. exfalso. subst v.
              cbn [Semantics.interp_binop] in Hcontra.

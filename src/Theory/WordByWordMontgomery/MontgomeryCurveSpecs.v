@@ -9,6 +9,7 @@ Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Theory.WordByWordMontgomery.wbw_morphisms.
 Require Import Theory.Fields.ReflectiveZmod.
 Require Import Theory.Fields.ReflectiveZmodTac.
+Require Export Theory.WordByWordMontgomery.MontgomeryCurveG1Equiv.
 
 Section G1Specs.
     Open Scope Z_scope.
@@ -209,56 +210,6 @@ Section G1Specs.
         [ rewrite evfrom_val_add in H
         | rewrite evfrom_val_sub in H
         | rewrite evfrom_val_mul in H].
-
-    Lemma BLS12_add_specs_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz,
-        BLS12_add_mont_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <->
-            BLS12_add_Gallina_spec (val _ _ _ X1) (val _ _ _ Y1) (val _ _ _ Z1) (val _ _ _ X2) (val _ _ _ Y2) (val _ _ _ Z2) (val _ _ _ outx) (val _ _ _ outy) (val _ _ _ outz).
-        Proof.
-            split; intros.
-                - unfold BLS12_add_Gallina_spec.
-                unfold BLS12_add_mont_spec in H.
-                apply pair_equal_spec in H; destruct H.
-                apply pair_equal_spec in H; destruct H.
-                apply (f_equal (fun y => evfrom (val _ _ _ y))) in H, H0, H1.
-                destruct outx as [outx Hx], outy as [outy Hy], outz as [outz Hz].
-                rewrite !mont_enc_val in H, H0, H1.
-                rewrite !mont_enc_val.
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hx) in H.
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hx).
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hy) in H1.
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hy).
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hz) in H0.
-                rewrite <- (valid'_mod _ _ _ _ _ r'_correct m'_correct bw_big n_nz m_small m_big Hz).
-                push_mont_in H.
-                push_mont_in H0; push_mont_in H1.
-                rewrite H, H0, H1.
-                apply pair_equal_spec; split.
-                apply pair_equal_spec; split.
-                all: unfold my_mul, my_add, my_sub; rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
-                - unfold BLS12_add_mont_spec.
-                destruct outx as [x Hx], outy as [y Hy], outz as [z Hz].
-                rewrite !mont_enc_val in H.
-                unfold BLS12_add_Gallina_spec, my_mul, my_add, my_sub in H.
-                apply pair_equal_spec in H; destruct H as [H H1].
-                apply pair_equal_spec in H; destruct H as [H H0].
-                apply pair_equal_spec; split.
-                apply pair_equal_spec; split.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H0. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
-                    + apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H1. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod.
-    Qed.
-
-    Lemma BLS12_add_specs_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz
-        (HX1 : valid' _ _ _ X1) (HX2 : valid' _ _ _ X2) (HY1 : valid' _ _ _ Y1) (HY2 : valid' _ _ _ Y2) (HZ1 : valid' _ _ _ Z1) (HZ2 : valid' _ _ _ Z2)
-        (Houtx : valid' _ _ _ outx) (Houty : valid' _ _ _ outy) (Houtz : valid' _ _ _ outz),
-        BLS12_add_mont_spec (enc_mont _ _ _ X1 HX1) (enc_mont _ _ _ Y1 HY1) (enc_mont _ _ _ Z1 HZ1) (enc_mont _ _ _ X2 HX2) (enc_mont _ _ _ Y2 HY2)
-            (enc_mont _ _ _ Z2 HZ2) (enc_mont _ _ _ outx Houtx) (enc_mont _ _ _ outy Houty) (enc_mont _ _ _ outz Houtz) <->
-            BLS12_add_Gallina_spec (X1) (Y1) (Z1) (X2) (Y2) (Z2) (outx) (outy) (outz).
-    Proof.
-        split; intros.
-            - apply BLS12_add_specs_equiv in H. rewrite !mont_enc_val in H. auto.
-            - apply BLS12_add_specs_equiv. rewrite !mont_enc_val. auto.
-    Qed.
 
 End G1Specs.
 

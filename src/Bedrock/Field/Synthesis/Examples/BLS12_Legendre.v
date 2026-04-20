@@ -23,7 +23,7 @@ From Stdlib Require Import Lia.
 From Stdlib Require Import Zdiv.
 From Stdlib Require Import Zpower.
 
-From Crypto.Bedrock.Field.Synthesis.Examples Require Import bls12_prime_certif.
+From Bedrock.Field.Synthesis.Examples Require Import bls12_prime_certif.
 
 Require Import Coqprime.PrimalityTest.Zp.
 Require Import Coqprime.PrimalityTest.EGroup.

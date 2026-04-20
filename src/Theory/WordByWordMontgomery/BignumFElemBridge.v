@@ -33,20 +33,23 @@ Require Import bedrock2.Array.
 Require Import bedrock2.Scalars.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Bitwidth.
+Require Import coqutil.Map.Interface.
 
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 
 Import ListNotations.
 Local Open Scope Z_scope.
+Import bedrock2.Memory.
 
 Section BignumFElemBridge.
   Context {width : Z} {BW : Bitwidth width}
-          {word : word.word width}
-          {mem : Interface.map.map word Byte.byte}
+          {word : Interface.word width}
+          {mem : map.map word Byte.byte}
           {word_ok : word.ok word}
-          {mem_ok : Interface.map.ok mem}.
+          {mem_ok : @map.ok _ _ mem}.
 
   Context {field_parameters : FieldParameters}
           {field_representation : FieldRepresentation}.
@@ -64,14 +67,11 @@ Section BignumFElemBridge.
   Proof.
     cbv [FElem Bignum].
     destruct x as [ws Hlen]. cbn [proj1_sig].
-    (* (array scalar ... px ws) <-> (emp (length ws = n) * array scalar ... px ws) *)
-    split; intros m H.
+    intro m0; split; intro H.
     - apply sep_emp_l. split; [exact Hlen | exact H].
     - apply sep_emp_l in H. destruct H as [_ H]. exact H.
   Qed.
 
-  (* The reverse direction: given a Bignum predicate plus a length proof,
-     we can wrap into FElem. *)
   Lemma Bignum_to_FElem (px : word) (ws : list word.rep)
         (Hlen : length ws = felem_size_in_words) :
     Lift1Prop.iff1
@@ -79,29 +79,21 @@ Section BignumFElemBridge.
       (FElem px (exist _ ws Hlen)).
   Proof.
     cbv [FElem Bignum]. cbn [proj1_sig].
-    split; intros m H.
+    intro m0; split; intro H.
     - apply sep_emp_l in H. destruct H as [_ H]. exact H.
     - apply sep_emp_l. split; [exact Hlen | exact H].
   Qed.
-
-  (* === Decoding equivalence ===
-     For the WBW field representation, [feval] is precisely
-     [F.of_Z ∘ Positional.eval ∘ from_montgomerymod ∘ map word.unsigned],
-     and [F.to_Z ∘ feval] is therefore that same composition modulo M. *)
 
   Lemma feval_to_Z (x : felem) :
     F.to_Z (feval x) =
       F.to_Z (feval x) mod M.
   Proof.
-    destruct (feval x) as [v Hv]. cbn [F.to_Z]. rewrite Hv at 1. reflexivity.
+    pose proof (F.to_Z_range (feval x) (Pos2Z.is_pos M_pos)).
+    symmetry. apply Zmod_small. unfold M in *. lia.
   Qed.
 
-  (* === Helper: extract length from a Bignum sep predicate ===
-     Bignum carries [emp (length ws = n)] inside the sep, so given a
-     Bignum hypothesis we can pull out the length equality unconditionally. *)
-
   Lemma Bignum_length n (px : word) (ws : list word.rep)
-        (m_post : Interface.map.rep) (R : Interface.map.rep -> Prop) :
+        (m_post : @map.rep _ _ mem) (R : @map.rep _ _ mem -> Prop) :
     (Bignum n px ws * R)%sep m_post ->
     length ws = n.
   Proof.

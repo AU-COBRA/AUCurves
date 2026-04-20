@@ -107,7 +107,8 @@ Section Field.
     epair;
     begin_derive_bedrock2_func;
     try lazymatch goal with
-      | |- _ = b2_func _ => vm_compute; reflexivity
+      | |- _ = b2_func _ =>
+        solve [ native_compute; reflexivity | vm_compute; reflexivity ]
       end;
     lazymatch goal with
     | |- _ = @ErrorT.Success ?ErrT unit tt =>

@@ -4,7 +4,7 @@ is equivalent to the MontgomeryCurveSpecs gallina specification of the same grou
 Require Import Hacspec.Util.Lib.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Crypto.Curves.Weierstrass.Projective.
-Require Import Bedrock.Field.bls12prime.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime.
 Require Import Coq.ZArith.ZArith.
 Require Import bedrock2.Semantics.
 Require Import Crypto.Bedrock.Field.Common.Types.
@@ -30,7 +30,7 @@ Local Open Scope Z_scope.
 (*Parameters to be changed: specify prime and import reification from cache.*)
 Require Import Bedrock.Examples.felem_copy_64.
 Local Definition felem_suffix := felem_copy_64.aff.
-Local Notation m := bls12prime.m.
+Local Notation m := bls12_prime.m.
 
 (*Initializing parameters; do not touch*)
 Local Notation bw := width.

@@ -14,7 +14,7 @@ Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Spec.HashToCurve.
-Require Import Crypto.Bedrock.Field.Synthesis.Examples.bls12_prime_certif.
+Require Import Bedrock.Field.Synthesis.Examples.bls12_prime_certif.
 
 From Coq Require Export Ring_theory Field_theory Field_tac.
 Require Crypto.Algebra.Hierarchy Crypto.Algebra.Field.

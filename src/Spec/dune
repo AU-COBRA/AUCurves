@@ -3,4 +3,4 @@
 (coq.theory
  (name Spec)
  (mode vo)
- (theories Stdlib Crypto))
+ (theories Stdlib Crypto Bedrock))

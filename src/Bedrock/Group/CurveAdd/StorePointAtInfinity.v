@@ -13,7 +13,7 @@ Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
 Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Arithmetic.WordByWordMontgomery.
-Require Import Crypto.Arithmetic.WordByWordMontgomeryUtil.
+Require Import Bedrock.Arithmetic.WordByWordMontgomeryUtil.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Util.ZUtil.ModInv.

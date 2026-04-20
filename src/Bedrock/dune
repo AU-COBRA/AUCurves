@@ -13,7 +13,6 @@
      ExtractSafeTowerBN256
      ExtractSafeTowerBN446
      TestSafeBody
-     Field.quadratic_extension_bls12
      Curve.BLS12Curve_G1
      Curve.BLS12Curve_G2
      Curve.BW6_761Curve_G1_bedrock

@@ -159,9 +159,9 @@ Section G1Equiv.
     Lemma gallina_fiat_crypto_equiv : forall X1 X2 Y1 Y2 Z1 Z2 outx outy outz on_curve1 on_curve2 except, 
         (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <-> 
         (evfrom outx, evfrom outy, evfrom outz) = pair_val (proj1_sig (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except))).
-    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)) by ( intros; rewrite H; reflexivity ). 
+    Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)) by ( intros; rewrite H; reflexivity ).
         intros. apply H. unfold pair_val, fc_proj_add, proj1_sig, to_fc_point_from_mont, to_fc_point.
-        rememberp X1 X2 Y1 Y2 Z1 Z2. autorewrite with znz_to_z_arith.
+        autorewrite with znz_to_z_arith.
         unfold three_b_list, a_list. rewrite (eval_list _ three_b_small), (eval_list _ a_small) . reflexivity.
     Qed.
 
@@ -174,9 +174,9 @@ Section G1Equiv.
     Lemma gallina_fiat_crypto_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz on_curve1 on_curve2 on_curve_out except, 
         (BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz -> 
         fc_proj_eq (to_fc_point_from_mont outx outy outz on_curve_out)  (fc_proj_add (to_fc_point_from_mont X1 Y1 Z1 on_curve1) (to_fc_point_from_mont X2 Y2 Z2 on_curve2) except)).
-    Proof. intros. rewrite (gallina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H. 
+    Proof. intros. rewrite (gallina_fiat_crypto_equiv _ _ _ _ _ _ _ _ _ on_curve1 on_curve2 except) in H.
         apply fc_proj_eq_sig. unfold to_fc_point_from_mont, to_fc_point, fc_proj_add, proj1_sig.
-        apply pair_equal_spec in H. rememberp X1 X2 Y1 Y2 Z1 Z2. 
+        apply pair_equal_spec in H.
         destruct H as [H ->]. apply pair_equal_spec in H. destruct H as [-> ->].
         apply pair_equal_spec. split; [apply pair_equal_spec; split |]; apply zirr; autorewrite with znz_to_z_arith; unfold "-'", "+'"; rewrite Zmod_mod; reflexivity.
     Qed.
@@ -280,7 +280,8 @@ Section G2Equiv.
     Local Notation FFp2 := ((@FFp2 m) m_prime m_odd m_mod3).
 
     Definition fp2_fc_field := (Fp2fc m m_prime m_odd m_mod3).
-    Definition fp2_char_ge_3 := Char_Fp2_geq_p m m_prime 3 (three_small m n n_nz twenty1_small).
+    Lemma three_small_p2 : 3 < m. Proof. lia. Qed.
+    Definition fp2_char_ge_3 := Char_Fp2_geq_p m m_prime 3 three_small_p2.
     Definition fp2_char_ge_21 := Char_Fp2_geq_p m m_prime 21 twenty1_small.
 
     Lemma fc_fp2_dec : DecidableRel (@eq (Fp2)).
@@ -327,7 +328,7 @@ Section G2Equiv.
     (* Some helper lemmas *)
     Local Notation Fp2_add_equiv := (Fp2_add_equiv m).
 
-    Local Notation Fp2_mul_equiv := (Fp2_mul_equiv m n n_nz m_mod).
+    Local Notation Fp2_mul_equiv := (Fp2_mul_equiv m bw n n_nz m_mod).
 
     Local Notation Fp2_sub_equiv := (Fp2_sub_equiv m).
 
@@ -366,7 +367,7 @@ Section G2Equiv.
     Proof. assert (forall A (x y z: A), y = z -> (x = y <-> x = z)) by ( intros; rewrite H; reflexivity ). 
         intros. unfold BLS12_G2_add_Gallina_spec, to_fc_p2_point_from_mont.
         apply H. unfold pair_p2_val, fc_proj_p2_add, proj1_sig, to_fc_p2_point. 
-        rememberp2 X1 X2 Y1 Y2 Z1 Z2. autorewrite with znz2_to_z2_arith. reflexivity.
+        autorewrite with znz2_to_z2_arith. reflexivity.
     Qed.
 
     Lemma fc_proj_p2_eq_sig: forall x y, proj1_sig x = proj1_sig y -> fc_proj_p2_eq x y.

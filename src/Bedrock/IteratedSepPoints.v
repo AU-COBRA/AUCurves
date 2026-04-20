@@ -48,6 +48,17 @@ Section RunningSum.
   Lemma op_zero_r : forall a, op a zero = a.
   Proof. intros a. rewrite op_comm. apply op_zero_l. Qed.
 
+  (** 4-term rearrangement: [(a+b)+(c+d) = (a+c)+(b+d)].  Used several times below. *)
+  Lemma op_4_swap a b c d : op (op a b) (op c d) = op (op a c) (op b d).
+  Proof.
+    rewrite op_assoc.
+    rewrite <- (op_assoc b c d).
+    rewrite (op_comm b c).
+    rewrite (op_assoc c b d).
+    rewrite <- op_assoc.
+    reflexivity.
+  Qed.
+
   (** [nat_scalar_mul n g] is [n·g] = [op g (op g (... g))] ([n] copies). *)
   Fixpoint nat_scalar_mul (n : nat) (g : G) : G :=
     match n with
@@ -87,28 +98,12 @@ Section RunningSum.
   Proof.
     revert k. induction bs as [|b rest IH]; intros k.
     - simpl. rewrite op_zero_l. reflexivity.
-    - simpl. rewrite IH.
-      (* Goal:
-           op (op b (nat_scalar_mul k b))
-              (op (plain_sum rest) (scaled_sum_from (S k) rest))
-         = op (op b (plain_sum rest))
-              (op (nat_scalar_mul k b) (scaled_sum_from k rest)). *)
-      rewrite IH.
-      (* Now rhs' = op (op b (plain_sum rest))
-                       (op (nat_scalar_mul k b)
-                           (op (plain_sum rest) (scaled_sum_from k rest))). *)
-      (* Use assoc + comm to pull the structure together.  Both sides
-         are a five-way sum of:
-           b, nat_scalar_mul k b, plain_sum rest, plain_sum rest, scaled_sum_from k rest.
-         Reduce both sides to a canonical associated-right form. *)
-      repeat rewrite op_assoc.
-      f_equal.
-      rewrite (op_comm (nat_scalar_mul k b) (plain_sum rest)).
-      repeat rewrite op_assoc.
-      f_equal.
-      rewrite (op_comm (plain_sum rest) (nat_scalar_mul k b)).
-      repeat rewrite op_assoc.
-      reflexivity.
+    - simpl plain_sum. simpl scaled_sum_from. simpl nat_scalar_mul.
+      rewrite (IH (S k)).
+      (* LHS: op (op b (nat_scalar_mul k b)) (op (plain_sum rest) (scaled_sum_from (S k) rest))
+         RHS: op (op b (plain_sum rest))     (op (nat_scalar_mul k b) (scaled_sum_from (S k) rest)).
+         Both are (b + k·b + psum rest + s_{S k} rest) up to rearrangement. *)
+      apply op_4_swap.
   Qed.
 
   (** The two-register update applied by the running-sum loop body. *)
@@ -124,23 +119,30 @@ Section RunningSum.
   Proof.
     induction bs as [|b rest IH].
     - reflexivity.
-    - simpl. rewrite IH. cbn [rs_step fst snd].
+    - cbn [fold_right]. rewrite IH.
+      unfold rs_step. cbn [fst snd].
+      (* Goal: (op (plain_sum rest) b, op (scaled_sum rest) (op (plain_sum rest) b))
+             = (plain_sum (b :: rest), scaled_sum (b :: rest)). *)
       f_equal.
-      + (* First component: op (plain_sum rest) b = plain_sum (b :: rest). *)
+      + (* First component. *)
         simpl plain_sum. apply op_comm.
       + (* Second component:
-           op (scaled_sum rest) (op (plain_sum rest) b) = scaled_sum (b :: rest). *)
-        unfold scaled_sum. simpl scaled_sum_from.
-        rewrite nat_scalar_mul_succ, nat_scalar_mul_zero, op_zero_r.
-        rewrite scaled_sum_from_S.
-        (* rhs = op b (op (plain_sum rest) (scaled_sum_from 1 rest)).
-           lhs = op (scaled_sum_from 1 rest) (op (plain_sum rest) b). *)
-        rewrite (op_comm (plain_sum rest) b).
-        repeat rewrite op_assoc.
-        rewrite (op_comm (scaled_sum_from 1 rest) b).
-        repeat rewrite op_assoc.
-        f_equal.
-        apply op_comm.
+           Goal: op (scaled_sum rest) (op (plain_sum rest) b) = scaled_sum (b :: rest). *)
+        unfold scaled_sum. simpl.
+        (* After simpl:
+             op (scaled_sum_from 1 rest) (op (plain_sum rest) b)
+             = op (op b zero) (scaled_sum_from 2 rest). *)
+        rewrite op_zero_r.
+        rewrite (scaled_sum_from_S 1 rest).
+        (* Goal: op (scaled_sum_from 1 rest) (op (plain_sum rest) b)
+               = op b (op (plain_sum rest) (scaled_sum_from 1 rest)) *)
+        set (s := scaled_sum_from 1 rest).
+        set (p := plain_sum rest).
+        (* Goal: op s (op p b) = op b (op p s). *)
+        rewrite (op_comm p b).                 (* op s (op b p) *)
+        rewrite (op_comm s (op b p)).          (* op (op b p) s *)
+        rewrite op_assoc.                      (* op b (op p s) *)
+        reflexivity.
   Qed.
 
   (** Convenience: the value the bedrock2 loop will place in
@@ -152,57 +154,18 @@ Section RunningSum.
 End RunningSum.
 
 (* =================================================================== *)
-(** * Part 2: bridge to BLS12_MSM.reduce_buckets.                        *)
+(** * Part 2: [fold_left (rev)] ↔ [fold_right] shape gap.                *)
 (*                                                                      *)
 (*    [BLS12_MSM.reduce_buckets] is written with a left-fold over        *)
-(*    [rev buckets], which is equivalent (for our two-register          *)
-(*    update) to a [fold_right] over [buckets].  This section closes   *)
-(*    that fold-shape gap so the WP proof can cite                      *)
-(*    [scaled_sum]-style invariants directly.                           *)
+(*    [rev buckets].  This is equivalent (for our two-register update)  *)
+(*    to a [fold_right] over [buckets].  This lemma closes the shape    *)
+(*    gap so the caller can rewrite a left-fold expression into the     *)
+(*    [running_fold_invariant] shape above without importing BLS12_MSM. *)
 (* =================================================================== *)
 
-Require Import Bedrock.BLS12_MSM.
-
-Section BLS12MSMBridge.
+Section FoldReshape.
   Context (G1 : Type).
-  Context (g1_identity : G1).
   Context (g1_add : G1 -> G1 -> G1).
-  Hypothesis g1_add_assoc : forall a b c, g1_add (g1_add a b) c = g1_add a (g1_add b c).
-  Hypothesis g1_add_comm  : forall a b, g1_add a b = g1_add b a.
-  Hypothesis g1_add_identity_l : forall a, g1_add g1_identity a = a.
-
-  (** The inner [go] fixpoint inside [reduce_buckets] unfolded as a
-      [fold_left] over [rev buckets]. *)
-  Lemma reduce_buckets_as_fold (bs : list G1) :
-    reduce_buckets G1 g1_identity g1_add bs
-    = snd (fold_left
-             (fun p b =>
-                let r' := g1_add (fst p) b in
-                (r', g1_add (snd p) r'))
-             (rev bs)
-             (g1_identity, g1_identity)).
-  Proof.
-    unfold reduce_buckets.
-    (* Generalize the initial state to arbitrary (r, a), which lets us
-       induct on the list argument of the local [fix go]. *)
-    assert (Hgo: forall rs r a,
-      (fix go (bs0 : list G1) (running acc : G1) {struct bs0} : G1 :=
-         match bs0 with
-         | [] => acc
-         | b :: rest =>
-             let running' := g1_add running b in
-             let acc' := g1_add acc running' in
-             go rest running' acc'
-         end) rs r a
-      = snd (fold_left (fun p b =>
-                          let r' := g1_add (fst p) b in
-                          (r', g1_add (snd p) r'))
-                       rs (r, a))).
-    { intros rs. induction rs as [|b rest IH]; intros r a.
-      - reflexivity.
-      - simpl. apply IH. }
-    apply Hgo.
-  Qed.
 
   (** [fold_left (flip f) (rev xs) z = fold_right f z xs]. *)
   Lemma fold_left_rev_right_rs (bs : list G1) (z : G1 * G1) :
@@ -213,23 +176,14 @@ Section BLS12MSMBridge.
       (rev bs) z
     = fold_right (rs_step G1 g1_add) z bs.
   Proof.
-    induction bs as [|b rest IH]; simpl.
+    induction bs as [|b rest IH].
     - reflexivity.
-    - rewrite fold_left_app. simpl. rewrite IH.
+    - change (rev (b :: rest)) with (rev rest ++ [b]).
+      rewrite fold_left_app. rewrite IH.
       reflexivity.
   Qed.
 
-  (** Headline bridge: [reduce_buckets] equals [scaled_sum]. *)
-  Theorem reduce_buckets_eq_scaled_sum (bs : list G1) :
-    reduce_buckets G1 g1_identity g1_add bs
-    = scaled_sum G1 g1_identity g1_add bs.
-  Proof.
-    rewrite reduce_buckets_as_fold.
-    rewrite fold_left_rev_right_rs.
-    rewrite running_fold_snd; auto.
-  Qed.
-
-End BLS12MSMBridge.
+End FoldReshape.
 
 (* =================================================================== *)
 (** * Part 3: bedrock2 [array]-of-points wrapper + update-at lemma.      *)
@@ -266,8 +220,8 @@ Section ArrayOfPoints.
     unfold PointArray.
     etransitivity.
     - apply (array_index_nat_inbounds (default:=default) _ _ xs start n H).
-    - (* bedrock2 returns [A * (P * B)]; we want [(A * P) * B]. *)
-      cancel.
+    - (* bedrock2 returns [A * (P * B)]; our statement has [(A * P) * B]. *)
+      symmetry. apply sep_assoc.
   Qed.
 
   (** If the [n]-th cell was updated in-place, re-merge the array. *)
@@ -281,31 +235,18 @@ Section ArrayOfPoints.
          (PointArray start
             (firstn n xs ++ v' :: skipn (S n) xs)).
   Proof.
-    (* Apply [split_at] to the already-updated list, then rewrite the
-       [firstn/skipn/hd] facts to collapse back to [firstn n xs] /
-       [skipn (S n) xs] / [v'] respectively. *)
-    set (xs' := firstn n xs ++ v' :: skipn (S n) xs).
-    assert (Hfn : length (firstn n xs) = n).
-    { rewrite List.firstn_length. Lia.lia. }
-    assert (Hn' : (n < length xs')%nat).
-    { unfold xs'. rewrite List.app_length. simpl.
-      rewrite List.skipn_length. Lia.lia. }
-    assert (Hfirstn : firstn n xs' = firstn n xs).
-    { unfold xs'. rewrite List.firstn_app, Hfn.
-      replace (n - n)%nat with 0%nat by Lia.lia.
-      rewrite List.firstn_O. rewrite List.app_nil_r.
-      rewrite List.firstn_firstn. rewrite Nat.min_id. reflexivity. }
-    assert (Hskn_full : skipn n xs' = v' :: skipn (S n) xs).
-    { unfold xs'. rewrite List.skipn_app, Hfn.
-      replace (n - n)%nat with 0%nat by Lia.lia.
-      rewrite (List.skipn_all2 (firstn n xs)) by Lia.lia.
-      simpl. reflexivity. }
-    assert (Hskipn : skipn (S n) xs' = skipn (S n) xs).
-    { change (S n) with (1 + n)%nat.
-      rewrite <- List.skipn_skipn. rewrite Hskn_full. reflexivity. }
-    pose proof (PointArray_split_at start xs' n Hn') as Hsplit.
-    rewrite Hfirstn, Hskipn, Hskn_full in Hsplit. simpl hd in Hsplit.
-    symmetry. exact Hsplit.
+    unfold PointArray.
+    symmetry.
+    (* Goal: iff1 (array start (firstn n xs ++ v' :: skipn (S n) xs)) (split_form). *)
+    rewrite array_append.
+    (* The middle offset from [array_append] is
+         start + size * length (firstn n xs).
+       Replace [length (firstn n xs)] with [n] using [n < length xs]. *)
+    replace (length (firstn n xs)) with n
+      by (symmetry; apply firstn_length_le; Lia.lia).
+    rewrite array_cons.
+    (* Now the RHS of [iff1] is [A * (P * B)], while the LHS we want is [(A * P) * B]. *)
+    symmetry. apply sep_assoc.
   Qed.
 
 End ArrayOfPoints.

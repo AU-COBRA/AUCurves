@@ -46,9 +46,14 @@ Program Definition opp_25519 (P : Point) : Point :=
   exist _ (F.opp (fst (proj1_sig P)), snd (proj1_sig P)) _.
 Next Obligation.
   destruct P as [[x y] H]. simpl.
-  (* (-x)^2 = x^2 in any field: (-x)*(-x) = -(x*(-x)) = -(-(x*x)) = x*x *)
-  admit.
-Admitted.
+  (* (-x)*(-x) = x*x in any ring *)
+  pose proof (Hierarchy.field_commutative_ring (field := field_25519)) as Hcr.
+  rewrite (@Algebra.Ring.mul_opp_l _ _ _ _ _ _ _ _ Hcr x (F.opp x)).
+  rewrite (@Algebra.Ring.mul_opp_r _ _ _ _ _ _ _ _ Hcr x x).
+  rewrite (@Hierarchy.Group.inv_inv _ _ _ _
+             (@Hierarchy.Ring.ring_group _ _ _ _ _ _ _ _ Hcr)).
+  exact H.
+Qed.
 
 (** Scalar multiplication via repeated doubling (Z-indexed). *)
 Definition scalar_mul_Z : Z -> Point -> Point :=

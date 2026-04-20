@@ -148,8 +148,8 @@ Section SpecBodies.
                WordByWordMontgomery.valid bw n m (toZ wsout) /\
                (Bignum n pout wsout * Rout)%sep mem' /\
                (eval (from_mont (toZ wsout))) mod m =
-               (((eval (from_mont (toZ wsx))) mod m) *
-                ((eval (from_mont (toZ wsx))) mod m)) mod m).
+               ((eval (from_mont (toZ wsx))) mod m *
+                (eval (from_mont (toZ wsx))) mod m) mod m).
 
   (** UnOp predicate body: opp-style. *)
   Definition unop_opp_body : Semantics.env -> Prop :=

@@ -74,7 +74,7 @@ Section Fp2.
       apply rel_prime_sym, prime_rel_prime; try apply p_prime; intros contra; apply Zdivide_mod in contra; rewrite contra in H1;
       rewrite <- Zmod_0_l with (p) in H1; symmetry in H1; discriminate_incongruence H1. 
     - pose proof p_mod3_eq as H'.
-      assert (p = 4 * (p / 4) + 3) as H2 by (rewrite <- H'; apply Z_div_mod_eq; auto with zarith).
+      assert (p = 4 * (p / 4) + 3) as H2 by (rewrite <- H'; apply Z.div_mod; auto with zarith).
       apply (f_equal (fun y => y - 1)) in H2; remember (2 * (p / 4) + 1) as m eqn:Hm2.
       assert (p - 1 = 2 * m) as Hm; auto with zarith.
       apply (f_equal (fun y => y^m mod p)) in H1; rewrite <- Zpower_mod in H1; rewrite <- Zpower_mod in H1; try lia.
@@ -176,28 +176,30 @@ Section Fp2.
       + apply Z.eqb_neq in eq1; refine (Fp2irr _ _ _ _ _ _); simpl. field. split.
         * intros H1; apply Zerop_iff in H1; contradiction.
         * destruct (val p x2 =? 0) eqn:eq2.
-            (* case x2 is zero *)
-            apply Z.eqb_eq in eq2; apply Zerop_iff in eq2; rewrite eq2.
-            assert ((x1 *p x1 -p (zero p *p zero p) *p β) = (x1 *p x1)) as H0. field. rewrite H0.
-            apply ZpZ_integral_domain; intros contra; apply Zerop_iff in contra; contradiction.
-            (* case x2 is not zero *)
-            intros contra.
-            apply (f_equal (fun x => (x +p x2 *p x2 *p β) /p (x2 *p x2))) in contra.
-            field_simplify in contra; try (apply Z.eqb_neq in eq2; apply Zerop_iff in contra; contradiction).
-            apply beta_is_non_res; exists (x1 /p x2); rewrite <- contra;
-            field; intros contra2; apply Zerop_iff in contra2; apply Z.eqb_neq in eq2; auto.
-        * field. split. intros contra; apply Zerop_iff in contra; contradiction.
-          destruct (val p x2 =? 0) eqn:eq2.
-            (* case x2 is zero *)
+          { (* case x2 is zero *)
             apply Z.eqb_eq in eq2; apply Zerop_iff in eq2; rewrite eq2.
             assert ((x1 *p x1 -p (zero p *p zero p) *p β) = (x1 *p x1)) as H0 by field. rewrite H0.
-            apply ZpZ_integral_domain; intros contra; apply Zerop_iff in contra; contradiction.
-            (* case x2 is not zero *)
+            apply ZpZ_integral_domain; intros contra; apply Zerop_iff in contra; contradiction. }
+          { (* case x2 is not zero *)
             intros contra.
             apply (f_equal (fun x => (x +p x2 *p x2 *p β) /p (x2 *p x2))) in contra.
-            field_simplify in contra; try (apply Z.eqb_neq in eq2; apply Zerop_iff in contra; contradiction).
-            apply beta_is_non_res; exists (x1 /p x2); rewrite <- contra;
-            field; intros contra2; apply Zerop_iff in contra2; apply Z.eqb_neq in eq2; auto.
+            field_simplify in contra;
+              [ apply beta_is_non_res; exists (x1 /p x2); rewrite <- contra;
+                field; intros contra2; apply Zerop_iff in contra2; apply Z.eqb_neq in eq2; auto
+              | intros contra_nz; apply Z.eqb_neq in eq2; apply eq2; apply Zerop_iff; auto .. ]. }
+        * field. split. intros contra; apply Zerop_iff in contra; contradiction.
+          destruct (val p x2 =? 0) eqn:eq2.
+          { (* case x2 is zero *)
+            apply Z.eqb_eq in eq2; apply Zerop_iff in eq2; rewrite eq2.
+            assert ((x1 *p x1 -p (zero p *p zero p) *p β) = (x1 *p x1)) as H0 by field. rewrite H0.
+            apply ZpZ_integral_domain; intros contra; apply Zerop_iff in contra; contradiction. }
+          { (* case x2 is not zero *)
+            intros contra.
+            apply (f_equal (fun x => (x +p x2 *p x2 *p β) /p (x2 *p x2))) in contra.
+            field_simplify in contra;
+              [ apply beta_is_non_res; exists (x1 /p x2); rewrite <- contra;
+                field; intros contra2; apply Zerop_iff in contra2; apply Z.eqb_neq in eq2; auto
+              | intros contra_nz; apply Z.eqb_neq in eq2; apply eq2; apply Zerop_iff; auto .. ]. }
   Defined.
 
   Add Field Fp2 : FFp2.

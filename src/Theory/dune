@@ -8,5 +8,5 @@
  ; -time: per-sentence timing in build output, negligible overhead,
  ;   makes slow sentences immediately visible without re-runs.
  ; Bedrock/Curve/*_prime_certif.v keep native (use native_cast_no_check).
- (flags -native-compiler off -time)
+ (flags -native-compiler off -time -profile-ltac -profile-ltac-cutoff 1)
  (theories Stdlib Crypto Coqprime))

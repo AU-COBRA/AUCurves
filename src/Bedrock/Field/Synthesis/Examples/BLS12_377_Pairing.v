@@ -251,6 +251,10 @@ Section BLS12_377_Pairing.
     Let fp2_mul_fp_name : string := "bls377_Fp2_mul_fp".
     Let make_line_name : string := "bls377_make_line".
     Let fp2_mul_xi_name : string := (fp2_prefix ++ "mul_xi")%string.
+    Let fp6_mul_name : string := AbstractField.mul (F:=Fp6).
+    Let fp6_add_name : string := AbstractField.add (F:=Fp6).
+    Let fp6_mul_fp2_name : string := (fp6_prefix ++ "mul_fp2")%string.
+    Let fp6_mul_by_v_name : string := (fp6_prefix ++ "mul_by_v")%string.
 
     (* ============================================================== *)
     (* Fp2_mul_xi: multiply Fp2 element by xi = u                     *)
@@ -381,6 +385,66 @@ Section BLS12_377_Pairing.
        ))).
 
     Lemma bls377_make_line_ok : program_logic_goal_for_function! bls377_make_line.
+    Proof. exact I. Qed.
+
+    (* ============================================================== *)
+    (* Fp12_mul_by_024: sparse Fp12 × line evaluation                  *)
+    (*   Line is (ell0, ell2, ell4 : Fp2), representing the sparse     *)
+    (*   Fp12 element ((ell0, ell2, 0), (ell4, 0, 0)).                 *)
+    (*   Same formula as bls12_Fp12_mul_by_024; tower structure is     *)
+    (*   identical (both BLS12 variants use Fp6 = Fp2[v]/(v^3 - xi)). *)
+    (* ============================================================== *)
+
+    Local Definition mul_by_024_body_377 : Syntax.cmd.cmd :=
+      cmd_seq_list [
+        (* Construct sparse Fp6 b = (ell0, ell2, 0) in 'b' *)
+        cmd.call [] fp2_copy_name
+          [expr_fp6_c0 (expr.var "b"); expr.var "ell0"];
+        cmd.call [] fp2_copy_name
+          [expr_fp6_c1 (expr.var "b"); expr.var "ell2"];
+        cmd.call [] from_word_name
+          [expr_fp6_c2 (expr.var "b"); expr.literal 0];
+        cmd.call [] from_word_name
+          [expr_fp_snd (expr_fp6_c2 (expr.var "b")); expr.literal 0];
+
+        (* t0 = a.c0 * b *)
+        cmd.call [] fp6_mul_name
+          [expr.var "t0"; expr_fp12_c0 (expr.var "a"); expr.var "b"];
+        (* t1 = Fp6_mul_fp2(a.c1, ell4) *)
+        cmd.call [] fp6_mul_fp2_name
+          [expr.var "t1"; expr_fp12_c1 (expr.var "a"); expr.var "ell4"];
+        (* u = mul_by_v(t1) *)
+        cmd.call [] fp6_mul_by_v_name
+          [expr.var "u"; expr.var "t1"];
+        (* out.c0 = t0 + u *)
+        cmd.call [] fp6_add_name
+          [expr_fp12_c0 (expr.var "out"); expr.var "t0"; expr.var "u"];
+
+        (* t2 = a.c1 * b *)
+        cmd.call [] fp6_mul_name
+          [expr.var "t2"; expr_fp12_c1 (expr.var "a"); expr.var "b"];
+        (* t1 = Fp6_mul_fp2(a.c0, ell4) *)
+        cmd.call [] fp6_mul_fp2_name
+          [expr.var "t1"; expr_fp12_c0 (expr.var "a"); expr.var "ell4"];
+        (* out.c1 = t2 + t1 *)
+        cmd.call [] fp6_add_name
+          [expr_fp12_c1 (expr.var "out"); expr.var "t2"; expr.var "t1"]
+      ].
+
+    Definition bls377_Fp12_mul_by_024 : function_t :=
+      ("bls377_Fp12_mul_by_024",
+       (["out"; "a"; "ell0"; "ell2"; "ell4"], []:list String.string,
+        bedrock_func_body:(
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as b;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as t0;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as t1;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as t2;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as u;
+          coq:(mul_by_024_body_377)
+        ))).
+
+    Lemma bls377_Fp12_mul_by_024_ok :
+      program_logic_goal_for_function! bls377_Fp12_mul_by_024.
     Proof. exact I. Qed.
 
     (* ============================================================== *)

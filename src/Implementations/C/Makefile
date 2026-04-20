@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -std=c11 -O2 -Wall -Wno-implicit-function-declaration -Wno-unused-function
-CFLAGS_BENCH = -std=c11 -O3 -march=native -Wall -Wno-implicit-function-declaration -Wno-unused-function
+CFLAGS_BENCH = -std=c11 -O3 -march=native -flto -Wall -Wno-implicit-function-declaration -Wno-unused-function
 LDFLAGS = -z noexecstack
 
 # Extracted C code from verified bedrock2 implementation.

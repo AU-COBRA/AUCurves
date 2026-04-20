@@ -21,7 +21,7 @@ From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import Ring_theory Ring.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS24Pairing.Tower.
+Require Import Bedrock.Spec.BLS24Pairing.Tower.
 Require Import Bedrock.Specs.AbstractField.
 Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensionsAbstract.
 Require Import Bedrock.Field.FieldExtensions.Theory.CubicExtensionsAbstract.

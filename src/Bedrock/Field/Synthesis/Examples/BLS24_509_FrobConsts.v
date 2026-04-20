@@ -8,7 +8,7 @@
 
 From Coq Require Import ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS24Pairing.Tower.
+Require Import Bedrock.Spec.BLS24Pairing.Tower.
 Require Import Bedrock.Field.Synthesis.Examples.bls24_509_prime.
 
 Local Open Scope Z_scope.

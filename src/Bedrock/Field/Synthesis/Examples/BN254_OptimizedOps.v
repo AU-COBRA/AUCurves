@@ -115,7 +115,7 @@ Definition bn254_fp12_cyc_sqr : ft :=
      cmd.call [] a2 [(cp 1 2 (expr.var "out")); expr.var "t"; (cp 1 2 (expr.var "x"))]
    ]))))))))).
 
-Require Import Crypto.Bedrock.Jasmin.Core.
+Require Import Bedrock.Jasmin.Core.
 
 Definition bn254_opt_funcs : list ft :=
   [ bn254_fp12_mul_line; bn254_fp12_cyc_sqr ].

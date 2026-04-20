@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh
 #
 # Build the BN254 leaf object library.
 #
@@ -19,6 +19,10 @@
 #
 # No build.rs Rust code. No objcopy. No symbol surgery.
 # Each step is one tool invocation that a reviewer can read in 30 seconds.
+
+# Fail on the first error. Note: relying on the shebang -e flag is unreliable
+# (sh build.sh bypasses the shebang flags), so we set it explicitly here.
+set -e
 
 OUT_DIR="${OUT_DIR:-$PWD/generated/build}"
 mkdir -p "$OUT_DIR"

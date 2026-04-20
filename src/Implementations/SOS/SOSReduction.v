@@ -154,11 +154,15 @@ Module WordByWordMontgomery.
         Local Lemma r_big : r > 1.
         Proof using lgr_big. clear -lgr_big; subst r. auto with zarith. Qed.
         Local Notation wprops := (@uwprops lgr lgr_big).
-
+        #[warnings="-fragile-hint-constr"]
         Local Hint Immediate (wprops) : core.
+        #[warnings="-fragile-hint-constr"]
         Local Hint Immediate (weight_0 wprops) : core.
+        #[warnings="-fragile-hint-constr"]
         Local Hint Immediate (weight_positive wprops) : core.
+        #[warnings="-fragile-hint-constr"]
         Local Hint Immediate (weight_multiples wprops) : core.
+        #[warnings="-fragile-hint-constr"]
         Local Hint Immediate (weight_divides wprops) : core.
         Local Hint Immediate r_big : core.
 
@@ -254,7 +258,7 @@ Module WordByWordMontgomery.
           rewrite H2; rewrite app_nil_r; auto.
         - intros x l H2; unfold eval. rewrite app_length. simpl. rewrite Nat.add_1_r.
           assert (H3 : v1 ++ l ++ [x] = (v1 ++ l) ++ [x]) by apply app_assoc. rewrite H3.
-          rewrite NPeano.Nat.add_succ_r.
+          rewrite Nat.add_succ_r.
           rewrite Positional.eval_snoc_S; [| rewrite app_length; auto].
           rewrite Positional.eval_snoc_S; try auto.
           unfold eval in H2. rewrite H2.
@@ -371,8 +375,6 @@ Module WordByWordMontgomery.
           { rewrite (surjective_pairing (Rows.mul _ _ _ _ _ _)).
             rewrite Rows.mul_partitions by (try rewrite Hsmall; auto using length_partition, Positional.length_extend_to_length with lia).
             autorewrite with push_eval.
-            rewrite Positional.eval_cons by reflexivity.
-            rewrite weight_0 by auto.
             autorewrite with push_eval zsimplify_fast.
             split; [reflexivity | ].
             rewrite uweight_S, uweight_eq_alt by lia.
@@ -582,7 +584,7 @@ Module WordByWordMontgomery.
 
     Lemma nat_sub: forall x y, (S x <= y)%nat -> S (y - S x) = (y - x)%nat.
     Proof.
-       intros. rewrite <- Nat.sub_succ_l. rewrite NPeano.Nat.sub_succ; auto. auto. Qed.
+       intros. rewrite <- Nat.sub_succ_l. rewrite Nat.sub_succ; auto. auto. Qed.
 
     Lemma extend_app: forall n1 n2 v, Positional.extend_to_length (n1) (n1 + n2) v = (v ++ (Positional.zeros n2)).
     Proof.
@@ -607,7 +609,7 @@ Module WordByWordMontgomery.
     Lemma weight_geq: forall n1 n2, ((weight n1) <= (weight (n1 + n2)))%Z.
     Proof. intros n1. induction n2 as [| n2 IHn2].
       - simpl. rewrite Nat.add_0_r. lia.
-      - rewrite NPeano.Nat.add_succ_r. simpl. pose proof wprops.
+      - rewrite Nat.add_succ_r. simpl. pose proof wprops.
         destruct H. assert ((weight (n1 + n2) <= (weight (S (n1 + n2))))%Z).
           + unfold weight. unfold ModOps.weight. repeat rewrite Z.div_1_r.
             repeat rewrite Z.opp_involutive. auto with zarith.
@@ -626,9 +628,9 @@ Module WordByWordMontgomery.
       induction n2 as [| n2 IHn2].
       - intros v H. rewrite Nat.add_0_r. simpl. unfold Positional.zeros. simpl.
         rewrite <- H. rewrite app_nil_r. auto.
-      - intros v H. rewrite NPeano.Nat.add_succ_r.
+      - intros v H. rewrite Nat.add_succ_r.
         rewrite Partition.partition_step. rewrite Z.mod_small;
-        [| pose proof (small_bound H); pose proof (weight_geq n1 (S n2)); rewrite <- NPeano.Nat.add_succ_r; lia].
+        [| pose proof (small_bound H); pose proof (weight_geq n1 (S n2)); rewrite <- Nat.add_succ_r; lia].
         rewrite Z.div_small;
         [| pose proof (small_bound H); pose proof (weight_geq n1 n2); lia].
         rewrite IHn2; auto. rewrite zeros_S.
@@ -873,10 +875,9 @@ Module WordByWordMontgomery.
           - apply Z.ltb_lt in eq1. rewrite (Zdiv_small _ (weight _)).
             + rewrite Z.mul_0_r. rewrite Z.sub_0_r. rewrite weight_value in eq1. rewrite Nat2Z.inj_succ in eq1.
               rewrite Z.pow_succ_r in eq1; try lia.
-              apply div_bound_aux; try apply Z.mul_pos_pos; try lia;
-              [unfold r; rewrite <- Z.pow_mul_r; auto with zarith|].
+              apply div_bound_aux; [apply Z.mul_pos_pos; [lia | unfold r; rewrite <- Z.pow_mul_r; auto with zarith] |].
               apply small_bound in Hq. rewrite weight_value in Hq. rewrite Nat2Z.inj_succ in Hq. rewrite Z.pow_succ_r in Hq; try lia.
-              apply lt_S_n in H''.
+              apply Nat.succ_lt_mono in H''.
               assert (r * r ^ (Z.of_nat R_numlimbs) <= r * r ^ (Z.of_nat n)) by
               (apply Z.mul_le_mono_pos_l; try lia; apply Zpow_facts.Zpower_le_monotone; try lia).
               lia.
@@ -888,7 +889,8 @@ Module WordByWordMontgomery.
               + apply Z.le_antisymm.
                 * apply small_carry; auto; lia.
                 * assert (1 = 0 + 1) by auto. rewrite H0.
-                  apply Ztac.Zlt_le_add_1. apply Z.div_str_pos. apply Z.nlt_ge in eq1.
+                  assert (Hlt_le_add : forall n0 m0 : Z, n0 < m0 -> n0 + 1 <= m0) by lia.
+                  apply Hlt_le_add. apply Z.div_str_pos. apply Z.nlt_ge in eq1.
                   split; try lia. apply wprops.
               + rewrite H0. pose proof (small_bound Hq) as H1. rewrite Z.add_1_r.
                 apply Z.le_succ_r; left. apply div_monot;
@@ -986,19 +988,17 @@ Module WordByWordMontgomery.
         induction count as [| count IHcount].
           - intros. unfold red_loop. simpl. rewrite Nat.add_0_r in H. auto.
           - intros. rewrite red_loop_next. apply (IHcount); try rewrite length_red_body; auto with zarith. apply small_red_body; auto; try lia.
-            repeat rewrite <- Nat.add_succ_comm. rewrite NPeano.Nat.add_succ_l.
-            repeat rewrite <- Nat.add_succ_comm in H. rewrite NPeano.Nat.add_succ_l in H.
+            repeat rewrite <- Nat.add_succ_comm. rewrite Nat.add_succ_l.
+            repeat rewrite <- Nat.add_succ_comm in H. rewrite Nat.add_succ_l in H.
             auto.
       Qed.
 
       Lemma length_red_loop: forall init count A, (R_numlimbs <= init)%nat -> (length A = init + count + 1)%nat -> length (red_loop init count A) = (init + 1)%nat.
       Proof. clear A_big.
       intros init count A. generalize dependent A. generalize dependent init. induction count as [| count IHcount].
-        - intros. unfold red_loop. simpl. auto with zarith.
-        - intros init A H H0.  rewrite red_loop_next'. rewrite length_red_body; auto with zarith.
-          + rewrite (IHcount (S init)). auto. auto with zarith. lia.
-          + rewrite <- Nat.add_succ_comm. lia.
-      Qed. 
+        - intros. unfold red_loop. simpl. rewrite Nat.add_0_r in H0. auto.
+        - intros init A H H0. rewrite red_loop_next. apply (IHcount); try rewrite length_red_body; auto with zarith.
+      Qed.
 
     End red_loop_proofs.
 
@@ -1139,7 +1139,7 @@ Module WordByWordMontgomery.
                 rewrite H. rewrite <- HeqA''. unfold red_body.
                 pose proof (red_body_bounds (R_numlimbs + R_numlimbs - it) A'').
                 rewrite Nat.add_1_r. assert (R_numlimbs + R_numlimbs - S it = Nat.pred (R_numlimbs + R_numlimbs - it))%nat by auto with zarith.
-                rewrite H1. rewrite NPeano.Nat.succ_pred_pos; try lia.
+                rewrite H1. rewrite Nat.succ_pred_pos; try lia.
                 rewrite Nat.add_1_r. apply H0; auto; try lia.
                 - pose proof (length_small small_N).
                   rewrite HeqA''. assert (0 <= eval N < r ^ Z.of_nat R_numlimbs) by auto.
@@ -1196,11 +1196,9 @@ Module WordByWordMontgomery.
               repeat rewrite weight_value.
               assert (Z.of_nat it + 1 <= r - 1); try lia. 
               assert (H9 : (Z.of_nat it + 1) * r ^ Z.of_nat (R_numlimbs + R_numlimbs - it) <= (r - 1) * r ^ Z.of_nat ((R_numlimbs + R_numlimbs - it))).
-              {
-                apply Z.mul_le_mono_nonneg_r; try lia. assert (H9 : (O < R_numlimbs + R_numlimbs - it)%nat) by lia.
-                unfold r. rewrite <- Z.pow_mul_r; try lia.
-                apply Pow2.Z.pow2_ge_0.
-              }
+              { apply Z.mul_le_mono_nonneg_r; try lia;
+                unfold r; rewrite <- Z.pow_mul_r; try lia;
+                apply Pow2.Z.pow2_ge_0. }
               assert (H10 : r ^ Z.of_nat (S R_numlimbs) <= r ^ Z.of_nat (R_numlimbs + R_numlimbs - it)).
               {
                 pose proof (Z.pow_le_mono_r r (Z.of_nat (S R_numlimbs)) (Z.of_nat (R_numlimbs + R_numlimbs - it))) as H10.

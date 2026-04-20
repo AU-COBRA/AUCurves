@@ -5531,10 +5531,86 @@ Section PippengerSpec.
         split; [exact Hlen_bz'|].
         split; [exact Hoinv'|].
         (* Sep closure: Hm_a has [FElem (Some tight) run/ws]; invariant
-           has [FElem None run/ws].  Need to apply [drop_bounds_FElem] 6
-           times under the sep context.  Plus 17 locals lookups + trace
-           equality.  Tedious mechanical; left admitted. *)
-        admit.
+           has [FElem None run/ws].  Weaken via [drop_bounds_FElem] 6
+           times under [Proper_sep_impl1].  Plus 17 locals lookups +
+           trace equality. *)
+        destruct out1 as [[O1x O1y] O1z]. cbv iota beta in Hm_a. cbv iota beta.
+        (* Build the None-bounds weakening of Hm_a. *)
+        assert (Hm_a_weak :
+          (FElem (Some tight_bounds) outx O1x ⋆ FElem (Some tight_bounds) outy O1y
+           ⋆ FElem (Some tight_bounds) outz O1z
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x'
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y'
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z'
+           ⋆ FElem None a_rx r1x ⋆ FElem None a_ry r1y ⋆ FElem None a_rz r1z
+           ⋆ FElem None a_wx w1x ⋆ FElem None a_wy w1y ⋆ FElem None a_wz w1z
+           ⋆ ScalarsArray scalars_p scalars ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R) m_a).
+        { (* Build the impl1 separately, then apply to Hm_a. *)
+          assert (HfullImpl :
+            Lift1Prop.impl1
+              (FElem (Some tight_bounds) outx O1x ⋆ FElem (Some tight_bounds) outy O1y
+               ⋆ FElem (Some tight_bounds) outz O1z
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x'
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y'
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z'
+               ⋆ FElem (Some tight_bounds) a_rx r1x
+               ⋆ FElem (Some tight_bounds) a_ry r1y
+               ⋆ FElem (Some tight_bounds) a_rz r1z
+               ⋆ FElem (Some tight_bounds) a_wx w1x
+               ⋆ FElem (Some tight_bounds) a_wy w1y
+               ⋆ FElem (Some tight_bounds) a_wz w1z
+               ⋆ ScalarsArray scalars_p scalars
+               ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)
+              (FElem (Some tight_bounds) outx O1x ⋆ FElem (Some tight_bounds) outy O1y
+               ⋆ FElem (Some tight_bounds) outz O1z
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x'
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y'
+               ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z'
+               ⋆ FElem None a_rx r1x ⋆ FElem None a_ry r1y ⋆ FElem None a_rz r1z
+               ⋆ FElem None a_wx w1x ⋆ FElem None a_wy w1y ⋆ FElem None a_wz w1z
+               ⋆ ScalarsArray scalars_p scalars
+               ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)).
+          { (* sep is LEFT-associative, so Proper_sep_impl1 splits off the
+               RIGHTMOST term first.  Peel: R, G1, SA, wz, wy, wx, rz, ry,
+               rx, bz, by, bx, outz, outy; final = outx via reflexivity. *)
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|apply Compilation2.drop_bounds_FElem].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            apply Proper_sep_impl1; [|reflexivity].
+            reflexivity. }
+          apply HfullImpl; exact Hm_a. }
+        split.
+        { exact Hm_a_weak. }
+        (* 17 locals lookups + trace equality. *)
+        split; [exact Hl_outx'|].
+        split; [exact Hl_outy'|].
+        split; [exact Hl_outz'|].
+        split; [exact Hl_bx'|].
+        split; [exact Hl_by'|].
+        split; [exact Hl_bz'|].
+        split; [exact Hl_rx'|].
+        split; [exact Hl_ry'|].
+        split; [exact Hl_rz'|].
+        split; [exact Hl_wx'|].
+        split; [exact Hl_wy'|].
+        split; [exact Hl_wz'|].
+        split; [exact Hl_sc'|].
+        split; [exact Hl_px'|].
+        split; [exact Hl_py'|].
+        split; [exact Hl_pz'|].
+        split; [exact Hl_n'|].
+        split; [exact Hl_w'|].
+        reflexivity.
       - (* FALSE branch: v = 0, close the outer while's post.  Steps:
            1. v = 0, so outer_inv 0 out = (out = PM num_windows identity ss ps).
            2. Apply [msm_pippenger_as_partial_msm_from] to get

@@ -1250,6 +1250,55 @@ Section PippengerSpec.
       split; [ exact Hsp | split; [ exact Hx0 | exact Hxs ] ].
   Qed.
 
+  (** Converse of [anybytes_to_felem_array]: an [array (FElem None)] at
+      [p] of any length collapses back to an [anybytes] block.  Used by
+      the post-loop dealloc chain to reclaim the 3 bucket arrays. *)
+  Lemma felem_array_to_anybytes :
+    forall (p : word) (xs : list F) (m : mem),
+      array (FElem None) (word.of_Z felem_size_in_bytes) p xs m ->
+      Memory.anybytes p (Z.of_nat (Datatypes.length xs) * felem_size_in_bytes) m.
+  Proof.
+    Existing Instance Compilation2.felem_alloc.
+    intros p xs; revert p; induction xs; intros p m Hm;
+      cbn [array Datatypes.length].
+    - unfold emp in Hm. destruct Hm as [Heq _]. subst m.
+      change (Z.of_nat 0 * felem_size_in_bytes) with 0.
+      exists nil. split; [|split].
+      + rewrite OfListWord.map.of_list_word_nil. reflexivity.
+      + reflexivity.
+      + cbn. apply Z.pow_nonneg. Lia.lia.
+    - destruct Hm as (m1 & m2 & Hsp & Hfe & Hrest).
+      pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc) p a _ Hfe)
+        as Hany1.
+      cbn in Hany1.
+      specialize (IHxs _ _ Hrest).
+      destruct (anybytes_to_array_1 _ _ _ Hany1) as [bs1 [Ha1 Hlen1]].
+      destruct (anybytes_to_array_1 _ _ _ IHxs) as [bs2 [Ha2 Hlen2]].
+      assert (Hm_merge : array ptsto (word.of_Z 1) p (bs1 ++ bs2) m).
+      { apply array_append. do 2 eexists.
+        split; [exact Hsp|]. split; [exact Ha1|].
+        replace (word.add p (word.of_Z
+                  (word.unsigned (word.of_Z 1) * Z.of_nat (Datatypes.length bs1))))
+           with (word.add p (word.of_Z felem_size_in_bytes)); [exact Ha2|].
+        f_equal. rewrite Hlen1.
+        rewrite word.unsigned_of_Z_1. rewrite Z.mul_1_l.
+        change size_in_bytes with felem_size_in_bytes.
+        rewrite Z2Nat.id; [reflexivity|].
+        unfold felem_size_in_bytes.
+        pose proof Types.word_size_in_bytes_pos (width:=width). Lia.nia. }
+      apply array_1_to_anybytes in Hm_merge.
+      rewrite app_length, Hlen1, Hlen2 in Hm_merge.
+      replace (Z.of_nat (Z.to_nat size_in_bytes
+                         + Z.to_nat (Z.of_nat (Datatypes.length xs)
+                                     * felem_size_in_bytes)))
+         with (Z.of_nat (S (Datatypes.length xs)) * felem_size_in_bytes)
+         in Hm_merge.
+      + exact Hm_merge.
+      + change size_in_bytes with felem_size_in_bytes.
+        unfold felem_size_in_bytes.
+        pose proof Types.word_size_in_bytes_pos (width:=width). Lia.nia.
+  Qed.
+
   (* =================================================================== *)
   (** ** Sub-loop leaves — load-bearing decomposition of prelude_wp.      *)
   (*                                                                      *)
@@ -5625,7 +5674,197 @@ Section PippengerSpec.
            6. Final sep: [FElem (Some tight_bounds) outx/y/z *
                           ScalarsArray * G1Array3 * R] m' — Hm1 supplies
               this plus the now-discarded run/ws + buckets sep. *)
-        admit.
+        intros Hbr.
+        (* Step 1: [word.unsigned (word.of_Z v) = 0] with v <= num_windows = 29
+           forces v = 0 (29 fits in both 32-bit and 64-bit word space). *)
+        assert (Hnws : Z.to_nat num_windows = 29%nat) by reflexivity.
+        assert (Hv0 : v = 0%nat).
+        { destruct v as [|n']; [reflexivity|].
+          exfalso.
+          pose proof width_cases as Hwc.
+          rewrite word.unsigned_of_Z in Hbr. unfold word.wrap in Hbr.
+          destruct Hwc as [Hw|Hw]; rewrite Hw in Hbr;
+            rewrite Z.mod_small in Hbr; Lia.lia. }
+        subst v.
+        (* Step 2: Unfold outer_inv, simplify, apply msm_pippenger_as_partial_msm_from. *)
+        unfold outer_inv in Hoinv.
+        change (Z.to_nat (Z.of_nat 0)) with 0%nat in Hoinv.
+        rewrite partial_msm_from_zero in Hoinv.
+        assert (Hnw_pos : (0 < Z.to_nat num_windows)%nat)
+          by (rewrite Hnws; Lia.lia).
+        rewrite <- (msm_pippenger_as_partial_msm_from _ _ Hnw_pos) in Hoinv.
+        destruct out as [[Ox Oy] Oz]; cbv iota beta in Hm1.
+        (* Step 3: 9 deallocations in reverse alloc order (wz..bx).
+           Each peel: [use_sep_assumption; cancel] rearranges Hm1/the running
+           rest-sep to put the current dealloc target at the head; destruct
+           the sep into (cell memory, rest); convert cell → anybytes via
+           [P_to_bytes] (felems) or [felem_array_to_anybytes] (buckets);
+           witness (rest, cell) for the stackalloc obligation. *)
+        (* ---- Peel wz ---- *)
+        assert (Hmp0 : (FElem None a_wz wz ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ FElem None a_rx rx ⋆ FElem None a_ry ry ⋆ FElem None a_rz rz
+           ⋆ FElem None a_wx wx ⋆ FElem None a_wy wy
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m1)
+          by (use_sep_assumption; cancel).
+        destruct Hmp0 as (m_wz & m0 & Hspl0 & Hfe_wz' & Hr0).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_wz wz _ Hfe_wz') as Hany_wz'.
+        cbn in Hany_wz'.
+        exists m0, m_wz.
+        split; [exact Hany_wz'|].
+        split; [apply map.split_comm; exact Hspl0|].
+        (* ---- Peel wy ---- *)
+        assert (Hmp1 : (FElem None a_wy wy ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ FElem None a_rx rx ⋆ FElem None a_ry ry ⋆ FElem None a_rz rz
+           ⋆ FElem None a_wx wx
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m0)
+          by (use_sep_assumption; cancel).
+        destruct Hmp1 as (m_wy & m1_rest & Hspl1 & Hfe_wy' & Hr1).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_wy wy _ Hfe_wy') as Hany_wy'.
+        cbn in Hany_wy'.
+        exists m1_rest, m_wy.
+        split; [exact Hany_wy'|].
+        split; [apply map.split_comm; exact Hspl1|].
+        (* ---- Peel wx ---- *)
+        assert (Hmp2 : (FElem None a_wx wx ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ FElem None a_rx rx ⋆ FElem None a_ry ry ⋆ FElem None a_rz rz
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m1_rest)
+          by (use_sep_assumption; cancel).
+        destruct Hmp2 as (m_wx & m2' & Hspl2 & Hfe_wx' & Hr2).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_wx wx _ Hfe_wx') as Hany_wx'.
+        cbn in Hany_wx'.
+        exists m2', m_wx.
+        split; [exact Hany_wx'|].
+        split; [apply map.split_comm; exact Hspl2|].
+        (* ---- Peel rz ---- *)
+        assert (Hmp3 : (FElem None a_rz rz ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ FElem None a_rx rx ⋆ FElem None a_ry ry
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m2')
+          by (use_sep_assumption; cancel).
+        destruct Hmp3 as (m_rz & m3' & Hspl3 & Hfe_rz' & Hr3).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_rz rz _ Hfe_rz') as Hany_rz'.
+        cbn in Hany_rz'.
+        exists m3', m_rz.
+        split; [exact Hany_rz'|].
+        split; [apply map.split_comm; exact Hspl3|].
+        (* ---- Peel ry ---- *)
+        assert (Hmp4 : (FElem None a_ry ry ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ FElem None a_rx rx
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m3')
+          by (use_sep_assumption; cancel).
+        destruct Hmp4 as (m_ry & m4' & Hspl4 & Hfe_ry' & Hr4).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_ry ry _ Hfe_ry') as Hany_ry'.
+        cbn in Hany_ry'.
+        exists m4', m_ry.
+        split; [exact Hany_ry'|].
+        split; [apply map.split_comm; exact Hspl4|].
+        (* ---- Peel rx ---- *)
+        assert (Hmp5 : (FElem None a_rx rx ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m4')
+          by (use_sep_assumption; cancel).
+        destruct Hmp5 as (m_rx & m5' & Hspl5 & Hfe_rx' & Hr5).
+        pose proof (P_to_bytes (Allocable:=Compilation2.felem_alloc)
+                      a_rx rx _ Hfe_rx') as Hany_rx'.
+        cbn in Hany_rx'.
+        exists m5', m_rx.
+        split; [exact Hany_rx'|].
+        split; [apply map.split_comm; exact Hspl5|].
+        (* ---- Peel bz (bucket array) ---- *)
+        assert (Hmp6 : (array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m5')
+          by (use_sep_assumption; cancel).
+        destruct Hmp6 as (m_bz & m6' & Hspl6 & Harr_bz' & Hr6).
+        apply felem_array_to_anybytes in Harr_bz'.
+        replace (Z.of_nat (Datatypes.length bs_z) * felem_size_in_bytes)
+           with ((2 ^ 9 - 1) * felem_size_in_bytes) in Harr_bz'
+           by (rewrite Hlen_bz; reflexivity).
+        exists m6', m_bz.
+        split; [exact Harr_bz'|].
+        split; [apply map.split_comm; exact Hspl6|].
+        (* ---- Peel by ---- *)
+        assert (Hmp7 : (array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m6')
+          by (use_sep_assumption; cancel).
+        destruct Hmp7 as (m_by & m7' & Hspl7 & Harr_by' & Hr7).
+        apply felem_array_to_anybytes in Harr_by'.
+        replace (Z.of_nat (Datatypes.length bs_y) * felem_size_in_bytes)
+           with ((2 ^ 9 - 1) * felem_size_in_bytes) in Harr_by'
+           by (rewrite Hlen_by; reflexivity).
+        exists m7', m_by.
+        split; [exact Harr_by'|].
+        split; [apply map.split_comm; exact Hspl7|].
+        (* ---- Peel bx ---- *)
+        assert (Hmp8 : (array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x ⋆
+          (FElem (Some tight_bounds) outx Ox ⋆ FElem (Some tight_bounds) outy Oy
+           ⋆ FElem (Some tight_bounds) outz Oz
+           ⋆ ScalarsArray scalars_p scalars
+           ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R)) m7')
+          by (use_sep_assumption; cancel).
+        destruct Hmp8 as (m_bx & m8' & Hspl8 & Harr_bx' & Hr8).
+        apply felem_array_to_anybytes in Harr_bx'.
+        replace (Z.of_nat (Datatypes.length bs_x) * felem_size_in_bytes)
+           with ((2 ^ 9 - 1) * felem_size_in_bytes) in Harr_bx'
+           by (rewrite Hlen_bx; reflexivity).
+        exists m8', m_bx.
+        split; [exact Harr_bx'|].
+        split; [apply map.split_comm; exact Hspl8|].
+        (* Steps 4-6: close the final post. *)
+        exists nil.
+        split; [reflexivity|].
+        split; [reflexivity|].
+        split; [reflexivity|].
+        exists Ox, Oy, Oz.
+        split; [unfold mk_point; exact Hoinv|].
+        use_sep_assumption; cancel.
     }
     (* Remaining obligations: outer while + 9 deallocs + postcondition.
 
@@ -5669,7 +5908,7 @@ Section PippengerSpec.
        ([msm_bls12_outer_body_wp], [msm_pippenger_as_partial_msm_from],
        [outer_inv], [P_to_bytes]) are already [Qed], so the body is
        pure composition work with no new lemmas required. *)
-  Admitted.
+  Qed.
 
   (** [msm_bls12_exec_correct] now follows by applying                     *)
   (** [msm_bls12_prelude_wp] directly (its postcondition matches).          *)

@@ -1227,11 +1227,12 @@ Section PippengerSpec.
             rewrite word.unsigned_sub.
             rewrite !word.unsigned_of_Z.
             cbv [word.wrap].
-            assert (Hv_bd : Z.of_nat v <= 9).
+            assert (Hv_bd : Z.of_nat v <= c).
             { assert (Hle : (Z.of_nat v <= Z.of_nat (Z.to_nat c))%Z) by
                 (apply Nat2Z.inj_le; exact Hvle).
               rewrite Z2Nat.id in Hle by (cbv; discriminate).
-              unfold c in Hle. exact Hle. }
+              exact Hle. }
+            assert (Hc_compute : c < 2 ^ 32) by (vm_compute; reflexivity).
             assert (H2w_big : 2 ^ 32 <= 2 ^ width).
             { apply Z.pow_le_mono_r; [Lia.lia|].
               pose proof width_cases as Hwc.
@@ -1255,11 +1256,12 @@ Section PippengerSpec.
         assert (Hv0 : v = 0%nat).
         { rewrite word.unsigned_of_Z in Heq.
           cbv [word.wrap] in Heq.
-          assert (Hv_bd : Z.of_nat v <= 9).
+          assert (Hv_bd : Z.of_nat v <= c).
           { assert (Hle : (Z.of_nat v <= Z.of_nat (Z.to_nat c))%Z) by
               (apply Nat2Z.inj_le; exact Hvle).
             rewrite Z2Nat.id in Hle by (cbv; discriminate).
-            unfold c in Hle. exact Hle. }
+            exact Hle. }
+          assert (Hc_compute : c < 2 ^ 32) by (vm_compute; reflexivity).
           assert (H2w_big : 2 ^ 32 <= 2 ^ width).
           { apply Z.pow_le_mono_r; [Lia.lia|].
             pose proof width_cases as Hwc.
@@ -1560,7 +1562,8 @@ Section PippengerSpec.
       destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
     assert (H2w_pos : 0 < 2 ^ width).
     { pose proof word.width_pos; apply Z.pow_pos_nonneg; Lia.lia. }
-    assert (Hnb_val : num_buckets = 511) by reflexivity.
+    assert (Hnb_val : num_buckets = 2 ^ c - 1) by reflexivity.
+    assert (Hnb_compute : num_buckets < 2 ^ 32) by (vm_compute; reflexivity).
     assert (Hnb_small : num_buckets < 2 ^ width) by Lia.lia.
     pose proof felem_size_ok as Hfs_le.
     (* Name the identity triple.  Use [remember]-like pattern with explicit
@@ -1649,9 +1652,8 @@ Section PippengerSpec.
         destruct vi as [|n]; [Lia.lia|].
         (* Bounds on Z.of_nat (S n). *)
         assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
-        { assert (HSn_le : Z.of_nat (S n) <= 511).
-          { rewrite <- Hnb_val. rewrite <- (Z2Nat.id num_buckets)
-              by (cbv; discriminate).
+        { assert (HSn_le : Z.of_nat (S n) <= num_buckets).
+          { rewrite <- (Z2Nat.id num_buckets) by (cbv; discriminate).
             apply Nat2Z.inj_le. exact Hvi_le. }
           Lia.lia. }
         assert (Hn_small : Z.of_nat n < 2 ^ width).
@@ -1906,9 +1908,8 @@ Section PippengerSpec.
         { destruct vi as [|n]; [reflexivity|].
           exfalso.
           assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
-          { assert (HSn_le : Z.of_nat (S n) <= 511).
-            { rewrite <- Hnb_val. rewrite <- (Z2Nat.id num_buckets)
-                by (cbv; discriminate).
+          { assert (HSn_le : Z.of_nat (S n) <= num_buckets).
+            { rewrite <- (Z2Nat.id num_buckets) by (cbv; discriminate).
               apply Nat2Z.inj_le. exact Hvi_le. }
             Lia.lia. }
           rewrite Hiw_val in Hbr. rewrite Nat2Z.inj_succ in Hbr. Lia.lia. }
@@ -2759,9 +2760,10 @@ Section PippengerSpec.
     assert (H2w : 2 ^ 32 <= 2 ^ width).
     { apply Z.pow_le_mono_r; [Lia.lia|].
       destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
-    assert (Hnb : num_buckets = 511) by reflexivity.
-    assert (Hv_le : Z.of_nat v <= 511).
-    { rewrite <- Hnb. rewrite <- (Z2Nat.id num_buckets) by (cbv; discriminate).
+    assert (Hnb : num_buckets = 2 ^ c - 1) by reflexivity.
+    assert (Hnb_compute : num_buckets < 2 ^ 32) by (vm_compute; reflexivity).
+    assert (Hv_le : Z.of_nat v <= num_buckets).
+    { rewrite <- (Z2Nat.id num_buckets) by (cbv; discriminate).
       apply Nat2Z.inj_le. exact Hle. }
     Lia.lia.
   Qed.
@@ -2922,7 +2924,8 @@ Section PippengerSpec.
       destruct Hwc as [Hw|Hw]; rewrite Hw; Lia.lia. }
     assert (H2w_pos : 0 < 2 ^ width).
     { pose proof word.width_pos; apply Z.pow_pos_nonneg; Lia.lia. }
-    assert (Hnb_val : num_buckets = 511) by reflexivity.
+    assert (Hnb_val : num_buckets = 2 ^ c - 1) by reflexivity.
+    assert (Hnb_compute : num_buckets < 2 ^ 32) by (vm_compute; reflexivity).
     assert (Hnb_small : num_buckets < 2 ^ width) by Lia.lia.
     (* felem_size_in_bytes bound.  For the BLS12-381 instance this is
        [48]; the [felem_size_ok] assumption gives [<= 2^width], which is

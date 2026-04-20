@@ -5417,11 +5417,50 @@ Section PippengerSpec.
           map.get l "n" = Some n_w /\
           map.get l "w" = Some (word.of_Z (Z.of_nat v)) /\
           tr = tr').
-    (* Outer-while composition via [Loops.while_localsmap].  Body step
-       cites [msm_bls12_outer_body_wp] (Qed); exit cites
-       [msm_pippenger_as_partial_msm_from] (Qed); 9 deallocs via
-       [P_to_bytes] in reverse allocation order. *)
-    clear inv_outer.  (* placeholder — concrete application deferred *)
+    (* Outer-while composition via [Loops.while_localsmap].  Initial
+       measure = [Z.to_nat num_windows], well-founded by [Nat.lt_wf_0]. *)
+    eapply (Loops.while_localsmap (measure:=nat) inv_outer Nat.lt_wf_0
+                                  (Z.to_nat num_windows)).
+    { (* Entry: measure = Z.to_nat num_windows, out = g1_identity,
+         buckets = the freshly-allocated lists, run/ws at the initial
+         values written by store_zero (any — the invariant quantifies
+         them existentially). *)
+      subst inv_outer; cbv beta.
+      exists (Xi, Yi, Zi).
+      exists bs_x_init, bs_y_init, bs_z_init.
+      (* The 6 run/ws cell values are whatever HStoreZero wrote (R/W
+         init-values).  Since the invariant carries them existentially
+         as "None bounds", any F works — pick the current witnesses. *)
+      exists RX0_init, RY0_init, RZ0_init, WX0_init, WY0_init, WZ0_init.
+      split; [Lia.lia|].
+      split; [rewrite Hlen_bx_init;
+              rewrite Z2Nat.id by (vm_compute; discriminate); reflexivity|].
+      split; [rewrite Hlen_by_init;
+              rewrite Z2Nat.id by (vm_compute; discriminate); reflexivity|].
+      split; [rewrite Hlen_bz_init;
+              rewrite Z2Nat.id by (vm_compute; discriminate); reflexivity|].
+      split.
+      { (* outer_inv num_windows g1_identity = (PM num_windows id = PM num_windows id). *)
+        unfold outer_inv. rewrite HgId. rewrite Nat2Z.id. reflexivity. }
+      split.
+      { (* Memory sep: the current Hm' has exactly the shape we need
+           after Jacobian identity components are exposed. *)
+        admit. }
+      (* 17 locals lookups. *)
+      repeat match goal with
+        | |- _ /\ _ => split
+        end; try reflexivity.
+      (* Last goals: the 17 specific map.get entries.  Each is a
+         put-chain lookup — follows from map.get_put_{same,diff}. *)
+      all: admit.
+    }
+    { (* Body step (v > 0) + exit (v = 0).  Takes (vi, tr1, m1, l1)
+         plus Hinv, produces the while-header DEXPR + TRUE/FALSE split.
+         TRUE: decrement measure, apply msm_bls12_outer_body_wp.
+         FALSE: vi = 0, close the outer while's post (9 deallocs +
+         final postcondition). *)
+      admit.
+    }
     (* Remaining obligations: outer while + 9 deallocs + postcondition.
 
        [Outer while] via [Loops.while_localsmap] with measure [w : nat],

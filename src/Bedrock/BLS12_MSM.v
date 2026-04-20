@@ -5304,9 +5304,32 @@ Section PippengerSpec.
       as [bs_y_init [Hlen_by_init Harr_by]].
     destruct (anybytes_to_felem_array a_bz (Z.to_nat (2^9 - 1)) mS_bz Hany_bz)
       as [bs_z_init [Hlen_bz_init Harr_bz]].
-    (* Next: combine 9 FElem/array chunks with [mem0] sep via the
-       [map.split] chain into a unified sep hypothesis on [mC_wz],
-       then the initial [store_zero] call via [HStoreZero], outer while
+    (* Combine 9 fresh sep predicates + Hsep into a unified sep on mC_wz
+       via the 9 [map.split] chain.  Right-associative parenthesization
+       aligns with the iterative unfold of [sep P Q = exists m1 m2, ...]. *)
+    assert (Hbig : (Compilation2.FElem None a_wz WZ0_init ⋆
+                   (Compilation2.FElem None a_wy WY0_init ⋆
+                   (Compilation2.FElem None a_wx WX0_init ⋆
+                   (Compilation2.FElem None a_rz RZ0_init ⋆
+                   (Compilation2.FElem None a_ry RY0_init ⋆
+                   (Compilation2.FElem None a_rx RX0_init ⋆
+                   (array (FElem None) (word.of_Z felem_size_in_bytes) a_bz bs_z_init ⋆
+                   (array (FElem None) (word.of_Z felem_size_in_bytes) a_by bs_y_init ⋆
+                   (array (FElem None) (word.of_Z felem_size_in_bytes) a_bx bs_x_init ⋆
+                   (FElem None outx outx0 ⋆ FElem None outy outy0
+                    ⋆ FElem None outz outz0 ⋆ ScalarsArray scalars_p scalars
+                    ⋆ G1Array3 ppx ppy ppz px py pz ⋆ R))))))))))%sep mC_wz).
+    { exists mS_wz, mC_wy; split; [apply map.split_comm; exact Hsplit_wz|split;[exact Hfe_wz|]].
+      exists mS_wy, mC_wx; split; [apply map.split_comm; exact Hsplit_wy|split;[exact Hfe_wy|]].
+      exists mS_wx, mC_rz; split; [apply map.split_comm; exact Hsplit_wx|split;[exact Hfe_wx|]].
+      exists mS_rz, mC_ry; split; [apply map.split_comm; exact Hsplit_rz|split;[exact Hfe_rz|]].
+      exists mS_ry, mC_rx; split; [apply map.split_comm; exact Hsplit_ry|split;[exact Hfe_ry|]].
+      exists mS_rx, mC_bz; split; [apply map.split_comm; exact Hsplit_rx|split;[exact Hfe_rx|]].
+      exists mS_bz, mC_by; split; [apply map.split_comm; exact Hsplit_bz|split;[exact Harr_bz|]].
+      exists mS_by, mC_bx; split; [apply map.split_comm; exact Hsplit_by|split;[exact Harr_by|]].
+      exists mS_bx, mem0; split; [apply map.split_comm; exact Hsplit_bx|split;[exact Harr_bx|]].
+      exact Hsep. }
+    (* Next: initial [store_zero] call via [HStoreZero], outer while
        via [msm_bls12_outer_body_wp] (Qed), exit via
        [msm_pippenger_as_partial_msm_from] (Qed), 9 deallocs via
        [P_to_bytes], postcondition.  Deferred. *)

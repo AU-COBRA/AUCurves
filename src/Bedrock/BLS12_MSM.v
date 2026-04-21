@@ -3093,6 +3093,37 @@ Section PippengerSpec.
                          reflexivity)
                    Hn_small
                    Hlimb_small). }
+        (* Apply ScalarsArray_load_limb to get the memory load result. *)
+        pose proof (ScalarsArray_load_limb scalars_p scalars n limb_nat
+               (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x' *
+                array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y' *
+                array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z' *
+                G1Array3 ppx ppy ppz px py pz * R)%sep
+               m1 Hn_lt Hlimb_nat_bound) as Hload1_pre.
+        assert (Hload1 : Memory.load access_size.word m1 la1_w =
+                        Some (nth limb_nat (nth n scalars nil) (word.of_Z 0))).
+        { rewrite Hla1_eq. apply Hload1_pre. ecancel_assumption. }
+        (* Step 9: cmd.set "val" := load(load_addr1) >> shift *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get WeakestPrecondition.load dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          eexists; split.
+          { exact Hload1. }
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (val1_w := word.sru (nth limb_nat (nth n scalars nil) (word.of_Z 0)) shift_w
+                      : word.rep).
         admit.
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:

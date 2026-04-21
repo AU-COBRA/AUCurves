@@ -73,8 +73,13 @@ Ltac ecancel_fast :=
   lazymatch goal with
   | |- Lift1Prop.impl1 _ _ =>
     repeat cancel_impl_step;
-    repeat ecancel_step_by_implication;
-    cbv [seps]; exact impl1_refl
+    first [ cbv [seps];
+            repeat (apply (proj2 (impl1_l_sep_emp True _ _)); intros _);
+            exact impl1_refl
+          | repeat ecancel_step_by_implication;
+            cbv [seps];
+            repeat (apply (proj2 (impl1_l_sep_emp True _ _)); intros _);
+            exact impl1_refl ]
   | |- Lift1Prop.iff1 _ _ =>
     ecancel_steps_at O;
     ecancel_done

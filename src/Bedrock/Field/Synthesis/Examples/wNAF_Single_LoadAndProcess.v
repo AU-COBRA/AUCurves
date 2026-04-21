@@ -28,6 +28,7 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Require Import bedrock2.Scalars.
 Require Import bedrock2.Array.
 From coqutil.Tactics Require Import letexists.
+Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Import Syntax BinInt String List.ListNotations.
 Local Open Scope string_scope. Local Open Scope Z_scope.
 
@@ -162,12 +163,55 @@ Section SingleLoadAndProcess.
             with (ap1 * felem_size_in_bytes) by ring
       end;
       ecancel_assumption
-    | intros ? ? ? ?;
-      cbv beta in *;
+    | let Hpost := fresh "Hpost" in
+      intros ? ? ? Hpost;
+      cbv beta in Hpost;
       repeat match goal with H : _ /\ _ |- _ => destruct H end;
       subst;
       cbv [map.putmany_of_list_zip];
       try (eexists; split; [exact eq_refl | ]) ].
+
+  Local Ltac fix_curve_add_mem Hca :=
+    repeat match goal with
+    | K : context [curve_add _ _] |- _ =>
+        rewrite Hca in K; cbn iota in K
+    end.
+
+  (* Normalize newest sep hypothesis after wp_direct_call so ecancel_assumption
+     can match it.  The postcondition retains
+     [Semantics.interp_binop bopname.add pT (word.mul v1 (word.of_Z (3*fs)))]
+     rather than the concrete-offset form used in the goal.  We fold
+     [word.mul v1 ...] back to [v2], rewrite using [Hv2_eq], collapse the
+     nested [word.add] pairs, and normalize the resulting [Z] arithmetic. *)
+  Local Ltac prep_ecancel_H :=
+    lazymatch goal with
+    | H : (_ * _)%sep _ |- _ =>
+      cbn [Semantics.interp_binop] in H;
+      try (lazymatch goal with
+           | Hv2 : ?vv2 = word.of_Z _ |- _ =>
+             lazymatch type of H with
+             | context [word.mul ?vv1 (word.of_Z (3 * felem_size_in_bytes))] =>
+               change (word.mul vv1 (word.of_Z (3 * felem_size_in_bytes)))
+                 with vv2 in H;
+               rewrite Hv2 in H
+             end
+           end);
+      rewrite <- !word.ring_morph_add in H;
+      repeat match type of H with
+      | context [word.of_Z (0 + ?b)] =>
+          replace (0 + b) with b in H by lia
+      | context [word.of_Z (?a + 0)] =>
+          replace (a + 0) with a in H by lia
+      | context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] =>
+          let ab := eval cbv in (a + b) in
+          replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+            with (ab * felem_size_in_bytes) in H by lia
+      | context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] =>
+          let ap1 := eval cbv in (a + 1) in
+          replace (a * felem_size_in_bytes + felem_size_in_bytes)
+            with (ap1 * felem_size_in_bytes) in H by lia
+      end
+    end.
 
   (* Normalize interp_binop/v2 in hypotheses so ecancel_assumption can match
      table addresses after wp_direct_call postconditions. *)
@@ -446,7 +490,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X0, F.opp Y0, Z0))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X0, (F.opp Y0), Z0.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -470,7 +513,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -493,7 +537,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X1, F.opp Y1, Z1))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X1, (F.opp Y1), Z1.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -517,7 +560,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -540,7 +584,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X2, F.opp Y2, Z2))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X2, (F.opp Y2), Z2.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -564,7 +607,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -587,7 +631,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X3, F.opp Y3, Z3))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X3, (F.opp Y3), Z3.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -611,7 +654,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -728,7 +772,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X0, Y0, Z0))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X0, Y0, Z0.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -752,7 +795,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -774,7 +818,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X1, Y1, Z1))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X1, Y1, Z1.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -798,7 +841,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -820,7 +864,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X2, Y2, Z2))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X2, Y2, Z2.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -844,7 +887,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
@@ -866,7 +910,6 @@ Section SingleLoadAndProcess.
              wp_direct_call HCurveAddInplace.
              destruct (curve_add (Ox, Oy, Oz) (X3, Y3, Z3))
                as [[Xo' Yo'] Zo'] eqn:Hca.
-             cbn zeta in Hsep.
              exists Xo', Yo', Zo', X3, Y3, Z3.
              destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
              simpl.
@@ -890,7 +933,8 @@ Section SingleLoadAndProcess.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
                replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
-               normalize_sep_addrs.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
                ecancel_assumption.
              - repeat split; try solve_mapget; try reflexivity.
                intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.

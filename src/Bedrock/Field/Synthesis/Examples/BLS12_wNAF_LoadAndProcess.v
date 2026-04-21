@@ -35,6 +35,7 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
 Require Import bedrock2.Scalars.
 Require Import bedrock2.Array.
 From coqutil.Tactics Require Import letexists.
+Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Import Syntax BinInt String List.ListNotations.
 Local Open Scope string_scope. Local Open Scope Z_scope.
 
@@ -52,6 +53,8 @@ Section LoadAndProcess.
   Context {field_parameters_ok : FieldParameters_ok}
           {field_representation_ok : FieldRepresentation_ok}.
   Context (Hbounds_eq : loose_bounds = tight_bounds).
+  Context (Hfs_pos : 0 < felem_size_in_bytes).
+  Context (Hfs_small : 12 * felem_size_in_bytes < 2 ^ width).
 
   Local Notation F := (F M_pos).
   Local Notation Fzero := (@F.zero M_pos).
@@ -155,6 +158,65 @@ Section LoadAndProcess.
       equals the Z-level offset of table_point_addr. *)
 
   (* ================================================================== *)
+  (** ** Address normalization helpers (shared with Single version)       *)
+  (* ================================================================== *)
+
+  Local Lemma word_add_of_Z_assoc (p : word) (a b : Z) :
+    word.add (word.add p (word.of_Z a)) (word.of_Z b) = word.add p (word.of_Z (a + b)).
+  Proof.
+    rewrite <- word.add_assoc. rewrite <- word.ring_morph_add. reflexivity.
+  Qed.
+
+  Local Ltac normalize_sep_addrs :=
+    cbn [Semantics.interp_binop] in *;
+    repeat match goal with H : ?v = word.of_Z _ |- _ => is_var v; rewrite H in * end;
+    repeat rewrite <- (word.ring_morph_add word_ok) in *;
+    repeat match goal with
+    | H : context [word.of_Z (0 + ?b)] |- _ =>
+        replace (0 + b) with b in H by ring
+    | H : context [word.of_Z (?a + 0)] |- _ =>
+        replace (a + 0) with a in H by ring
+    | H : context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] |- _ =>
+        let ab := eval cbv in (a + b) in
+        replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+          with (ab * felem_size_in_bytes) in H by ring
+    | H : context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] |- _ =>
+        let ap1 := eval cbv in (a + 1) in
+        replace (a * felem_size_in_bytes + felem_size_in_bytes)
+          with (ap1 * felem_size_in_bytes) in H by ring
+    end.
+
+  Lemma tab_off_compute (d : Z) :
+    1 <= d <= 7 ->
+    word.mul
+      (word.sru (word.sub (word.of_Z d : word) (word.of_Z 1)) (word.of_Z 1))
+      (word.of_Z (3 * felem_size_in_bytes))
+    = (word.of_Z (((d - 1) / 2) * (3 * felem_size_in_bytes)) : word).
+  Proof.
+    intros Hd.
+    assert (Hbound : 0 <= (d - 1) / 2 * (3 * felem_size_in_bytes) < 2^width).
+    { clear - Hd Hfs_pos Hfs_small.
+      assert (h1 : 0 <= (d - 1) / 2 <= 3) by lia.
+      split; nia. }
+    clear dk1 Hlen1 Hdigits_bounded1 table_P_entries Htable_P_len Hdigit_load1
+          HOppInplace HOpp HFelemCopy HCurveAddInplace
+          curve_add curve_add_id_r curve_add_id_l curve_add_assoc curve_add_comm
+          curve_add_name functions.
+    apply word.unsigned_inj.
+    rewrite word.unsigned_mul.
+    rewrite word.unsigned_sru_shamtZ with (a := 1%Z) by
+      (destruct BW; destruct width_cases as [-> | ->]; lia).
+    rewrite word.unsigned_sub_nowrap by
+      (rewrite !word.unsigned_of_Z_nowrap by lia; lia).
+    rewrite ?word.unsigned_of_Z_nowrap by nia.
+    unfold word.wrap.
+    rewrite Z.shiftr_div_pow2 by lia.
+    change (2^1) with (2:Z).
+    rewrite Z.mod_small by (split; nia).
+    reflexivity.
+  Qed.
+
+  (* ================================================================== *)
   (** ** WP automation tactics for process_one_digit                      *)
   (* ================================================================== *)
 
@@ -163,8 +225,8 @@ Section LoadAndProcess.
       with map.get_put_diff and looks for an assumption. *)
   Local Ltac solve_mapget :=
     first [ apply map.get_put_same
-          | rewrite map.get_put_diff by congruence; assumption
-          | rewrite map.get_put_diff by congruence; solve_mapget ].
+          | rewrite !map.get_put_diff by congruence;
+            first [apply map.get_put_same | eassumption] ].
 
   (** Evaluate a DEXPR for a single expression.
       Handles: var lookups, literal, binop, and their compositions. *)
@@ -230,12 +292,87 @@ Section LoadAndProcess.
       standard WeakestPrecondition.cmd form. *)
   Local Ltac eval_dexprs_here :=
     cbv [dexprs list_map list_map_body
+         WeakestPrecondition.dexpr
          WeakestPrecondition.expr WeakestPrecondition.expr_body
          WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet];
     repeat (first
       [ exact eq_refl
       | eexists; split; [solve_mapget |]
       | eexists; split; [exact eq_refl |] ]).
+
+  Local Ltac wp_direct_call spec :=
+    letexists; split; [solve [eval_dexprs_here] |];
+    eapply Semantics.weaken_call;
+    [ eapply spec;
+      repeat match goal with
+      | H : ?v = word.of_Z _ |- _ => is_var v; rewrite H
+      end;
+      cbn [Semantics.interp_binop];
+      repeat rewrite <- word.ring_morph_add;
+      repeat match goal with
+      | |- context [word.of_Z (0 + ?b)] =>
+          replace (0 + b) with b by ring
+      | |- context [word.of_Z (?a + 0)] =>
+          replace (a + 0) with a by ring
+      | |- context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] =>
+          let ab := eval cbv in (a + b) in
+          replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+            with (ab * felem_size_in_bytes) by ring
+      | |- context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] =>
+          let ap1 := eval cbv in (a + 1) in
+          replace (a * felem_size_in_bytes + felem_size_in_bytes)
+            with (ap1 * felem_size_in_bytes) by ring
+      end;
+      ecancel_assumption
+    | let Hpost := fresh "Hpost" in
+      intros ? ? ? Hpost;
+      cbv beta in Hpost;
+      repeat match goal with H : _ /\ _ |- _ => destruct H end;
+      subst;
+      cbv [map.putmany_of_list_zip];
+      try (eexists; split; [exact eq_refl | ]) ].
+
+  Local Ltac fix_curve_add_mem Hca :=
+    repeat match goal with
+    | K : context [curve_add _ _] |- _ =>
+        rewrite Hca in K; cbn iota in K
+    end.
+
+  (* Normalize newest sep hypothesis after wp_direct_call so ecancel_assumption
+     can match it.  The postcondition retains
+     [Semantics.interp_binop bopname.add pT (word.mul v1 (word.of_Z (3*fs)))]
+     rather than the concrete-offset form used in the goal.  We fold
+     [word.mul v1 ...] back to [v2], rewrite using [Hv2_eq], collapse the
+     nested [word.add] pairs, and normalize the resulting [Z] arithmetic. *)
+  Local Ltac prep_ecancel_H :=
+    lazymatch goal with
+    | H : (_ * _)%sep _ |- _ =>
+      cbn [Semantics.interp_binop] in H;
+      try (lazymatch goal with
+           | Hv2 : ?vv2 = word.of_Z _ |- _ =>
+             lazymatch type of H with
+             | context [word.mul ?vv1 (word.of_Z (3 * felem_size_in_bytes))] =>
+               change (word.mul vv1 (word.of_Z (3 * felem_size_in_bytes)))
+                 with vv2 in H;
+               rewrite Hv2 in H
+             end
+           end);
+      rewrite <- !word.ring_morph_add in H;
+      repeat match type of H with
+      | context [word.of_Z (0 + ?b)] =>
+          replace (0 + b) with b in H by lia
+      | context [word.of_Z (?a + 0)] =>
+          replace (a + 0) with a in H by lia
+      | context [word.of_Z (?a * felem_size_in_bytes + ?b * felem_size_in_bytes)] =>
+          let ab := eval cbv in (a + b) in
+          replace (a * felem_size_in_bytes + b * felem_size_in_bytes)
+            with (ab * felem_size_in_bytes) in H by lia
+      | context [word.of_Z (?a * felem_size_in_bytes + felem_size_in_bytes)] =>
+          let ap1 := eval cbv in (a + 1) in
+          replace (a * felem_size_in_bytes + felem_size_in_bytes)
+            with (ap1 * felem_size_in_bytes) in H by lia
+      end
+    end.
 
   (** wp_call: gcall_explicit-style tactic adapted for our specs.
       Uses unfold1_cmd_goal + letexists + eval_dexprs_here to avoid
@@ -367,45 +504,554 @@ Section LoadAndProcess.
          all: try (subst l1; intros k v Hk1 Hk2 Hk3 Hk4 Hgk;
                    rewrite map.get_put_diff by auto; exact Hgk). }
 
-    + (* === Step 4: d ≠ 0 case (THEN branch) === *)
+    + (* === Step 4: d ≠ 0 case (THEN branch): 8 sub-cases === *)
       intros Hdne.
       pose proof (Hdigits_bounded1 n Hn) as Hdb. fold d in Hdb.
       assert (Hd_ne : d <> 0).
       { intro Heq. apply Hdne. unfold encode_digit. rewrite Heq.
         rewrite word.unsigned_of_Z_0. reflexivity. }
-      (* Inner cmd.cond on lts d1 0: use unfold1_cmd_goal pattern *)
-      unfold1_cmd_goal; cbv beta match delta [cmd_body];
-      letexists; split; [solve [eval_dexprs_here] |];
-      split;
-      all: (
-        intros ?;
-        (* lookup_d (cmd.set) *)
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        letexists; split; [solve [eval_dexprs_here] |];
-        cbv beta match delta [dlet.dlet];
-        (* tab_idx (cmd.set via cmd.seq) *)
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        letexists; split; [solve [eval_dexprs_here] |];
-        cbv beta match delta [dlet.dlet];
-        (* tab_off (cmd.set via cmd.seq) *)
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        letexists; split; [solve [eval_dexprs_here] |];
-        cbv beta match delta [dlet.dlet];
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        (* 3x felem_copy *)
-        wp_call HFelemCopy;
-        wp_call HFelemCopy;
-        wp_call HFelemCopy;
-        (* inner cond negate *)
-        unfold1_cmd_goal; cbv beta match delta [cmd_body];
-        letexists; split; [solve [eval_dexprs_here] |];
-        split;
-        [ intros _; wp_call HOppInplace; wp_call HCurveAddInplace; admit
-        | intros _;
-          unfold1_cmd_goal; cbv beta match delta [cmd_body];
-          wp_call HCurveAddInplace; admit ]).
-  Admitted.
+      subst l1.
+      (* Inner cmd.cond on lts d1 0 *)
+      letexists; split; [solve [eval_dexprs_here] |].
+      split.
+      -- (* d < 0 branch *)
+         intro Hlts.
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         destruct table_P_entries as [|e0 [|e1 [|e2 [|e3 [|??]]]]];
+           try (simpl in Htable_P_len; discriminate).
+         subst v. cbn [Semantics.interp_binop] in *.
+         assert (Hdneg : d < 0).
+         { unfold encode_digit in Hlts.
+           destruct (word.lts (word.of_Z d) (word.of_Z 0)) eqn:E.
+           { rewrite word.signed_lts in E.
+             rewrite word.signed_of_Z in E. rewrite word.signed_of_Z in E.
+             unfold word.swrap in E.
+             destruct width_cases as [Hw|Hw]; rewrite Hw in E; lia. }
+           { exfalso. apply Hlts. rewrite word.unsigned_of_Z_0. reflexivity. } }
+         clear Hlts Hdne.
+         assert (Hv0_eq : v0 = word.of_Z (Z.abs d)).
+         { subst v0. unfold encode_digit. rewrite <- word.ring_morph_sub.
+           f_equal. lia. }
+         assert (Hv2_eq : v2 = word.of_Z (((Z.abs d - 1) / 2)
+                                          * (3 * felem_size_in_bytes))).
+         { subst v2. subst v1. rewrite Hv0_eq. apply tab_off_compute. lia. }
+         set (idx := (Z.abs d - 1) / 2) in Hv2_eq.
+         assert (Hidx : idx = 0 \/ idx = 1 \/ idx = 2 \/ idx = 3)
+           by (subst idx; lia).
+         destruct e0 as [[X0 Y0] Z0]. destruct e1 as [[X1 Y1] Z1].
+         destruct e2 as [[X2 Y2] Z2]. destruct e3 as [[X3 Y3] Z3].
+         unfold Table4, TablePoint, table_point_addr, felem_addr in Hsep.
+         rewrite !word_add_of_Z_assoc in Hsep.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with 0 in Hsep by lia.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with felem_size_in_bytes in Hsep by lia.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (2 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (3 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (4 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (5 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (6 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (7 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (8 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (9 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (10 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (11 * felem_size_in_bytes) in Hsep by lia.
+         destruct Hidx as [Hi|[Hi|[Hi|Hi]]]; rewrite Hi in Hv2_eq;
+           first
+             [ replace (0 * (3 * felem_size_in_bytes))
+                  with 0 in Hv2_eq by lia
+             | replace (1 * (3 * felem_size_in_bytes))
+                  with (3 * felem_size_in_bytes) in Hv2_eq by lia
+             | replace (2 * (3 * felem_size_in_bytes))
+                  with (6 * felem_size_in_bytes) in Hv2_eq by lia
+             | replace (3 * (3 * felem_size_in_bytes))
+                  with (9 * felem_size_in_bytes) in Hv2_eq by lia ];
+           wp_direct_call HFelemCopy;
+           wp_direct_call HFelemCopy;
+           wp_direct_call HFelemCopy.
+         { (* idx = 0, d < 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros _.
+             wp_direct_call HOppInplace.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X0, F.opp Y0, Z0))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X0, (F.opp Y0), Z0.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = true) as -> by (apply Z.ltb_lt; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. }
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.unsigned_of_Z_1 in Hcontra. congruence.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
+         { (* idx = 1, d < 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros _.
+             wp_direct_call HOppInplace.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X1, F.opp Y1, Z1))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X1, (F.opp Y1), Z1.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = true) as -> by (apply Z.ltb_lt; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. }
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.unsigned_of_Z_1 in Hcontra. congruence.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
+         { (* idx = 2, d < 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros _.
+             wp_direct_call HOppInplace.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X2, F.opp Y2, Z2))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X2, (F.opp Y2), Z2.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = true) as -> by (apply Z.ltb_lt; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. }
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.unsigned_of_Z_1 in Hcontra. congruence.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
+         { (* idx = 3, d < 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros _.
+             wp_direct_call HOppInplace.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X3, F.opp Y3, Z3))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X3, (F.opp Y3), Z3.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = true) as -> by (apply Z.ltb_lt; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. }
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.unsigned_of_Z_1 in Hcontra. congruence.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia. } }
+      -- (* d >= 0 branch *)
+         intro Hge.
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         letexists; split; [solve [eval_dexprs_here] |].
+         cbv beta zeta match delta [dlet.dlet].
+         destruct table_P_entries as [|e0 [|e1 [|e2 [|e3 [|??]]]]];
+           try (simpl in Htable_P_len; discriminate).
+         subst v. cbn [Semantics.interp_binop] in *.
+         assert (Hdpos : 0 < d).
+         { unfold encode_digit in Hge.
+           destruct (word.lts (word.of_Z d) (word.of_Z 0)) eqn:E.
+           { exfalso. rewrite word.unsigned_of_Z in Hge.
+             unfold word.wrap in Hge.
+             destruct width_cases as [Hw|Hw]; rewrite Hw in Hge;
+               cbv in Hge; discriminate. }
+           { rewrite word.signed_lts in E.
+             rewrite word.signed_of_Z in E. rewrite word.signed_of_Z in E.
+             unfold word.swrap in E.
+             destruct width_cases as [Hw|Hw]; rewrite Hw in E; lia. } }
+         clear Hge Hdne.
+         assert (Hv0_eq : v0 = word.of_Z (Z.abs d)).
+         { subst v0. unfold encode_digit. f_equal. lia. }
+         assert (Hv2_eq : v2 = word.of_Z (((Z.abs d - 1) / 2)
+                                          * (3 * felem_size_in_bytes))).
+         { subst v2. subst v1. rewrite Hv0_eq. apply tab_off_compute. lia. }
+         set (idx := (Z.abs d - 1) / 2) in Hv2_eq.
+         assert (Hidx : idx = 0 \/ idx = 1 \/ idx = 2 \/ idx = 3)
+           by (subst idx; lia).
+         destruct e0 as [[X0 Y0] Z0]. destruct e1 as [[X1 Y1] Z1].
+         destruct e2 as [[X2 Y2] Z2]. destruct e3 as [[X3 Y3] Z3].
+         unfold Table4, TablePoint, table_point_addr, felem_addr in Hsep.
+         rewrite !word_add_of_Z_assoc in Hsep.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with 0 in Hsep by lia.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with felem_size_in_bytes in Hsep by lia.
+         replace (Z.of_nat 0 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (2 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (3 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (4 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 1 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (5 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (6 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (7 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 2 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (8 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 0 * felem_size_in_bytes)
+            with (9 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 1 * felem_size_in_bytes)
+            with (10 * felem_size_in_bytes) in Hsep by lia.
+         replace (Z.of_nat 3 * (3 * felem_size_in_bytes) +
+                  Z.of_nat 2 * felem_size_in_bytes)
+            with (11 * felem_size_in_bytes) in Hsep by lia.
+         destruct Hidx as [Hi|[Hi|[Hi|Hi]]]; rewrite Hi in Hv2_eq;
+           first
+             [ replace (0 * (3 * felem_size_in_bytes))
+                  with 0 in Hv2_eq by lia
+             | replace (1 * (3 * felem_size_in_bytes))
+                  with (3 * felem_size_in_bytes) in Hv2_eq by lia
+             | replace (2 * (3 * felem_size_in_bytes))
+                  with (6 * felem_size_in_bytes) in Hv2_eq by lia
+             | replace (3 * (3 * felem_size_in_bytes))
+                  with (9 * felem_size_in_bytes) in Hv2_eq by lia ];
+           wp_direct_call HFelemCopy;
+           wp_direct_call HFelemCopy;
+           wp_direct_call HFelemCopy.
+         { (* idx = 0, d >= 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia.
+             - apply Hcontra. rewrite word.unsigned_of_Z_0. reflexivity. }
+           { intros _.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X0, Y0, Z0))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X0, Y0, Z0.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = false) as -> by (apply Z.ltb_ge; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. } }
+         { (* idx = 1, d >= 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia.
+             - apply Hcontra. rewrite word.unsigned_of_Z_0. reflexivity. }
+           { intros _.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X1, Y1, Z1))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X1, Y1, Z1.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = false) as -> by (apply Z.ltb_ge; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. } }
+         { (* idx = 2, d >= 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia.
+             - apply Hcontra. rewrite word.unsigned_of_Z_0. reflexivity. }
+           { intros _.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X2, Y2, Z2))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X2, Y2, Z2.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = false) as -> by (apply Z.ltb_ge; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. } }
+         { (* idx = 3, d >= 0 *)
+           letexists; split; [solve [eval_dexprs_here] |].
+           split.
+           { intros Hcontra. exfalso. subst v.
+             cbn [Semantics.interp_binop] in Hcontra.
+             unfold encode_digit in Hcontra.
+             destruct (@word.lts _ word (word.of_Z d) (word.of_Z 0)) eqn:Elt.
+             - rewrite word.signed_lts in Elt.
+               rewrite word.signed_of_Z in Elt. rewrite word.signed_of_Z in Elt.
+               unfold word.swrap in Elt.
+               destruct width_cases as [Hw|Hw]; rewrite Hw in Elt; lia.
+             - apply Hcontra. rewrite word.unsigned_of_Z_0. reflexivity. }
+           { intros _.
+             wp_direct_call HCurveAddInplace.
+             destruct (curve_add (Ox, Oy, Oz) (X3, Y3, Z3))
+               as [[Xo' Yo'] Zo'] eqn:Hca.
+             exists Xo', Yo', Zo', X3, Y3, Z3.
+             destruct (d =? 0) eqn:Edz; [apply Z.eqb_eq in Edz; lia|].
+             simpl.
+             split; [|split].
+             - rewrite <- Hca. f_equal.
+               unfold digit_point. rewrite Edz.
+               unfold idx in Hi. rewrite Hi. simpl.
+               assert ((d <? 0) = false) as -> by (apply Z.ltb_ge; lia).
+               reflexivity.
+             - unfold Table4, TablePoint, table_point_addr, felem_addr.
+               rewrite !word_add_of_Z_assoc.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with 0 by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with felem_size_in_bytes by lia.
+               replace (Z.of_nat 0 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (2 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (3 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (4 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 1 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (5 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (6 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (7 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 2 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (8 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 0 * felem_size_in_bytes) with (9 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 1 * felem_size_in_bytes) with (10 * felem_size_in_bytes) by lia.
+               replace (Z.of_nat 3 * (3 * felem_size_in_bytes) + Z.of_nat 2 * felem_size_in_bytes) with (11 * felem_size_in_bytes) by lia.
+               fix_curve_add_mem Hca.
+               prep_ecancel_H.
+               ecancel_assumption.
+             - repeat split; try solve_mapget; try reflexivity.
+               intros k v' Hk1 Hk2 Hk3 Hk4 Hgk.
+               repeat (rewrite map.get_put_diff by auto).
+               exact Hgk. } }
+  Qed.
 
 End LoadAndProcess.

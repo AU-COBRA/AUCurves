@@ -364,6 +364,17 @@ Section PippengerSpec.
     apply Z.lt_trans with 64; [|Lia.lia];
     apply Z.div_lt_upper_bound; Lia.lia.
 
+  (** [solve_map_get_chain]: closes goals of shape
+      [map.get (map.put^n m k v) k' = Some _] without requiring the
+      exact [put] count.  Strict: fails if the goal is not a map.get.
+
+      Apply ONLY at sites where the goal is a pure [map.get ... = Some _];
+      some WP.dexpr sites have the interp equation as the focused goal
+      after [eexists. split.] and need a different closer. *)
+  Ltac solve_map_get_chain :=
+    repeat (rewrite map.get_put_diff by congruence);
+    rewrite map.get_put_same; reflexivity.
+
   Local Notation F := (F M_pos).
   Local Notation G1_F := (F * F * F)%type.
 

@@ -311,6 +311,8 @@ Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import bedrock2.WeakestPrecondition.
 Require Import bedrock2.ProgramLogic.
 Require Import bedrock2.Array.
+Require Import bedrock2.Scalars.
+Require Import bedrock2.ZnWords.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Bedrock.IteratedSepPoints.
 Require Import Bedrock.FrameLocalsWP.
@@ -327,6 +329,11 @@ Section PippengerSpec.
   Context {field_parameters : FieldParameters}
           {field_representation : FieldRepresentation}
           {field_representation_ok : FieldRepresentation_ok (field_representation:=field_representation)}.
+
+  (** The MSM program uses 64-bit scalar limbs (4 × u64 = 32 bytes per
+      scalar).  This assumption pins [bytes_per_word width = 8] and is
+      satisfied by every concrete instance (all use BasicC64Semantics). *)
+  Context (Hwidth64 : width = 64).
 
   Context (curve_add_name    : String.string)
           (curve_double_name : String.string)
@@ -361,9 +368,9 @@ Section PippengerSpec.
   Definition G1Array3 (bx bpy bpz : word)
                       (xs ys zs : list F)
     : mem -> Prop :=
-    (array (FElem None) (word.of_Z felem_size_in_bytes) bx  xs *
-     array (FElem None) (word.of_Z felem_size_in_bytes) bpy ys *
-     array (FElem None) (word.of_Z felem_size_in_bytes) bpz zs)%sep.
+    (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bx  xs *
+     array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bpy ys *
+     array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) bpz zs)%sep.
 
   (** Abstract Gallina group operations at the [G1_F] level, supplied
       by the caller through [spec_of_curve_add] / [spec_of_curve_double]
@@ -2369,6 +2376,224 @@ Section PippengerSpec.
         rewrite Hne. apply Hinv. exact Hk.
   Qed.
 
+  (** Helper: load the [limb]-th word of the [n]-th scalar from
+      [ScalarsArray base ss].  Requires [width = 64] (via [Hwidth64]) since
+      the bedrock2 program uses an 8-byte limb stride. *)
+  Lemma ScalarsArray_load_limb
+      (base : word) (ss : list (list word)) (n limb : nat)
+      (R : mem -> Prop) (m : mem) :
+      (n < length ss)%nat ->
+      (limb < scalar_limbs)%nat ->
+      (ScalarsArray base ss * R)%sep m ->
+      Memory.load access_size.word m
+        (word.add base
+           (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb * 8))) =
+      Some (nth limb (nth n ss nil) (word.of_Z 0)).
+  Proof.
+    intros Hn Hlimb Hsep.
+    assert (Hbpw : Memory.bytes_per_word width = 8).
+    { unfold Memory.bytes_per_word. rewrite Hwidth64. reflexivity. }
+    assert (Hu32 : word.unsigned (word.of_Z 32 : word) = 32).
+    { rewrite word.unsigned_of_Z. unfold word.wrap. rewrite Hwidth64.
+      reflexivity. }
+    (* hd nil (skipn n ss) = nth n ss nil *)
+    assert (Hhd : hd nil (skipn n ss) = nth n ss nil).
+    { revert n Hn. clear - ss.
+      induction ss as [|s rest IH]; intros n Hn; [cbn in Hn; lia|].
+      destruct n as [|n']; [reflexivity|].
+      cbn. apply IH. cbn in Hn. lia. }
+    (* Expose n-th ScalarAt *)
+    set (addr_n := word.add base (word.of_Z (32 * Z.of_nat n))).
+    set (ws_n := nth n ss nil).
+    unfold ScalarsArray in Hsep.
+    seprewrite_in
+      (array_index_nat_inbounds (default:=nil) ScalarAt (word.of_Z 32) ss base n Hn)
+      Hsep.
+    rewrite Hu32 in Hsep.
+    (* Unfold ScalarAt = Bignum.Bignum; rewrite bytes_per_word = 8 *)
+    unfold ScalarAt, Bignum.Bignum in Hsep.
+    rewrite Hbpw in Hsep.
+    (* Extract the emp (length ws_n = scalar_limbs) from the sep.
+       After seprewrite_in, Hsep has [List.hd [] (ListDef.skipn n ss)] in it,
+       which equals ws_n via Hhd.  We first extract the emp, then replace. *)
+    extract_ex1_and_emp_in_hyps.
+    (* auto-named emp hypothesis: rename + convert to ws_n form *)
+    assert (Hlen_ws_n : length ws_n = scalar_limbs)
+      by (unfold ws_n; rewrite <- Hhd; assumption).
+    (* Replace [List.hd [] (skipn n ss)] with ws_n in Hsep *)
+    replace (List.hd nil (ListDef.skipn n ss)) with ws_n in Hsep
+      by (unfold ws_n; exact (eq_sym Hhd)).
+    (* Now Hsep has: (...) * array scalar (word.of_Z 8) addr_n ws_n * (...) *)
+    (* Build a clean sep for array_load_of_sep *)
+    assert (Hinner : (array scalar (word.of_Z 8) addr_n ws_n *
+        (array (fun (p : word) (ws : list word) =>
+                  emp (length ws = scalar_limbs) * array scalar (word.of_Z 8) p ws)
+           (word.of_Z 32) base (ListDef.firstn n ss) *
+         array (fun (p : word) (ws : list word) =>
+                  emp (length ws = scalar_limbs) * array scalar (word.of_Z 8) p ws)
+           (word.of_Z 32)
+           (word.add (word.add base (word.of_Z (32 * Z.of_nat n))) (word.of_Z 32))
+           (ListDef.skipn (S n) ss) * R))%sep m)
+      by ecancel_assumption.
+    (* Use array_load_of_sep to conclude the memory load. *)
+    assert (Hlimb_wn : (limb < length ws_n)%nat) by (rewrite Hlen_ws_n; exact Hlimb).
+    assert (Haddr_eq : word.add base (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb * 8)) =
+                       word.add addr_n (word.of_Z (word.unsigned (word.of_Z 8 : word) * Z.of_nat limb)))
+      by (unfold addr_n; ZnWords).
+    pose proof (Scalars.array_load_of_sep
+        addr_n
+        (word.add base (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb * 8)))
+        limb ws_n (word.of_Z 8) access_size.word
+        _ m Hinner Haddr_eq Hlimb_wn) as Hload.
+    rewrite Hload.
+    f_equal.
+    (* Simplify truncate_word access_size.word to identity for 64-bit words *)
+    unfold Scalars.truncate_word.
+    apply word.unsigned_inj.
+    rewrite word.unsigned_of_Z.
+    unfold Scalars.truncate_Z.
+    cbn [Memory.bytes_per].
+    rewrite Hbpw.
+    cbn [Z.to_nat].
+    unfold word.wrap.
+    assert (Hv_range : 0 <= word.unsigned (nth limb ws_n (word.of_Z 0)) < 2^width)
+      by apply word.unsigned_range.
+    rewrite Z.mul_comm.
+    rewrite Z.land_ones by lia.
+    assert (Hwidth64_eq : 8 * Z.of_nat (Pos.to_nat 8) = width)
+      by (simpl; lia).
+    rewrite Hwidth64_eq.
+    rewrite Z.mod_mod by lia.
+    apply word.wrap_unsigned.
+  Qed.
+
+  (** Helper: connect the bedrock2 word-arithmetic for the window extraction
+      to the Gallina [get_window] function.  The hypothesis [Hval_unsigned]
+      records the [word.unsigned val] computed by the bedrock2 body (after the
+      first load plus the optional cross-limb load); the conclusion says the
+      masked result equals [get_window]. *)
+  Lemma get_window_word_correct
+      (scalar_ws : list word) (w_val : Z) (val_w : word)
+      (Hw_val : 0 <= w_val)
+      (Hw_val_lt : w_val < num_windows)
+      (Hscalar_len : length scalar_ws = scalar_limbs)
+      (Hval_unsigned :
+        word.unsigned val_w =
+        (let bit_offset := w_val * c in
+         let limb := (bit_offset / 64)%Z in
+         let shift := (bit_offset mod 64)%Z in
+         let v1 := Z.shiftr
+           (word.unsigned (nth (Z.to_nat limb) scalar_ws (word.of_Z 0)))
+           shift in
+         if Nat.ltb 64 (Z.to_nat (w_val * c mod 64) + Z.to_nat c)
+         then
+           (if Z.ltb limb 3
+            then
+              Z.lor v1
+                (Z.shiftl
+                   (word.unsigned (nth (Z.to_nat (limb + 1)) scalar_ws (word.of_Z 0)))
+                   (64 - shift))
+            else v1)
+         else v1)) :
+      word.unsigned (word.and val_w (word.of_Z (Z.ones c))) =
+      get_window (List.map word.unsigned scalar_ws) (Z.to_nat w_val) (Z.to_nat c).
+  Proof.
+    unfold get_window.
+    rewrite word.unsigned_and.
+    rewrite word.unsigned_of_Z.
+    unfold word.wrap.
+    assert (Hwidth_ge9 : (9 <= width)%Z) by (rewrite Hwidth64; lia).
+    change (Z.ones c) with 511.
+    assert (Hones_small : (511 mod 2^width = 511)%Z).
+    { apply Z.mod_small; split; [lia|].
+      apply Z.lt_le_trans with (2^9). { change (2^9) with 512; lia. }
+      apply Z.pow_le_mono_r; lia. }
+    rewrite Hones_small.
+    assert (Hland_small : (Z.land (word.unsigned val_w) 511) mod 2^width =
+                          Z.land (word.unsigned val_w) 511).
+    { apply Z.mod_small; split.
+      - apply Z.land_nonneg; left; apply (proj1 (word.unsigned_range val_w)).
+      - apply Z.lt_le_trans with (2^9).
+        { change 511 with (Z.ones 9).
+          rewrite Z.land_ones by lia.
+          apply Z.mod_pos_bound. lia. }
+        apply Z.pow_le_mono_r; lia. }
+    rewrite Hland_small.
+    rewrite Hval_unsigned.
+    cbv [c].
+    (* Now need: Z.land (the_body) 511 = the_get_window_body *)
+    (* The get_window uses nth_error while we use nth; connect them *)
+    assert (Hne_limb : forall limb : nat,
+        nth_error (List.map word.unsigned scalar_ws) limb =
+        if Nat.ltb limb (length scalar_ws)
+        then Some (word.unsigned (nth limb scalar_ws (word.of_Z 0)))
+        else None).
+    { intros idx. destruct (Nat.ltb_spec idx (length scalar_ws)).
+      - rewrite nth_error_map.
+        rewrite (@nth_error_nth' _ scalar_ws idx (word.of_Z 0) H).
+        reflexivity.
+      - rewrite nth_error_map.
+        apply nth_error_None in H. rewrite H. reflexivity. }
+    (* limb = w_val * 9 / 64 *)
+    set (limb := (w_val * 9 / 64)%Z).
+    set (shift := (w_val * 9 mod 64)%Z).
+    (* limb bounds: 0 <= limb <= 3 since w_val < 29 and c=9 *)
+    assert (Hlimb_bound : (0 <= limb < 4)%Z).
+    { unfold limb. split; [apply Z_div_nonneg_nonneg; lia|].
+      (* w_val < num_windows=29, so w_val*9 <= 28*9=252, 252/64=3 < 4 *)
+      apply Z.div_lt_upper_bound; [lia|].
+      cbv [num_windows c] in Hw_val_lt. lia. }
+    assert (Hlimb_in_bounds : (Z.to_nat limb < length scalar_ws)%nat).
+    { rewrite Hscalar_len. unfold scalar_limbs.
+      apply Nat2Z.inj_lt. rewrite Z2Nat.id; lia. }
+    (* Convert nat↔Z arithmetic for limb and shift indices *)
+    assert (Hnat_lim : (Z.to_nat w_val * 9 / 64 = Z.to_nat limb)%nat).
+    { unfold limb. rewrite Z2Nat.inj_div by lia.
+      rewrite Z2Nat.inj_mul by lia. reflexivity. }
+    assert (Hnat_sh : (Z.to_nat w_val * 9 mod 64 = Z.to_nat shift)%nat).
+    { unfold shift. rewrite Z2Nat.inj_mod by lia.
+      rewrite Z2Nat.inj_mul by lia. reflexivity. }
+    change (Z.to_nat 9) with 9%nat.
+    rewrite Hnat_lim, Hnat_sh.
+    (* nth_error for the primary limb *)
+    rewrite (Hne_limb (Z.to_nat limb)).
+    rewrite (proj2 (Nat.ltb_lt _ _) Hlimb_in_bounds).
+    (* Z.of_nat (Z.to_nat shift) = shift *)
+    assert (Hshift_nonneg : 0 <= shift) by (unfold shift; apply Z.mod_pos_bound; lia).
+    rewrite Z2Nat.id; [|exact Hshift_nonneg].
+    (* Cross-limb case analysis *)
+    destruct (Bool.bool_dec (Nat.ltb 64 (Z.to_nat shift + 9)) true) as [Hctrue | Hcfalse].
+    - (* cross-limb fires *)
+      rewrite Hctrue.
+      apply Nat.ltb_lt in Hctrue as Hcross.
+      assert (Hlim_le3 : limb <= 3) by lia.
+      destruct (Z.ltb_spec limb 3) as [Hlim3 | Hlim3].
+      + (* limb < 3: limb+1 in bounds *)
+        assert (Hlim1_in : (Z.to_nat limb + 1 < length scalar_ws)%nat).
+        { rewrite Hscalar_len. apply Nat2Z.inj_lt.
+          rewrite Nat2Z.inj_add. rewrite Z2Nat.id by lia. simpl. lia. }
+        rewrite Z2Nat.inj_add by lia.
+        change (Z.to_nat 1) with 1%nat.
+        rewrite (Hne_limb ((Z.to_nat limb + 1)%nat)).
+        rewrite (proj2 (Nat.ltb_lt _ _) Hlim1_in).
+        assert (Hsh_le63 : (Z.to_nat shift <= 63)%nat).
+        { apply Nat.lt_succ_r. apply Nat2Z.inj_lt.
+          rewrite Z2Nat.id by exact Hshift_nonneg.
+          unfold shift. apply Z.mod_pos_bound; lia. }
+        rewrite Nat2Z.inj_sub by Lia.lia.
+        rewrite Z2Nat.id; [reflexivity|exact Hshift_nonneg].
+      + (* limb = 3: limb+1 out of bounds *)
+        assert (Hlim1_oob : (length scalar_ws <= Z.to_nat limb + 1)%nat).
+        { rewrite Hscalar_len. apply Nat2Z.inj_le.
+          rewrite Nat2Z.inj_add. rewrite Z2Nat.id by lia. simpl. lia. }
+        rewrite (Hne_limb ((Z.to_nat limb + 1)%nat)).
+        rewrite (proj2 (Nat.ltb_nlt _ _) (proj2 (Nat.nlt_ge _ _) Hlim1_oob)).
+        reflexivity.
+    - (* cross-limb doesn't fire *)
+      apply Bool.not_true_iff_false in Hcfalse.
+      rewrite Hcfalse. reflexivity.
+  Qed.
+
   (** Leaf 3: distribute sub-loop.  Hardest leaf: [i] counts from [n]
       down, each iter extracts [get_window scalar w c], and if > 0 adds
       [points[i]] into [buckets[idx-1]] via [curve_add].  Uses
@@ -2824,7 +3049,1473 @@ Section PippengerSpec.
              - [scalars_array_index_limb] : sep-logic split (~30 LoC).
              - [get_window_word_correct]  : word-arith identity (~100 LoC).
            and the [HCurveAdd] callee spec (assumption). *)
-        admit.
+        (* ------ proof of TRUE body step ------ *)
+        (* Set abbreviations for the word expressions computed by the
+           7 mechanical cmd.sets. *)
+        set (w_c    := word.mul (word.of_Z w) (word.of_Z c) : word) in *.
+        set (limb_w := word.sru w_c (word.of_Z 6) : word) in *.
+        set (shift_w2 := word.and w_c (word.of_Z 63) : word) in *.
+        set (mask_w2 := word.sub (word.slu (word.of_Z 1) (word.of_Z c))
+                          (word.of_Z 1) : word) in *.
+        set (sp_w2  := word.add scalars_p (word.mul iw' (word.of_Z 32)) : word) in *.
+        set (lo1_w2 := word.mul limb_w (word.of_Z 8) : word) in *.
+        set (la1_w2 := word.add sp_w2 lo1_w2 : word) in *.
+        set (limb_nat := Z.to_nat (w * c / 64)).
+        (* ---- arithmetic prerequisites ---- *)
+        assert (Hw_bound : 0 <= w <= 28).
+        { unfold num_windows in Hw_bd. cbv [c] in Hw_bd. Lia.lia. }
+        assert (Hlimb_unsigned : word.unsigned limb_w = w * c / 64).
+        { subst limb_w w_c.
+          rewrite word.unsigned_sru_nowrap.
+          2: { rewrite word.unsigned_of_Z; unfold word.wrap; rewrite Hwidth64; simpl; lia. }
+          rewrite word.unsigned_mul_nowrap.
+          2: { rewrite word.unsigned_of_Z, word.unsigned_of_Z.
+               unfold word.wrap; rewrite Hwidth64; simpl.
+               cbv [c]. rewrite Z.mod_small by lia. rewrite Z.mod_small by lia. nia. }
+          assert (H6 : word.unsigned (word.of_Z 6 : word) = 6).
+          { rewrite word.unsigned_of_Z_nowrap; [reflexivity|lia]. }
+          rewrite H6.
+          rewrite word.unsigned_of_Z, word.unsigned_of_Z.
+          unfold word.wrap; rewrite Hwidth64; simpl.
+          cbv [c]. rewrite Z.mod_small by lia. rewrite Z.mod_small by lia.
+          rewrite Z.shiftr_div_pow2; [|lia]; simpl; lia. }
+        assert (Hlimb_nat_eq : limb_nat = Z.to_nat (word.unsigned limb_w)).
+        { unfold limb_nat. rewrite Hlimb_unsigned. reflexivity. }
+        assert (Hlimb_nat_bound : (limb_nat < scalar_limbs)%nat).
+        { unfold limb_nat, scalar_limbs. cbv [c].
+          apply Nat2Z.inj_lt.
+          rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+          apply Z.div_lt_upper_bound; lia. }
+        assert (Hn_lt : (n < length scalars)%nat).
+        { assert (Hns_eq : Z.to_nat (word.unsigned n_w) = length scalars)
+            by (rewrite Hn_len; apply Nat2Z.id).
+          Lia.lia. }
+        assert (Hshift_unsigned : word.unsigned shift_w2 = w * c mod 64).
+        { subst shift_w2 w_c.
+          rewrite word.unsigned_and.
+          rewrite word.unsigned_mul_nowrap.
+          2: { rewrite !word.unsigned_of_Z.
+               unfold word.wrap; rewrite Hwidth64; simpl.
+               cbv [c]. rewrite Z.mod_small by lia. rewrite Z.mod_small by lia. nia. }
+          rewrite !word.unsigned_of_Z.
+          unfold word.wrap; rewrite Hwidth64; simpl.
+          cbv [c].
+          rewrite (Z.mod_small w (Z.pow_pos 2 64)) by (unfold Z.pow_pos; simpl; lia).
+          rewrite (Z.mod_small 9 (Z.pow_pos 2 64)) by (unfold Z.pow_pos; simpl; lia).
+          rewrite (Z.mod_small 63 (Z.pow_pos 2 64)) by (unfold Z.pow_pos; simpl; lia).
+          change 63 with (Z.ones 6).
+          rewrite Z.land_ones by lia.
+          rewrite Z.mod_small.
+          { change (2^6) with 64. reflexivity. }
+          { pose proof (Z.mod_pos_bound (w*9) (2^6) ltac:(lia)) as Hmod6.
+            split; [lia|].
+            apply Z.lt_trans with (2^6); [lia|unfold Z.pow_pos; simpl; lia]. } }
+        (* The val1 word is the first (primary) limb shifted right. *)
+        set (val1_w := word.sru
+               (nth limb_nat (nth n scalars nil) (word.of_Z 0))
+               shift_w2 : word).
+        (* Primary load address equals [scalars_p + n*32 + limb_nat*8]. *)
+        assert (Hla1_eq : la1_w2 = word.add scalars_p
+                  (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb_nat * 8))).
+        { subst la1_w2 sp_w2 lo1_w2.
+          (* Convert limb_w (word.sru form) to word.of_Z (Z.of_nat limb_nat) *)
+          assert (Hlimb_w_eq : limb_w = word.of_Z (Z.of_nat limb_nat)).
+          { apply word.unsigned_inj. rewrite Hlimb_unsigned.
+            rewrite word.unsigned_of_Z. unfold word.wrap.
+            unfold limb_nat.
+            rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+            rewrite Hwidth64.
+            rewrite Z.mod_small; [reflexivity|].
+            split; [apply Z_div_nonneg_nonneg; lia|].
+            apply Z.lt_trans with 64; [|lia].
+            apply Z.div_lt_upper_bound; lia. }
+          rewrite Hlimb_w_eq.
+          assert (Hlimb_small : Z.of_nat limb_nat < 2^32).
+          { unfold limb_nat.
+            rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+            apply Z.lt_trans with 64; [|lia].
+            apply Z.div_lt_upper_bound; lia. }
+          ZnWords. }
+        (* Use ScalarsArray_load_limb to get the memory load result. *)
+        pose proof (ScalarsArray_load_limb scalars_p scalars n limb_nat
+               (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x' *
+                array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y' *
+                array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z' *
+                G1Array3 ppx ppy ppz px py pz * R)
+               m1 Hn_lt Hlimb_nat_bound) as Hload1.
+        rewrite <- Hla1_eq in Hload1.
+        assert (Hload1' : Memory.load access_size.word m1 la1_w2 =
+                          Some (nth limb_nat (nth n scalars nil) (word.of_Z 0))).
+        { apply Hload1. ecancel_assumption. }
+        (* ---- Prove the full DEXPR goal ---- *)
+        (* Witness for "val": the primary shifted value, possibly or-ed with
+           the cross-limb contribution. We provide val1_w here as the initial
+           witness; the cross-limb TRUE branch will refine it. *)
+        eexists. split.
+        { (* DEXPR for: load(load_addr1) >> shift *)
+          cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get WeakestPrecondition.load dlet.dlet].
+          eexists. split.
+          { rewrite map.get_put_same. reflexivity. }
+          eexists. split.
+          { exact Hload1'. }
+          eexists. split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        (* Witness for v0 (64 < shift + c condition) *)
+        eexists. split.
+        { (* DEXPR for: 64 < shift + c *)
+          cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists. split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        split.
+        - (* Cross-limb TRUE: 64 < shift + c *)
+          intro Hcross.
+          (* Extract: word.unsigned shift_w2 + c > 64 *)
+          assert (Hcross_Z : 64 < word.unsigned shift_w2 + c).
+          { cbv [Semantics.interp_binop word.ltu] in Hcross.
+            destruct (Z.ltb_spec 64 (word.unsigned shift_w2 + c)) as [Hlt|Hnlt].
+            { rewrite word.unsigned_of_Z in Hcross.
+              unfold word.wrap in Hcross. rewrite Hwidth64 in Hcross. simpl in Hcross.
+              rewrite Z.mod_small in Hcross by lia. lia. }
+            { exfalso.
+              rewrite word.unsigned_of_Z in Hcross.
+              unfold word.wrap in Hcross. rewrite Hwidth64 in Hcross. simpl in Hcross.
+              rewrite Z.mod_small in Hcross by lia.
+              rewrite Hcross in Hcross. exact Hcross. } }
+          (* Witness for v1 (limb < 3 condition) *)
+          eexists. split.
+          { (* DEXPR for limb < 3 *)
+            cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                 WeakestPrecondition.expr_body WeakestPrecondition.literal
+                 WeakestPrecondition.get dlet.dlet].
+            eexists. split.
+            { rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_same. reflexivity. }
+            cbv [Semantics.interp_binop]. reflexivity. }
+          split.
+          + (* Cross-limb inner TRUE: limb < 3 *)
+            intro Hlimb_lt3.
+            (* Extract limb_nat < 3 *)
+            assert (Hlimb3 : limb_nat < 3).
+            { rewrite Hlimb_nat_eq.
+              cbv [Semantics.interp_binop word.ltu] in Hlimb_lt3.
+              destruct (Z.ltb_spec (word.unsigned limb_w) 3) as [Hlt|Hnlt].
+              { apply Nat2Z.inj_lt. rewrite Z2Nat.id by (pose proof word.unsigned_range limb_w; lia).
+                lia. }
+              { exfalso.
+                rewrite word.unsigned_of_Z in Hlimb_lt3.
+                unfold word.wrap in Hlimb_lt3. rewrite Hwidth64 in Hlimb_lt3. simpl in Hlimb_lt3.
+                rewrite Z.mod_small in Hlimb_lt3 by lia.
+                rewrite Hlimb_lt3 in Hlimb_lt3. exact Hlimb_lt3. } }
+            (* Second load address: sp_w2 + (limb_nat+1)*8 *)
+            set (la2_w2 := word.add sp_w2 (word.mul (word.add limb_w (word.of_Z 1)) (word.of_Z 8)) : word).
+            (* Second load from scalar array *)
+            assert (Hload2 : Memory.load access_size.word m1 la2_w2 =
+                              Some (nth (limb_nat + 1) (nth n scalars nil) (word.of_Z 0))).
+            { assert (Hlimb1_bound : (limb_nat + 1 < scalar_limbs)%nat).
+              { unfold scalar_limbs. Lia.lia. }
+              pose proof (ScalarsArray_load_limb scalars_p scalars n (limb_nat + 1)
+                     (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x' *
+                      array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y' *
+                      array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z' *
+                      G1Array3 ppx ppy ppz px py pz * R)
+                     m1 Hn_lt Hlimb1_bound) as Hload2'.
+              rewrite Nat2Z.inj_add in Hload2'.
+              assert (Hla2_eq : la2_w2 = word.add scalars_p
+                       (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb_nat * 8 + 8))).
+              { subst la2_w2 sp_w2 limb_w w_c.
+                apply word.unsigned_inj.
+                rewrite word.unsigned_add, word.unsigned_add.
+                rewrite word.unsigned_of_Z.
+                unfold word.wrap; rewrite Hwidth64; simpl.
+                rewrite word.unsigned_add.
+                rewrite word.unsigned_mul_nowrap.
+                2: { rewrite word.unsigned_of_Z. unfold word.wrap; rewrite Hwidth64; simpl. lia. }
+                rewrite Hiw'_unsigned.
+                rewrite word.unsigned_of_Z. unfold word.wrap; rewrite Hwidth64; simpl.
+                rewrite Z.mod_small by lia.
+                rewrite word.unsigned_mul.
+                rewrite word.unsigned_add.
+                rewrite Hlimb_unsigned.
+                rewrite word.unsigned_of_Z. unfold word.wrap; rewrite Hwidth64; simpl.
+                unfold limb_nat.
+                rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+                rewrite Z.mod_small by lia.
+                rewrite word.unsigned_of_Z. unfold word.wrap; rewrite Hwidth64; simpl.
+                rewrite Z.mod_small by lia.
+                rewrite Z.mod_small.
+                { rewrite Z.mod_small by lia.
+                  rewrite Z.mod_small.
+                  { lia. }
+                  split; [lia|].
+                  pose proof (word.unsigned_range scalars_p). lia. }
+                split; [lia|].
+                pose proof (word.unsigned_range scalars_p). lia. }
+              apply Hload2'.
+              rewrite <- Hla2_eq.
+              assert (Heq2 : word.add scalars_p (word.of_Z (Z.of_nat n * 32 + (Z.of_nat limb_nat + 1) * 8))
+                             = la2_w2).
+              { rewrite Hla2_eq. f_equal. lia. }
+              rewrite <- Heq2. ecancel_assumption. }
+            (* val2 word: val1 | (load2 << (64 - shift)) *)
+            set (val2_w := word.or val1_w
+                   (word.slu (nth (limb_nat+1) (nth n scalars nil) (word.of_Z 0))
+                      (word.sub (word.of_Z 64) shift_w2)) : word).
+            (* Provide witnesses for load_off2 and load_addr2 *)
+            eexists. split.
+            { (* DEXPR for: (limb + 1) * 8 = load_off2 *)
+              cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            eexists. split.
+            { cbv [dlet.dlet].
+              (* DEXPR for: scalar_ptr + load_off2 = load_addr2 *)
+              cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            (* DEXPR for: val = val | (load(load_addr2) << (64 - shift)) *)
+            cbv [dlet.dlet].
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get WeakestPrecondition.load dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              eexists. split.
+              { (* load(load_addr2) *)
+                exact Hload2. }
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            (* Now prove the idx DEXPR and bucket update *)
+            eexists. split.
+            { (* DEXPR for: val & mask *)
+              cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            (* idx_w2 = word.and val2_w mask_w2 *)
+            set (idx_w2 := word.and val2_w mask_w2).
+            (* Use get_window_word_correct to connect idx to Gallina get_window *)
+            set (scalar_ws_n := nth n scalars nil).
+            assert (Hscalar_len_n : length scalar_ws_n = scalar_limbs).
+            { unfold scalar_ws_n.
+              (* Extract length from ScalarsArray sep, using a local copy to
+                 avoid destroying Hsep1. *)
+              assert (Hbpw_sc : Memory.bytes_per_word width = 8).
+              { unfold Memory.bytes_per_word. rewrite Hwidth64. reflexivity. }
+              assert (Hu32_sc : word.unsigned (word.of_Z 32 : word.rep) = 32).
+              { rewrite word.unsigned_of_Z. unfold word.wrap. rewrite Hwidth64.
+                reflexivity. }
+              assert (Hhd_sc : hd nil (skipn n scalars) = nth n scalars nil).
+              { revert n Hn_lt. clear - scalars.
+                induction scalars as [|s rest IH]; intros n Hn; [cbn in Hn; lia|].
+                destruct n as [|n']; [reflexivity|].
+                cbn. apply IH. cbn in Hn. lia. }
+              assert (Hsep1_copy := Hsep1).
+              unfold ScalarsArray in Hsep1_copy.
+              seprewrite_in
+                (array_index_nat_inbounds (default:=nil) ScalarAt (word.of_Z 32)
+                   scalars scalars_p n Hn_lt)
+                Hsep1_copy.
+              rewrite Hu32_sc in Hsep1_copy.
+              unfold ScalarAt, Bignum.Bignum in Hsep1_copy.
+              rewrite Hbpw_sc in Hsep1_copy.
+              extract_ex1_and_emp_in_hyps.
+              rewrite <- Hhd_sc. assumption. }
+            assert (Hval2_unsigned : word.unsigned val2_w =
+              (let bit_offset := w * c in
+               let limb := (bit_offset / 64)%Z in
+               let shift := (bit_offset mod 64)%Z in
+               let v1 := Z.shiftr
+                 (word.unsigned (nth (Z.to_nat limb) scalar_ws_n (word.of_Z 0)))
+                 shift in
+               if Nat.ltb 64 (Z.to_nat (w * c mod 64) + Z.to_nat c)
+               then
+                 (if Z.ltb limb 3
+                  then
+                    Z.lor v1
+                      (Z.shiftl
+                         (word.unsigned (nth (Z.to_nat (limb + 1)) scalar_ws_n (word.of_Z 0)))
+                         (64 - shift))
+                  else v1)
+               else v1)).
+            { (* val2_w = val1_w | (load2 << (64 - shift)) when cross-limb, limb < 3 *)
+              subst val2_w val1_w.
+              unfold scalar_ws_n.
+              rewrite word.unsigned_or.
+              rewrite word.unsigned_sru_nowrap.
+              2: { pose proof word.unsigned_range shift_w2. lia. }
+              rewrite word.unsigned_slu.
+              rewrite word.unsigned_sub.
+              rewrite word.unsigned_of_Z. unfold word.wrap; rewrite Hwidth64; simpl.
+              rewrite Z.mod_small by lia.
+              (* shift *)
+              rewrite Hshift_unsigned.
+              rewrite Hlimb_unsigned.
+              unfold limb_nat.
+              rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+              rewrite Z2Nat.id by (apply Z.mod_pos_bound; lia).
+              cbv [c].
+              (* Now simplify the condition *)
+              assert (Htrue_cond : Nat.ltb 64
+                       (Z.to_nat (w * 9 mod 64) + Z.to_nat 9) = true).
+              { apply Nat.ltb_lt.
+                rewrite Hcross_Z at 1.
+                cbv [c] in Hcross_Z.
+                rewrite Hshift_unsigned in Hcross_Z.
+                cbv [c] in Hcross_Z.
+                rewrite Z2Nat.inj_add by (apply Z.mod_pos_bound; lia).
+                lia. }
+              rewrite Htrue_cond.
+              assert (Hlt3_cond : Z.ltb (w * 9 / 64) 3 = true).
+              { apply Z.ltb_lt. unfold limb_nat in Hlimb3. cbv [c] in Hlimb3.
+                apply Nat2Z.inj_lt in Hlimb3.
+                rewrite Z2Nat.id in Hlimb3 by (apply Z_div_nonneg_nonneg; lia). lia. }
+              rewrite Hlt3_cond.
+              rewrite Z2Nat.inj_add by (apply Z_div_nonneg_nonneg; lia).
+              rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+              rewrite Z.mod_small by (apply Z.mod_pos_bound; lia).
+              rewrite Z.mod_small.
+              2: { pose proof (Z.mod_pos_bound (w * 9) 64 ltac:(lia)).
+                   rewrite Hwidth64. simpl. lia. }
+              rewrite Z.shiftr_div_pow2 by (apply Z.mod_pos_bound; lia).
+              rewrite Z.shiftl_mul_pow2 by lia.
+              reflexivity. }
+            assert (Hidx_window :
+              word.unsigned idx_w2 =
+              get_window (List.map word.unsigned scalar_ws_n) (Z.to_nat w) (Z.to_nat c)).
+            { subst idx_w2.
+              apply get_window_word_correct; [lia|lia|exact Hscalar_len_n|exact Hval2_unsigned]. }
+            (* Bounds on idx *)
+            pose proof (get_window_lt_2c (List.map word.unsigned scalar_ws_n) (Z.to_nat w)) as Hidx_lt.
+            rewrite Hidx_window in Hidx_lt.
+            (* Branch on idx = 0 or > 0 *)
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            split.
+            * (* idx TRUE branch: idx != 0 *)
+              intro Hidx_ne0.
+              assert (Hidx_pos : (0 < Z.to_nat (word.unsigned idx_w2))%nat).
+              { apply Nat.neq_0_lt_0.
+                intro Hzero.
+                apply Hidx_ne0.
+                apply word.unsigned_inj. rewrite Hzero.
+                simpl. rewrite word.unsigned_of_Z.
+                unfold word.wrap. rewrite Hwidth64. simpl. reflexivity. }
+              set (d := Z.to_nat (word.unsigned idx_w2)).
+              assert (Hd_le : (d <= Z.to_nat num_buckets)%nat).
+              { unfold d. apply Nat2Z.inj_le.
+                rewrite Z2Nat.id by (pose proof word.unsigned_range idx_w2; lia).
+                rewrite Hidx_window.
+                exact (proj2 (Z.ltb_lt _ _) (Z.lt_le_pred _ _ Hidx_lt)). }
+              (* 7 mechanical cmd.sets: bucket_index, bpx, bpy, bpz, ppx, ppy, ppz *)
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              set (bidx_w := word.sub idx_w2 (word.of_Z 1) : word).
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlbx1. }
+                eexists. split.
+                { rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlby1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlbz1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppx1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppy1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppz1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              (* curve_add call *)
+              (* Split bucket arrays at index d-1 *)
+              assert (Hd1_lt_x : (d - 1 < length bs_x')%nat).
+              { apply Nat2Z.inj_lt. rewrite Hlx.
+                unfold d. rewrite Hidx_window. rewrite Z2Nat.id by (pose proof word.unsigned_range idx_w2; lia).
+                unfold num_buckets. simpl. Lia.lia. }
+              assert (Hd1_lt_y : (d - 1 < length bs_y')%nat).
+              { rewrite <- Hxy in Hd1_lt_x. rewrite <- (Nat2Z.inj_lt).
+                rewrite Hly. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hd1_lt_x. }
+              assert (Hd1_lt_z : (d - 1 < length bs_z')%nat).
+              { rewrite <- Hyz in Hd1_lt_y. rewrite <- (Nat2Z.inj_lt).
+                rewrite Hlz. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hd1_lt_y. }
+              (* Split point arrays at index n *)
+              assert (Hn_lt_px : n < length px).
+              { rewrite <- Hlen_s_px. exact Hn_lt. }
+              assert (Hn_lt_py : n < length py).
+              { rewrite <- Hlen_px_py. exact Hn_lt_px. }
+              assert (Hn_lt_pz : n < length pz).
+              { rewrite <- Hlen_py_pz. exact Hn_lt_py. }
+              (* Compute bucket and point addresses *)
+              set (felem_sz := word.of_Z (width:=width) felem_size_in_bytes).
+              set (felem_sz_u := word.unsigned felem_sz).
+              set (bpx_w := word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (d-1))) : word).
+              set (bpy_w := word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (d-1))) : word).
+              set (bpz_w := word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (d-1))) : word).
+              set (ppx_w := word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              set (ppy_w := word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              set (ppz_w := word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              (* Extract FElems from the sep *)
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (d-1) Hd1_lt_x) as Hspx.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (d-1) Hd1_lt_y) as Hspy.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (d-1) Hd1_lt_z) as Hspz.
+              unfold PointArray in Hspx, Hspy, Hspz.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppx px n Hn_lt_px) as Hsppx.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppy py n Hn_lt_py) as Hsppy.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppz pz n Hn_lt_pz) as Hsppz.
+              unfold PointArray in Hsppx, Hsppy, Hsppz.
+              (* Extract from Hsep1 *)
+              assert (Hsep1' : (FElem (Some tight_bounds) bpx_w (nth (d-1) bs_x' F.zero) *
+                                FElem (Some tight_bounds) bpy_w (nth (d-1) bs_y' F.zero) *
+                                FElem (Some tight_bounds) bpz_w (nth (d-1) bs_z' F.zero) *
+                                FElem (Some tight_bounds) ppx_w (nth n px F.zero) *
+                                FElem (Some tight_bounds) ppy_w (nth n py F.zero) *
+                                FElem (Some tight_bounds) ppz_w (nth n pz F.zero) *
+                                (array (FElem (Some tight_bounds)) felem_sz buckets_x (firstn (d-1) bs_x') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (d-1)))) felem_sz)
+                                       (skipn (S (d-1)) bs_x') *
+                                 array (FElem (Some tight_bounds)) felem_sz buckets_y (firstn (d-1) bs_y') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (d-1)))) felem_sz)
+                                       (skipn (S (d-1)) bs_y') *
+                                 array (FElem (Some tight_bounds)) felem_sz buckets_z (firstn (d-1) bs_z') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (d-1)))) felem_sz)
+                                       (skipn (S (d-1)) bs_z') *
+                                 ScalarsArray scalars_p scalars *
+                                 array (FElem (Some tight_bounds)) felem_sz ppx (firstn n px) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) px) *
+                                 array (FElem (Some tight_bounds)) felem_sz ppy (firstn n py) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) py) *
+                                 array (FElem (Some tight_bounds)) felem_sz ppz (firstn n pz) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) pz) *
+                                 R))%sep m1).
+              { seprewrite_in Hspx Hsep1. seprewrite_in Hspy Hsep1. seprewrite_in Hspz Hsep1.
+                unfold G1Array3 in Hsep1.
+                seprewrite_in Hsppx Hsep1. seprewrite_in Hsppy Hsep1. seprewrite_in Hsppz Hsep1.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_x.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_y.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_z.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_px.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_py.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_pz.
+                subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u.
+                ecancel_assumption. }
+              (* Invoke CurveAddAliasedOK *)
+              unfold CurveAddAliasedOK in HCurveAdd.
+              eapply (HCurveAdd
+                bpx_w ppx_w bpy_w ppy_w bpz_w ppz_w
+                (nth (d-1) bs_x' F.zero) (nth n px F.zero)
+                (nth (d-1) bs_y' F.zero) (nth n py F.zero)
+                (nth (d-1) bs_z' F.zero) (nth n pz F.zero)).
+              { ecancel_assumption. }
+              intros tr2 m2 rets (Hrets & Htr2 & Hm2).
+              subst tr2 rets.
+              (* Destruct the let-binding in the CurveAddAliasedOK postcondition *)
+              set (add_res := g1_add_spec
+                (nth (d-1) bs_x' F.zero, nth (d-1) bs_y' F.zero, nth (d-1) bs_z' F.zero)
+                (nth n px F.zero, nth n py F.zero, nth n pz F.zero)) in Hm2.
+              destruct add_res as [[B1' B2'] B3'] eqn:Hadd_res.
+              (* g1_add_spec result — use B1'/B2'/B3' directly *)
+              set (bs_x'' := firstn (d-1) bs_x' ++ B1' :: skipn (S (d-1)) bs_x').
+              set (bs_y'' := firstn (d-1) bs_y' ++ B2' :: skipn (S (d-1)) bs_y').
+              set (bs_z'' := firstn (d-1) bs_z' ++ B3' :: skipn (S (d-1)) bs_z').
+              (* Re-establish invariant *)
+              split; [reflexivity|].
+              exists bs_x'', bs_y'', bs_z''.
+              split.
+              { subst bs_x''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { subst bs_y''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { subst bs_z''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { (* distribute_inv step *)
+                eapply distribute_inv_step_pos.
+                - Lia.lia.
+                - rewrite Hlen_s_px. reflexivity.
+                - unfold d.
+                  split; [exact Hidx_pos|exact Hd_le].
+                - rewrite <- Nat2Z.inj_succ in Hdinv.
+                  unfold add_res in Hadd_res. rewrite Hadd_res. exact Hdinv. }
+              split.
+              { (* sep: reconstruct arrays after in-place bucket update *)
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (d-1) B1' Hd1_lt_x) as Hupd_bx.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (d-1) B2' Hd1_lt_y) as Hupd_by.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (d-1) B3' Hd1_lt_z) as Hupd_bz.
+                unfold PointArray in Hupd_bx, Hupd_by, Hupd_bz.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppx px n (nth n px F.zero) Hn_lt_px) as Hupd_px.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppy py n (nth n py F.zero) Hn_lt_py) as Hupd_py.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppz pz n (nth n pz F.zero) Hn_lt_pz) as Hupd_pz.
+                unfold PointArray in Hupd_px, Hupd_py, Hupd_pz.
+                assert (Hpx_eq : firstn n px ++ nth n px F.zero :: skipn (S n) px = px).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_px. apply firstn_skipn. }
+                assert (Hpy_eq : firstn n py ++ nth n py F.zero :: skipn (S n) py = py).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_py. apply firstn_skipn. }
+                assert (Hpz_eq : firstn n pz ++ nth n pz F.zero :: skipn (S n) pz = pz).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_pz. apply firstn_skipn. }
+                seprewrite_in Hupd_bx Hm2. seprewrite_in Hupd_by Hm2. seprewrite_in Hupd_bz Hm2.
+                seprewrite_in Hupd_px Hm2. seprewrite_in Hupd_py Hm2. seprewrite_in Hupd_pz Hm2.
+                rewrite Hpx_eq in Hm2. rewrite Hpy_eq in Hm2. rewrite Hpz_eq in Hm2.
+                unfold G1Array3.
+                subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u bs_x'' bs_y'' bs_z''.
+                ecancel_assumption. }
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlbx1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlby1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlbz1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hls1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppx1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppy1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppz1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlw1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hli1|].
+              split; [exact Hiw'_unsigned|].
+              split; [Lia.lia|].
+              reflexivity.
+            * (* idx FALSE branch: idx = 0 *)
+              intro Hidx_zero.
+              assert (Hd_zero : Z.to_nat (word.unsigned idx_w2) = 0%nat).
+              { apply Nat.eq_of_eq_pred; simpl.
+                apply word.unsigned_inj in Hidx_zero.
+                rewrite Hidx_zero. simpl. rewrite word.unsigned_of_Z.
+                unfold word.wrap; rewrite Hwidth64; simpl. lia. }
+              assert (Hwin_zero : get_window (List.map word.unsigned scalar_ws_n) (Z.to_nat w) (Z.to_nat c) = 0).
+              { rewrite <- Hidx_window. rewrite Hd_zero.
+                rewrite Z2Nat.id by (pose proof word.unsigned_range idx_w2; lia).
+                reflexivity. }
+              split; [reflexivity|].
+              exists bs_x', bs_y', bs_z'.
+              split; [exact Hlx|].
+              split; [exact Hly|].
+              split; [exact Hlz|].
+              split.
+              { eapply distribute_inv_step_zero.
+                - Lia.lia.
+                - rewrite Hlen_s_px. reflexivity.
+                - unfold scalar_ws_n. unfold scalars_to_Z. rewrite map_nth.
+                  exact Hwin_zero.
+                - rewrite <- Nat2Z.inj_succ in Hdinv. exact Hdinv. }
+              split; [exact Hsep1|].
+              split; [exact Hlbx1|].
+              split; [exact Hlby1|].
+              split; [exact Hlbz1|].
+              split; [exact Hls1|].
+              split; [exact Hppx1|].
+              split; [exact Hppy1|].
+              split; [exact Hppz1|].
+              split; [exact Hlw1|].
+              split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                exact Hli1. }
+              split; [exact Hiw'_unsigned|].
+              split; [Lia.lia|].
+              reflexivity.
+          + (* Cross-limb inner FALSE: limb >= 3 — no second load, val stays val1_w *)
+            intro Hlimb_ge3.
+            (* limb_nat >= 3 means limb_nat = 3 (since limb_nat < 4 = scalar_limbs) *)
+            assert (Hlimb3' : limb_nat = 3).
+            { rewrite Hlimb_nat_eq.
+              cbv [Semantics.interp_binop word.ltu] in Hlimb_ge3.
+              apply word.unsigned_inj in Hlimb_ge3.
+              rewrite word.unsigned_of_Z in Hlimb_ge3.
+              unfold word.wrap in Hlimb_ge3; rewrite Hwidth64 in Hlimb_ge3; simpl in Hlimb_ge3.
+              destruct (Z.ltb_spec (word.unsigned limb_w) 3).
+              { (* limb < 3: contradiction since Hlimb_ge3 says 0 *)
+                rewrite Z.mod_small in Hlimb_ge3 by lia.
+                apply Nat2Z.inj_lt in H.
+                rewrite Z2Nat.id in H by (pose proof word.unsigned_range limb_w; lia).
+                unfold limb_nat in Hlimb_nat_bound. lia. }
+              { (* limb >= 3: limb = 3 since limb_nat < scalar_limbs = 4 *)
+                apply Nat2Z.inj_eq.
+                rewrite Z2Nat.id by (pose proof word.unsigned_range limb_w; lia).
+                unfold limb_nat in Hlimb_nat_bound. unfold scalar_limbs in Hlimb_nat_bound.
+                rewrite Hlimb_unsigned. lia. } }
+            (* val stays val1_w — skip the inner cond body is cmd.skip *)
+            (* Need to prove idx branch with val = val1_w *)
+            set (val1_val := val1_w).
+            eexists. split.
+            { (* DEXPR for val & mask when val = val1_w *)
+              cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            set (idx1_w := word.and val1_w mask_w2).
+            assert (Hval1_unsigned : word.unsigned val1_w =
+              (let bit_offset := w * c in
+               let limb := (bit_offset / 64)%Z in
+               let shift := (bit_offset mod 64)%Z in
+               let v1 := Z.shiftr
+                 (word.unsigned (nth (Z.to_nat limb) (nth n scalars nil) (word.of_Z 0)))
+                 shift in
+               if Nat.ltb 64 (Z.to_nat (w * c mod 64) + Z.to_nat c)
+               then
+                 (if Z.ltb limb 3
+                  then
+                    Z.lor v1
+                      (Z.shiftl
+                         (word.unsigned (nth (Z.to_nat (limb + 1)) (nth n scalars nil) (word.of_Z 0)))
+                         (64 - shift))
+                  else v1)
+               else v1)).
+            { subst val1_w.
+              rewrite word.unsigned_sru_nowrap.
+              2: { pose proof word.unsigned_range shift_w2. lia. }
+              rewrite Hshift_unsigned. rewrite Hlimb_unsigned.
+              unfold limb_nat.
+              rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+              rewrite Z2Nat.id by (apply Z.mod_pos_bound; lia).
+              cbv [c].
+              assert (Hcross_true2 : Nat.ltb 64 (Z.to_nat (w * 9 mod 64) + Z.to_nat 9) = true).
+              { apply Nat.ltb_lt.
+                cbv [c] in Hcross_Z. rewrite Hshift_unsigned in Hcross_Z. cbv [c] in Hcross_Z.
+                rewrite Z2Nat.inj_add by (apply Z.mod_pos_bound; lia). lia. }
+              rewrite Hcross_true2.
+              rewrite <- Hlimb3'.
+              unfold limb_nat in Hlimb3'.
+              assert (Hlimb3_Z : Z.ltb (w * 9 / 64) 3 = false).
+              { apply Z.ltb_nlt. apply Nat2Z.inj_le.
+                rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia). lia. }
+              rewrite Hlimb3_Z. reflexivity. }
+            assert (Hidx1_window :
+              word.unsigned idx1_w =
+              get_window (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w) (Z.to_nat c)).
+            { subst idx1_w.
+              apply get_window_word_correct; [lia|lia|exact Hscalar_len_n|exact Hval1_unsigned]. }
+            pose proof (get_window_lt_2c (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w)) as Hidx1_lt.
+            rewrite Hidx1_window in Hidx1_lt.
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            split.
+            * (* idx != 0 TRUE branch — bucket update *)
+              intro Hidx1_ne0.
+              assert (Hidx1_pos : (0 < Z.to_nat (word.unsigned idx1_w))%nat).
+              { apply Nat.neq_0_lt_0. intro Hz. apply Hidx1_ne0.
+                apply word.unsigned_inj. rewrite Hz. simpl.
+                rewrite word.unsigned_of_Z. unfold word.wrap. rewrite Hwidth64. simpl. reflexivity. }
+              set (d1 := Z.to_nat (word.unsigned idx1_w)).
+              assert (Hd1_le : (d1 <= Z.to_nat num_buckets)%nat).
+              { unfold d1. apply Nat2Z.inj_le.
+                rewrite Z2Nat.id by (pose proof word.unsigned_range idx1_w; lia).
+                rewrite Hidx1_window. exact (proj2 (Z.ltb_lt _ _) (Z.lt_le_pred _ _ Hidx1_lt)). }
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              set (bidx_w := word.sub idx1_w (word.of_Z 1) : word).
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlbx1. }
+                eexists. split.
+                { rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlby1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. exact Hlbz1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppx1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppy1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+              fold WeakestPrecondition.cmd.
+              eexists. split.
+              { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                     WeakestPrecondition.expr_body WeakestPrecondition.literal
+                     WeakestPrecondition.get dlet.dlet].
+                eexists. split.
+                { repeat rewrite map.get_put_diff by congruence. exact Hppz1. }
+                eexists. split.
+                { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                  rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+                cbv [Semantics.interp_binop]. reflexivity. }
+              cbv [dlet.dlet].
+              assert (Hd1_lt_x : (d1 - 1 < length bs_x')%nat).
+              { apply Nat2Z.inj_lt. rewrite Hlx.
+                unfold d1. rewrite Hidx1_window.
+                rewrite Z2Nat.id by (pose proof word.unsigned_range idx1_w; lia).
+                unfold num_buckets. simpl. Lia.lia. }
+              assert (Hd1_lt_y : (d1 - 1 < length bs_y')%nat).
+              { rewrite <- Hxy in Hd1_lt_x. rewrite <- (Nat2Z.inj_lt).
+                rewrite Hly. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hd1_lt_x. }
+              assert (Hd1_lt_z : (d1 - 1 < length bs_z')%nat).
+              { rewrite <- Hyz in Hd1_lt_y. rewrite <- (Nat2Z.inj_lt).
+                rewrite Hlz. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hd1_lt_y. }
+              assert (Hn_lt_px : n < length px).
+              { rewrite <- Hlen_s_px. exact Hn_lt. }
+              assert (Hn_lt_py : n < length py).
+              { rewrite <- Hlen_px_py. exact Hn_lt_px. }
+              assert (Hn_lt_pz : n < length pz).
+              { rewrite <- Hlen_py_pz. exact Hn_lt_py. }
+              set (felem_sz := word.of_Z (width:=width) felem_size_in_bytes).
+              set (felem_sz_u := word.unsigned felem_sz).
+              set (bpx_w := word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (d1-1))) : word).
+              set (bpy_w := word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (d1-1))) : word).
+              set (bpz_w := word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (d1-1))) : word).
+              set (ppx_w := word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              set (ppy_w := word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              set (ppz_w := word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (d1-1) Hd1_lt_x) as Hspx.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (d1-1) Hd1_lt_y) as Hspy.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (d1-1) Hd1_lt_z) as Hspz.
+              unfold PointArray in Hspx, Hspy, Hspz.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppx px n Hn_lt_px) as Hsppx.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppy py n Hn_lt_py) as Hsppy.
+              pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppz pz n Hn_lt_pz) as Hsppz.
+              unfold PointArray in Hsppx, Hsppy, Hsppz.
+              assert (Hsep1' : (FElem (Some tight_bounds) bpx_w (nth (d1-1) bs_x' F.zero) *
+                                FElem (Some tight_bounds) bpy_w (nth (d1-1) bs_y' F.zero) *
+                                FElem (Some tight_bounds) bpz_w (nth (d1-1) bs_z' F.zero) *
+                                FElem (Some tight_bounds) ppx_w (nth n px F.zero) *
+                                FElem (Some tight_bounds) ppy_w (nth n py F.zero) *
+                                FElem (Some tight_bounds) ppz_w (nth n pz F.zero) *
+                                (array (FElem (Some tight_bounds)) felem_sz buckets_x (firstn (d1-1) bs_x') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (d1-1)))) felem_sz)
+                                       (skipn (S (d1-1)) bs_x') *
+                                 array (FElem (Some tight_bounds)) felem_sz buckets_y (firstn (d1-1) bs_y') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (d1-1)))) felem_sz)
+                                       (skipn (S (d1-1)) bs_y') *
+                                 array (FElem (Some tight_bounds)) felem_sz buckets_z (firstn (d1-1) bs_z') *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (d1-1)))) felem_sz)
+                                       (skipn (S (d1-1)) bs_z') *
+                                 ScalarsArray scalars_p scalars *
+                                 array (FElem (Some tight_bounds)) felem_sz ppx (firstn n px) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) px) *
+                                 array (FElem (Some tight_bounds)) felem_sz ppy (firstn n py) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) py) *
+                                 array (FElem (Some tight_bounds)) felem_sz ppz (firstn n pz) *
+                                 array (FElem (Some tight_bounds)) felem_sz
+                                       (word.add (word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                       (skipn (S n) pz) *
+                                 R))%sep m1).
+              { seprewrite_in Hspx Hsep1. seprewrite_in Hspy Hsep1. seprewrite_in Hspz Hsep1.
+                unfold G1Array3 in Hsep1.
+                seprewrite_in Hsppx Hsep1. seprewrite_in Hsppy Hsep1. seprewrite_in Hsppz Hsep1.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_x.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_y.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hd1_lt_z.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_px.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_py.
+                rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_pz.
+                subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u.
+                ecancel_assumption. }
+              unfold CurveAddAliasedOK in HCurveAdd.
+              eapply (HCurveAdd
+                bpx_w ppx_w bpy_w ppy_w bpz_w ppz_w
+                (nth (d1-1) bs_x' F.zero) (nth n px F.zero)
+                (nth (d1-1) bs_y' F.zero) (nth n py F.zero)
+                (nth (d1-1) bs_z' F.zero) (nth n pz F.zero)).
+              { ecancel_assumption. }
+              intros tr2 m2 rets (Hrets & Htr2 & Hm2).
+              subst tr2 rets.
+              set (add_res1 := g1_add_spec
+                (nth (d1-1) bs_x' F.zero, nth (d1-1) bs_y' F.zero, nth (d1-1) bs_z' F.zero)
+                (nth n px F.zero, nth n py F.zero, nth n pz F.zero)) in Hm2.
+              destruct add_res1 as [[B1' B2'] B3'] eqn:Hadd_res1.
+              set (bs_x'' := firstn (d1-1) bs_x' ++ B1' :: skipn (S (d1-1)) bs_x').
+              set (bs_y'' := firstn (d1-1) bs_y' ++ B2' :: skipn (S (d1-1)) bs_y').
+              set (bs_z'' := firstn (d1-1) bs_z' ++ B3' :: skipn (S (d1-1)) bs_z').
+              split; [reflexivity|].
+              exists bs_x'', bs_y'', bs_z''.
+              split.
+              { subst bs_x''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { subst bs_y''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { subst bs_z''. rewrite length_app, length_cons, length_firstn, length_skipn.
+                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+              split.
+              { eapply distribute_inv_step_pos.
+                - Lia.lia.
+                - rewrite Hlen_s_px. reflexivity.
+                - unfold d1. split; [exact Hidx1_pos|exact Hd1_le].
+                - rewrite <- Nat2Z.inj_succ in Hdinv.
+                  unfold add_res1 in Hadd_res1. rewrite Hadd_res1. exact Hdinv. }
+              split.
+              { pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (d1-1) B1' Hd1_lt_x) as Hupd_bx.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (d1-1) B2' Hd1_lt_y) as Hupd_by.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (d1-1) B3' Hd1_lt_z) as Hupd_bz.
+                unfold PointArray in Hupd_bx, Hupd_by, Hupd_bz.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppx px n (nth n px F.zero) Hn_lt_px) as Hupd_px.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppy py n (nth n py F.zero) Hn_lt_py) as Hupd_py.
+                pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                      (FElem (Some tight_bounds)) felem_sz ppz pz n (nth n pz F.zero) Hn_lt_pz) as Hupd_pz.
+                unfold PointArray in Hupd_px, Hupd_py, Hupd_pz.
+                assert (Hpx_eq : firstn n px ++ nth n px F.zero :: skipn (S n) px = px).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_px. apply firstn_skipn. }
+                assert (Hpy_eq : firstn n py ++ nth n py F.zero :: skipn (S n) py = py).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_py. apply firstn_skipn. }
+                assert (Hpz_eq : firstn n pz ++ nth n pz F.zero :: skipn (S n) pz = pz).
+                { rewrite <- skipn_S_eq_gen by exact Hn_lt_pz. apply firstn_skipn. }
+                seprewrite_in Hupd_bx Hm2. seprewrite_in Hupd_by Hm2. seprewrite_in Hupd_bz Hm2.
+                seprewrite_in Hupd_px Hm2. seprewrite_in Hupd_py Hm2. seprewrite_in Hupd_pz Hm2.
+                rewrite Hpx_eq in Hm2. rewrite Hpy_eq in Hm2. rewrite Hpz_eq in Hm2.
+                unfold G1Array3.
+                subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u bs_x'' bs_y'' bs_z''.
+                ecancel_assumption. }
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlbx1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlby1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlbz1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hls1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppx1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppy1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hppz1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hlw1|].
+              split; [repeat rewrite map.get_put_diff by congruence; exact Hli1|].
+              split; [exact Hiw'_unsigned|].
+              split; [Lia.lia|].
+              reflexivity.
+            * (* idx = 0 FALSE branch *)
+              intro Hidx1_zero.
+              assert (Hwin1_zero : get_window (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w) (Z.to_nat c) = 0).
+              { rewrite <- Hidx1_window.
+                apply word.unsigned_inj in Hidx1_zero.
+                rewrite Hidx1_zero. simpl. rewrite word.unsigned_of_Z.
+                unfold word.wrap; rewrite Hwidth64; simpl. lia. }
+              split; [reflexivity|].
+              exists bs_x', bs_y', bs_z'.
+              split; [exact Hlx|]. split; [exact Hly|]. split; [exact Hlz|].
+              split.
+              { eapply distribute_inv_step_zero. Lia.lia.
+                rewrite Hlen_s_px. reflexivity.
+                unfold scalars_to_Z. rewrite map_nth. exact Hwin1_zero.
+                rewrite <- Nat2Z.inj_succ in Hdinv. exact Hdinv. }
+              split; [exact Hsep1|].
+              split; [exact Hlbx1|]. split; [exact Hlby1|]. split; [exact Hlbz1|].
+              split; [exact Hls1|].
+              split; [exact Hppx1|]. split; [exact Hppy1|]. split; [exact Hppz1|].
+              split; [exact Hlw1|].
+              split.
+              { rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                exact Hli1. }
+              split; [exact Hiw'_unsigned|].
+              split; [Lia.lia|]. reflexivity.
+        - (* Cross-limb FALSE: shift + c <= 64 — no second load *)
+          intro Hno_cross.
+          (* val = val1_w (no cross-limb) *)
+          assert (Hno_cross_Z : word.unsigned shift_w2 + c <= 64).
+          { cbv [Semantics.interp_binop word.ltu] in Hno_cross.
+            apply word.unsigned_inj in Hno_cross.
+            rewrite word.unsigned_of_Z in Hno_cross.
+            unfold word.wrap in Hno_cross; rewrite Hwidth64 in Hno_cross; simpl in Hno_cross.
+            destruct (Z.ltb_spec 64 (word.unsigned shift_w2 + c)).
+            { rewrite Z.mod_small in Hno_cross by lia. discriminate. }
+            { lia. } }
+          (* val = val1_w directly *)
+          assert (Hval1_nocross_unsigned : word.unsigned val1_w =
+            (let bit_offset := w * c in
+             let limb := (bit_offset / 64)%Z in
+             let shift := (bit_offset mod 64)%Z in
+             let v1 := Z.shiftr
+               (word.unsigned (nth (Z.to_nat limb) (nth n scalars nil) (word.of_Z 0)))
+               shift in
+             if Nat.ltb 64 (Z.to_nat (w * c mod 64) + Z.to_nat c)
+             then
+               (if Z.ltb limb 3
+                then
+                  Z.lor v1
+                    (Z.shiftl
+                       (word.unsigned (nth (Z.to_nat (limb + 1)) (nth n scalars nil) (word.of_Z 0)))
+                       (64 - shift))
+                else v1)
+             else v1)).
+          { subst val1_w.
+            rewrite word.unsigned_sru_nowrap.
+            2: { pose proof word.unsigned_range shift_w2. lia. }
+            rewrite Hshift_unsigned. rewrite Hlimb_unsigned.
+            unfold limb_nat.
+            rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; lia).
+            rewrite Z2Nat.id by (apply Z.mod_pos_bound; lia).
+            cbv [c].
+            assert (Hno_cross_false : Nat.ltb 64 (Z.to_nat (w * 9 mod 64) + Z.to_nat 9) = false).
+            { apply Nat.ltb_nlt.
+              cbv [c] in Hno_cross_Z. rewrite Hshift_unsigned in Hno_cross_Z.
+              cbv [c] in Hno_cross_Z.
+              rewrite Z2Nat.inj_add by (apply Z.mod_pos_bound; lia). lia. }
+            rewrite Hno_cross_false. reflexivity. }
+          assert (Hidxv1_window :
+            word.unsigned (word.and val1_w mask_w2) =
+            get_window (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w) (Z.to_nat c)).
+          { apply get_window_word_correct; [lia|lia|exact Hscalar_len_n|exact Hval1_nocross_unsigned]. }
+          pose proof (get_window_lt_2c (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w)) as Hv1_lt.
+          eexists. split.
+          { (* DEXPR for val & mask *)
+            cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                 WeakestPrecondition.expr_body WeakestPrecondition.literal
+                 WeakestPrecondition.get dlet.dlet].
+            eexists. split.
+            { rewrite map.get_put_same. reflexivity. }
+            eexists. split.
+            { rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_same. reflexivity. }
+            cbv [Semantics.interp_binop]. reflexivity. }
+          cbv [dlet.dlet].
+          rewrite Hidxv1_window in Hv1_lt.
+          set (idxv1_w := word.and val1_w mask_w2).
+          cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+          fold WeakestPrecondition.cmd.
+          split.
+          + (* idx != 0 TRUE — bucket update *)
+            intro Hidxv1_ne0.
+            assert (Hdv_pos : (0 < Z.to_nat (word.unsigned idxv1_w))%nat).
+            { apply Nat.neq_0_lt_0. intro Hz. apply Hidxv1_ne0.
+              apply word.unsigned_inj. rewrite Hz. simpl.
+              rewrite word.unsigned_of_Z. unfold word.wrap. rewrite Hwidth64. simpl. reflexivity. }
+            assert (Hdv_le : (Z.to_nat (word.unsigned idxv1_w) <= Z.to_nat num_buckets)%nat).
+            { apply Nat2Z.inj_le.
+              rewrite Z2Nat.id by (pose proof word.unsigned_range idxv1_w; lia).
+              rewrite Hidxv1_window.
+              exact (proj2 (Z.ltb_lt _ _) (Z.lt_le_pred _ _ Hv1_lt)). }
+            set (dv := Z.to_nat (word.unsigned idxv1_w)).
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            set (bidx_w := word.sub idxv1_w (word.of_Z 1) : word).
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. exact Hlbx1. }
+              eexists. split.
+              { rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. exact Hlby1. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. exact Hlbz1. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { repeat rewrite map.get_put_diff by congruence. exact Hppx1. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { repeat rewrite map.get_put_diff by congruence. exact Hppy1. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get dlet.dlet].
+              eexists. split.
+              { repeat rewrite map.get_put_diff by congruence. exact Hppz1. }
+              eexists. split.
+              { rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence. rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence. rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            assert (Hdv_lt_x : (dv - 1 < length bs_x')%nat).
+            { apply Nat2Z.inj_lt. rewrite Hlx.
+              unfold dv. rewrite Hidxv1_window.
+              rewrite Z2Nat.id by (pose proof word.unsigned_range idxv1_w; lia).
+              unfold num_buckets. simpl. Lia.lia. }
+            assert (Hdv_lt_y : (dv - 1 < length bs_y')%nat).
+            { rewrite <- Hxy in Hdv_lt_x. rewrite <- (Nat2Z.inj_lt).
+              rewrite Hly. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hdv_lt_x. }
+            assert (Hdv_lt_z : (dv - 1 < length bs_z')%nat).
+            { rewrite <- Hyz in Hdv_lt_y. rewrite <- (Nat2Z.inj_lt).
+              rewrite Hlz. apply (Nat2Z.inj_lt _ (Z.to_nat num_buckets)). exact Hdv_lt_y. }
+            assert (Hn_lt_px : n < length px).
+            { rewrite <- Hlen_s_px. exact Hn_lt. }
+            assert (Hn_lt_py : n < length py).
+            { rewrite <- Hlen_px_py. exact Hn_lt_px. }
+            assert (Hn_lt_pz : n < length pz).
+            { rewrite <- Hlen_py_pz. exact Hn_lt_py. }
+            set (felem_sz := word.of_Z (width:=width) felem_size_in_bytes).
+            set (felem_sz_u := word.unsigned felem_sz).
+            set (bpx_w := word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (dv-1))) : word).
+            set (bpy_w := word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (dv-1))) : word).
+            set (bpz_w := word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (dv-1))) : word).
+            set (ppx_w := word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+            set (ppy_w := word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+            set (ppz_w := word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n)) : word).
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (dv-1) Hdv_lt_x) as Hspx.
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (dv-1) Hdv_lt_y) as Hspy.
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (dv-1) Hdv_lt_z) as Hspz.
+            unfold PointArray in Hspx, Hspy, Hspz.
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz ppx px n Hn_lt_px) as Hsppx.
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz ppy py n Hn_lt_py) as Hsppy.
+            pose proof (PointArray_split_at (T:=F) (default:=F.zero)
+                  (FElem (Some tight_bounds)) felem_sz ppz pz n Hn_lt_pz) as Hsppz.
+            unfold PointArray in Hsppx, Hsppy, Hsppz.
+            assert (Hsep1' : (FElem (Some tight_bounds) bpx_w (nth (dv-1) bs_x' F.zero) *
+                              FElem (Some tight_bounds) bpy_w (nth (dv-1) bs_y' F.zero) *
+                              FElem (Some tight_bounds) bpz_w (nth (dv-1) bs_z' F.zero) *
+                              FElem (Some tight_bounds) ppx_w (nth n px F.zero) *
+                              FElem (Some tight_bounds) ppy_w (nth n py F.zero) *
+                              FElem (Some tight_bounds) ppz_w (nth n pz F.zero) *
+                              (array (FElem (Some tight_bounds)) felem_sz buckets_x (firstn (dv-1) bs_x') *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add buckets_x (word.of_Z (felem_sz_u * Z.of_nat (dv-1)))) felem_sz)
+                                     (skipn (S (dv-1)) bs_x') *
+                               array (FElem (Some tight_bounds)) felem_sz buckets_y (firstn (dv-1) bs_y') *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add buckets_y (word.of_Z (felem_sz_u * Z.of_nat (dv-1)))) felem_sz)
+                                     (skipn (S (dv-1)) bs_y') *
+                               array (FElem (Some tight_bounds)) felem_sz buckets_z (firstn (dv-1) bs_z') *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add buckets_z (word.of_Z (felem_sz_u * Z.of_nat (dv-1)))) felem_sz)
+                                     (skipn (S (dv-1)) bs_z') *
+                               ScalarsArray scalars_p scalars *
+                               array (FElem (Some tight_bounds)) felem_sz ppx (firstn n px) *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add ppx (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                     (skipn (S n) px) *
+                               array (FElem (Some tight_bounds)) felem_sz ppy (firstn n py) *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add ppy (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                     (skipn (S n) py) *
+                               array (FElem (Some tight_bounds)) felem_sz ppz (firstn n pz) *
+                               array (FElem (Some tight_bounds)) felem_sz
+                                     (word.add (word.add ppz (word.of_Z (felem_sz_u * Z.of_nat n))) felem_sz)
+                                     (skipn (S n) pz) *
+                               R))%sep m1).
+            { seprewrite_in Hspx Hsep1. seprewrite_in Hspy Hsep1. seprewrite_in Hspz Hsep1.
+              unfold G1Array3 in Hsep1.
+              seprewrite_in Hsppx Hsep1. seprewrite_in Hsppy Hsep1. seprewrite_in Hsppz Hsep1.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hdv_lt_x.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hdv_lt_y.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hdv_lt_z.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_px.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_py.
+              rewrite skipn_S_eq_gen in Hsep1 by exact Hn_lt_pz.
+              subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u.
+              ecancel_assumption. }
+            unfold CurveAddAliasedOK in HCurveAdd.
+            eapply (HCurveAdd
+              bpx_w ppx_w bpy_w ppy_w bpz_w ppz_w
+              (nth (dv-1) bs_x' F.zero) (nth n px F.zero)
+              (nth (dv-1) bs_y' F.zero) (nth n py F.zero)
+              (nth (dv-1) bs_z' F.zero) (nth n pz F.zero)).
+            { ecancel_assumption. }
+            intros tr2 m2 rets (Hrets & Htr2 & Hm2).
+            subst tr2 rets.
+            set (add_res2 := g1_add_spec
+              (nth (dv-1) bs_x' F.zero, nth (dv-1) bs_y' F.zero, nth (dv-1) bs_z' F.zero)
+              (nth n px F.zero, nth n py F.zero, nth n pz F.zero)) in Hm2.
+            destruct add_res2 as [[B1' B2'] B3'] eqn:Hadd_res2.
+            set (bs_x'' := firstn (dv-1) bs_x' ++ B1' :: skipn (S (dv-1)) bs_x').
+            set (bs_y'' := firstn (dv-1) bs_y' ++ B2' :: skipn (S (dv-1)) bs_y').
+            set (bs_z'' := firstn (dv-1) bs_z' ++ B3' :: skipn (S (dv-1)) bs_z').
+            split; [reflexivity|].
+            exists bs_x'', bs_y'', bs_z''.
+            split.
+            { subst bs_x''. rewrite length_app, length_cons, length_firstn, length_skipn.
+              rewrite Nat.min_l by Lia.lia. Lia.lia. }
+            split.
+            { subst bs_y''. rewrite length_app, length_cons, length_firstn, length_skipn.
+              rewrite Nat.min_l by Lia.lia. Lia.lia. }
+            split.
+            { subst bs_z''. rewrite length_app, length_cons, length_firstn, length_skipn.
+              rewrite Nat.min_l by Lia.lia. Lia.lia. }
+            split.
+            { eapply distribute_inv_step_pos.
+              - Lia.lia.
+              - rewrite Hlen_s_px. reflexivity.
+              - unfold dv. split; [exact Hdv_pos|exact Hdv_le].
+              - rewrite <- Nat2Z.inj_succ in Hdinv.
+                unfold add_res2 in Hadd_res2. rewrite Hadd_res2. exact Hdinv. }
+            split.
+            { pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_x bs_x' (dv-1) B1' Hdv_lt_x) as Hupd_bx.
+              pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_y bs_y' (dv-1) B2' Hdv_lt_y) as Hupd_by.
+              pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz buckets_z bs_z' (dv-1) B3' Hdv_lt_z) as Hupd_bz.
+              unfold PointArray in Hupd_bx, Hupd_by, Hupd_bz.
+              pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppx px n (nth n px F.zero) Hn_lt_px) as Hupd_px.
+              pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppy py n (nth n py F.zero) Hn_lt_py) as Hupd_py.
+              pose proof (PointArray_update_at (T:=F) (default:=F.zero)
+                    (FElem (Some tight_bounds)) felem_sz ppz pz n (nth n pz F.zero) Hn_lt_pz) as Hupd_pz.
+              unfold PointArray in Hupd_px, Hupd_py, Hupd_pz.
+              assert (Hpx_eq : firstn n px ++ nth n px F.zero :: skipn (S n) px = px).
+              { rewrite <- skipn_S_eq_gen by exact Hn_lt_px. apply firstn_skipn. }
+              assert (Hpy_eq : firstn n py ++ nth n py F.zero :: skipn (S n) py = py).
+              { rewrite <- skipn_S_eq_gen by exact Hn_lt_py. apply firstn_skipn. }
+              assert (Hpz_eq : firstn n pz ++ nth n pz F.zero :: skipn (S n) pz = pz).
+              { rewrite <- skipn_S_eq_gen by exact Hn_lt_pz. apply firstn_skipn. }
+              seprewrite_in Hupd_bx Hm2. seprewrite_in Hupd_by Hm2. seprewrite_in Hupd_bz Hm2.
+              seprewrite_in Hupd_px Hm2. seprewrite_in Hupd_py Hm2. seprewrite_in Hupd_pz Hm2.
+              rewrite Hpx_eq in Hm2. rewrite Hpy_eq in Hm2. rewrite Hpz_eq in Hm2.
+              unfold G1Array3.
+              subst bpx_w bpy_w bpz_w ppx_w ppy_w ppz_w felem_sz felem_sz_u bs_x'' bs_y'' bs_z''.
+              ecancel_assumption. }
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hlbx1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hlby1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hlbz1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hls1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hppx1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hppy1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hppz1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hlw1|].
+            split; [repeat rewrite map.get_put_diff by congruence; exact Hli1|].
+            split; [exact Hiw'_unsigned|].
+            split; [Lia.lia|].
+            reflexivity.
+          + (* idx = 0 FALSE *)
+            intro Hidxv1_zero.
+            assert (Hwinv1_zero : get_window (List.map word.unsigned (nth n scalars nil)) (Z.to_nat w) (Z.to_nat c) = 0).
+            { rewrite <- Hidxv1_window.
+              apply word.unsigned_inj in Hidxv1_zero.
+              rewrite Hidxv1_zero. simpl. rewrite word.unsigned_of_Z.
+              unfold word.wrap; rewrite Hwidth64; simpl. lia. }
+            split; [reflexivity|].
+            exists bs_x', bs_y', bs_z'.
+            split; [exact Hlx|]. split; [exact Hly|]. split; [exact Hlz|].
+            split.
+            { eapply distribute_inv_step_zero. Lia.lia.
+              rewrite Hlen_s_px. reflexivity.
+              unfold scalars_to_Z. rewrite map_nth. exact Hwinv1_zero.
+              rewrite <- Nat2Z.inj_succ in Hdinv. exact Hdinv. }
+            split; [exact Hsep1|].
+            split; [exact Hlbx1|]. split; [exact Hlby1|]. split; [exact Hlbz1|].
+            split; [exact Hls1|].
+            split; [exact Hppx1|]. split; [exact Hppy1|]. split; [exact Hppz1|].
+            split; [exact Hlw1|].
+            split.
+            { rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              exact Hli1. }
+            split; [exact Hiw'_unsigned|].
+            split; [Lia.lia|]. reflexivity.
       - (* FALSE branch: word.unsigned iw = 0 → vi = 0, close the post.
            After structural fix (2026-04-20), the invariant's sep shape
            is now [Some tight_bounds] — matching the post directly, no
@@ -2850,7 +4541,7 @@ Section PippengerSpec.
         split; [exact Hppz1|].
         split; [exact Hls1|].
         exact Hlw1. }
-  Admitted.
+  Qed.
 
   (** --- Helper lemmas for the [msm_bls12_reduce_wp] proof below. --- *)
 

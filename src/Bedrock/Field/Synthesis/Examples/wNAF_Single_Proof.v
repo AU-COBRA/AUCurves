@@ -81,8 +81,8 @@ Section WNAF_Single.
       (Hknn : 0 <= k)
       (Hnbound : Z.of_nat num_iters < 2 ^ width)
       (R : mem -> Prop)
+      pT pDK
       (HLoopBody : forall (n : nat) pOx pOy pOz pAx pAy pAz
-         pT pDK
          (Ox Oy Oz Ax Ay Az : F) tr0 m0 l0,
          (n < num_iters)%nat ->
          (Ox,Oy,Oz) = scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz) ->
@@ -111,7 +111,7 @@ Section WNAF_Single.
              /\ map.get l' "digits_k" = Some pDK
              /\ map.get l' "iter" = Some (word.of_Z (Z.of_nat n))
              /\ tr0 = t')),
-    forall pOx pOy pOz pAx pAy pAz pT pDK
+    forall pOx pOy pOz pAx pAy pAz
       (Ox0 Oy0 Oz0 Ax0 Ay0 Az0 : F) tr m l,
     map.get l "outx" = Some pOx -> map.get l "outy" = Some pOy ->
     map.get l "outz" = Some pOz -> map.get l "auxx" = Some pAx ->
@@ -211,7 +211,7 @@ Section WNAF_Single.
         subst iwi.
 
         (* Apply HLoopBody *)
-        specialize (HLoopBody n pOx pOy pOz pAx pAy pAz pT pDK
+        specialize (HLoopBody n pOx pOy pOz pAx pAy pAz
           Oxi Oyi Ozi Axi Ayi Azi tr m1 l1
           Hn_lt Hout_i Hsep_i Hl_ox' Hl_oy' Hl_oz' Hl_ax' Hl_ay' Hl_az'
           Hl_t' Hl_dk' Hl_iter').

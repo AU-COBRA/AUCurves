@@ -204,30 +204,45 @@ Section BN254_wNAF_Instance.
       exists Rx, Ry, Rz, Ax', Ay', Az'. split; [exact Hout|].
       ecancel_assumption.
     - (* HLoopBody *)
-      intros n pOx' pOy' pOz' pAx' pAy' pAz' pT' pDK'
+      intros n pOx' pOy' pOz' pAx' pAy' pAz'
         Ox Oy Oz Ax Ay Az tr0 m0 l0
         Hn Hinv Hsep0 Hl_ox0 Hl_oy0 Hl_oz0 Hl_ax0 Hl_ay0 Hl_az0
         Hl_t0 Hl_dk0 Hl_iter0.
-      eapply wnaf_single_loop_body_ok; try eassumption.
-      (* HProcessDigit — compose single_load_and_process_ok with Hhorner_step *)
-      intros n' pOx'' pOy'' pOz'' pAx'' pAy'' pAz'' pT'' pDK''
-        Ox' Oy' Oz' Ax' Ay' Az' Rinner' tr0' m0' l0'
-        Hn' Hinv' Hsep' Hl_ox' Hl_oy' Hl_oz' Hl_ax' Hl_ay' Hl_az'
-        Hl_t' Hl_dk' Hl_iter'.
-      (* Need to show: after load+process, result = scmul(ws(skipn n' dk)) P.
-         single_load_and_process_ok gives: result = if d=0 then old else add(old)(digit_point d).
-         Hhorner_step bridges: if d=0 then ... else add(...)(digit_point d) = scmul(ws(skipn n' dk)) P.
-         Compose via Proper_cmd weakening. *)
+      (* Regroup sep associativity in the goal's postcondition so the
+         Rinner frame matches wnaf_single_loop_body_ok's flat shape *)
       eapply WeakestPreconditionProperties.Proper_cmd;
-        [|eapply single_load_and_process_ok; try eassumption].
-      intros t3 m3 l3 (Ox3 & Oy3 & Oz3 & Ax3 & Ay3 & Az3 &
-        Hout3 & Hsep3 & Hlox3 & Hloy3 & Hloz3 & Hlax3 & Hlay3 & Hlaz3 &
-        Hlt3 & Hldk3 & Hliter3 & Hpres3 & Htr3).
-      exists Ox3, Oy3, Oz3, Ax3, Ay3, Az3.
-      repeat split; try assumption.
-      + (* Key: connect digit_point result to scmul via Hhorner_step *)
-        rewrite Hout3. apply Hhorner_step; assumption.
-      + exact Hsep3.
+        [|simple refine (@wnaf_single_loop_body_ok _ _ _ _ _ _ _ _ _ _ _ _
+                curve_add_name curve_double_name _
+                curve_add_id_l curve_add_assoc functions HCurveDouble
+                dk Px Py Pz num_iters Hlen Hws_nn table_entries
+                _  (* HProcessDigit subgoal *)
+                n pOx' pOy' pOz' pAx' pAy' pAz' pT pDK
+                Ox Oy Oz Ax Ay Az _ tr0 m0 l0
+                Hn Hinv _ Hl_ox0 Hl_oy0 Hl_oz0 Hl_ax0 Hl_ay0 Hl_az0
+                Hl_t0 Hl_dk0 Hl_iter0)].
+      { (* postcondition weakening *)
+        intros t2 m2 l2 (Ox' & Oy' & Oz' & Ax' & Ay' & Az' &
+          Hout' & Hsep' & H_ox' & H_oy' & H_oz' & H_ax' & H_ay' & H_az' &
+          H_tP' & H_dk' & H_it' & Htr').
+        exists Ox', Oy', Oz', Ax', Ay', Az'.
+        repeat (split; [try assumption|]); try assumption.
+        ecancel_assumption. }
+      { (* HProcessDigit — compose single_load_and_process_ok + Hhorner_step *)
+        intros n' pOx'' pOy'' pOz'' pAx'' pAy'' pAz'' pT'' pDK''
+          Ox' Oy' Oz' Ax' Ay' Az' Rinner' tr0' m0' l0'
+          Hn' Hinv' Hsep' Hl_ox' Hl_oy' Hl_oz' Hl_ax' Hl_ay' Hl_az'
+          Hl_t' Hl_dk' Hl_iter'.
+        eapply WeakestPreconditionProperties.Proper_cmd;
+          [|eapply single_load_and_process_ok; try eassumption].
+        intros t3 m3 l3 (Ox3 & Oy3 & Oz3 & Ax3 & Ay3 & Az3 &
+          Hout3 & Hsep3 & Hlox3 & Hloy3 & Hloz3 & Hlax3 & Hlay3 & Hlaz3 &
+          Hlt3 & Hldk3 & Hliter3 & Hpres3 & Htr3).
+        exists Ox3, Oy3, Oz3, Ax3, Ay3, Az3.
+        repeat split; try assumption.
+        (* Hhorner_step connects digit_point → scmul *)
+        rewrite Hout3. apply Hhorner_step; assumption. }
+      { (* sep precondition *)
+        ecancel_assumption. }
   Qed.
 
 End BN254_wNAF_Instance.

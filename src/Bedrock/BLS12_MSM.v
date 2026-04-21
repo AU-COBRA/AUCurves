@@ -3035,6 +3035,34 @@ Section PippengerSpec.
           cbv [Semantics.interp_binop]. reflexivity. }
         cbv [dlet.dlet].
         set (la1_w := word.add sp_w lo1_w : word.rep).
+        (* Establish bounds + Hlimb_unsigned for the forthcoming Memory.load. *)
+        pose proof width_cases as Hwc.
+        assert (Hw_bound : 0 <= w <= 28).
+        { unfold num_windows in Hw_bd. cbv [c] in Hw_bd. Lia.lia. }
+        assert (Hlimb_unsigned : word.unsigned limb_w = w * c / 64).
+        { subst limb_w w_c.
+          rewrite word.unsigned_sru_nowrap.
+          2: { rewrite !word.unsigned_of_Z; unfold word.wrap;
+               rewrite Hwidth64; simpl; Lia.lia. }
+          rewrite word.unsigned_mul_nowrap.
+          2: { rewrite !word.unsigned_of_Z.
+               unfold word.wrap; rewrite Hwidth64; simpl.
+               cbv [c]. rewrite Z.mod_small by Lia.lia.
+               rewrite Z.mod_small by Lia.lia. nia. }
+          rewrite !word.unsigned_of_Z.
+          unfold word.wrap; rewrite Hwidth64; simpl.
+          cbv [c]. rewrite Z.mod_small by Lia.lia.
+          rewrite Z.mod_small by Lia.lia.
+          rewrite Z.mod_small by Lia.lia.
+          rewrite Z.shiftr_div_pow2 by Lia.lia. simpl. Lia.lia. }
+        set (limb_nat := Z.to_nat (w * c / 64) : nat).
+        assert (Hlimb_nat_eq : limb_nat = Z.to_nat (word.unsigned limb_w))
+          by (subst limb_nat; rewrite Hlimb_unsigned; reflexivity).
+        assert (Hlimb_nat_bound : (limb_nat < scalar_limbs)%nat).
+        { subst limb_nat. unfold scalar_limbs. cbv [c].
+          apply Nat2Z.inj_lt.
+          rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; Lia.lia).
+          apply Z.div_lt_upper_bound; Lia.lia. }
         admit.
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:

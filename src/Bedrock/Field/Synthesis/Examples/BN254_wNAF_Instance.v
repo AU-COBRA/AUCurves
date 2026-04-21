@@ -23,6 +23,7 @@ Require Import Bedrock.Field.Synthesis.Examples.wNAF.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_ScalarMult.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_GLV_Func.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_wNAF_ProcessDigits.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_GLV_LoopInvariant.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_LoopBody.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_Proof.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_LoadAndProcess.
@@ -92,7 +93,7 @@ Section BN254_wNAF_Instance.
         (FElem (Some tight_bounds) pXo Xo' ⋆ FElem (Some tight_bounds) pYo Yo'
          ⋆ FElem (Some tight_bounds) pZo Zo' ⋆ FElem (Some tight_bounds) pX2 X2'
          ⋆ FElem (Some tight_bounds) pY2 Y2' ⋆ FElem (Some tight_bounds) pZ2 Z2'
-         ⋆ R0) m')))).
+         ⋆ R0) m'))).
 
   Context (HFelemCopy :
     forall pDst pSrc (v : F) (old : F) R0 tr0 m0,

@@ -126,6 +126,7 @@ Section BN254_wNAF_Instance.
   (* Data *)
   Context (dk : list Z) (Px Py Pz : F) (num_iters : nat).
   Context (Hlen : length dk = num_iters).
+  Context (Hnbound : Z.of_nat num_iters < 2 ^ width).
   Context (Hdigits_bounded :
     forall i, (i < num_iters)%nat -> -7 <= nth i dk 0 <= 7).
   Context (Hfs_pos : 0 < felem_size_in_bytes).

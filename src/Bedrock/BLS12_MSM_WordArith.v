@@ -56,8 +56,8 @@ Section WordArith.
       (Hw : 0 <= w < 2^32)
       (Hiw'_unsigned : word.unsigned iw' = Z.of_nat n)
       (Hlimb_unsigned_abs : Z.of_nat limb_nat = w * 9 / 64)
-      (Hn_small : Z.of_nat n < 2^32)
-      (Hlimb_small : Z.of_nat limb_nat < 2^32) :
+      (Hn_small : Z.of_nat n < 2^width)
+      (Hlimb_small : Z.of_nat limb_nat < 2^width) :
       word.add (word.add scalars_p (word.mul iw' (word.of_Z 32)))
                (word.mul (word.of_Z (Z.of_nat limb_nat)) (word.of_Z 8))
       = word.add scalars_p (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb_nat * 8)).

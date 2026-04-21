@@ -313,6 +313,7 @@ Require Import bedrock2.ProgramLogic.
 Require Import bedrock2.Array.
 Require Import bedrock2.Scalars.
 Require Import bedrock2.ZnWords.
+Require Import Bedrock.BLS12_MSM_WordArith.
 Require Import Crypto.Bedrock.Field.Synthesis.Generic.Bignum.
 Require Import Bedrock.IteratedSepPoints.
 Require Import Bedrock.FrameLocalsWP.
@@ -3063,6 +3064,35 @@ Section PippengerSpec.
           apply Nat2Z.inj_lt.
           rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; Lia.lia).
           apply Z.div_lt_upper_bound; Lia.lia. }
+        (* Hla1_eq: la1_w equals the abstract scalar-array index form. *)
+        assert (Hlimb_w_eq : limb_w = word.of_Z (Z.of_nat limb_nat)).
+        { apply word.unsigned_inj.
+          rewrite Hlimb_unsigned, word.unsigned_of_Z.
+          subst limb_nat.
+          rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; Lia.lia).
+          unfold word.wrap. rewrite Hwidth64.
+          rewrite Z.mod_small; [reflexivity|].
+          split; [apply Z_div_nonneg_nonneg; Lia.lia|].
+          apply Z.lt_trans with 64;
+            [apply Z.div_lt_upper_bound; Lia.lia | Lia.lia]. }
+        assert (Hlimb_small : Z.of_nat limb_nat < 2 ^ width).
+        { subst limb_nat.
+          rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; Lia.lia).
+          apply Z.lt_le_trans with 64;
+            [apply Z.div_lt_upper_bound; Lia.lia|].
+          rewrite Hwidth64. Lia.lia. }
+        assert (Hla1_eq : la1_w =
+                word.add scalars_p
+                  (word.of_Z (Z.of_nat n * 32 + Z.of_nat limb_nat * 8))).
+        { subst la1_w sp_w lo1_w. rewrite Hlimb_w_eq.
+          apply (la1_eq_helper Hwidth64 scalars_p iw' w n limb_nat
+                   ltac:(cbv [num_windows c] in Hw_bd; Lia.lia)
+                   Hiw'_unsigned
+                   ltac:(subst limb_nat;
+                         rewrite Z2Nat.id by (apply Z_div_nonneg_nonneg; Lia.lia);
+                         reflexivity)
+                   Hn_small
+                   Hlimb_small). }
         admit.
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:

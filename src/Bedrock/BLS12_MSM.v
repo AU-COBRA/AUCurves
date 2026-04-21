@@ -3166,7 +3166,20 @@ Section PippengerSpec.
             cbv [Semantics.interp_binop]. reflexivity. }
           cbv [dlet.dlet].
           set (idx_w := word.and val1_w mask_w : word.rep).
-          admit. }
+          (* Step 12: cmd.cond (var "idx") <bucket update> skip *)
+          cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+          fold WeakestPrecondition.cmd.
+          eexists. split.
+          { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                 WeakestPrecondition.expr_body WeakestPrecondition.literal
+                 WeakestPrecondition.get dlet.dlet].
+            eexists; split; [rewrite map.get_put_same; reflexivity|].
+            reflexivity. }
+          split.
+          { (* idx_w <> 0: bucket update branch *)
+            intro Hidx_nz. admit. }
+          { (* idx_w = 0: cmd.skip, close invariant with bs_x'/y/z' unchanged *)
+            intro Hidx_z. admit. } }
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:
            1. cmd.set "i" := i - 1.  Peel with [cbv cmd; cbv dexpr; eexists; split; solve_map_get_chain].

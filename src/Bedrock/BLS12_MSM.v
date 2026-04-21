@@ -2916,6 +2916,125 @@ Section PippengerSpec.
           pose proof (word.unsigned_range n_w).
           rewrite <- (Z2Nat.id (word.unsigned n_w)) by Lia.lia.
           apply (proj1 (Nat2Z.inj_lt _ _)). Lia.lia. }
+        (* Step 1: cmd.set "i" := i - 1 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split; [exact Hli1|].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (iw' := word.sub iw (word.of_Z 1)).
+        assert (Hiw'_unsigned : word.unsigned iw' = Z.of_nat n).
+        { subst iw'.
+          rewrite word.unsigned_sub.
+          rewrite Hiw. rewrite !word.unsigned_of_Z.
+          cbv [word.wrap]. rewrite Nat2Z.inj_succ.
+          rewrite (Z.mod_small 1 (2 ^ width)) by Lia.lia.
+          rewrite Z.mod_small by Lia.lia. Lia.lia. }
+        (* Step 2: cmd.set "bit_offset" := w * c *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence. exact Hlw1. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (w_c := word.mul (word.of_Z w) (word.of_Z c) : word.rep).
+        (* Step 3: cmd.set "limb" := bit_offset >> 6 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (limb_w := word.sru w_c (word.of_Z 6) : word.rep).
+        (* Step 4: cmd.set "shift" := bit_offset & 63 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (shift_w := word.and w_c (word.of_Z 63) : word.rep).
+        (* Step 5: cmd.set "mask" := 1 << c - 1 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (mask_w := word.sub (word.slu (word.of_Z 1) (word.of_Z c)) (word.of_Z 1)
+                     : word.rep).
+        (* Step 6: cmd.set "scalar_ptr" := scalars + i * 32 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            exact Hls1. }
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (sp_w := word.add scalars_p (word.mul iw' (word.of_Z 32)) : word.rep).
+        (* Step 7: cmd.set "load_off1" := limb * 8 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (lo1_w := word.mul limb_w (word.of_Z 8) : word.rep).
+        (* Step 8: cmd.set "load_addr1" := scalar_ptr + load_off1 *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          eexists; split.
+          { rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        cbv [dlet.dlet].
+        set (la1_w := word.add sp_w lo1_w : word.rep).
         admit.
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:

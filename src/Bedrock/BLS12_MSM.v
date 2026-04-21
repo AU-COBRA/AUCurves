@@ -2901,7 +2901,42 @@ Section PippengerSpec.
         eexists; split; [exact Hli1|]. exact eq_refl. }
       split.
       - (* TRUE: word.unsigned iw <> 0, execute body. *)
-        intro Hbr. admit.
+        intro Hbr.
+        (* Derive vi = S n and all arithmetic bounds. *)
+        assert (Hvi_pos : (vi > 0)%nat).
+        { destruct vi as [|n']; [exfalso|Lia.lia].
+          apply Hbr. rewrite Hiw. reflexivity. }
+        destruct vi as [|n]; [Lia.lia|].
+        assert (HSn_small : Z.of_nat (S n) < 2 ^ width).
+        { rewrite <- Hiw. apply word.unsigned_range. }
+        assert (Hn_small : Z.of_nat n < 2 ^ width).
+        { rewrite Nat2Z.inj_succ in HSn_small. Lia.lia. }
+        assert (Hn_lt : (n < length scalars)%nat).
+        { apply Nat2Z.inj_lt. rewrite <- Hn_len.
+          pose proof (word.unsigned_range n_w).
+          rewrite <- (Z2Nat.id (word.unsigned n_w)) by Lia.lia.
+          apply (proj1 (Nat2Z.inj_lt _ _)). Lia.lia. }
+        admit.
+        (* Body WP body: ~400 LoC remaining.
+           Follows L4 pattern (reduce_wp).  Steps:
+           1. cmd.set "i" := i - 1.  Peel with [cbv cmd; cbv dexpr; eexists; split; solve_map_get_chain].
+              Set iw' := word.sub iw (word.of_Z 1); Hiw'_unsigned : word.unsigned iw' = Z.of_nat n.
+           2. 6 more cmd.sets (bit_offset, limb, shift, mask, scalar_ptr, load_off1, load_addr1).
+              For each, establish Hx_unsigned via word_arith_finish or manual mod reasoning.
+           3. cmd.set "val" with Memory.load.  Use ScalarsArray_load_limb to get load result.
+           4. cmd.cond on (64 < shift + c) -- cross-limb check.  Sub-cases:
+              a. Cross-limb fires, limb < 3: 3 more cmd.sets + val update.
+              b. Cross-limb fires, limb = 3: vacuous (limb < 3 is false), skip.
+              c. Cross-limb doesn't fire: skip.
+              In all cases, establish Hval_unsigned matching the get_window RHS shape.
+           5. cmd.set "idx" := val & mask.  Reduce to (val mod 2^c) via word.and_mask.
+              Establish: word.unsigned idx = get_window (scalars_to_Z scalars[n]) w c.
+           6. cmd.cond on idx -- non-zero check.
+              a. idx = 0: close with distribute_inv_step_zero.
+              b. idx != 0: 6 cmd.sets for bucket/point addresses, then curve_add call.
+                 Use HCurveAdd with bucket[idx-1] and points[n].
+                 Close with distribute_inv_step_pos.
+           7. Postcondition: exists v' := n, invariant at v' with updated buckets. *)
       - (* FALSE: word.unsigned iw = 0, close postcondition. *)
         intro Hzero.
         assert (Hvi0 : vi = 0%nat).

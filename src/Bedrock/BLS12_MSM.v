@@ -3124,7 +3124,49 @@ Section PippengerSpec.
         cbv [dlet.dlet].
         set (val1_w := word.sru (nth limb_nat (nth n scalars nil) (word.of_Z 0)) shift_w
                       : word.rep).
-        admit.
+        (* Step 10: cmd.cond (64 < shift + c) (cmd.cond (limb < 3) ... skip) skip.
+           Peel the outer cond.  For now, discharge BOTH branches as admit
+           so we can reach Step 11 (cmd.set "idx"). *)
+        cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+        fold WeakestPrecondition.cmd.
+        eexists. split.
+        { (* DEXPR for 64 < shift + c *)
+          cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+               WeakestPrecondition.expr_body WeakestPrecondition.literal
+               WeakestPrecondition.get dlet.dlet].
+          eexists; split.
+          { rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_diff by congruence.
+            rewrite map.get_put_same. reflexivity. }
+          cbv [Semantics.interp_binop]. reflexivity. }
+        split.
+        { (* Cross-limb TRUE branch (64 < shift + c): inner cond + 3 cmd.sets *)
+          intro Hcross. admit. }
+        { (* Cross-limb FALSE branch (64 >= shift + c): cmd.skip *)
+          intro Hno_cross.
+          (* cmd.skip then continue with cmd.seq (cmd.set "idx") (cmd.cond ...) *)
+          cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+          fold WeakestPrecondition.cmd.
+          (* Step 11: cmd.set "idx" := val & mask *)
+          eexists. split.
+          { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                 WeakestPrecondition.expr_body WeakestPrecondition.literal
+                 WeakestPrecondition.get dlet.dlet].
+            eexists; split.
+            { rewrite map.get_put_same. reflexivity. }
+            eexists; split.
+            { rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_diff by congruence.
+              rewrite map.get_put_same. reflexivity. }
+            cbv [Semantics.interp_binop]. reflexivity. }
+          cbv [dlet.dlet].
+          set (idx_w := word.and val1_w mask_w : word.rep).
+          admit. }
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:
            1. cmd.set "i" := i - 1.  Peel with [cbv cmd; cbv dexpr; eexists; split; solve_map_get_chain].

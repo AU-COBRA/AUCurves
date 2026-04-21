@@ -254,4 +254,7 @@ End BN254_wNAF_Instance.
     - Algebraic hypotheses (Horner step, weighted-sum non-negativity)
     And proves the full WP for wnaf_single_func_body.
 
-    Status: Qed, 0 Admitted. [single_load_and_process_ok] Qed 2026-04-20. *)
+    Status: Qed, 0 Admitted (2026-04-21). [single_load_and_process_ok]
+    Qed via prep_ecancel_H normalization. [wnaf_single_full] Qed via
+    Option-1 HLoopBody hoist + Proper_cmd+simple refine sep-assoc fix.
+    [Print Assumptions wnaf_single_full] = "Closed under the global context". *)

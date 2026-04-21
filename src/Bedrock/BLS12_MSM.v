@@ -2824,7 +2824,107 @@ Section PippengerSpec.
              map.get l' "scalars"   = Some scalars_p /\
              map.get l' "w"         = Some (word.of_Z w)).
   Proof.
-  Admitted.  (* L3 msm_bls12_distribute_wp: full body deferred; Rocq 9 migration + put_diff count drift made the prior ~1700-line proof unworkable.  Remains the sole hole in msm_bls12_ok's 1-axiom Qed. *)
+    intros functions HCurveAdd w n_w
+           buckets_x buckets_y buckets_z bs_x bs_y bs_z
+           scalars_p scalars ppx ppy ppz px py pz
+           R tr mem0 l0
+           Hw_bd Hlen_x Hlen_y Hlen_z Hxy Hyz Hn_len
+           Hlen_s_px Hlen_px_py Hlen_py_pz
+           Hinv0 Hsep
+           Hlbx Hlby Hlbz Hls Hppx Hppy Hppz Hlw Hli.
+    pose (inv := fun (v : nat) (tr' : Semantics.trace) (m : mem) (l : locals) =>
+      exists (bs_x' bs_y' bs_z' : list F) (iw : word),
+        Z.of_nat (length bs_x') = num_buckets /\
+        Z.of_nat (length bs_y') = num_buckets /\
+        Z.of_nat (length bs_z') = num_buckets /\
+        distribute_inv w (Z.of_nat v)
+          (points_of bs_x' bs_y' bs_z') (scalars_to_Z scalars)
+          (points_of px py pz) /\
+        (array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+         * array (FElem (Some tight_bounds)) (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+         * ScalarsArray scalars_p scalars
+         * G1Array3 ppx ppy ppz px py pz
+         * R)%sep m /\
+        map.get l "buckets_x" = Some buckets_x /\
+        map.get l "buckets_y" = Some buckets_y /\
+        map.get l "buckets_z" = Some buckets_z /\
+        map.get l "scalars"   = Some scalars_p /\
+        map.get l "pointsx"   = Some ppx /\
+        map.get l "pointsy"   = Some ppy /\
+        map.get l "pointsz"   = Some ppz /\
+        map.get l "w"         = Some (word.of_Z w) /\
+        map.get l "i"         = Some iw /\
+        word.unsigned iw = Z.of_nat v /\
+        (v <= Z.to_nat (word.unsigned n_w))%nat /\
+        tr = tr').
+    eapply (Loops.while_localsmap (measure:=nat) inv Nat.lt_wf_0
+                                  (Z.to_nat (word.unsigned n_w))).
+    { (* Entry invariant. *)
+      subst inv; cbv beta.
+      exists bs_x, bs_y, bs_z, n_w.
+      split; [exact Hlen_x|].
+      split; [exact Hlen_y|].
+      split; [exact Hlen_z|].
+      split.
+      { rewrite Z2Nat.id
+          by (pose proof word.unsigned_range n_w; Lia.lia).
+        exact Hinv0. }
+      split; [exact Hsep|].
+      split; [exact Hlbx|].
+      split; [exact Hlby|].
+      split; [exact Hlbz|].
+      split; [exact Hls|].
+      split; [exact Hppx|].
+      split; [exact Hppy|].
+      split; [exact Hppz|].
+      split; [exact Hlw|].
+      split; [exact Hli|].
+      split.
+      { rewrite Z2Nat.id; [reflexivity|].
+        pose proof word.unsigned_range n_w; Lia.lia. }
+      split; [Lia.lia|].
+      reflexivity. }
+    { (* Body + exit. *)
+      intros vi tr1 m1 l1 Hinv.
+      subst inv; cbv beta in Hinv.
+      destruct Hinv as
+        (bs_x' & bs_y' & bs_z' & iw & Hlx & Hly & Hlz & Hdinv & Hsep1 &
+         Hlbx1 & Hlby1 & Hlbz1 & Hls1 & Hppx1 & Hppy1 & Hppz1 & Hlw1 &
+         Hli1 & Hiw & Hvi_le & Htreq).
+      subst tr1.
+      exists iw.
+      split.
+      { (* DEXPR for expr.var "i" *)
+        cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get dlet.dlet].
+        eexists; split; [exact Hli1|]. exact eq_refl. }
+      split.
+      - (* TRUE: word.unsigned iw <> 0, execute body. *)
+        intro Hbr. admit.
+      - (* FALSE: word.unsigned iw = 0, close postcondition. *)
+        intro Hzero.
+        assert (Hvi0 : vi = 0%nat).
+        { destruct vi as [|n']; [reflexivity|exfalso].
+          rewrite Hzero in Hiw. Lia.lia. }
+        subst vi.
+        split; [reflexivity|].
+        exists bs_x', bs_y', bs_z'.
+        split; [exact Hlx|].
+        split; [exact Hly|].
+        split; [exact Hlz|].
+        split.
+        { change (Z.of_nat 0) with 0 in Hdinv. exact Hdinv. }
+        split; [exact Hsep1|].
+        split; [exact Hlbx1|].
+        split; [exact Hlby1|].
+        split; [exact Hlbz1|].
+        split; [exact Hppx1|].
+        split; [exact Hppy1|].
+        split; [exact Hppz1|].
+        split; [exact Hls1|].
+        exact Hlw1. }
+  Admitted.  (* L3 body TRUE case: 1 admit for the ~400 LoC WP body (decrement + scalar load + cross-limb + mask + bucket update via HCurveAdd).  Scaffold (while_localsmap + entry + exit + body dispatch) is Qed. *)
 
   (** --- Helper lemmas for the [msm_bls12_reduce_wp] proof below. --- *)
 

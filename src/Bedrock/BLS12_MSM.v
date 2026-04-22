@@ -374,13 +374,17 @@ Section PippengerSpec.
       after [eexists. split.] and need a different closer. *)
   Ltac solve_map_get_chain :=
     repeat (rewrite map.get_put_diff by congruence);
-    rewrite map.get_put_same; reflexivity.
+    first
+      [ rewrite map.get_put_same; reflexivity
+      | solve [eauto]
+      | solve [symmetry; eauto] ].
 
   (** [peel_cmd_set name witness]: peel one cmd.set in a cmd.seq chain,
       bind the result to [name], and advance to the next cmd.  Closes the
-      DEXPR sub-obligation automatically via nested [eexists; split;
-      solve_map_get_chain] + interp_binop reflexivity.  Works for
-      cmd.sets whose expression is a pure combination of op and var
+      DEXPR sub-obligation automatically via nested [eexists; split]
+      with both var (map.get) and literal (reflexivity) handling,
+      followed by [interp_binop] reduction.  Works for cmd.sets whose
+      expression is a pure combination of op, var, and literal
       (no expr.load — use manual peel for that). *)
   Ltac peel_cmd_set name witness :=
     cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body];
@@ -389,8 +393,12 @@ Section PippengerSpec.
     [ cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
            WeakestPrecondition.expr_body WeakestPrecondition.literal
            WeakestPrecondition.get dlet.dlet];
-      repeat (eexists; split; [solve_map_get_chain|]);
-      cbv [Semantics.interp_binop]; reflexivity
+      repeat first
+        [ solve [reflexivity]
+        | (eexists; split; [solve [solve_map_get_chain]|])
+        | (eexists; split; [|])
+        | progress cbv [Semantics.interp_binop] ];
+      try reflexivity
     | cbv [dlet.dlet] ];
     set (name := witness).
 
@@ -3227,7 +3235,21 @@ Section PippengerSpec.
             reflexivity. }
           split.
           { (* idx_w <> 0: bucket update branch *)
-            intro Hidx_nz. admit. }
+            intro Hidx_nz.
+            peel_cmd_set bucket_idx_w (word.sub idx_w (word.of_Z 1)).
+            peel_cmd_set bpx_w (word.add buckets_x
+              (word.mul bucket_idx_w (word.of_Z felem_size_in_bytes))).
+            peel_cmd_set bpy_w (word.add buckets_y
+              (word.mul bucket_idx_w (word.of_Z felem_size_in_bytes))).
+            peel_cmd_set bpz_w (word.add buckets_z
+              (word.mul bucket_idx_w (word.of_Z felem_size_in_bytes))).
+            peel_cmd_set ppx_w (word.add ppx
+              (word.mul iw' (word.of_Z felem_size_in_bytes))).
+            peel_cmd_set ppy_w (word.add ppy
+              (word.mul iw' (word.of_Z felem_size_in_bytes))).
+            peel_cmd_set ppz_w (word.add ppz
+              (word.mul iw' (word.of_Z felem_size_in_bytes))).
+            admit. (* curve_add call + distribute_inv_step_pos *) }
           { (* idx_w = 0: cmd.skip, close invariant with bs_x'/y/z' unchanged *)
             intro Hidx_z.
             cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].

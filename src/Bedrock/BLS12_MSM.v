@@ -3249,7 +3249,30 @@ Section PippengerSpec.
               (word.mul iw' (word.of_Z felem_size_in_bytes))).
             peel_cmd_set ppz_w (word.add ppz
               (word.mul iw' (word.of_Z felem_size_in_bytes))).
-            admit. (* curve_add call + distribute_inv_step_pos *) }
+            (* Phase B.2–6 — curve_add call + bucket array update.  Outline:
+               B.2. Establish bucket_idx bounds:
+                    d := word.unsigned bucket_idx_w = word.unsigned idx_w - 1
+                    Hd_pos : 0 < d + 1  (from Hidx_nz)
+                    Hd_bound : d < num_buckets
+                    (via idx_w = val & mask, mask_w = 2^c - 1).
+               B.3. Extract bucket cells via PointArray_split_at × 3 and
+                    points cells via PointArray_split_at × 3 (via ppp).
+                    Cells at index d (bucket) and n (points).
+               B.4. DEXPR evaluation for 9 call-args.
+               B.5. eapply Semantics.weaken_call + eapply HCurveAdd.
+                    ecancel_assumption for sep precondition.
+               B.6. Destructure call post: rets=[], tr unchanged,
+                    Hm2 : <updated sep with bucket[d] = g1_add(old, point)> m2.
+                    Destructure g1_add_spec result.
+               B.7. Re-merge bucket cells via PointArray_update_at × 3 to get
+                    updated bs_x''/bs_y''/bs_z''.
+               B.8. Close invariant via distribute_inv_step_pos with
+                    d := Z.to_nat (word.unsigned idx_w).
+               Pattern mirrors L4 reduce_wp's curve_add call (line ~3957 in file).
+               L4 has single-cell FElem run*/ws*; here we have array cells,
+               so add the PointArray_split_at/update_at sandwich around
+               the callee-spec application.  *)
+            admit. }
           { (* idx_w = 0: cmd.skip, close invariant with bs_x'/y/z' unchanged *)
             intro Hidx_z.
             cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].

@@ -376,6 +376,38 @@ Section PippengerSpec.
     repeat (rewrite map.get_put_diff by congruence);
     rewrite map.get_put_same; reflexivity.
 
+  (** [peel_cmd_set name witness]: peel one cmd.set in a cmd.seq chain,
+      bind the result to [name], and advance to the next cmd.  Closes the
+      DEXPR sub-obligation automatically via nested [eexists; split;
+      solve_map_get_chain] + interp_binop reflexivity.  Works for
+      cmd.sets whose expression is a pure combination of op and var
+      (no expr.load — use manual peel for that). *)
+  Ltac peel_cmd_set name witness :=
+    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body];
+    fold WeakestPrecondition.cmd;
+    eexists; split;
+    [ cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+           WeakestPrecondition.expr_body WeakestPrecondition.literal
+           WeakestPrecondition.get dlet.dlet];
+      repeat (eexists; split; [solve_map_get_chain|]);
+      cbv [Semantics.interp_binop]; reflexivity
+    | cbv [dlet.dlet] ];
+    set (name := witness).
+
+  (** [wp_cond]: peel a cmd.cond whose condition is a var-or-op expression,
+      leaving two subgoals for TRUE (word.unsigned <> 0) and FALSE
+      (word.unsigned = 0) branches. *)
+  Ltac wp_cond :=
+    cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body];
+    fold WeakestPrecondition.cmd;
+    eexists; split;
+    [ cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+           WeakestPrecondition.expr_body WeakestPrecondition.literal
+           WeakestPrecondition.get dlet.dlet];
+      repeat (eexists; split; [solve_map_get_chain|]);
+      try (cbv [Semantics.interp_binop]; reflexivity)
+    | split ].
+
   Local Notation F := (F M_pos).
   Local Notation G1_F := (F * F * F)%type.
 
@@ -2631,6 +2663,24 @@ Section PippengerSpec.
       rewrite Hcfalse. reflexivity.
   Qed.
 
+  (** Length helpers used in L3's body.  (Also re-proved later in the file
+      for L5, but scoped here so they're available in L3.) *)
+  Lemma length_points_of_L3 :
+    forall px py pz : list F,
+      length px = length py -> length py = length pz ->
+      length (points_of px py pz) = length px.
+  Proof.
+    induction px as [|x px' IH]; intros py pz Hxy Hyz; cbn in *.
+    - reflexivity.
+    - destruct py as [|y py']; [discriminate|].
+      destruct pz as [|z pz']; [discriminate|].
+      cbn. f_equal. apply IH; [cbn in Hxy; Lia.lia | cbn in Hyz; Lia.lia].
+  Qed.
+
+  Lemma length_scalars_to_Z_L3 :
+    forall ss, length (scalars_to_Z ss) = length ss.
+  Proof. intros. unfold scalars_to_Z. apply List.map_length. Qed.
+
   (** Leaf 3: distribute sub-loop.  Hardest leaf: [i] counts from [n]
       down, each iter extracts [get_window scalar w c], and if > 0 adds
       [points[i]] into [buckets[idx-1]] via [curve_add].  Uses
@@ -3179,7 +3229,54 @@ Section PippengerSpec.
           { (* idx_w <> 0: bucket update branch *)
             intro Hidx_nz. admit. }
           { (* idx_w = 0: cmd.skip, close invariant with bs_x'/y/z' unchanged *)
-            intro Hidx_z. admit. } }
+            intro Hidx_z.
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            (* Post: exists v', Markers.split ((<inv at v'>) /\ (v' < vi)%nat) *)
+            exists n.
+            cbv [Markers.split]. split; [|Lia.lia].
+            exists bs_x', bs_y', bs_z', iw'.
+            (* Establish window-at-n = 0 from idx_w = 0. *)
+            assert (Hwindow_zero :
+                get_window (nth n (scalars_to_Z scalars) []) (Z.to_nat w) (Z.to_nat c) = 0)
+              by admit.
+            (* 15 conjuncts of the invariant. *)
+            split; [exact Hlx|].
+            split; [exact Hly|].
+            split; [exact Hlz|].
+            split.
+            { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by Lia.lia.
+              apply distribute_inv_step_zero with (ps := points_of px py pz).
+              - rewrite length_points_of_L3 by assumption.
+                rewrite <- Hlen_s_px. Lia.lia.
+              - rewrite length_scalars_to_Z_L3, length_points_of_L3 by assumption.
+                Lia.lia.
+              - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by Lia.lia.
+                exact Hwindow_zero.
+              - exact Hdinv. }
+            split; [exact Hsep1|].
+            (* 10 locals entries: buckets_x/y/z, scalars, pointsx/y/z, w, i_lookup *)
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hlbx1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hlby1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hlbz1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hls1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hppx1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hppy1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hppz1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence). exact Hlw1. }
+            split.
+            { repeat (rewrite map.get_put_diff by congruence).
+              rewrite map.get_put_same. reflexivity. }
+            split; [exact Hiw'_unsigned|].
+            split; [Lia.lia|reflexivity]. } }
         (* Body WP body: ~400 LoC remaining.
            Follows L4 pattern (reduce_wp).  Steps:
            1. cmd.set "i" := i - 1.  Peel with [cbv cmd; cbv dexpr; eexists; split; solve_map_get_chain].

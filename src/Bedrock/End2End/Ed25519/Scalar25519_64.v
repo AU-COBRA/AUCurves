@@ -100,6 +100,7 @@ Section Ed25519ScalarBedrock.
   Parameter fe25519_scalar_mul        : (string * Syntax.func).
   Parameter fe25519_scalar_add        : (string * Syntax.func).
   Parameter fe25519_scalar_sub        : (string * Syntax.func).
+  Parameter fe25519_scalar_opp        : (string * Syntax.func).
   Parameter fe25519_scalar_from_bytes : (string * Syntax.func).
   Parameter fe25519_scalar_to_bytes   : (string * Syntax.func).
 
@@ -107,6 +108,7 @@ Section Ed25519ScalarBedrock.
     [ fe25519_scalar_mul;
       fe25519_scalar_add;
       fe25519_scalar_sub;
+      fe25519_scalar_opp;
       fe25519_scalar_from_bytes;
       fe25519_scalar_to_bytes ].
 
@@ -134,6 +136,11 @@ Section Ed25519ScalarBedrock.
     forall functions,
       functions_contain functions fe25519_scalar_sub ->
       spec_of_BinOp bin_sub (field_representation := frep25519_scalar) functions.
+
+  Parameter fe25519_scalar_opp_correct :
+    forall functions,
+      functions_contain functions fe25519_scalar_opp ->
+      spec_of_UnOp un_opp (field_representation := frep25519_scalar) functions.
 
   Parameter fe25519_scalar_from_bytes_correct :
     forall functions,

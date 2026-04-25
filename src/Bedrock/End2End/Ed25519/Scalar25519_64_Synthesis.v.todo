@@ -156,6 +156,15 @@ Section Ed25519ScalarBedrock.
     As fe25519_scalar_sub_correct.
   Proof. Time derive_bedrock2_func sub_op. Qed.
 
+  Derive fe25519_scalar_opp
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_opp ->
+                 spec_of_UnOp un_opp
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_opp_correct.
+  Proof. Time derive_bedrock2_func opp_op. Qed.
+
   Derive fe25519_scalar_from_bytes
     SuchThat (forall functions,
                  functions_contain functions fe25519_scalar_from_bytes ->
@@ -174,11 +183,12 @@ Section Ed25519ScalarBedrock.
     As fe25519_scalar_to_bytes_correct.
   Proof. Time derive_bedrock2_func to_bytes_op. Qed.
 
-  (** The five bedrock2 [(name, func)] pairs that Sign.v / Verify.v import. *)
+  (** The six bedrock2 [(name, func)] pairs that Sign.v / Verify.v import. *)
   Definition fe25519_scalar_funcs : list (string * Syntax.func) :=
     [ fe25519_scalar_mul;
       fe25519_scalar_add;
       fe25519_scalar_sub;
+      fe25519_scalar_opp;
       fe25519_scalar_from_bytes;
       fe25519_scalar_to_bytes ].
 

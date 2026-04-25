@@ -24,16 +24,39 @@
  *   - `xeddsa_sign` (lines 225-300): the wrapper. Differs from RFC 8032
  *     Ed25519 in: SHA-512 vs SHAKE-256; no random nonce (Ed25519 derives
  *     nonce from prefix bytes, XEdDSA from random || prefix). Structural
- *     shape is the same.
+ *     shape is the same — but XEdDSA uses [montladder] (Montgomery ladder
+ *     for Curve25519); Ed25519 needs Edwards scalarmult instead.
  *
- * Sign.v's bedrock2 body, when written, will compose the
- * [fe25519_scalar_funcs] (from [Scalar25519_64.v]) with a SHA-512 axiom
- * and the field/curve operations from [Field25519_64.v] /
- * [EdwardsXYZT25519.v] / [EdwardsCompressDecompress.v].
+ * **HARD BLOCKER (2026-04-25)**: there is no bedrock2 Edwards scalarmult
+ * function in either AUCurves or fiat-crypto. The atoms exist
+ * ([fiat-crypto/.../EdwardsXYZT.v::{add_precomputed, double, readd,
+ * to_cached}], all Qed'd at lines 477-580) but no high-level
+ * `ed25519_scalarmult` routine. Phase 1.3's bedrock2 [ed25519_sign] body
+ * needs `r·B` and `a·B`, which require this routine.
+ *
+ * Two paths to unblock Phase 1.3:
+ *   (a) Write [ed25519_scalarmult] in this directory or fiat-crypto/X25519:
+ *       ~100-200 LoC bedrock2 windowed-comb-table loop + ~100-200 LoC
+ *       WP proof composing [add_precomputed_ok], [double_ok], etc.
+ *       Multi-day focused work — a separate sub-task at the same scope
+ *       as Sign.v itself.
+ *   (b) Cite an Edwards-Montgomery birational map and reuse the
+ *       existing [montladder] (X25519's Montgomery ladder). Fiat-crypto
+ *       has [Curves/EdwardsMontgomery25519.v::EdwardsMontgomery25519]
+ *       (the iso lemma) but no bedrock2 wrapper. Lower scope than (a)
+ *       but still requires the wrapper + a per-direction conversion in
+ *       bedrock2.
+ *
+ * Sign.v's bedrock2 body, when written, will compose:
+ *   - [fe25519_scalar_funcs] (from [Scalar25519_64.v]) — already declared
+ *   - SHA-512 axiom (Parameter [sha512] below)
+ *   - field operations from [Field25519_64.v] (already in tree)
+ *   - [ed25519_scalarmult] (BLOCKED — see above)
+ *   - point compression from [EdwardsCompressDecompress.v] — already done
  *
  * The Lean side cites [ed25519_sign_correct] from this file via
- * [CoqAxioms.lean::ed25519_sign_correct]; until that theorem is closed,
- * the citation row remains 🚧 phase1.
+ * [CoqAxioms.lean::ed25519_sign_correct]; until the blocker is resolved
+ * AND the body is written, the citation row remains 🚧 phase1.
  *)
 
 From Stdlib Require Import String List ZArith.

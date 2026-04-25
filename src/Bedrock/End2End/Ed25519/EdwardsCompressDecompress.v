@@ -168,4 +168,85 @@ Module Ed25519Compress.
             P <> b.
   Proof. apply E.decompress_None. Qed.
 
+  (** ** Phase 1.2 corollary lemmas — the names CoqAxioms.lean cites.
+      [ed_decompress_correct] and [ed_compress_correct] complete the
+      "Phase 1.2 deliverable" rows. *)
+
+  (** Concrete [compress] / [decompress] specialized at Ed25519's
+      parameters. Wrappers around the generic [E.compress] / [E.decompress]
+      with all type-class arguments fixed. *)
+  Definition compress_25519
+    (P : @E.point _ Logic.eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d)
+    : bool * F :=
+    E.compress
+      (Fone := F.one) (Fadd := F.add) (Fmul := F.mul)
+      (a := Curve25519.E.a) (d := Curve25519.E.d)
+      (parity := parity)
+      P.
+
+  Definition decompress_25519 (b : bool * F)
+    : option (@E.point _ Logic.eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d) :=
+    E.decompress
+      (a := Curve25519.E.a) (d := Curve25519.E.d)
+      (nonzero_a := Curve25519.E.nonzero_a)
+      (square_a := Curve25519.E.square_a)
+      (nonsquare_d := Curve25519.E.nonsquare_d)
+      (sqrt_div := sqrt_div)
+      (sqrt_Some := sqrt_div_Some_correct)
+      (sqrt_None := sqrt_div_None_correct)
+      (parity := parity)
+      (Proper_parity := Proper_parity)
+      (parity_opp := parity_opp_correct)
+      b.
+
+  (** Phase 1.2 deliverable: the inverse direction. If [decompress_25519]
+      returns [Some P], then compressing P gives back the input bytes. *)
+  Theorem ed_decompress_correct
+    : forall b P, decompress_25519 b = Some P -> compress_25519 P = b.
+  Proof. apply decompress_Some_25519. Qed.
+
+  (** Phase 1.2 deliverable: the forward direction. Compressing then
+      decompressing always succeeds (yields [Some _], not [None]),
+      since [decompress_None] would contradict [compress_25519] being a
+      valid output bytes for [P]. *)
+  Theorem ed_compress_correct
+    : forall P, decompress_25519 (compress_25519 P) <> None.
+  Proof.
+    intros P Heq.
+    pose proof (decompress_None_25519 _ Heq P) as Hne.
+    apply Hne. reflexivity.
+  Qed.
+
+  (** ** [fp_sqrt_ratio_i] — Lean [interp_fp_sqrt_ratio_i] discharge.
+      Concrete function returning [r] such that [r²·v = u] when [u/v]
+      is a quadratic residue in [F p]. Wraps our [sqrt_div].
+      For non-QR [u/v], returns a dummy ([F.zero]); the Lean axiom
+      conditions on the QR existence so the dummy case is unreachable. *)
+  Definition fp_sqrt_ratio_i (u v : F) : F :=
+    match sqrt_div u v with
+    | Some r => r
+    | None => F.zero
+    end.
+
+  Add Field _ed25519_F_field : (Algebra.Field.field_theory_for_stdlib_tactic (T:=F)).
+
+  Theorem interp_fp_sqrt_ratio_i_correct
+    : forall u v : F, v <> F.zero ->
+      (exists r : F, F.mul (F.mul r r) v = u) ->
+      F.mul (F.mul (fp_sqrt_ratio_i u v) (fp_sqrt_ratio_i u v)) v = u.
+  Proof.
+    intros u v Hv [r Hr].
+    unfold fp_sqrt_ratio_i.
+    destruct (sqrt_div u v) as [s|] eqn:Hsq.
+    - (* Some case: s² = u/v from sqrt_div_Some_correct.
+         Goal: (s*s)*v = u. Rewrite with Hs then field. *)
+      pose proof (sqrt_div_Some_correct _ _ _ Hsq) as Hs.
+      rewrite Hs. field. exact Hv.
+    - (* None case contradicts the existence hypothesis. *)
+      exfalso.
+      apply (sqrt_div_None_correct _ _ Hsq r).
+      (* Need: r*r = u/v. Have: (r*r)*v = u, v ≠ 0. *)
+      field_simplify_eq; [ exact Hr | exact Hv ].
+  Qed.
+
 End Ed25519Compress.

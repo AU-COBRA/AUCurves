@@ -14,7 +14,7 @@
  * lighter [Scalar25519_64.v::Ed25519Scalar.scalar_inv_eq_pow] for
  * algebra. Bedrock2/Phase 1.3+ consumers import this file. *)
 
-From Stdlib Require Import ZArith.
+From Stdlib Require Import ZArith Znumtheory.
 From Stdlib Require Import String List.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Spec.Curve25519.

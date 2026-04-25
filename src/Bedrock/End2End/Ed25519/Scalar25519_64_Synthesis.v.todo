@@ -1,0 +1,185 @@
+(** * Ed25519 scalar field — bedrock2 WordByWordMontgomery synthesis.
+ *
+ * EXTRACTED from [Scalar25519_64.v] per Root Cause 5 of the
+ * slow-proofs reference: [make_computed_op] for an 11-field
+ * [word_by_word_Montgomery_ops] instance over a 252-bit prime
+ * runs ~15-30 min on rocq-9 (which builds with [-native-compiler off]
+ * via dune [(mode vo)], forcing fallback from [native_compute] to
+ * [vm_compute]). Isolating the heavy synthesis here means:
+ *   - The file compiles ONCE, .vo cached forever.
+ *   - Edits to [Scalar25519_64.v] / [Sign.v] / [Verify.v] do NOT
+ *     retrigger the synthesis (those files only import the cached .vo).
+ *
+ * Nothing in this file is cited by the Lean side. Lean cites the
+ * lighter [Scalar25519_64.v::Ed25519Scalar.scalar_inv_eq_pow] for
+ * algebra. Bedrock2/Phase 1.3+ consumers import this file. *)
+
+From Stdlib Require Import ZArith.
+From Stdlib Require Import String List.
+Require Import Crypto.Spec.ModularArithmetic.
+Require Import Crypto.Spec.Curve25519.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import Crypto.Bedrock.Field.Synthesis.New.ComputedOp.
+Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
+Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
+Require Import Crypto.Bedrock.Specs.Field.
+Require Import bedrock2.Syntax.
+Require Import bedrock2.BasicC64Semantics.
+Require Import coqutil.Word.Bitwidth64.
+Import ListNotations.
+
+Section Ed25519ScalarBedrock.
+
+  (** Scalar field modulus as a clean Z-literal expression — mirrors
+      [bn254_prime.v]'s [Definition m : Z := bn254_modulus.] pattern.
+      Using [Z.pos Curve25519.l] (where [Curve25519.l] is a Notation)
+      forced every [vm_compute] inside the 11 [make_computed_op]
+      invocations to re-traverse the symbolic [2^252 + ...] notation. *)
+  Definition m : Z :=
+    (2^252 + 27742317777372353535851937790883648493)%Z.
+
+  Lemma m_eq_l : m = Z.pos Curve25519.l.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Lemma prime_m : prime m.
+  Proof. rewrite m_eq_l. exact Curve25519.prime_l. Qed.
+
+  Local Existing Instances
+    Defaults64.default_parameters
+    Defaults64.default_parameters_ok.
+
+  Definition prefix : string := "fe25519_scalar_"%string.
+
+  (* a24 is unused for the scalar field (no Montgomery ladder) — pick
+     [F.of_Z _ 0] as a placeholder. Only the prefix and the modulus
+     are load-bearing for the synthesized operations. *)
+  Instance field_parameters : FieldParameters.
+  Proof using Type.
+    let M := (eval vm_compute in (Z.to_pos m)) in
+    let a := constr:(F.of_Z M 0) in
+    eapply (field_parameters_prefixed M a prefix).
+  Defined.
+
+  Instance field_parameters_ok : FieldParameters_ok.
+  Proof using Type. constructor. exact prime_m. Qed.
+
+  Definition to_mont_string := (prefix ++ "to_mont")%string.
+  Definition from_mont_string := (prefix ++ "from_mont")%string.
+
+  (** Run the fiat-crypto WordByWordMontgomery pipeline for [m] on a
+      64-bit machine (4 limbs of 64 bits). This is the slow step
+      ([Time constructor; make_computed_op.] takes 15-30 min on rocq-9). *)
+  Instance fe25519_scalar_ops :
+    @word_by_word_Montgomery_ops
+      from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _
+      (WordByWordMontgomery.n m machine_wordsize) m.
+  Proof using Type. Time constructor; make_computed_op. Defined.
+
+  #[export] Instance frep25519_scalar : FieldRepresentation :=
+    field_representation m.
+
+  #[export] Instance frep25519_scalar_ok :
+    FieldRepresentation_ok (field_representation := frep25519_scalar).
+  Proof.
+    apply Crypto.Bedrock.Field.Synthesis.New.Signature.field_representation_ok.
+    intros. assumption.
+    let c := eval lazy in felem_size_in_bytes in
+      change felem_size_in_bytes with c.
+    Lia.lia.
+  Qed.
+
+  (** Reusable [Derive] helper, mirrors [Field256k1.v]. *)
+  Local Ltac begin_derive_bedrock2_func :=
+    lazymatch goal with
+    | |- context [spec_of_BinOp bin_mul] => eapply mul_func_correct
+    | |- context [spec_of_UnOp un_square] => eapply square_func_correct
+    | |- context [spec_of_BinOp bin_add] => eapply add_func_correct
+    | |- context [spec_of_BinOp bin_sub] => eapply sub_func_correct
+    | |- context [spec_of_UnOp un_opp] => eapply opp_func_correct
+    | |- context [spec_of_from_bytes] => eapply from_bytes_func_correct
+    | |- context [spec_of_to_bytes] => eapply to_bytes_func_correct
+    | |- context [spec_of_selectznz] => eapply select_znz_func_correct
+    | |- context [spec_of_felem_copy] => eapply felem_copy_func_correct
+    end.
+
+  Local Ltac epair :=
+    lazymatch goal with
+    | f := _ : string * Syntax.func |- _ =>
+             let p := open_constr:((_, _)) in
+             unify f p;
+             subst f
+    end.
+
+  Local Ltac derive_bedrock2_func op :=
+    epair;
+    begin_derive_bedrock2_func;
+    try lazymatch goal with
+      | |- _ = b2_func _ => vm_compute; reflexivity
+      end;
+    lazymatch goal with
+    | |- _ = @ErrorT.Success ?ErrT unit tt =>
+        abstract (vm_cast_no_check (@eq_refl _ (@ErrorT.Success ErrT unit tt)))
+    | |- Func.valid_func _ =>
+        eapply Func.valid_func_bool_iff;
+        abstract vm_cast_no_check (eq_refl true)
+    | |- (_ = _)%Z => vm_compute; reflexivity
+    | |- (felem_size_in_bytes <= 2 ^ _)%Z => apply felem_size_ok
+    end.
+
+  Local Notation functions_contain functions f :=
+    (Interface.map.get functions (fst f) = Some (snd f)).
+
+  Derive fe25519_scalar_mul
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_mul ->
+                 spec_of_BinOp bin_mul
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_mul_correct.
+  Proof. Time derive_bedrock2_func mul_op. Qed.
+
+  Derive fe25519_scalar_add
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_add ->
+                 spec_of_BinOp bin_add
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_add_correct.
+  Proof. Time derive_bedrock2_func add_op. Qed.
+
+  Derive fe25519_scalar_sub
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_sub ->
+                 spec_of_BinOp bin_sub
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_sub_correct.
+  Proof. Time derive_bedrock2_func sub_op. Qed.
+
+  Derive fe25519_scalar_from_bytes
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_from_bytes ->
+                 spec_of_from_bytes
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_from_bytes_correct.
+  Proof. Time derive_bedrock2_func from_bytes_op. Qed.
+
+  Derive fe25519_scalar_to_bytes
+    SuchThat (forall functions,
+                 functions_contain functions fe25519_scalar_to_bytes ->
+                 spec_of_to_bytes
+                   (field_representation := frep25519_scalar)
+                   functions)
+    As fe25519_scalar_to_bytes_correct.
+  Proof. Time derive_bedrock2_func to_bytes_op. Qed.
+
+  (** The five bedrock2 [(name, func)] pairs that Sign.v / Verify.v import. *)
+  Definition fe25519_scalar_funcs : list (string * Syntax.func) :=
+    [ fe25519_scalar_mul;
+      fe25519_scalar_add;
+      fe25519_scalar_sub;
+      fe25519_scalar_from_bytes;
+      fe25519_scalar_to_bytes ].
+
+End Ed25519ScalarBedrock.

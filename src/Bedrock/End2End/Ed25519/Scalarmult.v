@@ -41,8 +41,21 @@
 
 From Stdlib Require Import String List ZArith.
 Require Import bedrock2.Syntax.
+Require Import coqutil.Word.LittleEndianList.
+Require Import Crypto.Spec.ModularArithmetic.
+Require Import Crypto.Spec.Curve25519.
+Require Import Crypto.Spec.CompleteEdwardsCurve.
+Require Import Crypto.Curves.Edwards.XYZT.Basic.
+Require Import Bedrock.End2End.Ed25519.EdwardsXYZT25519.
 
 Module Ed25519Scalarmult.
+
+  (** Decode a 32-byte little-endian scalar into a [nat] index for
+      [E.mul] / [scalarmult]. Range: [0, 2^256).
+      (Reduction mod L is the caller's responsibility; the bedrock2
+      function operates on the raw 256-bit integer.) *)
+  Definition decode_le_scalar (bs : list Byte.byte) : nat :=
+    Z.to_nat (LittleEndianList.le_combine bs).
 
   (** Constant-time scalarmult against the Ed25519 basepoint.
       Inputs: [out : ptr to projective point (5 felems)], [scalar : ptr to 32 bytes].
@@ -55,8 +68,20 @@ Module Ed25519Scalarmult.
       Output: [out] populated with [scalar · P]. *)
   Parameter ed25519_scalarmult : Syntax.func.
 
-  (** Spec axiom shape (real version pending [Scalarmult_Impl.v.todo]).
-      Currently `True` placeholder so downstream files can compile. *)
+  (** Spec connection (real Hoare-triple wrapping pending in
+      [Scalarmult_Impl.v.todo]). The intent: bedrock2
+      [ed25519_scalarmult_base scalar] outputs bytes that decode to a
+      projective point whose affine projection equals
+      [E.mul (decode_le_scalar scalar) Curve25519.E.B]. The full
+      sep-logic wrapping requires field-representation predicates that
+      bind the bedrock2 byte/limb buffer to [Extended.point].
+
+      The expected spec function name to compose with is
+      [Ed25519XYZT.scalarmult], whose correctness is the Closed
+      [Ed25519XYZT.scalarmult_correct] theorem.
+
+      Spec is left as `True` placeholder until the implementation
+      lands and the sep-logic wrapping can be stated precisely. *)
   Axiom ed25519_scalarmult_base_correct :
     forall (scalar : list Byte.byte),
       length scalar = 32%nat -> True.

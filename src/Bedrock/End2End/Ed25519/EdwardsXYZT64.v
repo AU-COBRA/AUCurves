@@ -423,15 +423,20 @@ Module Ed25519XYZT64.
           H10 about the resulting felem.
 
       Next blocker: [solve_mem]'s ecancel can't auto-solve the side condition
-      [(ws2bs (felem_to_list ?x))$@p_out * ?Rr] (the precondition of
-      fe25519_sub asks for an FElem-as-bytes representation, but our H6
-      has ListDef.firstn/skipn byte arrays). Needs an explicit
-      bytes-to-felem cast lemma application before each call, or an Hint
-      Extern that bridges the two. Pending.
+      [(ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list ?x))$@p_out * ?Rr].
+      Inspected upstream's [binop_spec] (Crypto.Bedrock.Specs.Field line 113):
+      its precondition wants a raw [out : list byte] satisfying
+      [(out$@pout * Rr)%sep mem]. The [ws2bs (felem_to_list ?x)] form
+      surfacing in our goal must be from [FElem]'s unfolding (FElem at 64-bit
+      = ws2bs(felem_to_list) of words). The mismatch: H6 has
+      [(ListDef.firstn 40 out) $@ p_out] as raw bytes, but the spec evar
+      is being resolved through FElem's expansion to the felem-as-bytes form,
+      not as raw bytes. Fix likely requires Hint Extern that recognizes the
+      bidirectional [bytes <-> felem-as-bytes] equivalence under length=40.
 
-      Status: 4-of-7 calls in to_cached64_ok would close with the same
-      pattern once the bytes-to-felem coercion is figured out. Each of
-      the 4 _ok lemmas (to_cached, add_precomputed, double, readd) shares
-      this structure, so the fix is once-for-all. *)
+      Same blocker will hit add_precomputed64_ok / double64_ok / readd64_ok.
+      Solving once unblocks all four. Pending — needs a fresh-eyes
+      architectural look at how upstream's 32-bit setup discharges this
+      side condition (likely a hint we haven't ported). *)
 
 End Ed25519XYZT64.

@@ -5,51 +5,19 @@
  * `func` syntax trees are width-agnostic; the proofs need 64-bit
  * field-representation hints.
  *
- * Status (Step 1 in progress, iteration 1 — bootstrap):
- *   - Imports + 64-bit instances set up.
- *   - Structure definitions (projective_coords, etc.) pending sub-task 1.1.
- *   - func definitions pending sub-task 1.2.
- *   - _ok lemmas pending sub-tasks 1.3-1.5.
+ * Status (Step 1 in progress):
+ *   - Sub-task 1.1: structure definitions Qed (projective/precomputed/cached).
+ *   - Sub-task 1.2: bedrock2 func aliases (4 Definitions).
+ *   - Sub-task 1.3: spec_of declarations Qed (4 Instances).
+ *   - Sub-task 1.4: helper Ltac — pending.
+ *   - Sub-task 1.5: _ok proofs (4 lemmas, ~150 LoC each) — pending.
  *
  * See [option-b-64bit-port-plan.md] for the full Step 1 plan. *)
 
-From Stdlib Require Import String List ZArith.
-Require Import Crypto.Spec.ModularArithmetic.
-From coqutil.Tactics Require Import Tactics.
-Require Import Crypto.Util.Tactics.DestructHead.
-Require Import bedrock2.Syntax.
-Require Import bedrock2.BasicC64Semantics.
-Require Import coqutil.Word.Bitwidth64.
-Require Import Crypto.Spec.Curve25519.
-Require Import Crypto.Spec.CompleteEdwardsCurve.
-Require Import Crypto.Curves.Edwards.XYZT.Basic.
-Require Import Crypto.Curves.Edwards.XYZT.Precomputed.
-Require Import Crypto.Curves.Edwards.XYZT.Readdition.
-Require Import Crypto.Bedrock.Specs.Field.
-Require Import Bedrock.End2End.X25519_64.Field25519_64.
-
-(* Upstream bedrock2 Edwards XYZT atoms — buildable in our setup as
-   of fiat-crypto commit abbea109e. Provides:
-   - add_precomputed, double, to_cached, readd  (bedrock2 funcs)
-   - their spec_of_* instances + _ok proofs (32-bit, but the func
-     SYNTAX is width-agnostic, so we reuse the Definitions and
-     re-state specs at 64-bit below). *)
-Require Crypto.Bedrock.End2End.X25519.EdwardsXYZT.
-
-(* 64-bit word + field-rep instances. *)
-#[export] Existing Instances
-  BasicC64Semantics.word
-  BasicC64Semantics.wordok
-  Bitwidth64.BW64
-  BasicC64Semantics.mem
-  BasicC64Semantics.mapok.
-
-#[export] Existing Instance field_parameters.
-#[export] Existing Instance frep25519.
-#[export] Existing Instance frep25519_ok.
-
-Local Existing Instance Curve25519.field.
-Local Existing Instance Curve25519.char_ge_3.
+(* All heavy imports + Existing Instances live in the Imports loader
+   so MCP can iterate on this file's content without hitting the
+   600s file-load timeout. See feedback_mcp_timeout_heavy_imports.md. *)
+Require Import Bedrock.End2End.Ed25519.EdwardsXYZT64_Imports.
 
 Module Ed25519XYZT64.
 
@@ -156,20 +124,148 @@ Module Ed25519XYZT64.
   Definition to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
   Definition readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
 
-  (** ** Sub-tasks 1.3-1.5: spec_of declarations + _ok proofs.
-      Pending — first attempt hit a [word]-type-resolution issue: in
-      fnspec! the syntax [(p_out: word)] requires [word] to resolve
-      to a concrete Type, but in our setup [word] is the typeclass
-      [Z -> Type]. Upstream's specs work because of an implicit
-      coercion / canonical-structure setup that we haven't yet
-      reproduced (probably tied to [coqutil.Word.Naive] or how
-      [Local Existing Instance] resolves [word] to its rep field).
-      Mitigation candidates (untested):
-        - Use [(p_out: @word.rep _ word)] explicitly in the specs.
-        - [Local Existing Instance Naive.word64] instead of
-          [BasicC64Semantics.word].
-        - [Import bedrock2.WeakestPrecondition] (tried — didn't fix).
-      Each build cycle is 5-15 min wall, so iteration is slow.
-      Defer to a focused future session. *)
+  (** ** Sub-task 1.3: spec_of declarations.
+      Mirror of upstream lines 319-400. Key fix: shadow [word] as
+      [Naive.word 64] (matching [BasicC64Semantics.word := Naive.word64])
+      so [(p_out: word)] in fnspec! resolves to a concrete Type. *)
+
+  Local Open Scope string_scope.
+  Local Open Scope Z_scope.
+
+  Local Notation word := (Naive.word 64).
+  Local Notation FElem := (FElem(FieldRepresentation:=frep25519)).
+  Local Notation felem := (felem(FieldRepresentation:=frep25519)).
+  Local Notation bounded_by := (bounded_by(FieldRepresentation:=frep25519)).
+  Local Notation felem_size := 40.
+
+  Local Notation "m =* P" := ((P%sep) m) (at level 70, only parsing).
+  Local Notation "p .+ n" := (word.add p (word.of_Z n)) (at level 50, format "p .+ n", left associativity).
+
+  (* Sep predicates for points: p5@ projective, p4@ cached, p3@ precomputed.
+     Verbatim from upstream lines 297-317. *)
+  Local Notation "c 'p5@' p" := (let '(X,Y,Z,Ta,Tb) := proj1_sig c in sep (sep (sep (sep
+                                (FElem (p) X)
+                                (FElem (p .+ felem_size) Y))
+                                (FElem (p .+ (felem_size + felem_size)) Z))
+                                (FElem (p .+ (felem_size + felem_size + felem_size)) Ta))
+                                (FElem (p .+ (felem_size + felem_size + felem_size + felem_size)) Tb))
+                                (at level 10, format "c 'p5@' p").
+  Local Notation "c 'p4@' p" := (let '(half_ymx, half_ypx ,z,td) := proj1_sig c in sep (sep (sep
+                                (FElem (p) half_ymx)
+                                (FElem (p .+ felem_size) half_ypx))
+                                (FElem (p .+ (felem_size + felem_size)) z))
+                                (FElem (p .+ (felem_size + felem_size + felem_size)) td))
+                                (at level 10, format "c 'p4@' p").
+  Local Notation "c 'p3@' p" := (let '(half_ymx, half_ypx, xyd) := proj1_sig c in sep (sep
+                                (FElem (p) half_ymx)
+                                (FElem (p .+ felem_size) half_ypx))
+                                (FElem (p .+ (felem_size + felem_size)) xyd))
+                                (at level 10, format "c 'p3@' p").
+
+  (* Algebraic instance witnesses needed by the m1* operators.
+     [nonzero_a]/[square_a]/[nonsquare_d] reuse Curve25519.E proofs;
+     [a_eq_minus1] is [eq_refl] since [a := F.opp 1];
+     [nonzero_d] discharged by Decidable.vm_decide. *)
+  Lemma a_eq_minus1 : Curve25519.E.a = F.opp F.one. Proof. reflexivity. Qed.
+  Lemma nonzero_d : Curve25519.E.d <> F.zero. Proof. Decidable.vm_decide. Qed.
+  Definition twice_d : F Curve25519.p := F.add Curve25519.E.d Curve25519.E.d.
+  Lemma k_eq_2d : twice_d = F.add Curve25519.E.d Curve25519.E.d. Proof. reflexivity. Qed.
+
+  (* Group-operation Notations specialized to Curve25519. *)
+  Local Notation m1double :=
+    (Extended.m1double (a:=a) (d:=d)
+       (nonzero_a:=Curve25519.E.nonzero_a)
+       (square_a:=Curve25519.E.square_a)
+       (nonsquare_d:=Curve25519.E.nonsquare_d)
+       (a_eq_minus1:=a_eq_minus1)
+       (twice_d:=twice_d)
+       (k_eq_2d:=k_eq_2d)).
+  Local Notation m1_prep :=
+    (Readdition.m1_prep (a:=a) (d:=d)
+       (nonzero_a:=Curve25519.E.nonzero_a)
+       (a_eq_minus1:=a_eq_minus1)
+       (twice_d:=twice_d)
+       (k_eq_2d:=k_eq_2d)
+       (nonzero_d:=nonzero_d)).
+  Local Notation m1_readd :=
+    (Readdition.m1_readd (a:=a) (d:=d)
+       (nonzero_a:=Curve25519.E.nonzero_a)
+       (square_a:=Curve25519.E.square_a)
+       (nonsquare_d:=Curve25519.E.nonsquare_d)
+       (a_eq_minus1:=a_eq_minus1)
+       (twice_d:=twice_d)
+       (k_eq_2d:=k_eq_2d)
+       (nonzero_d:=nonzero_d)).
+  Local Notation m1add_precomputed_coordinates :=
+    (Precomputed.m1add_precomputed_coordinates (a:=a) (d:=d)
+       (nonzero_a:=Curve25519.E.nonzero_a)
+       (square_a:=Curve25519.E.square_a)
+       (nonsquare_d:=Curve25519.E.nonsquare_d)
+       (a_eq_minus1:=a_eq_minus1)).
+
+  Global Instance spec_of_add_precomputed64 : spec_of "add_precomputed" :=
+    fnspec! "add_precomputed"
+      (p_out p_a p_b: word) /
+      (a: projective_coords) (b: precomputed_coords) (out : list byte) (R: _ -> Prop), {
+        requires t m :=
+          m =* out $@ p_out * a p5@ p_a * b p3@ p_b * R/\
+          Datatypes.length out = Z.to_nat (5 * felem_size);
+        ensures t' m' :=
+          t = t' /\
+          exists a_plus_b : projective_coords,
+            m' =* a_plus_b p5@ p_out * a p5@ p_a * b p3@ p_b * R /\
+            proj1_sig (m1add_precomputed_coordinates (coords_to_point a) (precomputed_coords_to_precomputed b))
+               = feval_projective_coords a_plus_b
+      }.
+
+  Global Instance spec_of_double64 : spec_of "double" :=
+    fnspec! "double"
+      (p_out p_a: word) /
+      (a: projective_coords) (out : list byte) (R: _ -> Prop), {
+        requires t m :=
+          m =* out $@ p_out * a p5@ p_a * R /\
+          Datatypes.length out = Z.to_nat (5 * felem_size);
+        ensures t' m' :=
+          t = t' /\
+          exists a_double: projective_coords,
+            m' =* a_double p5@ p_out * a p5@ p_a * R /\
+            proj1_sig (m1double (coords_to_point a)) = feval_projective_coords a_double
+      }.
+
+  Global Instance spec_of_to_cached64 : spec_of "to_cached" :=
+    fnspec! "to_cached"
+      (p_out p_a p_d: word) /
+      (a: projective_coords) (d1: felem) (out : list byte) (R: _ -> Prop), {
+        requires t m :=
+          m =* out $@ p_out * a p5@ p_a * FElem p_d d1 * R /\
+          Datatypes.length out = Z.to_nat (4 * felem_size) /\
+          d = feval d1 /\
+          bounded_by tight_bounds d1;
+        ensures t' m' :=
+          t = t' /\
+          exists a_cached: cached_coords,
+            m' =* a_cached p4@ p_out * a p5@ p_a * FElem p_d d1 * R /\
+            proj1_sig (m1_prep (coords_to_point a)) = feval_cached_coords a_cached
+    }.
+
+  Global Instance spec_of_readd64 : spec_of "readd" :=
+    fnspec! "readd"
+      (p_out p_a p_c: word) /
+      (a: projective_coords) (c: cached_coords) (out : list byte) (R: _ -> Prop), {
+        requires t m :=
+          m =* out $@ p_out * a p5@ p_a * c p4@ p_c * R /\
+          Datatypes.length out = Z.to_nat (5 * felem_size);
+        ensures t' m' :=
+          t = t' /\
+          exists a_plus_c: projective_coords,
+            m' =* a_plus_c p5@ p_out * a p5@ p_a * c p4@ p_c * R /\
+            proj1_sig (m1_readd (coords_to_point a) (cached_coords_to_cached c))
+              = feval_projective_coords a_plus_c
+      }.
+
+  (** ** Sub-tasks 1.4-1.5: helper Ltac + _ok proofs.
+      Pending — these mirror upstream's add_precomputed_ok, double_ok,
+      to_cached_ok, readd_ok proofs (~150 LoC each, mostly straightline +
+      handle_call + ecancel). Defer to a focused future session. *)
 
 End Ed25519XYZT64.

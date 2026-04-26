@@ -438,25 +438,38 @@ Module Ed25519XYZT64.
           for the first call (fe25519_sub), introducing post-state hypothesis
           H10 about the resulting felem.
 
-      Recipe (verified end-to-end via MCP for the FIRST of 7 calls):
-        For each output chunk [bs := firstn n (skipn k out)] at offset k:
-          1. assert (HL : length bs = Z.to_nat felem_size_in_bytes) by
-             (rewrite firstn_length; change felem_size_in_bytes with 40%Z; listZnWords).
-          2. pose proof (felem_from_bytes p_out_offset bs HL) as Hiff_k.
-          3. seprewrite_in Hiff_k H6.    (* H6 now has FElem instead of bytes *)
-        Then [repeat single_step] handles call sequencing; for each call,
-        the shelved [(ws2bs (felem_to_list ?x))$@p_out * ?Rr] side condition
-        closes via [use_sep_assumption. cancel. cancel_seps_at_indices 0%nat 0%nat. reflexivity. cancel.]
-        because H6's FElem unfolds (via the Hint Extern at Specs/Field.v line 525)
-        to match the spec's byte-form precondition.
+      Recipe verified via MCP for 5-of-7 calls in to_cached64_ok:
 
-      KEY DISCOVERY: [seprewrite_in (felem_from_bytes ...) H6] FAILS directly
-      ("No matching clauses for match") but works after [pose proof] of the
-      lemma application as a local hypothesis. The seprewrite_in tactic's
-      multimatch/unshelve interaction can't process direct lemma applications
-      with already-discharged side conditions. Workaround: pose first, rewrite
-      second.
+        Step 1: split_output_stack out p_out 4. (* yields 4 byte chunks *)
+        Step 2: pre-rewrite each chunk to FElem form via felem_from_bytes:
+          assert (HL_k : length bs_k = Z.to_nat felem_size_in_bytes) by
+            (rewrite firstn_length(, skipn_length); change felem_size_in_bytes with 40%Z; listZnWords).
+          pose proof (felem_from_bytes p_offset_k bs_k HL_k) as Hiff_k.
+          seprewrite_in Hiff_k H6.
+        Step 3: per-call: [single_step; try (use_sep_assumption; cancel;
+          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|]; cancel)].
 
-      Same recipe applies to add_precomputed64_ok / double64_ok / readd64_ok. *)
+      KEY DISCOVERY 1: seprewrite_in works only when the iff1 lemma is
+      pre-bound via [pose proof]. Direct seprewrite_in (felem_from_bytes ...) H6
+      fails with "No matching clauses for match" — multimatch/unshelve in
+      the seprewrite_in implementation chokes on already-discharged side
+      conditions.
+
+      KEY DISCOVERY 2: need a 64-bit spec_of_fe25519_half (declared above as
+      spec_of_fe25519_half64) — upstream's is 32-bit only.
+
+      REMAINING BLOCKER (call 6 of 7): the discharge tactic
+      [cancel_seps_at_indices 0%nat 0%nat. reflexivity.] fails on the
+      fe25519_mul writing to [p_out.+120]. After 5 calls, H6 changes shape;
+      what was originally [bs2felem (skipn 120 out)] at p_out.+120 is now
+      [x3] (the post-felem from the previous fe25519_mul side-allocate).
+      The reflexivity fails because the spec's RHS asks for the byte form
+      [(ws2bs (felem_to_list ?x))$@(p_out.+120)] but the LHS has [FElem
+      (p_out.+120) x3] — they need the felem_to_bytes Hint Extern to fire,
+      which requires the goal in [Lift1Prop.impl1] form (not Logic.eq).
+      Path forward: replace the discharger with one that uses
+      [use_sep_assumption_impl] (preserves impl1 form so the Hint Extern
+      at Specs/Field.v:525 fires) instead of [use_sep_assumption + cancel +
+      reflexivity]. *)
 
 End Ed25519XYZT64.

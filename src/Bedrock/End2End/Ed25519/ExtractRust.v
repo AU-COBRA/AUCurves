@@ -5,86 +5,70 @@
  *   Stage 1 (bedrock2 → C source):
  *     ToCString.c_module ed25519_funcs : string
  *     This produces the C body for the bedrock2 [ed25519_sign] /
- *     [ed25519_verify] functions. Already supported by AUCurves'
- *     existing [bedrock2.ToCString] integration; same pattern as
- *     [End2End/X25519_64/ExtractJasmin.v]'s c_module emission.
+ *     [ed25519_verify] functions. Pending Phase 1.3 / 1.4 (Sign.v
+ *     and Verify.v don't define their bodies yet — currently
+ *     [Parameter]s).
  *
  *   Stage 2 (safe Rust wrapper):
  *     ToSafeRustString.gen_module emits a safe Rust facade with
- *     [#[repr(transparent)]] newtypes around the C externs.
- *     The bls12_381 / bn254 extractions in [ToSafeRustString.v]
- *     are the working templates.
- *
- * STATUS (2026-04-26): blocked on Phase 1.3 / 1.4 — Sign.v and
- * Verify.v don't define their bedrock2 [Func] bodies yet. ToCString
- * needs concrete [func]s, and [Ed25519Sign.ed25519_sign] /
- * [Ed25519Verify.ed25519_verify] are still [Parameter]s.
- *
- * Additionally, [ToSafeRustString.v]'s [field_type] / [wrapper_spec]
- * ADTs assume [u64; N]-style arrays. Ed25519 sign/verify pass
- * variable-length byte arrays (msg) and fixed-size byte buffers
- * (sig 64, pk 32, seed 32). The infrastructure needs a small
- * extension (~50 LoC) before Ed25519 wrappers fit cleanly:
- *   - Add a [BytesArray N] variant to [field_type].
- *   - Add a [BytesPtrLen] variant for variable-length byte spans.
- *   - Update [gen_newtype], [rust_ref], [rust_cast], [gen_extern_decl],
- *     [gen_safe_wrapper] to dispatch on the new variants.
- *
- * Once those land:
- *
- *   Definition Ed25519Seed   := {| ft_name := "Seed";   ft_kind := Bytes 32 |}.
- *   Definition Ed25519PubKey := {| ft_name := "PubKey"; ft_kind := Bytes 32 |}.
- *   Definition Ed25519Sig    := {| ft_name := "Sig";    ft_kind := Bytes 64 |}.
- *   Definition Ed25519Msg    := {| ft_name := "Msg";    ft_kind := BytesPtrLen |}.
- *
- *   Definition ed25519_types : list field_type :=
- *     [Ed25519Seed; Ed25519PubKey; Ed25519Sig; Ed25519Msg].
- *
- *   Definition ed25519_wrappers : list wrapper_spec := [
- *     {| wrapper_rust_name := "sign";
- *        wrapper_c_name := "ed25519_sign";
- *        wrapper_params := [mk_out "sig_out" Ed25519Sig;
- *                           mk_in "seed" Ed25519Seed;
- *                           mk_in "msg" Ed25519Msg] |};
- *     {| wrapper_rust_name := "verify";
- *        wrapper_c_name := "ed25519_verify";
- *        wrapper_params := [mk_out "result" (Bytes 1);
- *                           mk_in "pk" Ed25519PubKey;
- *                           mk_in "sig" Ed25519Sig;
- *                           mk_in "msg" Ed25519Msg] |}
- *   ].
- *
- *   Definition ed25519_safe_rust : string :=
- *     gen_module "Ed25519" ed25519_types ed25519_wrappers.
- *
- *   Definition ed25519_c_source : string :=
- *     ToCString.c_module ed25519_funcs.   (* requires Sign.v / Verify.v bodies *)
- *
- *   (* Concatenated module that the consumer imports as one .rs *)
- *   Definition ed25519_rust_module : string :=
- *     ed25519_safe_rust.
- *
- *   (* Correctness theorem composes:
- *      - ed25519_sign_correct (Phase 1.3) — bedrock2 → spec
- *      - ToCString.c_module_correct — bedrock2 → C
- *      - ToSafeRustString safe-wrapper soundness — extern → safe Rust *)
- *   Theorem ed25519_sign_rust_correct :
- *     forall seed msg result_sig,
- *       length seed = 32 -> length msg < ... ->
- *       (* the safe Rust ed25519::sign(sig_out, seed, msg) leaves
- *          sig_out = rfc8032_ed25519_sign seed msg *) ...
- *   Proof.
- *     intros.
- *     apply gen_safe_wrapper_sound.    (* wrapper layer *)
- *     apply c_module_correct.          (* ToCString layer *)
- *     apply Ed25519Sign.ed25519_sign_correct.   (* bedrock2 layer *)
- *   Qed.
- *
- * STATUS UPDATE NEEDED when consuming this file:
- *   - $WORKSPACE/../SSProve-lean/scripts/extract_ed25519_rust.sh
- *     stage 2 currently consumes a placeholder; flip when this file
- *     produces a real string.
+ *     [#[repr(transparent)]] newtypes around the C externs. STAGE 2
+ *     IS NOW UNBLOCKED — [ToSafeRustString.v]'s [field_type] gained
+ *     the [ft_kind] discriminator (KLimbs/KBytes/KBytesSlice/KUsize)
+ *     in commit history below, so byte-buffer + variable-length-msg
+ *     wrappers fit cleanly. The wrapper module text is producible
+ *     now, in advance of the bedrock2 body — it just declares the
+ *     extern "C" signature shape that Stage 1's output will fill.
  *)
 
-(* Placeholder — full ToSafeRustString integration deferred. *)
-Definition ed25519_extract_status : nat := 0.
+From Stdlib Require Import String List ZArith.
+Require Import Bedrock.ToSafeRustString.
+Import ListNotations.
+
+Local Open Scope string_scope.
+
+(** ** Ed25519 byte-buffer field types. *)
+Definition Ed25519Seed   := {| ft_name := "Seed";   ft_limbs := 32; ft_kind := KBytes |}.
+Definition Ed25519PubKey := {| ft_name := "PubKey"; ft_limbs := 32; ft_kind := KBytes |}.
+Definition Ed25519Sig    := {| ft_name := "Sig";    ft_limbs := 64; ft_kind := KBytes |}.
+Definition Ed25519Result := {| ft_name := "Result"; ft_limbs := 1;  ft_kind := KBytes |}.
+Definition Ed25519Msg    := {| ft_name := "Msg";    ft_limbs := 0;  ft_kind := KBytesSlice |}.
+
+Definition ed25519_types : list field_type :=
+  [Ed25519Seed; Ed25519PubKey; Ed25519Sig; Ed25519Result; Ed25519Msg].
+
+(** ** Ed25519 wrapper specs.
+    Mirror the bedrock2 signatures from [Sign.v] / [Verify.v]. *)
+Definition ed25519_wrappers : list wrapper_spec := [
+  {| wrapper_rust_name := "sign";
+     wrapper_c_name := "ed25519_sign";
+     wrapper_params := [mk_out "sig_out" Ed25519Sig;
+                        mk_in "seed" Ed25519Seed;
+                        mk_in "msg" Ed25519Msg] |};
+
+  {| wrapper_rust_name := "verify";
+     wrapper_c_name := "ed25519_verify";
+     wrapper_params := [mk_out "result" Ed25519Result;
+                        mk_in "pk" Ed25519PubKey;
+                        mk_in "sig" Ed25519Sig;
+                        mk_in "msg" Ed25519Msg] |}
+].
+
+(** ** Stage 2 output: safe Rust wrapper module text.
+    Producible NOW (independent of bedrock2 body). The extern "C"
+    signature this declares matches what Stage 1's ToCString output
+    must emit when Sign.v / Verify.v are filled in. *)
+Definition ed25519_safe_rust : string :=
+  gen_module "Ed25519" ed25519_types ed25519_wrappers.
+
+(** ** Status notes for downstream consumers.
+    $WORKSPACE/../SSProve-lean/scripts/extract_ed25519_rust.sh
+    stage 2 can now consume [ed25519_safe_rust] (a real string).
+    Stage 1 (the C body for ed25519_sign / ed25519_verify) is still
+    pending Sign.v + Verify.v bedrock2 bodies. The wrapper module
+    expects extern "C" signatures:
+
+      fn ed25519_sign(sig_out: usize, seed: usize, msg_ptr: usize, msg_len: usize);
+      fn ed25519_verify(result: usize, pk: usize, sig: usize, msg_ptr: usize, msg_len: usize);
+
+    matching the bedrock2 [func]s' parameter lists. *)
+Definition ed25519_extract_status : nat := 1.  (* was 0; now Stage 2 ready *)

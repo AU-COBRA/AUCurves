@@ -44,10 +44,19 @@ Definition nat_to_string (n : nat) : string :=
 (* Field type descriptions                                           *)
 (* ================================================================ *)
 
-(** A field type: name (e.g., "Fp"), and number of u64 limbs. *)
+(** A field type kind. Determines the Rust newtype layout and
+    extern-call boundary representation. *)
+Inductive field_kind :=
+  | KLimbs       (* [u64; ft_limbs] — original behavior; field elements *)
+  | KBytes       (* [u8; ft_limbs] — fixed-size byte buffers (seed, sig, pk) *)
+  | KBytesSlice  (* &[u8] — variable-length byte spans (msg); expands to (ptr, len) on extern *)
+  | KUsize.      (* usize — raw integer; ft_limbs ignored *)
+
+(** A field type: name (e.g., "Fp"), number of limbs/bytes, kind. *)
 Record field_type := {
   ft_name : string;
   ft_limbs : nat;
+  ft_kind : field_kind;
 }.
 
 (* ================================================================ *)
@@ -91,59 +100,128 @@ Definition mk_inout (name : string) (ty : field_type) : param_spec :=
 (* Newtype declaration generation                                    *)
 (* ================================================================ *)
 
-(** Emit `#[repr(transparent)] pub struct Fp(pub [u64; N]);` for a field type.
-    The transparent repr ensures the layout matches a raw [u64; N] array,
-    so passing &Fp to extern "C" functions is correct. *)
+(** Whether a field type needs a generated newtype declaration.
+    KLimbs and KBytes do (fixed-size containers); KBytesSlice and
+    KUsize don't (use Rust built-ins directly). *)
+Definition needs_newtype (ft : field_type) : bool :=
+  match ft_kind ft with
+  | KLimbs | KBytes => true
+  | KBytesSlice | KUsize => false
+  end.
+
+(** Emit `#[repr(transparent)] pub struct Fp(pub [u64; N]);` for a [KLimbs]
+    field type, or `pub struct Sig(pub [u8; N]);` for a [KBytes] one.
+    The transparent repr ensures the layout matches the raw array,
+    so passing &Sig to extern "C" functions is correct. *)
 Definition gen_newtype (ft : field_type) : string :=
-  "#[repr(transparent)]" ++ LF ++
-  "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct " ++ ft_name ft ++ "(pub [u64; " ++ nat_to_string (ft_limbs ft) ++ "]);" ++ LF ++ LF ++
-  "impl " ++ ft_name ft ++ " {" ++ LF ++
-  "    /// Create from raw little-endian limbs (Montgomery form)." ++ LF ++
-  "    #[inline] pub const fn from_limbs(limbs: [u64; " ++ nat_to_string (ft_limbs ft) ++ "]) -> Self { " ++ ft_name ft ++ "(limbs) }" ++ LF ++
-  "    /// Zero element." ++ LF ++
-  "    #[inline] pub const fn zero() -> Self { " ++ ft_name ft ++ "([0u64; " ++ nat_to_string (ft_limbs ft) ++ "]) }" ++ LF ++
-  "    /// Borrow as raw limb array." ++ LF ++
-  "    #[inline] pub fn as_limbs(&self) -> &[u64; " ++ nat_to_string (ft_limbs ft) ++ "] { &self.0 }" ++ LF ++
-  "    /// Mutably borrow as raw limb array." ++ LF ++
-  "    #[inline] pub fn as_limbs_mut(&mut self) -> &mut [u64; " ++ nat_to_string (ft_limbs ft) ++ "] { &mut self.0 }" ++ LF ++
-  "}" ++ LF.
+  match ft_kind ft with
+  | KLimbs =>
+      "#[repr(transparent)]" ++ LF ++
+      "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+      "pub struct " ++ ft_name ft ++ "(pub [u64; " ++ nat_to_string (ft_limbs ft) ++ "]);" ++ LF ++ LF ++
+      "impl " ++ ft_name ft ++ " {" ++ LF ++
+      "    /// Create from raw little-endian limbs (Montgomery form)." ++ LF ++
+      "    #[inline] pub const fn from_limbs(limbs: [u64; " ++ nat_to_string (ft_limbs ft) ++ "]) -> Self { " ++ ft_name ft ++ "(limbs) }" ++ LF ++
+      "    /// Zero element." ++ LF ++
+      "    #[inline] pub const fn zero() -> Self { " ++ ft_name ft ++ "([0u64; " ++ nat_to_string (ft_limbs ft) ++ "]) }" ++ LF ++
+      "    /// Borrow as raw limb array." ++ LF ++
+      "    #[inline] pub fn as_limbs(&self) -> &[u64; " ++ nat_to_string (ft_limbs ft) ++ "] { &self.0 }" ++ LF ++
+      "    /// Mutably borrow as raw limb array." ++ LF ++
+      "    #[inline] pub fn as_limbs_mut(&mut self) -> &mut [u64; " ++ nat_to_string (ft_limbs ft) ++ "] { &mut self.0 }" ++ LF ++
+      "}" ++ LF
+  | KBytes =>
+      "#[repr(transparent)]" ++ LF ++
+      "#[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+      "pub struct " ++ ft_name ft ++ "(pub [u8; " ++ nat_to_string (ft_limbs ft) ++ "]);" ++ LF ++ LF ++
+      "impl " ++ ft_name ft ++ " {" ++ LF ++
+      "    /// Create from raw bytes." ++ LF ++
+      "    #[inline] pub const fn from_bytes(bytes: [u8; " ++ nat_to_string (ft_limbs ft) ++ "]) -> Self { " ++ ft_name ft ++ "(bytes) }" ++ LF ++
+      "    /// Zero buffer." ++ LF ++
+      "    #[inline] pub const fn zero() -> Self { " ++ ft_name ft ++ "([0u8; " ++ nat_to_string (ft_limbs ft) ++ "]) }" ++ LF ++
+      "    /// Borrow as raw byte array." ++ LF ++
+      "    #[inline] pub fn as_bytes(&self) -> &[u8; " ++ nat_to_string (ft_limbs ft) ++ "] { &self.0 }" ++ LF ++
+      "    /// Mutably borrow as raw byte array." ++ LF ++
+      "    #[inline] pub fn as_bytes_mut(&mut self) -> &mut [u8; " ++ nat_to_string (ft_limbs ft) ++ "] { &mut self.0 }" ++ LF ++
+      "}" ++ LF
+  | KBytesSlice | KUsize => ""  (* no newtype emitted — uses Rust built-in types *)
+  end.
 
 Definition gen_all_newtypes (types : list field_type) : string :=
-  join LF (List.map gen_newtype types).
+  join LF (List.map gen_newtype (List.filter needs_newtype types)).
 
 (* ================================================================ *)
 (* Wrapper code generation                                           *)
 (* ================================================================ *)
 
-(** Map a parameter spec to a Rust reference type. *)
+(** Map a parameter spec to a Rust safe-wrapper parameter type. *)
 Definition rust_ref (ps : param_spec) : string :=
-  match param_mode_val ps with
-  | ParamOut    => "&mut " ++ ft_name (param_type ps)
-  | ParamInOut  => "&mut " ++ ft_name (param_type ps)
-  | ParamIn     => "&" ++ ft_name (param_type ps)
+  let ft := param_type ps in
+  match ft_kind ft with
+  | KLimbs | KBytes =>
+      match param_mode_val ps with
+      | ParamOut | ParamInOut => "&mut " ++ ft_name ft
+      | ParamIn               => "&" ++ ft_name ft
+      end
+  | KBytesSlice =>
+      match param_mode_val ps with
+      | ParamOut | ParamInOut => "&mut [u8]"
+      | ParamIn               => "&[u8]"
+      end
+  | KUsize => "usize"
   end.
 
-(** Convert a parameter to its raw pointer cast for the unsafe call. *)
-Definition rust_cast (ps : param_spec) : string :=
-  match param_mode_val ps with
-  | ParamOut | ParamInOut =>
-      param_name ps ++ ".as_limbs_mut().as_mut_ptr() as usize"
-  | ParamIn  =>
-      param_name ps ++ ".as_limbs().as_ptr() as usize"
+(** Convert a parameter to its argument list for the unsafe extern call.
+    Returns a list of strings — most kinds emit one arg; KBytesSlice
+    emits TWO (pointer + length). *)
+Definition rust_cast_args (ps : param_spec) : list string :=
+  let ft := param_type ps in
+  match ft_kind ft with
+  | KLimbs =>
+      [match param_mode_val ps with
+       | ParamOut | ParamInOut => param_name ps ++ ".as_limbs_mut().as_mut_ptr() as usize"
+       | ParamIn               => param_name ps ++ ".as_limbs().as_ptr() as usize"
+       end]
+  | KBytes =>
+      [match param_mode_val ps with
+       | ParamOut | ParamInOut => param_name ps ++ ".as_bytes_mut().as_mut_ptr() as usize"
+       | ParamIn               => param_name ps ++ ".as_bytes().as_ptr() as usize"
+       end]
+  | KBytesSlice =>
+      let ptr := match param_mode_val ps with
+                 | ParamOut | ParamInOut => param_name ps ++ ".as_mut_ptr() as usize"
+                 | ParamIn               => param_name ps ++ ".as_ptr() as usize"
+                 end in
+      let len := param_name ps ++ ".len()" in
+      [ptr; len]
+  | KUsize => [param_name ps]
+  end.
+
+(** Number of C/extern args this parameter expands to. *)
+Definition extern_arity (ps : param_spec) : nat :=
+  match ft_kind (param_type ps) with
+  | KBytesSlice => 2
+  | _ => 1
+  end.
+
+(** Generate the extern "C" parameter declarations for a single param. *)
+Definition gen_extern_param (ps : param_spec) : list string :=
+  match ft_kind (param_type ps) with
+  | KBytesSlice =>
+      [param_name ps ++ "_ptr: usize"; param_name ps ++ "_len: usize"]
+  | _ => [param_name ps ++ ": usize"]
   end.
 
 (** Generate the extern "C" declaration for a function. *)
 Definition gen_extern_decl (ws : wrapper_spec) : string :=
   let params := wrapper_params ws in
-  let c_params := List.map (fun ps => param_name ps ++ ": usize") params in
+  let c_params := List.flat_map gen_extern_param params in
   "    fn " ++ wrapper_c_name ws ++ "(" ++ join ", " c_params ++ ");".
 
 (** Generate the safe Rust wrapper function. *)
 Definition gen_safe_wrapper (ws : wrapper_spec) : string :=
   let params := wrapper_params ws in
   let param_decls := List.map (fun ps => param_name ps ++ ": " ++ rust_ref ps) params in
-  let call_args := List.map rust_cast params in
+  let call_args := List.flat_map rust_cast_args params in
   "/// Safe wrapper for `" ++ wrapper_c_name ws ++ "`." ++ LF ++
   "///" ++ LF ++
   "/// Non-aliasing of `&mut` arguments is enforced by Rust's borrow checker." ++ LF ++
@@ -177,10 +255,10 @@ Definition gen_module (module_name : string) (types : list field_type) (wrappers
 (* ================================================================ *)
 
 (** BLS12 / BN254 share types for the 2-3-2 tower. *)
-Definition Fp_381  := {| ft_name := "Fp"; ft_limbs := 6 |}.
-Definition Fp2_381 := {| ft_name := "Fp2"; ft_limbs := 12 |}.
-Definition Fp6_381 := {| ft_name := "Fp6"; ft_limbs := 36 |}.
-Definition Fp12_381 := {| ft_name := "Fp12"; ft_limbs := 72 |}.
+Definition Fp_381  := {| ft_name := "Fp"; ft_limbs := 6; ft_kind := KLimbs |}.
+Definition Fp2_381 := {| ft_name := "Fp2"; ft_limbs := 12; ft_kind := KLimbs |}.
+Definition Fp6_381 := {| ft_name := "Fp6"; ft_limbs := 36; ft_kind := KLimbs |}.
+Definition Fp12_381 := {| ft_name := "Fp12"; ft_limbs := 72; ft_kind := KLimbs |}.
 
 Definition bls12_381_types : list field_type :=
   [Fp_381; Fp2_381; Fp6_381; Fp12_381].
@@ -232,10 +310,10 @@ Definition bls12_381_wrappers : list wrapper_spec := [
 ].
 
 (** BN254: same tower, smaller limbs (4 instead of 6). *)
-Definition Fp_bn254 := {| ft_name := "Fp"; ft_limbs := 4 |}.
-Definition Fp2_bn254 := {| ft_name := "Fp2"; ft_limbs := 8 |}.
-Definition Fp6_bn254 := {| ft_name := "Fp6"; ft_limbs := 24 |}.
-Definition Fp12_bn254 := {| ft_name := "Fp12"; ft_limbs := 48 |}.
+Definition Fp_bn254 := {| ft_name := "Fp"; ft_limbs := 4; ft_kind := KLimbs |}.
+Definition Fp2_bn254 := {| ft_name := "Fp2"; ft_limbs := 8; ft_kind := KLimbs |}.
+Definition Fp6_bn254 := {| ft_name := "Fp6"; ft_limbs := 24; ft_kind := KLimbs |}.
+Definition Fp12_bn254 := {| ft_name := "Fp12"; ft_limbs := 48; ft_kind := KLimbs |}.
 
 Definition bn254_types : list field_type :=
   [Fp_bn254; Fp2_bn254; Fp6_bn254; Fp12_bn254].

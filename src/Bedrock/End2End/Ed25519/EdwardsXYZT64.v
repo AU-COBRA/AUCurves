@@ -126,19 +126,24 @@ Module Ed25519XYZT64.
   Local Notation to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
   Local Notation readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
 
-  (* Re-register upstream's Section-local spec_of_fe25519_* instances. They
-     compile fine but their Instance hint dies with the upstream Section,
-     so `program_logic_goal_for_function!`'s [instance_of (spec_of $f)] lookup
-     fails on calls to fe25519_sub / _half / _add / _mul / _copy. *)
+  (* Declare 64-bit spec_of instances for the field operations called by
+     to_cached/add_precomputed/double/readd. CANNOT use upstream's
+     spec_of_fe25519_*: those are at 32-bit width (Naive.word32) because
+     upstream's section fixes Bitwidth32. Our [frep25519] (re-exported in
+     the Imports loader) is the 64-bit FieldRepresentation, so
+     [spec_of_BinOp bin_sub] etc. resolves to the 64-bit shape via the
+     [field_representation:=frep25519] implicit. *)
+  Local Instance spec_of_fe25519_sub64 : spec_of "fe25519_sub" := spec_of_BinOp bin_sub.
+  Local Instance spec_of_fe25519_add64 : spec_of "fe25519_add" := spec_of_BinOp bin_add.
+  Local Instance spec_of_fe25519_carry_add64 : spec_of "fe25519_carry_add" := spec_of_BinOp bin_carry_add.
+  Local Instance spec_of_fe25519_carry_sub64 : spec_of "fe25519_carry_sub" := spec_of_BinOp bin_carry_sub.
+  Local Instance spec_of_fe25519_mul64 : spec_of "fe25519_mul" := spec_of_BinOp bin_mul.
+  Local Instance spec_of_fe25519_square64 : spec_of "fe25519_square" := spec_of_UnOp un_square.
+  Local Instance spec_of_fe25519_copy64 : spec_of "fe25519_copy" := spec_of_felem_copy.
+  Local Instance spec_of_fe25519_from_word64 : spec_of "fe25519_from_word" := spec_of_from_word.
+  (* fe25519_half doesn't have a synthesized impl yet (per upstream comment) —
+     reuse upstream's spec shape if it's width-polymorphic, otherwise pending. *)
   Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_half.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_sub.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_add.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_mul.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_square.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_carry_add.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_carry_sub.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_from_word.
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe26619_copy.
 
   (** ** Sub-task 1.3: spec_of declarations.
       Mirror of upstream lines 319-400. Key fix: shadow [word] as
@@ -401,13 +406,32 @@ Module Ed25519XYZT64.
       end
     end.
 
-  (** ** Sub-task 1.5: _ok proofs — pending.
-      Helpers (above) are now ready: [split_output_stack] verified to work
-      via MCP on the to_cached64 setup (transforms [out $@ p_out] into 4
-      separate [FElem] chunks). Remaining work for each of [to_cached64_ok],
-      [add_precomputed64_ok], [double64_ok], [readd64_ok]: port upstream's
-      [repeat single_step] + post-condition discharge body. The single_step
-      iteration pattern (handle_call + ecancel + bounds) should port without
-      change since the helper Ltac is width-agnostic. *)
+  (** ** Sub-task 1.5: _ok proofs — partial.
+
+      ROOT CAUSE FOUND: upstream's [spec_of_fe25519_*] are at 32-bit width
+      (declared inside a section that fixes [Bitwidth32] + [Naive.word32]).
+      Our [to_cached64] proof needs 64-bit specs. Fix above declares fresh
+      [spec_of_fe25519_*64] Local Instances that resolve [field_representation:=frep25519]
+      from the loader (64-bit FieldRepresentation).
+
+      Verified end-to-end via MCP after the fix:
+        - [program_logic_goal_for_function! to_cached64] resolves with
+          64-bit hypotheses [spec_of_fe25519_sub64 functions], etc.
+        - [repeat straightline + destruct_points + split_output_stack] all work.
+        - [single_step] (= straightline_call + ssplit + solve_mem) succeeds
+          for the first call (fe25519_sub), introducing post-state hypothesis
+          H10 about the resulting felem.
+
+      Next blocker: [solve_mem]'s ecancel can't auto-solve the side condition
+      [(ws2bs (felem_to_list ?x))$@p_out * ?Rr] (the precondition of
+      fe25519_sub asks for an FElem-as-bytes representation, but our H6
+      has ListDef.firstn/skipn byte arrays). Needs an explicit
+      bytes-to-felem cast lemma application before each call, or an Hint
+      Extern that bridges the two. Pending.
+
+      Status: 4-of-7 calls in to_cached64_ok would close with the same
+      pattern once the bytes-to-felem coercion is figured out. Each of
+      the 4 _ok lemmas (to_cached, add_precomputed, double, readd) shares
+      this structure, so the fix is once-for-all. *)
 
 End Ed25519XYZT64.

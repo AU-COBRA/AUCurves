@@ -46,16 +46,27 @@ Local Existing Instance Curve25519.char_ge_3.
 Module Ed25519XYZT64.
 
   (** Ed25519 Edwards curve parameters (from Curve25519.E).
-      Use F_scope so unqualified `*`, `+`, `-`, `^` resolve to the
-      F-arithmetic versions throughout the structure definitions. *)
+      Use F_scope so unqualified `*`, `+`, `-` resolve to the
+      F-arithmetic versions. Override `x^2` to mean `x*x` (matching
+      upstream EdwardsXYZT.v's Local Notation), NOT `F.pow x 2%N` —
+      the validity predicates use the multiplicative form, so
+      sigtype-obligation discharge needs the same. *)
   Local Open Scope F_scope.
   Local Notation a := Curve25519.E.a.
   Local Notation d := Curve25519.E.d.
+  Local Notation "x ^ 2" := (F.mul x x) (only parsing, at level 30).
+  (* Mirror upstream's section-local 0/1 notations (Local Notation "0" := Fzero,
+     Local Notation "1" := Fone) so unqualified literals in the validity
+     predicates resolve to F.zero / F.one, not nat/Z. *)
+  Local Notation "0" := F.zero.
+  Local Notation "1" := F.one.
   Local Notation point := (@Extended.point _ Logic.eq F.zero F.add F.mul a d).
-  Local Notation precomputed_point := (@Precomputed.precomputed_point _ Logic.eq
-                                         F.zero F.one F.opp F.add F.sub F.mul a d).
-  Local Notation cached := (@Readdition.cached _ Logic.eq
-                             F.zero F.one F.opp F.add F.sub F.mul F.inv F.div a d).
+  (* precomputed_point: {F} {Feq} {Fone} {Fadd Fsub Fmul} {a d} *)
+  Local Notation precomputed_point :=
+    (@Precomputed.precomputed_point _ Logic.eq F.one F.add F.sub F.mul a d).
+  (* cached: {F} {Feq} {Fzero} {Fadd Fsub Fmul Fdiv} {a d} *)
+  Local Notation cached :=
+    (@Readdition.cached _ Logic.eq F.zero F.add F.sub F.mul F.div a d).
 
   (** ** Sub-task 1.1: structure definitions (projective/precomputed/cached
       coords with bounds). Verbatim port from

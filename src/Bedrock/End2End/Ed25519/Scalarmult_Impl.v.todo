@@ -1,74 +1,163 @@
-(** * Ed25519 Edwards scalarmult — bedrock2 implementation (pending).
+(** * Ed25519 Edwards scalarmult — bedrock2 implementation (PENDING).
  *
  * Discharge target for [Scalarmult.v]'s 2 [Parameter]s + 2 [Axiom]s.
  * Kept as `.v.todo` so dune skips it until ready to build.
  *
- * Concrete plan when picking this up:
+ * ============================================================
+ * CONCRETE BEDROCK2 SKETCH (paste-and-adapt for next session)
+ * ============================================================
  *
- * 1. Imports:
- *    - bedrock2.Syntax / NotationsCustomEntry / ProgramLogic
- *    - Crypto.Bedrock.End2End.X25519.EdwardsXYZT (provides [add_precomputed],
- *      [double], [readd], [to_cached] plus their _ok lemmas)
- *    - Crypto.Bedrock.End2End.X25519.Field25519 (field operation funcs)
- *    - Crypto.Spec.CompleteEdwardsCurve (spec-level [E.mul])
- *    - Crypto.Spec.Curve25519 (basepoint [B])
+ * Imports needed:
  *
- * 2. Define [B_precomputed] : a constant precomputed_point representing
- *    Curve25519.E.B in (half_ypx, half_ymx, xyd) form. Compute via
- *    `vm_compute` from B's affine coords. ~10 LoC.
+ *   From Stdlib Require Import String List ZArith.
+ *   Require Import bedrock2.Syntax bedrock2.NotationsCustomEntry.
+ *   Require Import bedrock2.WeakestPrecondition bedrock2.ProgramLogic.
+ *   Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
+ *   Require Import bedrock2.BasicC64Semantics.
+ *   Require Import coqutil.Macros.WithBaseName.
+ *   Require Import Crypto.Bedrock.End2End.X25519.EdwardsXYZT.
+ *   Require Import Crypto.Bedrock.End2End.X25519.Field25519.
+ *   Require Import Crypto.Spec.Curve25519.
+ *   Require Import Crypto.Spec.CompleteEdwardsCurve.
+ *   Require Import Bedrock.End2End.Ed25519.Scalarmult.
  *
- * 3. Define [ed25519_scalarmult_base] using bedrock2 syntax:
+ * Layout (mirrors EdwardsXYZT.v): a projective point is 5 felems
+ * × 40 bytes = 200 bytes total, fields (X, Y, Z, Ta, Tb).
+ * Local notations for field offsets are in EdwardsXYZT.v lines 60-64.
  *
- *      func! (out, scalar) {
- *        (* Initialize out = identity (X=0, Y=Z=1, T=0) *)
- *        stackalloc 200 as ACC;
- *        fe25519_from_word(ACC.X, $0); fe25519_from_word(ACC.Y, $1);
- *        fe25519_from_word(ACC.Z, $1); fe25519_from_word(ACC.Ta, $0);
- *        fe25519_from_word(ACC.Tb, $0);
- *        (* For bit i = 255 down to 0: *)
- *        i = $255;
- *        while (i >= $0) {
- *          double(ACC, ACC);
- *          (* Constant-time conditional: cmov bit into r, then masked add *)
- *          bit = (load1(scalar + (i >> 3)) >> (i & 7)) & 1;
- *          (* Constant-time variant: always compute add result; cmov on bit *)
- *          stackalloc 200 as ACC_PLUS_B;
- *          add_precomputed(ACC_PLUS_B, ACC, B_precomputed_addr);
- *          felem_cmov(ACC, ACC_PLUS_B, bit);  (* cmov each of 5 felems *)
- *          i = i - $1
- *        };
- *        memmove(out, ACC, $200)
- *      }.
+ * Helper functions needed (NOT YET IN TREE):
  *
- *    ~80-100 LoC bedrock2 (the cmov is the trickiest piece; use Field's
- *    selectznz primitive).
+ *   1. fe25519_select_znz: bedrock2 cmov for one felem.
+ *      Signature: func! (out, src_if_zero, src_if_nonzero, sel).
+ *      Definition would mirror Field25519.v's existing select_znz
+ *      synthesis (use unsaturated_solinas_ops's selectznz_op).
+ *      ~10 LoC.
  *
- * 4. Define [ed25519_scalarmult] (variable-time):
+ *   2. cmov_5felems: bedrock2 cmov over a 5-felem (200-byte) point.
+ *      Wraps fe25519_select_znz 5x for X, Y, Z, Ta, Tb.
+ *      ~12 LoC bedrock2.
  *
- *      func! (out, scalar, P) {
- *        (* Same loop but: only call readd when bit==1 *)
- *        ...
- *      }.
+ *   3. fe25519_from_word_at: write a single u64 into the i-th felem.
+ *      Already exists in Field25519.v as fe25519_from_word.
  *
- *    Uses [readd] which takes a cached point. So caller must convert
- *    P to cached first via [to_cached]. ~80 LoC.
+ * Constants needed (NOT YET IN TREE):
  *
- * 5. WP correctness proofs:
- *    - [ed25519_scalarmult_base_correct]: invariant
- *      "after iter i, ACC = (sum of bits[256-1..i] · 2^(255-...) · B)
- *      = (scalar mod 2^(256-i)) · B" — standard double-and-add.
- *      Compose [add_precomputed_ok], [double_ok], cmov correctness.
- *      ~150-300 LoC WP proof. The hardest part: bit-extraction
- *      arithmetic + the loop invariant connecting to [E.mul].
- *    - [ed25519_scalarmult_correct]: similar, with [readd_ok] and
- *      conditional rather than constant-time path.
+ *   4. B_precomputed: a Definition of Curve25519.E.B in
+ *      precomputed_point form (half_ypx, half_ymx, xyd as 3 felems).
+ *      Compute via vm_compute from B's affine coords (in Spec/Curve25519.v
+ *      indirectly via E.B). ~20 LoC including the vm_compute proof.
+ *      Actual byte sequence: known constant, but compute via Coq for
+ *      audit-correctness rather than hardcoding.
  *
- * 6. Test: build the file, run [Print Assumptions] on the two _correct
- *    theorems, expect "Closed under the global context".
+ * Bedrock2 function — ed25519_scalarmult_base (constant-time):
  *
- * Estimated total: 200-400 LoC bedrock2 + 300-700 LoC WP proof =
- * 500-1100 LoC. Multi-day focused effort. Comparable scope to a
- * single fiat-crypto bedrock2 file like [MontgomeryLadder.v].
+ *   Definition ed25519_scalarmult_base := func! (out, scalar) {
+ *     stackalloc 200 as ACC;
+ *     stackalloc 200 as TMP;
+ *     fe25519_from_word(ACC, $0);              (* X = 0 *)
+ *     fe25519_from_word(ACC + $40, $1);        (* Y = 1 *)
+ *     fe25519_from_word(ACC + $80, $1);        (* Z = 1 *)
+ *     fe25519_from_word(ACC + $120, $0);       (* Ta = 0 *)
+ *     fe25519_from_word(ACC + $160, $0);       (* Tb = 0 *)
+ *     i = $255;
+ *     while ($0 <= i) {
+ *       double(ACC, ACC);
+ *       byte = load1(scalar + (i >> $3));
+ *       bit = (byte >> (i & $7)) & $1;
+ *       add_precomputed(TMP, ACC, B_precomputed);
+ *       cmov_5felems(ACC, TMP, bit);
+ *       i = i - $1
+ *     };
+ *     memmove(out, ACC, $200)
+ *   }.
+ *
+ * The variable-time variant ed25519_scalarmult takes a point P:
+ *
+ *   Definition ed25519_scalarmult := func! (out, scalar, P) {
+ *     stackalloc 200 as ACC;
+ *     stackalloc 160 as P_cached;            (* cached form is 4 felems *)
+ *     to_cached(P_cached, P, fe25519_d);     (* fe25519_d is the curve d *)
+ *     (* init ACC to identity as above *)
+ *     ...
+ *     i = $255;
+ *     while ($0 <= i) {
+ *       double(ACC, ACC);
+ *       byte = load1(scalar + (i >> $3));
+ *       bit = (byte >> (i & $7)) & $1;
+ *       if (bit) {
+ *         readd(ACC, ACC, P_cached)
+ *       };
+ *       i = i - $1
+ *     };
+ *     memmove(out, ACC, $200)
+ *   }.
+ *
+ * Spec — ed25519_scalarmult_base_correct (Hoare triple shape):
+ *
+ *   Theorem ed25519_scalarmult_base_correct :
+ *     forall functions t m (out_ptr scalar_ptr : word)
+ *            (out_init : list Byte.byte) (scalar : list Byte.byte)
+ *            (R : Semantics.mem -> Prop),
+ *       length out_init = 200%nat ->
+ *       length scalar = 32%nat ->
+ *       (out_init$@out_ptr * scalar$@scalar_ptr * R)%sep m ->
+ *       map.get functions "ed25519_scalarmult_base" =
+ *         Some ed25519_scalarmult_base ->
+ *       WeakestPrecondition.call functions "ed25519_scalarmult_base" t m
+ *         [out_ptr; scalar_ptr]
+ *         (fun t' m' rets =>
+ *            t' = t /\ rets = nil /\
+ *            exists out_pt,
+ *              (* out is a serialized projective point *)
+ *              decode_proj_point out = Some out_pt /\
+ *              (* and equals scalar · B as an affine point *)
+ *              E.eq (Extended.to_affine out_pt)
+ *                   (E.mul (decode_le_scalar scalar) Curve25519.E.B) /\
+ *              (out$@out_ptr * scalar$@scalar_ptr * R)%sep m').
+ *
+ * WP proof structure:
+ *
+ *   straightline.  (* break out the stackalloc and 5 fe25519_from_word *)
+ *   handle_call.   (* for each fe25519_from_word_correct *)
+ *   ... (* establish ACC = identity in extended coords *)
+ *
+ *   apply Loops.tailrec  (* or while invariant lemma of choice *)
+ *     with
+ *       (loop_inv := fun i ACC_state =>
+ *          ACC_state = (high (255-i) bits of scalar) · B);
+ *
+ *   intros.
+ *   handle_call (double_ok).
+ *   handle_call (add_precomputed_ok).
+ *   handle_call (cmov_5felems_ok).  (* needs the new cmov primitive *)
+ *
+ *   (* close the invariant by case analysis on bit *)
+ *
+ *   straightline.
+ *   handle_call (memmove_correct).
+ *   ecancel_assumption.
+ *
+ * Estimate: ~150-300 LoC bedrock2 program text + helpers, ~300-700
+ * LoC WP proof. Multi-day focused effort. The hardest part is the
+ * loop invariant tying the bit-position bookkeeping to E.mul.
+ *
+ * Test plan after closure:
+ *   - Print Assumptions on both _correct theorems
+ *   - Expect "Closed under the global context"
+ *   - KAT test: ed25519_scalarmult_base [1, 0, ..., 0] should equal B
+ *
+ * ============================================================
+ * REASON THIS FILE IS NOT YET .v
+ * ============================================================
+ *
+ * 1. Helper primitives (cmov_5felems, B_precomputed) need to be
+ *    defined first. ~50 LoC.
+ * 2. WP proof requires interactive iteration via MCP/CoqIDE; cannot
+ *    be reliably written in batch.
+ * 3. Multi-day focused work expected.
+ *
+ * When picking up: rename to .v, follow the sketch above, expect
+ * 5-10 iterations on cmov_5felems and the loop invariant. Reference
+ * EdwardsXYZT.v's add_precomputed_ok proof at line 504 for the WP
+ * style to mimic.
  *)
-
-(* Implementation pending — see header comment for the plan. *)

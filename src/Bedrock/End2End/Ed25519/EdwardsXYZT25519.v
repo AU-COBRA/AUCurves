@@ -17,6 +17,7 @@ Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
 Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Crypto.Curves.Edwards.XYZT.Basic.
+Require Import Crypto.Curves.Edwards.XYZT.Precomputed.
 
 Module Ed25519XYZT.
 
@@ -122,5 +123,17 @@ Module Ed25519XYZT.
                     (a := Curve25519.E.a) (d := Curve25519.E.d)
                     (nonzero_a := Curve25519.E.nonzero_a) P)).
   Proof. intros. unfold scalarmult. apply Extended.to_affine_from_affine. Qed.
+
+  (** ** Precomputed basepoint.
+      The Ed25519 basepoint [Curve25519.E.B] in [precomputed_point]
+      form (half_ypx, half_ymx, xyd). Direct call to fiat-crypto's
+      [Precomputed.of_twisted]. The bedrock2 [add_precomputed] routine
+      consumes a [precomputed_point]; constant-time scalarmult against
+      the basepoint loads the limbs of [B_precomputed] into a stack
+      buffer and feeds them to [add_precomputed]. *)
+  Definition B_precomputed : precomputed_point :=
+    of_twisted (a := Curve25519.E.a) (d := Curve25519.E.d)
+               (nonzero_a := Curve25519.E.nonzero_a)
+               Curve25519.E.B.
 
 End Ed25519XYZT.

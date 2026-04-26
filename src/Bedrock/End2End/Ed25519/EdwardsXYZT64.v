@@ -141,9 +141,7 @@ Module Ed25519XYZT64.
   Local Instance spec_of_fe25519_square64 : spec_of "fe25519_square" := spec_of_UnOp un_square.
   Local Instance spec_of_fe25519_copy64 : spec_of "fe25519_copy" := spec_of_felem_copy.
   Local Instance spec_of_fe25519_from_word64 : spec_of "fe25519_from_word" := spec_of_from_word.
-  (* fe25519_half doesn't have a synthesized impl yet (per upstream comment) —
-     reuse upstream's spec shape if it's width-polymorphic, otherwise pending. *)
-  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_half.
+  (* fe25519_half spec moved to after [word] Notation below. *)
 
   (** ** Sub-task 1.3: spec_of declarations.
       Mirror of upstream lines 319-400. Key fix: shadow [word] as
@@ -158,6 +156,24 @@ Module Ed25519XYZT64.
   Local Notation felem := (felem(FieldRepresentation:=frep25519)).
   Local Notation bounded_by := (bounded_by(FieldRepresentation:=frep25519)).
   Local Notation felem_size := 40.
+
+  (* fe25519_half: no synthesized impl in fiat-crypto. Upstream's
+     spec_of_fe25519_half is at 32-bit width (Naive.word32), incompatible
+     with our 64-bit setup. Mirror the same spec SHAPE at 64-bit. *)
+  Local Instance spec_of_fe25519_half64 : spec_of "fe25519_half" :=
+    fnspec! "fe25519_half"
+      (result_location input_location: word) / (old_result input: felem)
+      (R: _ -> Prop),
+    { requires t m :=
+      bounded_by loose_bounds input /\
+      (exists Ra : map.rep -> Prop, ((FElem input_location input) * Ra)%sep m) /\
+      ((FElem result_location old_result) * R)%sep m;
+      ensures t' m' :=
+        t = t' /\
+        exists result : felem,
+          bounded_by tight_bounds result /\
+          feval result = F.div (feval input) (F.add F.one F.one) /\
+          ((FElem result_location result) * R)%sep m'}.
 
   Local Notation "m =* P" := ((P%sep) m) (at level 70, only parsing).
   Local Notation "p .+ n" := (word.add p (word.of_Z n)) (at level 50, format "p .+ n", left associativity).

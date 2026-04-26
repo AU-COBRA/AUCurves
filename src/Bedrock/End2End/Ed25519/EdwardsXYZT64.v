@@ -345,13 +345,27 @@ Module Ed25519XYZT64.
   Ltac skipn_firstn_length :=
     change felem_size_in_bytes with 40 in *; listZnWords.
 
-  Ltac split_stack_at_n_in stack p n H :=
-    rewrite <- (firstn_skipn n stack) in H;
-    rewrite (map.of_list_word_at_app_n _ _ _ n) in H; try skipn_firstn_length;
+  (* split_stack_at_n_in: 64-bit-port variant.
+     Diverges from upstream's verbatim helper in two ways needed by our setup:
+     (i) takes [n_z : Z] separately from [n_nat : nat] because
+         [map.of_list_word_at_app_n] expects Z while [firstn]/[skipn] need nat;
+         upstream's helper passes [n] in both positions and relies on a context
+         where the nat literal coerces to Z, which doesn't fire here.
+     (ii) explicit [ListDef.firstn] / [ListDef.skipn] in the [adjacent_arrays_disjoint_n]
+         instantiation — after [firstn_skipn] rewrite, H6 contains Stdlib's
+         [ListDef.firstn]/[ListDef.skipn] (they're the impls of the Stdlib lemma's
+         RHS), but bare [firstn]/[skipn] in our scope resolves to coqutil's
+         versions, causing seprewrite to syntactically fail to match. *)
+  Ltac split_stack_at_n_in stack p n_nat n_z H :=
+    rewrite <- (firstn_skipn n_nat stack) in H;
+    rewrite (map.of_list_word_at_app_n _ _ _ n_z) in H by
+      (rewrite firstn_length; cbv [felem_size_in_bytes] in *; listZnWords);
     let D := fresh in
-    unshelve(epose (sep_eq_putmany _ _ (map.adjacent_arrays_disjoint_n p (firstn n stack) (skipn n stack) n _ _)) as D);
-    try skipn_firstn_length; seprewrite_in D H; rewrite ?skipn_skipn in H;
-    bottom_up_simpl_in_hyp H; clear D.
+    unshelve(epose (sep_eq_putmany _ _ (map.adjacent_arrays_disjoint_n p (ListDef.firstn n_nat stack) (ListDef.skipn n_nat stack) n_z _ _)) as D);
+      [ rewrite firstn_length; cbv [felem_size_in_bytes] in *; listZnWords
+      | rewrite firstn_length, skipn_length; cbv [felem_size_in_bytes] in *; listZnWords
+      | seprewrite_in D H; rewrite ?skipn_skipn in H;
+        bottom_up_simpl_in_hyp H; clear D ].
 
   Local Ltac solve_length :=
     try lia;
@@ -377,38 +391,23 @@ Module Ed25519XYZT64.
   Ltac split_output_stack stack_var ptr_var num_points :=
     match goal with
     | H : context[stack_var $@ ptr_var] |- _ =>
-      split_stack_at_n_in stack_var ptr_var 40%nat H;
-      split_stack_at_n_in (skipn 40 stack_var) (ptr_var .+ 40) 40%nat H;
-      split_stack_at_n_in (skipn 80 stack_var) (ptr_var .+ 80) 40%nat H;
+      split_stack_at_n_in stack_var ptr_var 40%nat 40 H;
+      split_stack_at_n_in (ListDef.skipn 40 stack_var) (ptr_var .+ 40) 40%nat 40 H;
+      split_stack_at_n_in (ListDef.skipn 80 stack_var) (ptr_var .+ 80) 40%nat 40 H;
       match num_points with
       | 4 => idtac
       | 5 =>
-        split_stack_at_n_in (skipn 120 stack_var) (ptr_var .+ 120) 40%nat H
+        split_stack_at_n_in (ListDef.skipn 120 stack_var) (ptr_var .+ 120) 40%nat 40 H
       end
     end.
 
   (** ** Sub-task 1.5: _ok proofs — pending.
-      Status (2 sessions in):
-        - [program_logic_goal_for_function!] resolves cleanly (sub-task 1.4
-          unblocker held).
-        - [repeat straightline] sets up the post-spec context as expected;
-          the projective_coords parameter is named [a] (not [a0] like upstream)
-          because our Local Notation [a := Curve25519.E.a] does not bind a
-          hypothesis name.
-        - [destruct_points] succeeds, exposes (f2 f3 f1 f0 f : felem) and
-          their bounds.
-        - [split_output_stack out p_out 4] FAILS — its inner
-          [split_stack_at_n_in] passes [40%nat] to [map.of_list_word_at_app_n]
-          which expects [Z]. Upstream's verbatim-copied helper compiles for
-          them because... unclear; possibly a Stdlib-vs-coqutil [firstn]
-          shadowing in upstream's section that we don't reproduce. With
-          [40%Z] the type is right but [Z.of_nat (length (firstn 40 out)) = 40]
-          can't be inferred automatically — needs a simp+rewrite chain that
-          [listZnWords] alone doesn't close.
-      Path forward (next iteration):
-        - Replace [split_output_stack] with explicit [unfold (firstn 40)] +
-          [seprewrite] of [map.of_list_word_at_app_n] applied to a manually-
-          proven [Z.of_nat 40 = 40] side condition, then proceed with
-          [repeat single_step] from upstream verbatim. *)
+      Helpers (above) are now ready: [split_output_stack] verified to work
+      via MCP on the to_cached64 setup (transforms [out $@ p_out] into 4
+      separate [FElem] chunks). Remaining work for each of [to_cached64_ok],
+      [add_precomputed64_ok], [double64_ok], [readd64_ok]: port upstream's
+      [repeat single_step] + post-condition discharge body. The single_step
+      iteration pattern (handle_call + ecancel + bounds) should port without
+      change since the helper Ltac is width-agnostic. *)
 
 End Ed25519XYZT64.

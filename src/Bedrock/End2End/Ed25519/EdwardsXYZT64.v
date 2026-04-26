@@ -81,7 +81,7 @@ Module Ed25519XYZT64.
     refine (exist _ (feval_projective_coords c) _).
     abstract (destruct_head' projective_coords;
       cbv [proj1_sig feval_projective_coords valid_projective_coords] in *;
-      destruct_head' prod; destruct_head' and; ssplit; assumption).
+      destruct_head' prod; destruct_head' and; tauto).
   Defined.
 
   Definition valid_precomputed_coords (half_ypx half_ymx xyd : felem) :=
@@ -101,7 +101,7 @@ Module Ed25519XYZT64.
   Definition precomputed_coords_to_precomputed (c : precomputed_coords) : precomputed_point.
     refine (exist _ (feval_precomputed_coords c) _).
     abstract (destruct_head' precomputed_coords; destruct_head' prod;
-    destruct_head' and; cbv [feval_precomputed_coords valid_precomputed_coords proj1_sig] in *; assumption).
+    destruct_head' and; cbv [feval_precomputed_coords valid_precomputed_coords proj1_sig] in *; tauto).
   Defined.
 
   Definition valid_cached_coords (half_YmX half_YpX Z Td : felem):=
@@ -125,7 +125,7 @@ Module Ed25519XYZT64.
     refine (exist _ (feval_cached_coords c) _).
     abstract (destruct_head' cached_coords; destruct_head' prod;
     destruct_head' and;
-      cbv [valid_cached_coords proj1_sig] in *; assumption).
+      cbv [valid_cached_coords proj1_sig] in *; tauto).
   Defined.
 
   (** ** Sub-task 1.2: bedrock2 funcs (add_precomputed, double, to_cached,

@@ -14,6 +14,7 @@
  * See [option-b-64bit-port-plan.md] for the full Step 1 plan. *)
 
 From Stdlib Require Import String List ZArith.
+Require Import Crypto.Spec.ModularArithmetic.
 Require Import bedrock2.Syntax.
 Require Import bedrock2.BasicC64Semantics.
 Require Import coqutil.Word.Bitwidth64.

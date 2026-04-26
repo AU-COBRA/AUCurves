@@ -388,13 +388,27 @@ Module Ed25519XYZT64.
     end.
 
   (** ** Sub-task 1.5: _ok proofs — pending.
-      Status: [program_logic_goal_for_function!] now resolves cleanly
-      after re-Existing the upstream spec_of_fe25519_* instances above
-      (verified in this session: macro produced the expected goal
-      `forall functions, ... -> spec_of_fe25519_sub functions -> ... -> spec_of_to_cached functions`).
-      Remaining work for each of [to_cached64_ok], [add_precomputed64_ok],
-      [double64_ok], [readd64_ok]: port upstream's straightline + single_step
-      proof body (~25-150 LoC each), with the rename [a] → [a_in] etc. to
-      avoid shadowing our [Curve25519.E.a] / [Curve25519.E.d] notations. *)
+      Status (2 sessions in):
+        - [program_logic_goal_for_function!] resolves cleanly (sub-task 1.4
+          unblocker held).
+        - [repeat straightline] sets up the post-spec context as expected;
+          the projective_coords parameter is named [a] (not [a0] like upstream)
+          because our Local Notation [a := Curve25519.E.a] does not bind a
+          hypothesis name.
+        - [destruct_points] succeeds, exposes (f2 f3 f1 f0 f : felem) and
+          their bounds.
+        - [split_output_stack out p_out 4] FAILS — its inner
+          [split_stack_at_n_in] passes [40%nat] to [map.of_list_word_at_app_n]
+          which expects [Z]. Upstream's verbatim-copied helper compiles for
+          them because... unclear; possibly a Stdlib-vs-coqutil [firstn]
+          shadowing in upstream's section that we don't reproduce. With
+          [40%Z] the type is right but [Z.of_nat (length (firstn 40 out)) = 40]
+          can't be inferred automatically — needs a simp+rewrite chain that
+          [listZnWords] alone doesn't close.
+      Path forward (next iteration):
+        - Replace [split_output_stack] with explicit [unfold (firstn 40)] +
+          [seprewrite] of [map.of_list_word_at_app_n] applied to a manually-
+          proven [Z.of_nat 40 = 40] side condition, then proceed with
+          [repeat single_step] from upstream verbatim. *)
 
 End Ed25519XYZT64.

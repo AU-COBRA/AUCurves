@@ -28,6 +28,14 @@ Require Import Crypto.Curves.Edwards.XYZT.Readdition.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Bedrock.End2End.X25519_64.Field25519_64.
 
+(* Upstream bedrock2 Edwards XYZT atoms — buildable in our setup as
+   of fiat-crypto commit abbea109e. Provides:
+   - add_precomputed, double, to_cached, readd  (bedrock2 funcs)
+   - their spec_of_* instances + _ok proofs (32-bit, but the func
+     SYNTAX is width-agnostic, so we reuse the Definitions and
+     re-state specs at 64-bit below). *)
+Require Crypto.Bedrock.End2End.X25519.EdwardsXYZT.
+
 (* 64-bit word + field-rep instances. *)
 #[export] Existing Instances
   BasicC64Semantics.word
@@ -139,9 +147,14 @@ Module Ed25519XYZT64.
       cbv [valid_cached_coords proj1_sig] in *; tauto).
   Defined.
 
-  (** ** Sub-task 1.2: bedrock2 funcs (add_precomputed, double, to_cached,
-      readd). Pending — copy from upstream lines 78-145. The syntax
-      trees are width-agnostic; just need the 64-bit instances active. *)
+  (** ** Sub-task 1.2: bedrock2 funcs.
+      Reuse the upstream Definitions directly — bedrock2 [func] syntax
+      trees are width-agnostic. The 32-bit instantiation in upstream
+      doesn't affect the syntax. *)
+  Definition add_precomputed64 := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.add_precomputed.
+  Definition double64          := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.double.
+  Definition to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
+  Definition readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
 
   (** ** Sub-tasks 1.3-1.5: spec_of declarations + _ok proofs. Pending. *)
 

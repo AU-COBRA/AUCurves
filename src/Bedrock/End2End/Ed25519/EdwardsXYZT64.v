@@ -156,6 +156,20 @@ Module Ed25519XYZT64.
   Definition to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
   Definition readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
 
-  (** ** Sub-tasks 1.3-1.5: spec_of declarations + _ok proofs. Pending. *)
+  (** ** Sub-tasks 1.3-1.5: spec_of declarations + _ok proofs.
+      Pending — first attempt hit a [word]-type-resolution issue: in
+      fnspec! the syntax [(p_out: word)] requires [word] to resolve
+      to a concrete Type, but in our setup [word] is the typeclass
+      [Z -> Type]. Upstream's specs work because of an implicit
+      coercion / canonical-structure setup that we haven't yet
+      reproduced (probably tied to [coqutil.Word.Naive] or how
+      [Local Existing Instance] resolves [word] to its rep field).
+      Mitigation candidates (untested):
+        - Use [(p_out: @word.rep _ word)] explicitly in the specs.
+        - [Local Existing Instance Naive.word64] instead of
+          [BasicC64Semantics.word].
+        - [Import bedrock2.WeakestPrecondition] (tried — didn't fix).
+      Each build cycle is 5-15 min wall, so iteration is slow.
+      Defer to a focused future session. *)
 
 End Ed25519XYZT64.

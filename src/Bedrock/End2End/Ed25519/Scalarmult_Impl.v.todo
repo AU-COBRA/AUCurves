@@ -1,0 +1,74 @@
+(** * Ed25519 Edwards scalarmult — bedrock2 implementation (pending).
+ *
+ * Discharge target for [Scalarmult.v]'s 2 [Parameter]s + 2 [Axiom]s.
+ * Kept as `.v.todo` so dune skips it until ready to build.
+ *
+ * Concrete plan when picking this up:
+ *
+ * 1. Imports:
+ *    - bedrock2.Syntax / NotationsCustomEntry / ProgramLogic
+ *    - Crypto.Bedrock.End2End.X25519.EdwardsXYZT (provides [add_precomputed],
+ *      [double], [readd], [to_cached] plus their _ok lemmas)
+ *    - Crypto.Bedrock.End2End.X25519.Field25519 (field operation funcs)
+ *    - Crypto.Spec.CompleteEdwardsCurve (spec-level [E.mul])
+ *    - Crypto.Spec.Curve25519 (basepoint [B])
+ *
+ * 2. Define [B_precomputed] : a constant precomputed_point representing
+ *    Curve25519.E.B in (half_ypx, half_ymx, xyd) form. Compute via
+ *    `vm_compute` from B's affine coords. ~10 LoC.
+ *
+ * 3. Define [ed25519_scalarmult_base] using bedrock2 syntax:
+ *
+ *      func! (out, scalar) {
+ *        (* Initialize out = identity (X=0, Y=Z=1, T=0) *)
+ *        stackalloc 200 as ACC;
+ *        fe25519_from_word(ACC.X, $0); fe25519_from_word(ACC.Y, $1);
+ *        fe25519_from_word(ACC.Z, $1); fe25519_from_word(ACC.Ta, $0);
+ *        fe25519_from_word(ACC.Tb, $0);
+ *        (* For bit i = 255 down to 0: *)
+ *        i = $255;
+ *        while (i >= $0) {
+ *          double(ACC, ACC);
+ *          (* Constant-time conditional: cmov bit into r, then masked add *)
+ *          bit = (load1(scalar + (i >> 3)) >> (i & 7)) & 1;
+ *          (* Constant-time variant: always compute add result; cmov on bit *)
+ *          stackalloc 200 as ACC_PLUS_B;
+ *          add_precomputed(ACC_PLUS_B, ACC, B_precomputed_addr);
+ *          felem_cmov(ACC, ACC_PLUS_B, bit);  (* cmov each of 5 felems *)
+ *          i = i - $1
+ *        };
+ *        memmove(out, ACC, $200)
+ *      }.
+ *
+ *    ~80-100 LoC bedrock2 (the cmov is the trickiest piece; use Field's
+ *    selectznz primitive).
+ *
+ * 4. Define [ed25519_scalarmult] (variable-time):
+ *
+ *      func! (out, scalar, P) {
+ *        (* Same loop but: only call readd when bit==1 *)
+ *        ...
+ *      }.
+ *
+ *    Uses [readd] which takes a cached point. So caller must convert
+ *    P to cached first via [to_cached]. ~80 LoC.
+ *
+ * 5. WP correctness proofs:
+ *    - [ed25519_scalarmult_base_correct]: invariant
+ *      "after iter i, ACC = (sum of bits[256-1..i] · 2^(255-...) · B)
+ *      = (scalar mod 2^(256-i)) · B" — standard double-and-add.
+ *      Compose [add_precomputed_ok], [double_ok], cmov correctness.
+ *      ~150-300 LoC WP proof. The hardest part: bit-extraction
+ *      arithmetic + the loop invariant connecting to [E.mul].
+ *    - [ed25519_scalarmult_correct]: similar, with [readd_ok] and
+ *      conditional rather than constant-time path.
+ *
+ * 6. Test: build the file, run [Print Assumptions] on the two _correct
+ *    theorems, expect "Closed under the global context".
+ *
+ * Estimated total: 200-400 LoC bedrock2 + 300-700 LoC WP proof =
+ * 500-1100 LoC. Multi-day focused effort. Comparable scope to a
+ * single fiat-crypto bedrock2 file like [MontgomeryLadder.v].
+ *)
+
+(* Implementation pending — see header comment for the plan. *)

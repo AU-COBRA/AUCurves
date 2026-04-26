@@ -27,25 +27,12 @@
  *     shape is the same — but XEdDSA uses [montladder] (Montgomery ladder
  *     for Curve25519); Ed25519 needs Edwards scalarmult instead.
  *
- * **HARD BLOCKER (2026-04-25)**: there is no bedrock2 Edwards scalarmult
- * function in either AUCurves or fiat-crypto. The atoms exist
- * ([fiat-crypto/.../EdwardsXYZT.v::{add_precomputed, double, readd,
- * to_cached}], all Qed'd at lines 477-580) but no high-level
- * `ed25519_scalarmult` routine. Phase 1.3's bedrock2 [ed25519_sign] body
- * needs `r·B` and `a·B`, which require this routine.
- *
- * Two paths to unblock Phase 1.3:
- *   (a) Write [ed25519_scalarmult] in this directory or fiat-crypto/X25519:
- *       ~100-200 LoC bedrock2 windowed-comb-table loop + ~100-200 LoC
- *       WP proof composing [add_precomputed_ok], [double_ok], etc.
- *       Multi-day focused work — a separate sub-task at the same scope
- *       as Sign.v itself.
- *   (b) Cite an Edwards-Montgomery birational map and reuse the
- *       existing [montladder] (X25519's Montgomery ladder). Fiat-crypto
- *       has [Curves/EdwardsMontgomery25519.v::EdwardsMontgomery25519]
- *       (the iso lemma) but no bedrock2 wrapper. Lower scope than (a)
- *       but still requires the wrapper + a per-direction conversion in
- *       bedrock2.
+ * Edwards scalarmult: now declared as [Parameter]s in
+ * [Scalarmult.v] (ed25519_scalarmult, ed25519_scalarmult_base) with
+ * implementation pending in [Scalarmult_Impl.v.todo]. The discharge
+ * file's header has the concrete bedrock2 plan. Multi-day focused
+ * effort to close (~500-1100 LoC total) — comparable to a single
+ * fiat-crypto bedrock2 file like [MontgomeryLadder.v].
  *
  * Sign.v's bedrock2 body, when written, will compose:
  *   - [fe25519_scalar_funcs] (from [Scalar25519_64.v]) — already declared
@@ -64,6 +51,8 @@ Require Import Crypto.Spec.Curve25519.
 Require Import bedrock2.Syntax.
 (* Pulls in fe25519_scalar_funcs + the 6 spec_of_*_correct Parameters. *)
 Require Import Bedrock.End2End.Ed25519.Scalar25519_64.
+(* Pulls in ed25519_scalarmult_{,base} + correctness Parameters/Axioms. *)
+Require Import Bedrock.End2End.Ed25519.Scalarmult.
 
 Module Ed25519Sign.
 

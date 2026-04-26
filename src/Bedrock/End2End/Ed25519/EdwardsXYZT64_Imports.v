@@ -8,7 +8,9 @@
  *
  * This file should be stable; iteration happens in EdwardsXYZT64.v. *)
 
-From Stdlib Require Export String List ZArith.
+From Stdlib Require Export String List ZArith Lia.
+Require Export coqutil.Map.OfListWord.
+Require Export coqutil.Map.Interface.
 Require Export Crypto.Spec.ModularArithmetic.
 Require Export Crypto.Spec.Curve25519.
 Require Export Crypto.Spec.CompleteEdwardsCurve.
@@ -17,6 +19,7 @@ Require Export Crypto.Util.Tactics.DestructHead.
 
 (* bedrock2 stack. *)
 Require Export bedrock2.Array.
+Require Export bedrock2.bottom_up_simpl.
 Require Export bedrock2.Map.Separation.
 Require Export bedrock2.Map.SeparationLogic.
 Require Export bedrock2.ProgramLogic.
@@ -25,7 +28,10 @@ Require Export bedrock2.Scalars.
 Require Export bedrock2.Semantics.
 Require Export bedrock2.Syntax.
 Require Export bedrock2.WeakestPrecondition.
+Require Export bedrock2.WeakestPreconditionProperties.
 Require Export bedrock2.NotationsCustomEntry.
+Require Export bedrock2.ZnWords.
+Require Export bedrock2.Loops.
 
 (* 64-bit word + memory instances. *)
 Require Export coqutil.Word.Interface.

@@ -7,10 +7,12 @@
  *
  * Status (Step 1 in progress):
  *   - Sub-task 1.1: structure definitions Qed (projective/precomputed/cached).
- *   - Sub-task 1.2: bedrock2 func aliases (4 Definitions).
+ *   - Sub-task 1.2: bedrock2 func aliases (4 Local Notations).
  *   - Sub-task 1.3: spec_of declarations Qed (4 Instances).
- *   - Sub-task 1.4: helper Ltac — pending.
- *   - Sub-task 1.5: _ok proofs (4 lemmas, ~150 LoC each) — pending.
+ *   - Sub-task 1.4: helper Ltac Qed + 3 implies_valid lemmas Qed.
+ *     program_logic_goal_for_function! macro now resolves cleanly after
+ *     re-Existing the upstream spec_of_fe25519_* Section-local Instances.
+ *   - Sub-task 1.5: _ok proofs (4 lemmas, ~25-150 LoC each) — pending.
  *
  * See [option-b-64bit-port-plan.md] for the full Step 1 plan. *)
 
@@ -119,10 +121,24 @@ Module Ed25519XYZT64.
       Reuse the upstream Definitions directly — bedrock2 [func] syntax
       trees are width-agnostic. The 32-bit instantiation in upstream
       doesn't affect the syntax. *)
-  Definition add_precomputed64 := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.add_precomputed.
-  Definition double64          := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.double.
-  Definition to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
-  Definition readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
+  Local Notation add_precomputed64 := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.add_precomputed.
+  Local Notation double64          := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.double.
+  Local Notation to_cached64       := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.to_cached.
+  Local Notation readd64           := Crypto.Bedrock.End2End.X25519.EdwardsXYZT.readd.
+
+  (* Re-register upstream's Section-local spec_of_fe25519_* instances. They
+     compile fine but their Instance hint dies with the upstream Section,
+     so `program_logic_goal_for_function!`'s [instance_of (spec_of $f)] lookup
+     fails on calls to fe25519_sub / _half / _add / _mul / _copy. *)
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_half.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_sub.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_add.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_mul.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_square.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_carry_add.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_carry_sub.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe25519_from_word.
+  Existing Instance Crypto.Bedrock.End2End.X25519.EdwardsXYZT.spec_of_fe26619_copy.
 
   (** ** Sub-task 1.3: spec_of declarations.
       Mirror of upstream lines 319-400. Key fix: shadow [word] as
@@ -263,9 +279,122 @@ Module Ed25519XYZT64.
               = feval_projective_coords a_plus_c
       }.
 
-  (** ** Sub-tasks 1.4-1.5: helper Ltac + _ok proofs.
-      Pending — these mirror upstream's add_precomputed_ok, double_ok,
-      to_cached_ok, readd_ok proofs (~150 LoC each, mostly straightline +
-      handle_call + ecancel). Defer to a focused future session. *)
+  (** ** Sub-task 1.4: helper Ltac (verbatim port from upstream lines 412-475).
+      The Ltac is width-agnostic — uses bedrock2 sep-logic + bounds tactics
+      that do not reference [word32] vs [word64]. *)
+
+  (* Helper lemmas mirroring upstream lines 238, 261, 289 — needed by
+     the _ok proofs to relate [point]/[precomputed]/[cached] sigtype
+     witnesses to their structural validity predicate. *)
+  Lemma point_implies_coords_valid (p : point) (X Y Z Ta Tb : felem):
+    proj1_sig p = (feval X, feval Y, feval Z, feval Ta, feval Tb) ->
+    valid_projective_coords X Y Z Ta Tb.
+  Proof.
+    intros.
+    cbv [proj1_sig] in *. destruct_head' @Extended.point. destruct_head' prod.
+    Prod.inversion_prod; subst.
+    assumption.
+  Qed.
+
+  Lemma precomputed_implies_coords_valid (p : precomputed_point)
+        (half_ypx half_ymx xyd : felem):
+    proj1_sig p = (feval half_ypx, feval half_ymx, feval xyd) ->
+    valid_precomputed_coords half_ypx half_ymx xyd.
+  Proof.
+    intros.
+    cbv [proj1_sig valid_precomputed_coords] in *.
+    destruct_head' @Precomputed.precomputed_point.
+    destruct_head' prod. Prod.inversion_prod; subst.
+    assumption.
+  Qed.
+
+  Lemma cached_implies_coords_valid (c : cached) (half_YmX half_YpX Z Td : felem):
+    proj1_sig c = (feval half_YmX, feval half_YpX, feval Z, feval Td) ->
+    valid_cached_coords half_YmX half_YpX Z Td.
+  Proof.
+    intros.
+    cbv [proj1_sig valid_cached_coords] in *.
+    destruct_head' @Readdition.cached.
+    destruct_head' prod. Prod.inversion_prod; subst.
+    assumption.
+  Qed.
+
+  Local Ltac destruct_points :=
+    repeat match goal with
+      | _ => progress destruct_head' projective_coords
+      | _ => progress destruct_head' precomputed_coords
+      | _ => progress destruct_head' cached_coords
+      | _ => progress destruct_head' prod
+      | _ => progress destruct_head' and
+      | _ => progress lazy beta match zeta delta
+                       [Precomputed.precomputed_coordinates Readdition.cached_coordinates proj1_sig] in *
+    end.
+
+  Local Ltac cbv_bounds H :=
+    cbv [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub bin_carry_sub un_outbounds bin_outbounds] in H;
+    cbv [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub bin_carry_sub un_outbounds bin_outbounds].
+
+  Local Ltac solve_bounds :=
+    repeat match goal with
+    | H: bounded_by loose_bounds ?x |- bounded_by loose_bounds ?x => apply H
+    | H: bounded_by tight_bounds ?x |- bounded_by tight_bounds ?x => apply H
+    | H: bounded_by tight_bounds ?x |- bounded_by loose_bounds ?x => apply relax_bounds
+    | H: bounded_by _ ?x |- bounded_by _ ?x => cbv_bounds H
+    end.
+
+  Ltac skipn_firstn_length :=
+    change felem_size_in_bytes with 40 in *; listZnWords.
+
+  Ltac split_stack_at_n_in stack p n H :=
+    rewrite <- (firstn_skipn n stack) in H;
+    rewrite (map.of_list_word_at_app_n _ _ _ n) in H; try skipn_firstn_length;
+    let D := fresh in
+    unshelve(epose (sep_eq_putmany _ _ (map.adjacent_arrays_disjoint_n p (firstn n stack) (skipn n stack) n _ _)) as D);
+    try skipn_firstn_length; seprewrite_in D H; rewrite ?skipn_skipn in H;
+    bottom_up_simpl_in_hyp H; clear D.
+
+  Local Ltac solve_length :=
+    try lia;
+    match goal with
+      | |- Datatypes.length _ = _ =>
+        solve [rewrite ?ws2bs_felem_length; try lia;
+            change felem_size_in_bytes with 40 in *; try listZnWords; lia]
+    end.
+
+  Local Ltac solve_mem :=
+    repeat match goal with
+      | |- exists _ : _ -> Prop, _%sep _ => eexists
+      | H: ?P%sep ?m |- ?G%sep ?m => progress ecancel_assumption_preprocess_with solve_length
+      | H : _ %sep ?m |- _ %sep ?m => bottom_up_simpl_in_goal
+      | |- _%sep _ => ecancel_assumption
+    end.
+
+  Local Ltac single_step :=
+    repeat straightline; straightline_call; ssplit; try solve_mem; try solve_bounds; try solve_length.
+
+  Ltac solve_deallocation := dealloc_preprocess; repeat straightline.
+
+  Ltac split_output_stack stack_var ptr_var num_points :=
+    match goal with
+    | H : context[stack_var $@ ptr_var] |- _ =>
+      split_stack_at_n_in stack_var ptr_var 40%nat H;
+      split_stack_at_n_in (skipn 40 stack_var) (ptr_var .+ 40) 40%nat H;
+      split_stack_at_n_in (skipn 80 stack_var) (ptr_var .+ 80) 40%nat H;
+      match num_points with
+      | 4 => idtac
+      | 5 =>
+        split_stack_at_n_in (skipn 120 stack_var) (ptr_var .+ 120) 40%nat H
+      end
+    end.
+
+  (** ** Sub-task 1.5: _ok proofs — pending.
+      Status: [program_logic_goal_for_function!] now resolves cleanly
+      after re-Existing the upstream spec_of_fe25519_* instances above
+      (verified in this session: macro produced the expected goal
+      `forall functions, ... -> spec_of_fe25519_sub functions -> ... -> spec_of_to_cached functions`).
+      Remaining work for each of [to_cached64_ok], [add_precomputed64_ok],
+      [double64_ok], [readd64_ok]: port upstream's straightline + single_step
+      proof body (~25-150 LoC each), with the rename [a] → [a_in] etc. to
+      avoid shadowing our [Curve25519.E.a] / [Curve25519.E.d] notations. *)
 
 End Ed25519XYZT64.

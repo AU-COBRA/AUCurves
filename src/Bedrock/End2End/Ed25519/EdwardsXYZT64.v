@@ -422,21 +422,25 @@ Module Ed25519XYZT64.
           for the first call (fe25519_sub), introducing post-state hypothesis
           H10 about the resulting felem.
 
-      Next blocker: [solve_mem]'s ecancel can't auto-solve the side condition
-      [(ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list ?x))$@p_out * ?Rr].
-      Inspected upstream's [binop_spec] (Crypto.Bedrock.Specs.Field line 113):
-      its precondition wants a raw [out : list byte] satisfying
-      [(out$@pout * Rr)%sep mem]. The [ws2bs (felem_to_list ?x)] form
-      surfacing in our goal must be from [FElem]'s unfolding (FElem at 64-bit
-      = ws2bs(felem_to_list) of words). The mismatch: H6 has
-      [(ListDef.firstn 40 out) $@ p_out] as raw bytes, but the spec evar
-      is being resolved through FElem's expansion to the felem-as-bytes form,
-      not as raw bytes. Fix likely requires Hint Extern that recognizes the
-      bidirectional [bytes <-> felem-as-bytes] equivalence under length=40.
+      Next blocker (refined): [bs2felem] / [felem_from_bytes] in
+      [Crypto.Bedrock.Specs.Field] are the right primitives:
+        - [bs2felem : list byte -> felem]
+        - [felem_from_bytes p bs : length bs = felem_size_in_bytes ->
+                                    Lift1Prop.iff1 (bs$@p) (FElem p (bs2felem bs))]
+      Pattern (per [Field.Synthesis.New.Signature.v] line 267-270):
+        seprewrite_in (felem_from_bytes p bs) H; [length-proof|...]
+      Apply once for each of the 4 output chunks in H6 BEFORE the call
+      sequence, converting raw byte chunks to FElem form. Then the spec
+      precondition's [(out$@pout * Rr)%sep mem] matches via the existing
+      [Hint Extern] in [Specs/Field.v] line 525 ([felem_to_bytes] backwards).
+
+      Attempted but failed: [seprewrite_in (felem_from_bytes p_out (firstn 40 out)) H6]
+      gives "No matching clauses for match" — likely because seprewrite's
+      pattern matcher doesn't see through the outer [sepclause_of_map]
+      coercion. Needs a wrapped form or manual [change/cbv [sepclause_of_map]]
+      first.
 
       Same blocker will hit add_precomputed64_ok / double64_ok / readd64_ok.
-      Solving once unblocks all four. Pending — needs a fresh-eyes
-      architectural look at how upstream's 32-bit setup discharges this
-      side condition (likely a hint we haven't ported). *)
+      Solving once unblocks all four. *)
 
 End Ed25519XYZT64.

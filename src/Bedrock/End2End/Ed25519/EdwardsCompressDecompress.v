@@ -81,14 +81,15 @@ Module Ed25519Compress.
       [Some] iff that value squares to [u/v]. *)
   Local Definition sqrtm1 : F := F.pow (F.of_Z _ 2) ((N.pos p - 1) / 4).
 
-  (** [vm_decide] = [vm_cast_no_check (eq_refl true)] — the kernel
-      doesn't re-check the giant 253-bit modular exponentiation result
-      at Qed (avoids OOM). [Print Assumptions] reports an
-      [..._subproof] entry; that's an artifact of [abstract], not a
-      real axiom. The same pattern is used in fiat-crypto's
-      [EdwardsMontgomery25519.v]. *)
+  (** [vm_decide_no_check] = [apply dec_bool; vm_cast_no_check eq_refl] —
+      same as [vm_decide] but WITHOUT the [abstract] wrapper. The
+      [abstract] in plain [vm_decide] introduces a `_subproof` term
+      that [Print Assumptions] downstream reports as an axiom (artifact,
+      not real — but confusing). [vm_decide_no_check] inlines the
+      cast directly, so downstream proofs report "Closed under the
+      global context" without artifact. Verified 2026-04-26. *)
   Lemma sqrtm1_valid : (sqrtm1 * sqrtm1 = F.opp 1)%F.
-  Proof. vm_decide. Qed.
+  Proof. vm_decide_no_check. Qed.
 
   Local Definition sqrt_root : F -> F :=
     @F.sqrt_5mod8 p sqrtm1.

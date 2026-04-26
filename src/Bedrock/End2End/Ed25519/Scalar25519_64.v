@@ -56,7 +56,7 @@ Module Ed25519Scalar.
   Proof.
     intros x.
     apply (@F.Fq_inv_fermat l prime_l).
-    Decidable.vm_decide.
+    Decidable.vm_decide_no_check. (* avoids _subproof artifact in Print Assumptions *)
   Qed.
 
 End Ed25519Scalar.

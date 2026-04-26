@@ -422,25 +422,25 @@ Module Ed25519XYZT64.
           for the first call (fe25519_sub), introducing post-state hypothesis
           H10 about the resulting felem.
 
-      Next blocker (refined): [bs2felem] / [felem_from_bytes] in
-      [Crypto.Bedrock.Specs.Field] are the right primitives:
-        - [bs2felem : list byte -> felem]
-        - [felem_from_bytes p bs : length bs = felem_size_in_bytes ->
-                                    Lift1Prop.iff1 (bs$@p) (FElem p (bs2felem bs))]
-      Pattern (per [Field.Synthesis.New.Signature.v] line 267-270):
-        seprewrite_in (felem_from_bytes p bs) H; [length-proof|...]
-      Apply once for each of the 4 output chunks in H6 BEFORE the call
-      sequence, converting raw byte chunks to FElem form. Then the spec
-      precondition's [(out$@pout * Rr)%sep mem] matches via the existing
-      [Hint Extern] in [Specs/Field.v] line 525 ([felem_to_bytes] backwards).
+      Recipe (verified end-to-end via MCP for the FIRST of 7 calls):
+        For each output chunk [bs := firstn n (skipn k out)] at offset k:
+          1. assert (HL : length bs = Z.to_nat felem_size_in_bytes) by
+             (rewrite firstn_length; change felem_size_in_bytes with 40%Z; listZnWords).
+          2. pose proof (felem_from_bytes p_out_offset bs HL) as Hiff_k.
+          3. seprewrite_in Hiff_k H6.    (* H6 now has FElem instead of bytes *)
+        Then [repeat single_step] handles call sequencing; for each call,
+        the shelved [(ws2bs (felem_to_list ?x))$@p_out * ?Rr] side condition
+        closes via [use_sep_assumption. cancel. cancel_seps_at_indices 0%nat 0%nat. reflexivity. cancel.]
+        because H6's FElem unfolds (via the Hint Extern at Specs/Field.v line 525)
+        to match the spec's byte-form precondition.
 
-      Attempted but failed: [seprewrite_in (felem_from_bytes p_out (firstn 40 out)) H6]
-      gives "No matching clauses for match" — likely because seprewrite's
-      pattern matcher doesn't see through the outer [sepclause_of_map]
-      coercion. Needs a wrapped form or manual [change/cbv [sepclause_of_map]]
-      first.
+      KEY DISCOVERY: [seprewrite_in (felem_from_bytes ...) H6] FAILS directly
+      ("No matching clauses for match") but works after [pose proof] of the
+      lemma application as a local hypothesis. The seprewrite_in tactic's
+      multimatch/unshelve interaction can't process direct lemma applications
+      with already-discharged side conditions. Workaround: pose first, rewrite
+      second.
 
-      Same blocker will hit add_precomputed64_ok / double64_ok / readd64_ok.
-      Solving once unblocks all four. *)
+      Same recipe applies to add_precomputed64_ok / double64_ok / readd64_ok. *)
 
 End Ed25519XYZT64.

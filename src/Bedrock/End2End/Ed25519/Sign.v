@@ -49,6 +49,13 @@
 From Stdlib Require Import String List ZArith.
 Require Import Crypto.Spec.Curve25519.
 Require Import bedrock2.Syntax.
+Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.Semantics.
+Require Import bedrock2.Map.Separation.
+Require Import bedrock2.Scalars.
+Require Import coqutil.Word.Interface.
+Require Import bedrock2.BasicC64Semantics.
+Require Import coqutil.Map.OfListWord.
 (* Pulls in fe25519_scalar_funcs + the 6 spec_of_*_correct Parameters. *)
 Require Import Bedrock.End2End.Ed25519.Scalar25519_64.
 (* Pulls in ed25519_scalarmult_{,base} + correctness Parameters/Axioms. *)
@@ -75,11 +82,11 @@ Module Ed25519Sign.
 
         Theorem ed25519_sign_correct :
           forall (functions : Semantics.env)
-                 (t : Semantics.trace) (m : Semantics.mem)
+                 (t : Semantics.trace) (m : Interface.map.rep)
                  (sig_out_ptr seed_ptr msg_ptr : word)
                  (sig_out_init : list Byte.byte)
                  (seed : list Byte.byte) (msg : list Byte.byte)
-                 (R : Semantics.mem -> Prop),
+                 (R : Interface.map.rep -> Prop),
             length sig_out_init = 64%nat ->
             length seed = 32%nat ->
             (FElemBytes sig_out_ptr sig_out_init *
@@ -110,9 +117,35 @@ Module Ed25519Sign.
         handle_call (Ed25519XYZT.m1add_correct).
         handle_call (Ed25519Compress.decompress_Some_25519).
         ecancel_assumption. *)
+
+  (** Abstract Gallina spec for RFC 8032 Ed25519 signing.
+      Compositional: takes seed (32 B) and msg, returns 64-byte signature.
+      Pending — discharged in [Phase 1.3 #N] of option-b-plan. *)
+  Parameter rfc8032_ed25519_sign : list Byte.byte -> list Byte.byte -> list Byte.byte.
+  Parameter rfc8032_ed25519_sign_length :
+    forall seed msg, Datatypes.length (rfc8032_ed25519_sign seed msg) = 64%nat.
+
+  (** Real Hoare-spec shape — body pending. Once [ed25519_sign] is
+      a [Definition] (not [Parameter]) and [Scalarmult_Impl.v] closes,
+      this becomes a [Theorem] with proof matching XEdDSA/Sign.v. *)
   Axiom ed25519_sign_correct :
-    forall (seed : list Byte.byte) (msg : list Byte.byte),
-      length seed = 32%nat ->
-      True.
+    forall (functions : Interface.map.rep (map:=Semantics.env))
+           (t : Semantics.trace) (m : Interface.map.rep)
+           (sig_out_ptr seed_ptr msg_ptr : word)
+           (sig_out_init : list Byte.byte)
+           (seed : list Byte.byte) (msg : list Byte.byte)
+           (R : Interface.map.rep -> Prop),
+      Datatypes.length sig_out_init = 64%nat ->
+      Datatypes.length seed = 32%nat ->
+      ((sig_out_init$@sig_out_ptr) ⋆
+       (seed$@seed_ptr) ⋆ (msg$@msg_ptr) ⋆ R)%sep m ->
+      Interface.map.get functions "ed25519_sign"%string = Some ed25519_sign ->
+      WeakestPrecondition.call functions "ed25519_sign"%string t m
+        (sig_out_ptr :: seed_ptr :: msg_ptr ::
+         word.of_Z (Z.of_nat (Datatypes.length msg)) :: nil)
+        (fun t' m' rets =>
+           t' = t /\ rets = nil /\
+           ((rfc8032_ed25519_sign seed msg)$@sig_out_ptr ⋆
+            (seed$@seed_ptr) ⋆ (msg$@msg_ptr) ⋆ R)%sep m').
 
 End Ed25519Sign.

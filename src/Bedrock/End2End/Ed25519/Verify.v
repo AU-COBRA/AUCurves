@@ -41,6 +41,13 @@
 From Stdlib Require Import String List ZArith.
 Require Import Crypto.Spec.Curve25519.
 Require Import bedrock2.Syntax.
+Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.Semantics.
+Require Import bedrock2.Map.Separation.
+Require Import bedrock2.Scalars.
+Require Import coqutil.Word.Interface.
+Require Import bedrock2.BasicC64Semantics.
+Require Import coqutil.Map.OfListWord.
 Require Import Bedrock.End2End.Ed25519.Scalar25519_64.
 Require Import Bedrock.End2End.Ed25519.Scalarmult.
 
@@ -93,9 +100,29 @@ Module Ed25519Verify.
         handle_call (add_precomputed_ok).
         handle_call (Ed25519Compress.compress_25519 unfolded).
         ecancel_assumption. *)
+  (** Abstract Gallina spec for RFC 8032 Ed25519 verification.
+      Returns [true] iff the signature validates. Pending. *)
+  Parameter rfc8032_ed25519_verify : list Byte.byte -> list Byte.byte -> list Byte.byte -> bool.
+
+  (** Real Hoare-spec shape — body pending. *)
   Axiom ed25519_verify_correct :
-    forall (pk sig : list Byte.byte) (msg : list Byte.byte),
-      length pk = 32%nat -> length sig = 64%nat ->
-      True.
+    forall (functions : Interface.map.rep (map:=Semantics.env))
+           (t : Semantics.trace) (m : Interface.map.rep)
+           (result_ptr pk_ptr sig_ptr msg_ptr : word)
+           (result_init : Byte.byte)
+           (pk : list Byte.byte) (sig : list Byte.byte)
+           (msg : list Byte.byte)
+           (R : Interface.map.rep -> Prop),
+      Datatypes.length pk = 32%nat ->
+      Datatypes.length sig = 64%nat ->
+      ((cons result_init nil)$@result_ptr ⋆ pk$@pk_ptr ⋆ sig$@sig_ptr ⋆ msg$@msg_ptr ⋆ R)%sep m ->
+      Interface.map.get functions "ed25519_verify"%string = Some ed25519_verify ->
+      WeakestPrecondition.call functions "ed25519_verify"%string t m
+        (result_ptr :: pk_ptr :: sig_ptr :: msg_ptr ::
+         word.of_Z (Z.of_nat (Datatypes.length msg)) :: nil)
+        (fun t' m' rets =>
+           t' = t /\ rets = nil /\
+           ((cons (if rfc8032_ed25519_verify pk sig msg then Byte.x01 else Byte.x00) nil)$@result_ptr ⋆
+            pk$@pk_ptr ⋆ sig$@sig_ptr ⋆ msg$@msg_ptr ⋆ R)%sep m').
 
 End Ed25519Verify.

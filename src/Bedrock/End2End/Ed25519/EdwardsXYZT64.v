@@ -259,6 +259,10 @@ Module Ed25519XYZT64.
                = feval_projective_coords a_plus_b
       }.
 
+  (** spec_of_double64: Path A (5-separate-exists, mirrors secp256k1
+      JacobianCoZ.v's pattern). Avoids the sigma-unfolding goal blowup
+      in the postcondition discharge. The validity+bounds are inlined
+      as separate conjuncts; the FElem chunks are written directly. *)
   Global Instance spec_of_double64 : spec_of "double" :=
     fnspec! "double"
       (p_out p_a: word) /
@@ -268,9 +272,20 @@ Module Ed25519XYZT64.
           Datatypes.length out = Z.to_nat (5 * felem_size);
         ensures t' m' :=
           t = t' /\
-          exists a_double: projective_coords,
-            m' =* a_double p5@ p_out * a p5@ p_a * R /\
-            proj1_sig (m1double (coords_to_point a)) = feval_projective_coords a_double
+          exists (X Y Z Ta Tb : felem),
+            valid_projective_coords X Y Z Ta Tb /\
+            bounded_by tight_bounds X /\
+            bounded_by tight_bounds Y /\
+            bounded_by tight_bounds Z /\
+            bounded_by loose_bounds Ta /\
+            bounded_by loose_bounds Tb /\
+            m' =* (FElem p_out X * FElem (p_out.+felem_size) Y *
+                   FElem (p_out.+(felem_size+felem_size)) Z *
+                   FElem (p_out.+(felem_size+felem_size+felem_size)) Ta *
+                   FElem (p_out.+(felem_size+felem_size+felem_size+felem_size)) Tb) *
+                  a p5@ p_a * R /\
+            proj1_sig (m1double (coords_to_point a)) =
+              (feval X, feval Y, feval Z, feval Ta, feval Tb)
       }.
 
   Global Instance spec_of_to_cached64 : spec_of "to_cached" :=
@@ -633,18 +648,20 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
-    (* Cascade dispatch via straightline_stackdealloc (per MCP session #3-4): *)
+    (* Cascade dispatch + inner discharge (Path A spec, MCP session #6):
+       - straightline_stackdealloc closes the per-layer dealloc cascade
+       - exists stack5 fills a remaining list-byte evar from WP frame
+       - The remaining goal closes to 1 shelved evar via reflexivity +
+         ecancel + solve_bounds. The shelved evar is the missing X Y Z
+         Ta Tb felem witnesses — needs targeted `exists x9, x10, x11,
+         x7, x5` at the right point in the chain. *)
     do 3 eexists. ssplit.
     all: try (repeat straightline_stackdealloc).
     repeat straightline.
-    (* Inner postcondition (MCP session #5 progress):
-       After repeat straightline, the goal has multiple chained existentials
-       before reaching `exists a_double : projective_coords`. Each `exists`
-       takes a `list byte` of length 40 (one of stack/stack0/.../stack5)
-       OR fails with shape mismatches. The exact sequence of witnesses
-       requires line-by-line MCP iteration, which is hitting diminishing
-       returns due to the goal-print being truncated at ~50K chars
-       (hypothesis env is huge). *)
+    exists stack5. ssplit.
+    all: try reflexivity.
+    all: try ecancel_assumption.
+    all: try solve_bounds.
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

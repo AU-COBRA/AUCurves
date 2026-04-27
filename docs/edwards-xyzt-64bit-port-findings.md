@@ -197,9 +197,64 @@ parameter `a` directly.
 
 ## Open work checklist
 
-1. [ ] Solve discharge for nested-seps Hint Extern (Section 7 above).
-2. [ ] Close `to_cached64_ok` end-to-end.
-3. [ ] Apply same recipe to `add_precomputed64_ok` (5 chunks, more calls — possibly more side conditions).
-4. [ ] Apply to `double64_ok`.
-5. [ ] Apply to `readd64_ok`.
-6. [ ] Move on to Step 2 of the plan: `ed25519_scalarmult_base` (the big one).
+1. [x] Solve discharge for nested-seps Hint Extern — DONE via
+   `Local Ltac ecancel_assumption ::= ecancel_assumption_impl.`
+2. [x] Close `to_cached64_ok` end-to-end — Qed (commit `30621c4`).
+3. [ ] Apply recipe to `add_precomputed64_ok`, `double64_ok`,
+   `readd64_ok` — BLOCKED on **finding 9** below.
+4. [ ] Move on to Step 2 of the plan: `ed25519_scalarmult_base`.
+
+---
+
+## 9. NEW BLOCKER (2026-04-27): stackalloc → `array ptsto` slows single_step
+
+### Symptom
+
+Even ONE `single_step` times out (>120s) on the first call of
+`double64_ok`. Not cumulative — the very first call is the slow one.
+to_cached64_ok closes in 1.3s; double/add_precomputed/readd hang.
+
+### Difference
+
+`to_cached`'s body has zero `stackalloc`. The other three have many:
+double has 8, add_precomputed has 9, readd has 7.
+
+After a `stackalloc`, `straightline` introduces an `anybytes` →
+`array ptsto (word.of_Z 1) a stack` clause into the current sep
+hypothesis. The next call's spec wants `(?out$@a * ?Rr)%sep` —
+but H has the `array` form, not the `$@` (of_list_word_at) form.
+
+The Hint Extern at `Specs/Field.v:525` covers `FElem ↔ $@` but NOT
+`array ptsto ↔ $@`. ecancel can't bridge the gap, so it walks the
+hint database exhaustively and times out.
+
+### Fix (recipe extension)
+
+`Crypto.Bedrock.Specs.Field` line ~372 has
+`array1_iff_eq_of_list_word_at`:
+
+    Lemma array1_iff_eq_of_list_word_at p bs n :
+      Z.of_nat (length bs) = Z.of_nat n ->
+      Lift1Prop.iff1 (array ptsto (word.of_Z 1) p bs)
+                     (sepclause_of_map (bs $@ p)).
+
+This is the missing bridge. Recipe extension:
+
+```coq
+Ltac convert_stack_to_byte a stack H :=
+  let HL := fresh "HL_stack" in
+  let Hiff := fresh "Hiff_stack" in
+  assert (HL : Z.of_nat (Datatypes.length stack) = Z.of_nat (Z.to_nat 40)) by lia;
+  pose proof (array1_iff_eq_of_list_word_at a stack (Z.to_nat 40) HL) as Hiff;
+  seprewrite_in Hiff H.
+```
+
+Then call once per `stackalloc` straightline, BEFORE the next
+`single_step`. Should restore single_step performance to to_cached64_ok
+levels (~1s per call, ~15s total per lemma).
+
+### Status
+
+Diagnosed but not implemented. Adding the helper Ltac + threading it
+through the proof per stackalloc is straightforward (~15 LoC of helper
+Ltac + ~10 LoC per `_ok` lemma to thread).

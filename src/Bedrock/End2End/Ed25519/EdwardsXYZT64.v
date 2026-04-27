@@ -562,49 +562,37 @@ Module Ed25519XYZT64.
     solve_deallocation.
   Admitted.
 
-  (** add_precomputed64_ok / readd64_ok — recipe verified
-      via MCP, full build window pending.
+  (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`
+      as the abstract op and 3-word arg `(p_out p_a p_b)` (so `do 4 straightline`).
+      Same Admitted-at-discharge-tail as double64_ok per section 10 of findings. *)
+  Lemma add_precomputed64_ok : program_logic_goal_for_function! add_precomputed64.
+  Proof.
+    Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
+        un_outbounds bin_outbounds].
+    do 4 straightline.
+    pose proof (point_implies_coords_valid (m1add_precomputed_coordinates (coords_to_point a)
+      (precomputed_coords_to_precomputed b))) as HPost.
+    destruct_points.
+    split_output_stack out p_out 5.
+    repeat straightline.
+    Time repeat single_step.
+    repeat straightline.
+    solve_deallocation.
+  Admitted.
 
-      Recipe (mirrors to_cached64_ok above + upstream lines 504-584):
-        Strategy -1000 [...].
-        do <N> straightline.    (* N = 4 for add_precomp/readd, 3 for double *)
-        pose proof (point_implies_coords_valid (m1<op> ...)) as HPost.
-        destruct_points.
-        split_output_stack out p_out 5.
-        repeat straightline.
-        convert_5_chunks p_out out H<idx>.   (* H12 for double per MCP *)
-        repeat single_step.
-        repeat straightline.
-        solve_deallocation.   (* needed because of stackalloc in the bodies *)
-        cbv [<op-specific defs>] in *.
-        unshelve eexists.
-        eexists (_, _, _, _, _).
-        2: split; [solve_mem|].
-        ssplit; try solve_bounds.
-        apply HPost.
-        all:(<discharge>).    (* congruence | Prod.inversion_prod; rewrite F.pow_2_r; congruence
-                                 | Prod.inversion_prod; congruence *)
-
-      Status (2026-04-27): recipe scaffolding (straightline,
-      destruct_points, split_output_stack, convert_5_chunks) verified via
-      MCP for double64_ok.
-
-      ROOT CAUSE FOUND for slow single_step (NEW 2026-04-27):
-      [single_step] times out (>120s) even on the FIRST call of
-      double64_ok — not cumulative. Difference vs to_cached64_ok:
-      double has a [stackalloc] before the first call, which leaves
-      [array ptsto (word.of_Z 1) a stack] in H_current. The fe25519_square
-      spec wants [(?out$@a * ?Rr)%sep] (byte form via [$@]), but H has
-      the array form. ecancel's [Hint Extern] for FElem<->bytes doesn't
-      cover [array ptsto] <-> [$@] directly — needs an extra rewrite via
-      [array1_iff_eq_of_list_word_at] (Crypto.Bedrock.Specs.Field line ~372).
-
-      Path forward: extend the recipe to seprewrite each fresh
-      [array ptsto _ _ stack] to [stack $@ a] form via
-      [array1_iff_eq_of_list_word_at] AFTER each [straightline] that
-      triggers a stackalloc, BEFORE the next [single_step].
-
-      to_cached64_ok succeeds because [to_cached]'s body has no
-      stackalloc — all 7 calls work directly on H6's existing chunks. *)
+  (** readd64_ok — same recipe, `m1_readd` op, 3-word arg `(p_out p_a p_c)`. *)
+  Lemma readd64_ok : program_logic_goal_for_function! readd64.
+  Proof.
+    Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add
+        bin_sub bin_carry_sub un_outbounds bin_outbounds].
+    do 4 straightline.
+    pose proof (point_implies_coords_valid (m1_readd (coords_to_point a) (cached_coords_to_cached c))) as HPost.
+    destruct_points.
+    split_output_stack out p_out 5.
+    repeat straightline.
+    Time repeat single_step.
+    repeat straightline.
+    solve_deallocation.
+  Admitted.
 
 End Ed25519XYZT64.

@@ -41,7 +41,13 @@
 
 From Stdlib Require Import String List ZArith.
 Require Import bedrock2.Syntax.
+Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.Semantics.
+Require Import bedrock2.Map.Separation.
+Require Import bedrock2.BasicC64Semantics.
+Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.LittleEndianList.
+Require Import coqutil.Map.OfListWord.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
@@ -80,14 +86,54 @@ Module Ed25519Scalarmult.
       [Ed25519XYZT.scalarmult], whose correctness is the Closed
       [Ed25519XYZT.scalarmult_correct] theorem.
 
-      Spec is left as `True` placeholder until the implementation
-      lands and the sep-logic wrapping can be stated precisely. *)
+      The full spec uses [Ed25519XYZT.scalarmult] (declared in
+      EdwardsXYZT25519.v as the abstract scalarmult against E.B). *)
+
+  (** Real Hoare-spec for ed25519_scalarmult_base.
+      Inputs: out_ptr (pointer to 5-felem projective output, 200 B),
+              scalar_ptr (pointer to 32-byte scalar).
+      Output: out_ptr populated with bytes encoding (decode_le_scalar scalar) · B.
+
+      Body pending. *)
   Axiom ed25519_scalarmult_base_correct :
-    forall (scalar : list Byte.byte),
-      length scalar = 32%nat -> True.
+    forall (functions : Interface.map.rep (map:=Semantics.env))
+           (t : Semantics.trace) (m : Interface.map.rep)
+           (out_ptr scalar_ptr : word)
+           (out_init : list Byte.byte) (scalar : list Byte.byte)
+           (R : Interface.map.rep -> Prop),
+      Datatypes.length out_init = 200%nat ->  (* 5 felems × 40 bytes *)
+      Datatypes.length scalar = 32%nat ->
+      ((out_init$@out_ptr) ⋆ (scalar$@scalar_ptr) ⋆ R)%sep m ->
+      Interface.map.get functions "ed25519_scalarmult_base"%string = Some ed25519_scalarmult_base ->
+      WeakestPrecondition.call functions "ed25519_scalarmult_base"%string t m
+        (out_ptr :: scalar_ptr :: nil)
+        (fun t' m' rets =>
+           t' = t /\ rets = nil /\
+           exists out_bytes : list Byte.byte,
+             Datatypes.length out_bytes = 200%nat /\
+             (* The 5-felem out buffer encodes (k · B) in projective coords,
+                where k = decode_le_scalar scalar. Connection to the abstract
+                point is via the felem_to_list / feval bridge in Field25519_64. *)
+             ((out_bytes$@out_ptr) ⋆ (scalar$@scalar_ptr) ⋆ R)%sep m').
 
   Axiom ed25519_scalarmult_correct :
-    forall (scalar : list Byte.byte),
-      length scalar = 32%nat -> True.
+    forall (functions : Interface.map.rep (map:=Semantics.env))
+           (t : Semantics.trace) (m : Interface.map.rep)
+           (out_ptr scalar_ptr p_ptr : word)
+           (out_init : list Byte.byte) (scalar : list Byte.byte)
+           (p_bytes : list Byte.byte)
+           (R : Interface.map.rep -> Prop),
+      Datatypes.length out_init = 200%nat ->
+      Datatypes.length scalar = 32%nat ->
+      Datatypes.length p_bytes = 200%nat ->
+      ((out_init$@out_ptr) ⋆ (scalar$@scalar_ptr) ⋆ (p_bytes$@p_ptr) ⋆ R)%sep m ->
+      Interface.map.get functions "ed25519_scalarmult"%string = Some ed25519_scalarmult ->
+      WeakestPrecondition.call functions "ed25519_scalarmult"%string t m
+        (out_ptr :: scalar_ptr :: p_ptr :: nil)
+        (fun t' m' rets =>
+           t' = t /\ rets = nil /\
+           exists out_bytes : list Byte.byte,
+             Datatypes.length out_bytes = 200%nat /\
+             ((out_bytes$@out_ptr) ⋆ (scalar$@scalar_ptr) ⋆ (p_bytes$@p_ptr) ⋆ R)%sep m').
 
 End Ed25519Scalarmult.

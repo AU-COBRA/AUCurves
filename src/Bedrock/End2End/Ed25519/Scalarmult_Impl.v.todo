@@ -4,51 +4,46 @@
  * Kept as `.v.todo` so dune skips it until ready to build.
  *
  * ============================================================
- * PREREQUISITE CHAIN (discovered 2026-04-26)
+ * PREREQUISITE CHAIN — STATUS 2026-04-27
  * ============================================================
  *
- * Closing Phase 1.3 has FIVE serial dependencies, not the two
- * originally identified. From bottom to top:
+ *   0. ✅ **Upstream `EdwardsXYZT.v` builds in our setup.** Closed
+ *      via fiat-crypto commit `abbea109e` on the `pairing-proofs`
+ *      branch (drops 4 vestigial imports). PR-ready commit
+ *      `06aaee8a1` on `drop-vestigial-imports-edwardsxyzt` for
+ *      upstream submission via `bshvass/fiat-crypto` fork.
  *
- *   0. **Make `fiat-crypto/.../X25519/EdwardsXYZT.v` build in AUCurves'
- *      dune setup.** That file currently does NOT compile in our
- *      project (no `EdwardsXYZT.vo` in `_build`). It imports
- *      `compiler.MMIO`, `compiler.Pipeline`, `compiler.Symbols` —
- *      bedrock2 compiler-stack libraries that aren't in our dune
- *      `theories` list. Investigation needed: are these imports
- *      actually used in the file's content, or just leftover from
- *      a CompCert-style end-to-end demonstration? If unused: strip
- *      and rebuild. If used: add the `compiler` theory to AUCurves'
- *      dune theories, OR write a slimmed-down version of the file
- *      that doesn't depend on them. ~half-day investigation + fix.
+ *   1. ⏳ **64-bit port of `EdwardsXYZT.v` atoms** — partial.
+ *      `EdwardsXYZT64.v` has all sub-tasks 1.1–1.4 closed (Qed),
+ *      and 1/4 of sub-task 1.5: `to_cached64_ok` Qed (commit
+ *      `30621c4`, ~1.3s Qed time). Recipe documented in
+ *      `AUCurves/docs/edwards-xyzt-64bit-port-findings.md`.
+ *      Remaining: `add_precomputed64_ok`, `double64_ok`,
+ *      `readd64_ok` — recipe verified, build window pending
+ *      (each ~5-15 min wall due to `repeat single_step`).
  *
- *   1. **64-bit port of `EdwardsXYZT.v` atoms.** The fiat-crypto
- *      version is bound to FE310CSemantics + Bitwidth32 (RISC-V
- *      32-bit). Ed25519 needs Bitwidth64 + BasicC64Semantics. The
- *      `Definition func`s should mostly be width-agnostic syntax
- *      trees, but the `Local Notation` for field offsets uses
- *      `felem_size` which depends on the field representation
- *      (UnsaturatedSolinas at 64-bit gives the same 40-byte felem
- *      as 32-bit, so notations may transfer). The proofs
- *      ([add_precomputed_ok] at line 504 etc.) are ~90s `repeat
- *      single_step` per the comment in the file — should mostly
- *      port automatically if the helper Ltac (`split_stack_at_n_in`,
- *      `solve_mem`, `single_step` etc.) ports. ~150 LoC bedrock2 +
- *      ~200 LoC re-proofs + ~100 LoC helper Ltac copy = ~450 LoC
- *      file. 1-3 days focused work.
+ *      KEY UNBLOCKERS discovered 2026-04-26→27:
+ *        - `Local Ltac ecancel_assumption ::= ecancel_assumption_impl.`
+ *          (impl1-form solver walks the FElem↔bytes Hint Extern)
+ *        - `pose proof; seprewrite_in` for `felem_from_bytes`
+ *        - 64-bit `spec_of_fe25519_*64` + `spec_of_fe25519_half64`
+ *          (upstream's are 32-bit-only)
+ *        - Reusable `convert_chunk_to_felem` / `convert_4_chunks` /
+ *          `convert_5_chunks` Ltacs.
  *
- *   2. **`ed25519_scalarmult_base` bedrock2 body + WP proof.** The
- *      sketch below assumes the 64-bit atoms exist and are callable.
+ *   2. **`ed25519_scalarmult_base` bedrock2 body + WP proof** —
+ *      THIS FILE. Body sketch below; depends on completing #1.
  *      ~150-300 LoC bedrock2 + ~300-700 LoC WP proof.
  *
- *   3. **`ed25519_sign` body** (Sign.v). ~300 LoC + ~200 LoC WP.
+ *   3. **`ed25519_sign` body** (Sign.v). Hoare-spec shape upgraded
+ *      2026-04-27 (commit `b8d3feb`). Body fill-in pending #2.
+ *      ~300 LoC + ~200 LoC WP.
  *
- *   4. **`ed25519_verify` body** (Verify.v). ~150 LoC + ~150 LoC WP.
+ *   4. **`ed25519_verify` body** (Verify.v). Same status as #3.
+ *      ~150 LoC + ~150 LoC WP.
  *
- * Total realistic Phase 1.3-1.5 closure cost: 4-5 weeks focused
- * effort, mostly serial. The first prerequisite (#0) is potentially
- * the cheapest unblocker but its size depends on what those
- * compiler.* imports are actually doing.
+ * Total remaining: ~3-4 weeks focused effort, mostly serial.
+ * #1 needs ~½ day to fully close now that the recipe is in hand.
  *
  * ============================================================
  * CONCRETE BEDROCK2 SKETCH (paste-and-adapt for next session)

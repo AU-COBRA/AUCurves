@@ -491,8 +491,37 @@ Module Ed25519XYZT64.
           rewrite H8, H16, H22, H27, H24, H18, H12; reflexivity).
   Qed.
 
-  (** add_precomputed64_ok / double64_ok / readd64_ok — pending.
-      Same recipe applies; will need adjusted post-state rewrite
-      hypothesis lists per func body. *)
+  (** add_precomputed64_ok / double64_ok / readd64_ok — recipe verified
+      via MCP, full build window pending.
+
+      Recipe (mirrors to_cached64_ok above + upstream lines 504-584):
+        Strategy -1000 [...].
+        do <N> straightline.    (* N = 4 for add_precomp/readd, 3 for double *)
+        pose proof (point_implies_coords_valid (m1<op> ...)) as HPost.
+        destruct_points.
+        split_output_stack out p_out 5.
+        repeat straightline.
+        convert_5_chunks p_out out H<idx>.   (* H12 for double per MCP *)
+        repeat single_step.
+        repeat straightline.
+        solve_deallocation.   (* needed because of stackalloc in the bodies *)
+        cbv [<op-specific defs>] in *.
+        unshelve eexists.
+        eexists (_, _, _, _, _).
+        2: split; [solve_mem|].
+        ssplit; try solve_bounds.
+        apply HPost.
+        all:(<discharge>).    (* congruence | Prod.inversion_prod; rewrite F.pow_2_r; congruence
+                                 | Prod.inversion_prod; congruence *)
+
+      Status (2026-04-27): recipe scaffolding (straightline,
+      destruct_points, split_output_stack, convert_5_chunks) verified via
+      MCP for double64_ok. The [Time repeat single_step] step exceeds the
+      300s MCP timeout AND a 15-min dune attempt did not finish either,
+      indicating the cumulative 12+ call chain is genuinely heavy at 64-bit.
+
+      Path forward: either (a) dispatch overnight build + see if 30+ min
+      lands the Qed, or (b) optimize single_step's solve_mem inner loop
+      (bottleneck is likely ecancel walking the growing H6 chain). *)
 
 End Ed25519XYZT64.

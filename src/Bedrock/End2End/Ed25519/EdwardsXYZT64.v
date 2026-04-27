@@ -439,6 +439,34 @@ Module Ed25519XYZT64.
 
   Local Ltac ecancel_assumption ::= ecancel_assumption_impl.
 
+  (** Reusable: convert one output-buffer chunk in hypothesis [H] to FElem form.
+      Args: [p] (chunk pointer), [bs] (chunk byte list), [H] (sep hypothesis). *)
+  Ltac convert_chunk_to_felem p bs H :=
+    let HL := fresh "HL_chunk" in
+    let Hiff := fresh "Hiff_chunk" in
+    assert (HL : Datatypes.length bs = Z.to_nat felem_size_in_bytes)
+      by (rewrite ?length_firstn, ?length_skipn;
+          change felem_size_in_bytes with 40%Z; listZnWords);
+    pose proof (felem_from_bytes p bs HL) as Hiff;
+    seprewrite_in Hiff H.
+
+  (** Reusable: discharge byte-array preconditions for all 4 chunks
+      of a 4-felem output buffer. Convention: [pout] is the base, [bs]
+      is the byte list, [H] is the sep hypothesis with the chunks. *)
+  Ltac convert_4_chunks pout bs H :=
+    convert_chunk_to_felem pout            (ListDef.firstn 40 bs) H;
+    convert_chunk_to_felem (pout.+40)      (ListDef.firstn 40 (ListDef.skipn 40 bs)) H;
+    convert_chunk_to_felem (pout.+80)      (ListDef.firstn 40 (ListDef.skipn 80 bs)) H;
+    convert_chunk_to_felem (pout.+120)     (ListDef.skipn 120 bs) H.
+
+  (** Reusable: 5-felem output buffer variant. *)
+  Ltac convert_5_chunks pout bs H :=
+    convert_chunk_to_felem pout            (ListDef.firstn 40 bs) H;
+    convert_chunk_to_felem (pout.+40)      (ListDef.firstn 40 (ListDef.skipn 40 bs)) H;
+    convert_chunk_to_felem (pout.+80)      (ListDef.firstn 40 (ListDef.skipn 80 bs)) H;
+    convert_chunk_to_felem (pout.+120)     (ListDef.firstn 40 (ListDef.skipn 120 bs)) H;
+    convert_chunk_to_felem (pout.+160)     (ListDef.skipn 160 bs) H.
+
   Lemma to_cached64_ok : program_logic_goal_for_function! to_cached64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
@@ -448,22 +476,7 @@ Module Ed25519XYZT64.
     destruct_points.
     split_output_stack out p_out 4.
     repeat straightline.
-    assert (HL0 : Datatypes.length (ListDef.firstn 40 out) = Z.to_nat felem_size_in_bytes)
-      by (rewrite length_firstn; change felem_size_in_bytes with 40%Z; listZnWords).
-    pose proof (felem_from_bytes p_out (ListDef.firstn 40 out) HL0) as Hiff0.
-    seprewrite_in Hiff0 H6.
-    assert (HL1 : Datatypes.length (ListDef.firstn 40 (ListDef.skipn 40 out)) = Z.to_nat felem_size_in_bytes)
-      by (rewrite length_firstn, length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
-    pose proof (felem_from_bytes (p_out.+40) (ListDef.firstn 40 (ListDef.skipn 40 out)) HL1) as Hiff1.
-    seprewrite_in Hiff1 H6.
-    assert (HL2 : Datatypes.length (ListDef.firstn 40 (ListDef.skipn 80 out)) = Z.to_nat felem_size_in_bytes)
-      by (rewrite length_firstn, length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
-    pose proof (felem_from_bytes (p_out.+80) (ListDef.firstn 40 (ListDef.skipn 80 out)) HL2) as Hiff2.
-    seprewrite_in Hiff2 H6.
-    assert (HL3 : Datatypes.length (ListDef.skipn 120 out) = Z.to_nat felem_size_in_bytes)
-      by (rewrite length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
-    pose proof (felem_from_bytes (p_out.+120) (ListDef.skipn 120 out) HL3) as Hiff3.
-    seprewrite_in Hiff3 H6.
+    convert_4_chunks p_out out H6.
     repeat single_step.
     repeat straightline.
     lazy delta [cached_coords].

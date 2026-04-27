@@ -548,27 +548,51 @@ Module Ed25519XYZT64.
       stackalloc-free callees, e.g. to_cached64) OR repeat single_step
       with extended solve_length) is solid. See to_cached64_ok above
       for the full Qed'd template at 64-bit. *)
-  (** double64_ok — discharge tail discovery (2026-04-27 MCP session):
-      - The WP frame after `solve_deallocation` leaves a 7-layer cascade
-        of `exists m' mStack' : map.rep, anybytes _ _ mStack' /\
-        map.split _ m' mStack' /\ inner` (one per stackalloc, 7 of 8
-        because the first dealloc was consumed by solve_deallocation's
-        `repeat straightline`).
-      - The cascade is dispatched by:
-        `repeat (eexists; eexists; split; [eassumption|]; split; [eassumption|]).`
-        which uses the `H14, H18, H25, ...` (anybytes) and `H15, H19, H26, ...`
-        (map.split) hypotheses in scope.
-      - After the cascade, the inner goal is the postcondition body
-        `rets = nil /\ trace_eq /\ exists a_double : projective_coords, ...`.
-        That requires the upstream `unshelve eexists; eexists (_,_,_,_,_)`
-        pattern but FIRST needs the locals-frame `list_map (get l6) nil`
-        peeled off.
-      - Identified blocker: getting the EVAR ORDER right between the cascade
-        and the final discharge — `do 3 eexists` works but binds the wrong
-        evars. Needs more careful restructuring than fits in one MCP session
-        timebox.
-      Recipe through `solve_deallocation` is solid; remaining ~20 LoC of
-      WP-frame plumbing is the open task. *)
+  (** double64_ok — discharge tail discovery (2026-04-27 MCP session #2):
+
+      EXACT GOAL STRUCTURE post-`solve_deallocation; do 3 eexists; ssplit`
+      (from MCP `Show Proof` after assertion-trick goal-dump):
+        Goal 1: map.split a26 ?m' mStack5
+        Goal 2: exists m' mStack' : map.rep,
+                  anybytes a10 40 mStack' /\
+                  map.split ?m' m' mStack' /\
+                  (exists m'0 mStack'0,
+                     anybytes a7 40 mStack'0 /\
+                     map.split m' m'0 mStack'0 /\
+                     ... 4 more layers (trT, t0, trZ, trX) ...
+                     list_map (get l6) nil
+                       (fun rets => rets = nil /\ a13 = a13 /\
+                        exists a_double : projective_coords,
+                          <m_inner =* sep> /\ <proj1_sig = feval>))
+
+      SEVEN dealloc layers total (1 outer cT + 6 inner cZ rY trT t0 trZ trX).
+      Each layer needs: provide m' = previous-mem-var, mStack' = matching
+      mStack[N], discharge anybytes via H59/H46/H39/H32/H25/H18/H14 and
+      map.split via H60/H47/H40/H33/H26/H19/H15.
+
+      Tactic pieces verified individually via MCP:
+        - `do 3 eexists; ssplit` — sets up structure, leaves Goal 1 as
+          `map.split a26 ?m' mStack5` (NOT inside an exists — direct).
+        - For Goals 2..N (each cascade layer): `eexists; eexists; ssplit;
+          [eassumption|eassumption|]` would peel ONE level — but Goal 1
+          needs to be closed FIRST (since `eassumption` won't unify
+          a26 ↔ a20 without help, the chain breaks).
+
+      OPEN: The brittle part is the goal-selector chain. The following
+      sequence WAS attempted but didn't close cleanly:
+        do 3 eexists. ssplit.
+        all: try eassumption.   (* tries to close Goal 1 with H60 *)
+        all: try (eexists; eexists; ssplit; [eassumption|eassumption|]).
+        ... etc
+
+      Likely needs explicit goal selectors (`1: ... ; 2: ...`) or a
+      hand-written Ltac that lazymatches on the cascade shape per layer.
+
+      Recipe through `solve_deallocation` is solid (closes in 30-60s wall
+      via MCP); remaining ~15-30 LoC of WP-frame plumbing is the open
+      task. Best path forward: write a `dispatch_dealloc_cascade` Ltac
+      at toplevel (before the proof) that takes the goal apart per layer
+      and applies the right hypothesis. *)
   Lemma double64_ok : program_logic_goal_for_function! double64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub

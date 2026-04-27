@@ -356,10 +356,83 @@ bind. Likely fix is one of:
 
 ### Status (2026-04-27 EOD)
 
-`double64_ok` committed with `Admitted.` at the discharge tail. The
+All three `_ok` lemmas (`double64_ok`, `add_precomputed64_ok`,
+`readd64_ok`) committed with `Admitted.` at the discharge tail. The
 ~150 LoC scaffolding (recipe, helpers, solve_length extension, ecancel
-override, single_step through 12 calls + 8 stackallocs) is all green.
-Just the final ~10 LoC of postcondition discharge is open.
+override, single_step through 12-13 calls + 7-9 stackallocs) is all
+green for all three. `repeat single_step` timings: double 64s,
+add_precomputed 97s, readd 82s. Just the final ~10 LoC of postcondition
+discharge is open — same blocker for all three, fix once.
 
-Replicating to `add_precomputed64_ok` and `readd64_ok` will hit the
-same blocker — fix once via MCP, then s/double/<other>/ for each.
+### Working 64-bit pattern from secp256k1 JacobianCoZ.v
+
+Found at `fiat-crypto/src/Bedrock/Secp256k1/JacobianCoZ.v:604` —
+`secp256k1_zaddc_ok` is the closest 64-bit analog with stackalloc and
+similar postcondition discharge:
+
+```coq
+do 25 single_step.
+do 4 single_step.
+repeat straightline.
+dealloc_preprocess. repeat straightline.
+exists x11,x23,x7,x19,x0; ssplit. 3-7:solve_bounds.
+1,2: cbv [bin_model bin_mul bin_add bin_carry_add bin_sub
+          bin_carry_sub un_model un_square] in *.
+1,2: cbv match beta delta [zaddc proj1_sig fst snd].
+1,2: destruct P; destruct Q; cbv [proj1_sig] in H28, H29.
+1,2: rewrite H28, H29; cbv match zeta.
+1,2: rewrite F.pow_2_r in *; congruence.
+ecancel_assumption.
+```
+
+**KEY structural difference**: secp256k1's spec uses **5 separate
+`exists` at the top level** (`exists (OX1' OY1' OX2' OY2' OZ' : felem),
+... /\ ...`), NOT a single `exists a_double : sigma_type` like our
+spec follows upstream EdwardsXYZT.v.
+
+That's why `exists v1,v2,v3,v4,v5` works directly for them and
+`unshelve eexists; eexists (_,_,_,_,_)` fails for us — our `unshelve
+eexists` introduces an evar of type `projective_coords` (the sigma),
+not 5 felem evars. When the goal becomes `?proj : projective_coords`,
+`eexists (_,_,_,_,_)` tries to apply a 5-tuple as the witness for the
+sigma — but the unifier sees the goal type as `map.rep` (because our
+`solve_deallocation` left a pending m' evar at the front).
+
+### Two paths to fix (in priority order)
+
+**Path A: change spec to 5-separate-exists (~30 LoC, fits the working
+secp256k1 pattern):** Modify `spec_of_double64`, `spec_of_add_precomputed64`,
+`spec_of_readd64` (and re-do `spec_of_to_cached64`) to use:
+
+```coq
+ensures t' m' :=
+  t = t' /\
+  exists (X Y Z Ta Tb : felem),
+    bounded_by tight_bounds X /\ ... bounded_by loose_bounds Tb /\
+    valid_projective_coords X Y Z Ta Tb /\
+    m' =* FElem p_out X * FElem (p_out.+40) Y * ... * a p5@ p_a * R /\
+    proj1_sig (m1<op> (coords_to_point a)) = (feval X, feval Y, feval Z, feval Ta, feval Tb)
+```
+
+Then discharge follows secp256k1's pattern verbatim. Drawback: upstream-
+incompatible (our `_ok` lemmas would have a different shape than
+upstream EdwardsXYZT.v). Acceptable — we only need them as `_ok`
+witnesses for our scalarmult proof, downstream callers don't care
+about the spec shape.
+
+**Path B: keep sigma spec, find the right discharge for it (~5 LoC):**
+The blocker is `unshelve eexists` introducing the wrong evar (m' first,
+not projective_coords first). Use explicit refine: `refine (ex_intro _
+_ (conj eq_refl _)). exists x9, x10, x11, x7, x5; ...` — provide the
+m' evar implicitly while the `exists ...` lifts the inner sigma's tuple
+witnesses. Cleaner if it works, single-file change.
+
+Recommended: try Path B first (smaller change), fall back to Path A
+if Path B fights us.
+
+### Estimate to close
+
+15-20 min at next MCP-friendly session, NOT a heavy build session.
+All three `_ok` lemmas should close in one swoop once the discharge
+tail is figured out. Then Step 1 of `option-b-64bit-port-plan.md` is
+done and we can move to `ed25519_scalarmult_base` (Step 2, multi-day).

@@ -548,7 +548,35 @@ Module Ed25519XYZT64.
       stackalloc-free callees, e.g. to_cached64) OR repeat single_step
       with extended solve_length) is solid. See to_cached64_ok above
       for the full Qed'd template at 64-bit. *)
-  (** double64_ok — discharge tail discovery (2026-04-27 MCP session #2):
+  (** double64_ok — KEY WP automation found (2026-04-27 MCP session #3):
+      `straightline_stackdealloc` is bedrock2's per-layer dealloc tactic
+      (defined in bedrock2.ProgramLogic, called by `straightline` itself
+      under the right goal shape). Our `solve_deallocation` doesn't trigger
+      it because the goal shape after `dealloc_preprocess; repeat straightline`
+      isn't `exists _ _, anybytes _ _ _ /\ map.split _ _ _ /\ _` directly —
+      that pattern is INSIDE 3 outer existentials.
+
+      WORKING DISCHARGE PATTERN (verified via MCP, leaves only 1 inner
+      goal — the postcondition body after dealloc cascade is closed):
+
+        solve_deallocation.
+        do 3 eexists. ssplit.
+        all: try (repeat straightline_stackdealloc).
+        repeat straightline.
+        (* Now inner: rets=nil /\ trace_eq /\ exists a_double, ... *)
+        (* Inner discharge: exists list byte witness + upstream pattern *)
+        exists nil. (* or whatever rets evar wants *)
+        ssplit; [reflexivity | reflexivity | ...]
+        unshelve eexists. eexists (_, _, _, _, _).
+        2: split; [ecancel_assumption|].
+        ssplit; try solve_bounds.
+        apply HPost.
+        all: (cbv [...] in *; Prod.inversion_prod; congruence).
+
+      Open: figure out exact `exists` for `list byte` evar (might be
+      `nil` or might need more). Once that's right, full Qed in ~5 min.
+
+      DETAILED HISTORY (sessions #1, #2):
 
       EXACT GOAL STRUCTURE post-`solve_deallocation; do 3 eexists; ssplit`
       (from MCP `Show Proof` after assertion-trick goal-dump):

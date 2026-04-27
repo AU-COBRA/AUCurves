@@ -380,11 +380,11 @@ Module Ed25519XYZT64.
   Ltac split_stack_at_n_in stack p n_nat n_z H :=
     rewrite <- (firstn_skipn n_nat stack) in H;
     rewrite (map.of_list_word_at_app_n _ _ _ n_z) in H by
-      (rewrite firstn_length; cbv [felem_size_in_bytes] in *; listZnWords);
+      (rewrite length_firstn; cbv [felem_size_in_bytes] in *; listZnWords);
     let D := fresh in
     unshelve(epose (sep_eq_putmany _ _ (map.adjacent_arrays_disjoint_n p (ListDef.firstn n_nat stack) (ListDef.skipn n_nat stack) n_z _ _)) as D);
-      [ rewrite firstn_length; cbv [felem_size_in_bytes] in *; listZnWords
-      | rewrite firstn_length, skipn_length; cbv [felem_size_in_bytes] in *; listZnWords
+      [ rewrite length_firstn; cbv [felem_size_in_bytes] in *; listZnWords
+      | rewrite length_firstn, length_skipn; cbv [felem_size_in_bytes] in *; listZnWords
       | seprewrite_in D H; rewrite ?skipn_skipn in H;
         bottom_up_simpl_in_hyp H; clear D ].
 
@@ -422,27 +422,64 @@ Module Ed25519XYZT64.
       end
     end.
 
-  (** ** Sub-task 1.5: _ok proofs — PAUSED at 5/7 calls in to_cached64_ok.
+  (** ** Sub-task 1.5: _ok proofs.
 
-      ============================================================
-      MARKER: paused 2026-04-27. To resume, read first:
-        AUCurves/docs/edwards-xyzt-64bit-port-findings.md
+      Recipe (verified end-to-end via MCP, full Qed):
+        1. Override ecancel_assumption with ecancel_assumption_impl
+           (the impl1-form variant that walks the FElem<->bytes Hint
+           Extern at Specs/Field.v:525).
+        2. split_output_stack out p_out N (yields N byte chunks).
+        3. For each chunk: assert length, pose proof felem_from_bytes,
+           seprewrite_in.
+        4. repeat single_step (drives all calls).
+        5. Postcondition: unshelve eexists; eexists 4-tuple; ssplit;
+           apply HPost; cbv [coords_to_point feval_*coords proj1_sig
+                            m1_prep bin_model bin_mul bin_add bin_sub] in *;
+           rewrite H<post-state hyps>; reflexivity. *)
 
-      Status:
-        - Sub-tasks 1.1 – 1.4 closed (structures, funcs, specs, helpers).
-        - Sub-task 1.5: recipe verified via MCP for 5/7 calls in
-          to_cached64_ok. Stuck on calls 6-7 (the two fe25519_mul writes
-          to p_out.+120 and the fe25519_copy to p_out.+80) due to the
-          FElem<->bytes Hint Extern at Specs/Field.v:525 not firing on
-          nested-seps form (only fires on toplevel Lift1Prop.impl1).
+  Local Ltac ecancel_assumption ::= ecancel_assumption_impl.
 
-      Suggested next angle (per docs):
-        Import [ecancel_assumption_impl] and [handle_call] from
-        [Crypto.Bedrock.Field.Interface.Compilation2.v] (line 84
-        [prove_field_compilation]). The Rupicola compilation pipeline
-        uses these to discharge identical-shape preconditions; same
-        Hint database, but the dispatching tactic might walk through
-        nested seps to fire the hint where ours can't.
-      ============================================================ *)
+  Lemma to_cached64_ok : program_logic_goal_for_function! to_cached64.
+  Proof.
+    Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
+        bin_carry_sub un_outbounds bin_outbounds].
+    repeat straightline.
+    pose proof (cached_implies_coords_valid (m1_prep (coords_to_point a))) as HPost.
+    destruct_points.
+    split_output_stack out p_out 4.
+    repeat straightline.
+    assert (HL0 : Datatypes.length (ListDef.firstn 40 out) = Z.to_nat felem_size_in_bytes)
+      by (rewrite length_firstn; change felem_size_in_bytes with 40%Z; listZnWords).
+    pose proof (felem_from_bytes p_out (ListDef.firstn 40 out) HL0) as Hiff0.
+    seprewrite_in Hiff0 H6.
+    assert (HL1 : Datatypes.length (ListDef.firstn 40 (ListDef.skipn 40 out)) = Z.to_nat felem_size_in_bytes)
+      by (rewrite length_firstn, length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
+    pose proof (felem_from_bytes (p_out.+40) (ListDef.firstn 40 (ListDef.skipn 40 out)) HL1) as Hiff1.
+    seprewrite_in Hiff1 H6.
+    assert (HL2 : Datatypes.length (ListDef.firstn 40 (ListDef.skipn 80 out)) = Z.to_nat felem_size_in_bytes)
+      by (rewrite length_firstn, length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
+    pose proof (felem_from_bytes (p_out.+80) (ListDef.firstn 40 (ListDef.skipn 80 out)) HL2) as Hiff2.
+    seprewrite_in Hiff2 H6.
+    assert (HL3 : Datatypes.length (ListDef.skipn 120 out) = Z.to_nat felem_size_in_bytes)
+      by (rewrite length_skipn; change felem_size_in_bytes with 40%Z; listZnWords).
+    pose proof (felem_from_bytes (p_out.+120) (ListDef.skipn 120 out) HL3) as Hiff3.
+    seprewrite_in Hiff3 H6.
+    repeat single_step.
+    repeat straightline.
+    lazy delta [cached_coords].
+    unshelve eexists.
+    eexists (_, _, _, _).
+    2: split; [solve_mem|].
+    ssplit; try solve_bounds.
+    apply HPost.
+    all: (cbv [coords_to_point feval_projective_coords feval_cached_coords proj1_sig
+               Readdition.m1_prep bin_model bin_mul bin_add bin_sub
+               bin_carry_add bin_carry_sub un_model un_square] in *;
+          rewrite H8, H16, H22, H27, H24, H18, H12; reflexivity).
+  Qed.
+
+  (** add_precomputed64_ok / double64_ok / readd64_ok — pending.
+      Same recipe applies; will need adjusted post-state rewrite
+      hypothesis lists per func body. *)
 
 End Ed25519XYZT64.

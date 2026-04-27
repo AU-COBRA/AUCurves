@@ -548,6 +548,27 @@ Module Ed25519XYZT64.
       stackalloc-free callees, e.g. to_cached64) OR repeat single_step
       with extended solve_length) is solid. See to_cached64_ok above
       for the full Qed'd template at 64-bit. *)
+  (** double64_ok — discharge tail discovery (2026-04-27 MCP session):
+      - The WP frame after `solve_deallocation` leaves a 7-layer cascade
+        of `exists m' mStack' : map.rep, anybytes _ _ mStack' /\
+        map.split _ m' mStack' /\ inner` (one per stackalloc, 7 of 8
+        because the first dealloc was consumed by solve_deallocation's
+        `repeat straightline`).
+      - The cascade is dispatched by:
+        `repeat (eexists; eexists; split; [eassumption|]; split; [eassumption|]).`
+        which uses the `H14, H18, H25, ...` (anybytes) and `H15, H19, H26, ...`
+        (map.split) hypotheses in scope.
+      - After the cascade, the inner goal is the postcondition body
+        `rets = nil /\ trace_eq /\ exists a_double : projective_coords, ...`.
+        That requires the upstream `unshelve eexists; eexists (_,_,_,_,_)`
+        pattern but FIRST needs the locals-frame `list_map (get l6) nil`
+        peeled off.
+      - Identified blocker: getting the EVAR ORDER right between the cascade
+        and the final discharge — `do 3 eexists` works but binds the wrong
+        evars. Needs more careful restructuring than fits in one MCP session
+        timebox.
+      Recipe through `solve_deallocation` is solid; remaining ~20 LoC of
+      WP-frame plumbing is the open task. *)
   Lemma double64_ok : program_logic_goal_for_function! double64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub

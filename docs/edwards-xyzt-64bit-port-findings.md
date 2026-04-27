@@ -258,3 +258,108 @@ levels (~1s per call, ~15s total per lemma).
 Diagnosed but not implemented. Adding the helper Ltac + threading it
 through the proof per stackalloc is straightforward (~15 LoC of helper
 Ltac + ~10 LoC per `_ok` lemma to thread).
+
+---
+
+## 10. UPDATE (2026-04-27, second pass): single_step works → discharge tail blocks
+
+### What worked
+
+The conversion-to-byte-form approach (`convert_stack_to_byte` Ltac
+helper) turned out to be unnecessary once we tracked down the root
+causes:
+
+1. **Extended `solve_length` for 2^64 bound.** `array1_iff_eq_of_list_word_at`
+   has side condition `Z.of_nat (length _) <= 2^width`. At width=32
+   `lia` materializes `2^32`; at width=64 it can't materialize `2^64`
+   and chains stall. Fix: add a branch chaining through `2^7 = 128`
+   (which trivially bounds any 40-byte stackalloc):
+
+   ```coq
+   try (match goal with
+        | |- (Z.of_nat (Datatypes.length ?l) <= 2 ^ _)%Z =>
+            apply Z.le_trans with (Z.pow 2 7);
+              [ change felem_size_in_bytes with 40 in *;
+                rewrite ?length_firstn, ?length_skipn;
+                try (match goal with
+                     | H : Datatypes.length l = _ |- _ => rewrite H
+                     end);
+                try listZnWords; try lia
+              | apply Z.pow_le_mono_r; lia ]
+        end);
+   ```
+
+2. **`first [iff1-form | impl1-form]` for `ecancel_assumption`.**
+   The `Local Ltac ecancel_assumption ::= ecancel_assumption_impl.`
+   override (needed for to_cached64_ok's nested-seps) is "much slower
+   especially when it fails" (per `SeparationLogic.v:524`). Replacing
+   the override with a `first [...]` puts the fast iff1-form first
+   and the slow impl1-form as fallback. Result: `repeat single_step`
+   for double64_ok (12 calls + 8 stackallocs, fully automated via the
+   inline `ecancel_assumption_preprocess_with` array→bytes/FElem
+   rewrites) closes in **42-97 seconds** of wall time.
+
+   ```coq
+   Local Ltac ecancel_assumption_fast :=
+     multimatch goal with
+     | |- _ ?m1 =>
+       multimatch goal with
+       | H: _ ?m2 |- _ =>
+         syntactic_unify_deltavar m1 m2;
+         refine (Lift1Prop.subrelation_iff1_impl1 _ _ _ _ _ H); clear H;
+         solve [ecancel]
+       end
+     end.
+   Local Ltac ecancel_assumption ::=
+     first [ecancel_assumption_fast | ecancel_assumption_impl].
+   ```
+
+   Note: `Require Import coqutil.Tactics.syntactic_unify` is needed
+   in the content file (the Tactic Notation doesn't propagate via
+   loader's `Require Export bedrock2.Map.SeparationLogic`).
+
+### New blocker: postcondition discharge
+
+After `Time repeat single_step. repeat straightline. solve_deallocation.`,
+the focused goal is `exists _ : map.rep, _` (a pending memory evar
+from the WP frame), NOT `exists _ : projective_coords, _` as upstream's
+32-bit version expects. Trying upstream's verbatim
+`unshelve eexists. eexists (_, _, _, _, _).` fails with:
+
+```
+Unable to unify "(?A * ?B2 * ?B1 * ?B0 * ?B)%type"
+          with "list (SortedList.parameters.key * SortedList.parameters.value)"
+```
+
+(That `list (key * value)` is the locals/memory map representation.)
+
+Tried so far (both fail same way):
+- `unshelve eexists; eexists (_, _, _, _, _)` (verbatim upstream)
+- `lazy delta [projective_coords]; unshelve eexists; eexists (_, _, _, _, _)`
+- `eexists (exist _ (_, _, _, _, _) _)` (skip unshelve, provide witness)
+
+**Path forward (MCP, fast iteration):**
+Load EdwardsXYZT64.v in MCP and dump the goal between `solve_deallocation`
+and the discharge:
+
+```coq
+solve_deallocation.
+match goal with |- ?G => idtac "GOAL:" G end. fail.
+```
+
+Inspect what `m'` evar is pending and what memory variable it should
+bind. Likely fix is one of:
+  (a) `eexists last_a_N. split; [ecancel_assumption|]` first,
+      then the projective_coords witness, OR
+  (b) Extend `solve_deallocation` to also dispatch the m' evar via
+      `repeat straightline; eexists; ecancel_assumption` style.
+
+### Status (2026-04-27 EOD)
+
+`double64_ok` committed with `Admitted.` at the discharge tail. The
+~150 LoC scaffolding (recipe, helpers, solve_length extension, ecancel
+override, single_step through 12 calls + 8 stackallocs) is all green.
+Just the final ~10 LoC of postcondition discharge is open.
+
+Replicating to `add_precomputed64_ok` and `readd64_ok` will hit the
+same blocker — fix once via MCP, then s/double/<other>/ for each.

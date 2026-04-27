@@ -20,6 +20,10 @@
    so MCP can iterate on this file's content without hitting the
    600s file-load timeout. See feedback_mcp_timeout_heavy_imports.md. *)
 Require Import Bedrock.End2End.Ed25519.EdwardsXYZT64_Imports.
+(* Bring `syntactic_unify_deltavar` Tactic Notation into scope; needed by
+   the local ecancel_assumption_fast wrapper below. Already loaded
+   transitively via bedrock2.Map.SeparationLogic. *)
+Require Import coqutil.Tactics.syntactic_unify.
 
 Module Ed25519XYZT64.
 
@@ -390,6 +394,21 @@ Module Ed25519XYZT64.
 
   Local Ltac solve_length :=
     try lia;
+    (* 64-bit-port addition: side condition from
+       array1_iff_eq_of_list_word_at is `Z.of_nat (length _) <= 2^width`
+       (= 2^64 here). lia can't materialize 2^64, so chain through 2^7
+       (= 128, easily ≥ all our 40-byte stackalloc buffers). *)
+    try (match goal with
+         | |- (Z.of_nat (Datatypes.length ?l) <= 2 ^ _)%Z =>
+             apply Z.le_trans with (Z.pow 2 7);
+               [ change felem_size_in_bytes with 40 in *;
+                 rewrite ?length_firstn, ?length_skipn;
+                 try (match goal with
+                      | H : Datatypes.length l = _ |- _ => rewrite H
+                      end);
+                 try listZnWords; try lia
+               | apply Z.pow_le_mono_r; lia ]
+         end);
     match goal with
       | |- Datatypes.length _ = _ =>
         solve [rewrite ?ws2bs_felem_length; try lia;
@@ -437,7 +456,22 @@ Module Ed25519XYZT64.
                             m1_prep bin_model bin_mul bin_add bin_sub] in *;
            rewrite H<post-state hyps>; reflexivity. *)
 
-  Local Ltac ecancel_assumption ::= ecancel_assumption_impl.
+  (* Try the fast iff1-form ecancel first; fall back to impl1-form for
+     nested-sep cases (FElem<->bytes Hint Extern at Specs/Field.v:525)
+     that the standard form can't break through. The impl1-form is
+     much slower especially when it fails (see SeparationLogic.v:524),
+     so making it the fallback keeps `repeat single_step` performant. *)
+  Local Ltac ecancel_assumption_fast :=
+    multimatch goal with
+    | |- _ ?m1 =>
+      multimatch goal with
+      | H: _ ?m2 |- _ =>
+        syntactic_unify_deltavar m1 m2;
+        refine (Lift1Prop.subrelation_iff1_impl1 _ _ _ _ _ H); clear H;
+        solve [ecancel]
+      end
+    end.
+  Local Ltac ecancel_assumption ::= first [ecancel_assumption_fast | ecancel_assumption_impl].
 
   (** Reusable: convert one output-buffer chunk in hypothesis [H] to FElem form.
       Args: [p] (chunk pointer), [bs] (chunk byte list), [H] (sep hypothesis). *)
@@ -491,7 +525,44 @@ Module Ed25519XYZT64.
           rewrite H8, H16, H22, H27, H24, H18, H12; reflexivity).
   Qed.
 
-  (** add_precomputed64_ok / double64_ok / readd64_ok — recipe verified
+  (** double64_ok — recipe verified through `Time repeat single_step`
+      (42-97s wall, 12 calls + 8 stackallocs all discharged). Postcond
+      discharge tail BLOCKED: after `solve_deallocation`, the focused
+      goal is `exists _ : map.rep, _` (a pending memory evar from the
+      WP frame), not `exists _ : projective_coords, _` as upstream's
+      32-bit version. The 5-tuple `(_, _, _, _, _)` thus unifies
+      against `map.rep` and fails with
+        Unable to unify "(?A * ?B2 * ?B1 * ?B0 * ?B)%type"
+                  with "list (SortedList.parameters.key * SortedList.parameters.value)".
+
+      Diagnosis path forward (MCP, incremental):
+        - After `solve_deallocation`, dump goal with `idtac` to see
+          the `exists m', ...` shape and what memory variable it
+          should bind to (likely the latest `a_N : map.rep`).
+        - Either: (a) provide `eexists a_N. split; [ecancel_assumption|].`
+          first, then the projective_coords witness; OR
+          (b) extend `solve_deallocation` to also dispatch the m' evar.
+
+      The recipe scaffolding (Strategy + do-3-straightline +
+      destruct_points + split_output_stack + convert_5_chunks (for
+      stackalloc-free callees, e.g. to_cached64) OR repeat single_step
+      with extended solve_length) is solid. See to_cached64_ok above
+      for the full Qed'd template at 64-bit. *)
+  Lemma double64_ok : program_logic_goal_for_function! double64.
+  Proof.
+    Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
+        bin_carry_sub un_outbounds bin_outbounds].
+    do 3 straightline.
+    pose proof (point_implies_coords_valid (m1double (coords_to_point a))) as HPost.
+    destruct_points.
+    split_output_stack out p_out 5.
+    repeat straightline.
+    Time repeat single_step.
+    repeat straightline.
+    solve_deallocation.
+  Admitted.
+
+  (** add_precomputed64_ok / readd64_ok — recipe verified
       via MCP, full build window pending.
 
       Recipe (mirrors to_cached64_ok above + upstream lines 504-584):

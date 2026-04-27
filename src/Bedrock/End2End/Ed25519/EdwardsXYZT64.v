@@ -633,6 +633,14 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
+    (* Cascade dispatch via straightline_stackdealloc (per MCP session #3-4): *)
+    do 3 eexists. ssplit.
+    all: try (repeat straightline_stackdealloc).
+    repeat straightline.
+    (* Inner postcondition: exists list byte witness then upstream pattern.
+       MCP showed exists stack5 (any 40-byte stack) is accepted but the
+       remaining ssplit + projective_coords + discharge needs more work. *)
+    exists stack5.
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

@@ -422,54 +422,27 @@ Module Ed25519XYZT64.
       end
     end.
 
-  (** ** Sub-task 1.5: _ok proofs — partial.
+  (** ** Sub-task 1.5: _ok proofs — PAUSED at 5/7 calls in to_cached64_ok.
 
-      ROOT CAUSE FOUND: upstream's [spec_of_fe25519_*] are at 32-bit width
-      (declared inside a section that fixes [Bitwidth32] + [Naive.word32]).
-      Our [to_cached64] proof needs 64-bit specs. Fix above declares fresh
-      [spec_of_fe25519_*64] Local Instances that resolve [field_representation:=frep25519]
-      from the loader (64-bit FieldRepresentation).
+      ============================================================
+      MARKER: paused 2026-04-27. To resume, read first:
+        AUCurves/docs/edwards-xyzt-64bit-port-findings.md
 
-      Verified end-to-end via MCP after the fix:
-        - [program_logic_goal_for_function! to_cached64] resolves with
-          64-bit hypotheses [spec_of_fe25519_sub64 functions], etc.
-        - [repeat straightline + destruct_points + split_output_stack] all work.
-        - [single_step] (= straightline_call + ssplit + solve_mem) succeeds
-          for the first call (fe25519_sub), introducing post-state hypothesis
-          H10 about the resulting felem.
+      Status:
+        - Sub-tasks 1.1 – 1.4 closed (structures, funcs, specs, helpers).
+        - Sub-task 1.5: recipe verified via MCP for 5/7 calls in
+          to_cached64_ok. Stuck on calls 6-7 (the two fe25519_mul writes
+          to p_out.+120 and the fe25519_copy to p_out.+80) due to the
+          FElem<->bytes Hint Extern at Specs/Field.v:525 not firing on
+          nested-seps form (only fires on toplevel Lift1Prop.impl1).
 
-      Recipe verified via MCP for 5-of-7 calls in to_cached64_ok:
-
-        Step 1: split_output_stack out p_out 4. (* yields 4 byte chunks *)
-        Step 2: pre-rewrite each chunk to FElem form via felem_from_bytes:
-          assert (HL_k : length bs_k = Z.to_nat felem_size_in_bytes) by
-            (rewrite firstn_length(, skipn_length); change felem_size_in_bytes with 40%Z; listZnWords).
-          pose proof (felem_from_bytes p_offset_k bs_k HL_k) as Hiff_k.
-          seprewrite_in Hiff_k H6.
-        Step 3: per-call: [single_step; try (use_sep_assumption; cancel;
-          cancel_seps_at_indices 0%nat 0%nat; [reflexivity|]; cancel)].
-
-      KEY DISCOVERY 1: seprewrite_in works only when the iff1 lemma is
-      pre-bound via [pose proof]. Direct seprewrite_in (felem_from_bytes ...) H6
-      fails with "No matching clauses for match" — multimatch/unshelve in
-      the seprewrite_in implementation chokes on already-discharged side
-      conditions.
-
-      KEY DISCOVERY 2: need a 64-bit spec_of_fe25519_half (declared above as
-      spec_of_fe25519_half64) — upstream's is 32-bit only.
-
-      REMAINING BLOCKER (call 6 of 7): the discharge tactic
-      [cancel_seps_at_indices 0%nat 0%nat. reflexivity.] fails on the
-      fe25519_mul writing to [p_out.+120]. After 5 calls, H6 changes shape;
-      what was originally [bs2felem (skipn 120 out)] at p_out.+120 is now
-      [x3] (the post-felem from the previous fe25519_mul side-allocate).
-      The reflexivity fails because the spec's RHS asks for the byte form
-      [(ws2bs (felem_to_list ?x))$@(p_out.+120)] but the LHS has [FElem
-      (p_out.+120) x3] — they need the felem_to_bytes Hint Extern to fire,
-      which requires the goal in [Lift1Prop.impl1] form (not Logic.eq).
-      Path forward: replace the discharger with one that uses
-      [use_sep_assumption_impl] (preserves impl1 form so the Hint Extern
-      at Specs/Field.v:525 fires) instead of [use_sep_assumption + cancel +
-      reflexivity]. *)
+      Suggested next angle (per docs):
+        Import [ecancel_assumption_impl] and [handle_call] from
+        [Crypto.Bedrock.Field.Interface.Compilation2.v] (line 84
+        [prove_field_compilation]). The Rupicola compilation pipeline
+        uses these to discharge identical-shape preconditions; same
+        Hint database, but the dispatching tactic might walk through
+        nested seps to fire the hint where ours can't.
+      ============================================================ *)
 
 End Ed25519XYZT64.

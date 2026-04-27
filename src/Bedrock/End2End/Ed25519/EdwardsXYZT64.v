@@ -516,12 +516,24 @@ Module Ed25519XYZT64.
 
       Status (2026-04-27): recipe scaffolding (straightline,
       destruct_points, split_output_stack, convert_5_chunks) verified via
-      MCP for double64_ok. The [Time repeat single_step] step exceeds the
-      300s MCP timeout AND a 15-min dune attempt did not finish either,
-      indicating the cumulative 12+ call chain is genuinely heavy at 64-bit.
+      MCP for double64_ok.
 
-      Path forward: either (a) dispatch overnight build + see if 30+ min
-      lands the Qed, or (b) optimize single_step's solve_mem inner loop
-      (bottleneck is likely ecancel walking the growing H6 chain). *)
+      ROOT CAUSE FOUND for slow single_step (NEW 2026-04-27):
+      [single_step] times out (>120s) even on the FIRST call of
+      double64_ok — not cumulative. Difference vs to_cached64_ok:
+      double has a [stackalloc] before the first call, which leaves
+      [array ptsto (word.of_Z 1) a stack] in H_current. The fe25519_square
+      spec wants [(?out$@a * ?Rr)%sep] (byte form via [$@]), but H has
+      the array form. ecancel's [Hint Extern] for FElem<->bytes doesn't
+      cover [array ptsto] <-> [$@] directly — needs an extra rewrite via
+      [array1_iff_eq_of_list_word_at] (Crypto.Bedrock.Specs.Field line ~372).
+
+      Path forward: extend the recipe to seprewrite each fresh
+      [array ptsto _ _ stack] to [stack $@ a] form via
+      [array1_iff_eq_of_list_word_at] AFTER each [straightline] that
+      triggers a stackalloc, BEFORE the next [single_step].
+
+      to_cached64_ok succeeds because [to_cached]'s body has no
+      stackalloc — all 7 calls work directly on H6's existing chunks. *)
 
 End Ed25519XYZT64.

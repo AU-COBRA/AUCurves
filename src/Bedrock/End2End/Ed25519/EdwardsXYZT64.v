@@ -637,10 +637,14 @@ Module Ed25519XYZT64.
     do 3 eexists. ssplit.
     all: try (repeat straightline_stackdealloc).
     repeat straightline.
-    (* Inner postcondition: exists list byte witness then upstream pattern.
-       MCP showed exists stack5 (any 40-byte stack) is accepted but the
-       remaining ssplit + projective_coords + discharge needs more work. *)
-    exists stack5.
+    (* Inner postcondition (MCP session #5 progress):
+       After repeat straightline, the goal has multiple chained existentials
+       before reaching `exists a_double : projective_coords`. Each `exists`
+       takes a `list byte` of length 40 (one of stack/stack0/.../stack5)
+       OR fails with shape mismatches. The exact sequence of witnesses
+       requires line-by-line MCP iteration, which is hitting diminishing
+       returns due to the goal-print being truncated at ~50K chars
+       (hypothesis env is huge). *)
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

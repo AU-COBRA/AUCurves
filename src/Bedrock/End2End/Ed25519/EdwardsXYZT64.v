@@ -720,9 +720,17 @@ Module Ed25519XYZT64.
          reflexivity.
   Qed.
 
-  (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`
-      as the abstract op and 3-word arg `(p_out p_a p_b)` (so `do 4 straightline`).
-      Same Admitted-at-discharge-tail as double64_ok per section 10 of findings. *)
+  (** add_precomputed64_ok — 8 stackallocs (YpX1, YmX1, A, B, T1, C, F, G), sigma-form post.
+      Pattern: same 8 seprewrites + 8-layer manual cascade dispatch as double64_ok,
+      then upstream sigma discharge:
+        cbv [m1add_precomputed_coordinates proj1_sig coords_to_point ...] in *;
+        unshelve eexists. eexists (_, _, _, _, _).
+        2: split; [solve_mem|].
+        ssplit; try solve_bounds.
+        apply HPost.
+        all:(Prod.inversion_prod; congruence).
+      Specific stack-address names (a, aN, ...) determined by Coq fresh-naming
+      from the proof structure; need MCP inspection to identify. *)
   Lemma add_precomputed64_ok : program_logic_goal_for_function! add_precomputed64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
@@ -738,7 +746,9 @@ Module Ed25519XYZT64.
     solve_deallocation.
   Admitted.
 
-  (** readd64_ok — same recipe, `m1_readd` op, 3-word arg `(p_out p_a p_c)`. *)
+  (** readd64_ok — 6 stackallocs (A, B, C, D, F, G), sigma-form post.
+      Same pattern as add_precomputed64_ok: 6 seprewrites + 6-layer manual cascade
+      dispatch + sigma discharge via `unshelve eexists; eexists (_,_,_,_,_)`. *)
   Lemma readd64_ok : program_logic_goal_for_function! readd64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add

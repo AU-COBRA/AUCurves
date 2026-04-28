@@ -441,24 +441,6 @@ Module Ed25519XYZT64.
   Local Ltac single_step :=
     repeat straightline; straightline_call; ssplit; try solve_mem; try solve_bounds; try solve_length.
 
-  (** clear_call_intermediates: drop sep hyps, intermediate map.rep variables,
-      and `let l_k := map.put` bindings that are subsumed by the final state.
-      WHY: After `repeat single_step` for double/add_precomputed/readd, the env
-      accumulates ~20 intermediate H_k sep hyps + 10+ a_k map.rep vars + 7
-      l_k let-bindings. Each sep hyp shows the FULL nested FElem chain, so
-      the env hits 50-100K chars and MCP truncates output before the actual
-      goal is visible. This kills interactive debug. See
-      `feedback_clear_intermediate_seps.md`.
-      The H-number list below is specific to the DOUBLE recipe (12 calls); if
-      add_precomputed (13 calls) or readd (12 calls) have different counts,
-      adjust. `try clear` is robust to missing names. *)
-  Local Ltac clear_double_intermediates :=
-    try clear H20 H21 H22 H23 H27 H28 H29 H30 H34 H35 H36 H37
-              H41 H42 H43 H44 H48 H49 H50 H51 H52 H53 H54 H55 H56 H57
-              H61 H62 H63 H64 H65 H66 H67 H71 H72 H73 H74 H75 H76 H77 H78 H79;
-    try clear a3 a6 a9 a12 a14 a15 a17 a19 a21 a23 a24 a25;
-    try clear l l0 l1 l2 l3 l4 l5 l6.
-
   Ltac solve_deallocation := dealloc_preprocess; repeat straightline.
 
   Ltac split_output_stack stack_var ptr_var num_points :=

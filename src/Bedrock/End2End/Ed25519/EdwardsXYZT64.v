@@ -441,6 +441,30 @@ Module Ed25519XYZT64.
   Local Ltac single_step :=
     repeat straightline; straightline_call; ssplit; try solve_mem; try solve_bounds; try solve_length.
 
+  (** Pattern-based context cleanup. Safe at file-load time (uses match goal,
+      not named hyps). Clears subsumed intermediate feval hyps + map.put
+      let-bindings + OLD sep hyps (those whose memory variable was already
+      split into pieces by some map.split — i.e., subsumed by a later state).
+      See feedback_clear_intermediate_seps.md. *)
+  Local Ltac clear_intermediate_seps :=
+    (* Clear intermediate feval (felem_to_list) = _ hypotheses *)
+    repeat match goal with
+    | H : feval (felem_to_list _) = _ |- _ => clear H
+    end;
+    (* Clear intermediate map.put let-bindings (l := map.put _ _ _) *)
+    repeat match goal with
+    | l := map.put _ _ _ : map.rep |- _ => clear l
+    end;
+    (* Clear OLD sep hyps: those whose memory variable appears as the
+       SECOND argument of some map.split (meaning it was the pre-alloc state
+       that's been combined with a stack into a later state). *)
+    repeat match goal with
+    | H : Separation.sep _ _ ?m |- _ =>
+        match goal with
+        | _ : map.split _ m _ |- _ => clear H
+        end
+    end.
+
   Ltac solve_deallocation := dealloc_preprocess; repeat straightline.
 
   Ltac split_output_stack stack_var ptr_var num_points :=
@@ -720,17 +744,9 @@ Module Ed25519XYZT64.
          reflexivity.
   Qed.
 
-  (** add_precomputed64_ok — 8 stackallocs (YpX1, YmX1, A, B, T1, C, F, G), sigma-form post.
-      Pattern: same 8 seprewrites + 8-layer manual cascade dispatch as double64_ok,
-      then upstream sigma discharge:
-        cbv [m1add_precomputed_coordinates proj1_sig coords_to_point ...] in *;
-        unshelve eexists. eexists (_, _, _, _, _).
-        2: split; [solve_mem|].
-        ssplit; try solve_bounds.
-        apply HPost.
-        all:(Prod.inversion_prod; congruence).
-      Specific stack-address names (a, aN, ...) determined by Coq fresh-naming
-      from the proof structure; need MCP inspection to identify. *)
+  (** add_precomputed64_ok — 8 stackallocs (YpX1, YmX1, A, B, T1, C, F, G),
+      sigma-form post. 8-layer manual cascade dispatch + upstream sigma
+      discharge with generic feval-rewrite. *)
   Lemma add_precomputed64_ok : program_logic_goal_for_function! add_precomputed64.
   Proof.
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
@@ -744,7 +760,91 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
-  Admitted.
+    (* Identify the latest sep hyp via pattern matching *)
+    match goal with
+    | H : Separation.sep _ _ ?m |- _ =>
+        tryif (match goal with _ : map.split _ m _ |- _ => idtac end) then fail
+        else rename H into Hlast
+    end.
+    (* Convert all 8 stack FElems → array_ptsto in REVERSE cascade order *)
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a x) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a2 x0) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a0 x1) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a4 x2) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a7 x3) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a10 x4) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a16 x6) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a13 x7) Hlast.
+    pose proof (ws2bs_felem_length x) as Hlen_x.
+    pose proof (ws2bs_felem_length x0) as Hlen_x0.
+    pose proof (ws2bs_felem_length x1) as Hlen_x1.
+    pose proof (ws2bs_felem_length x2) as Hlen_x2.
+    pose proof (ws2bs_felem_length x3) as Hlen_x3.
+    pose proof (ws2bs_felem_length x4) as Hlen_x4.
+    pose proof (ws2bs_felem_length x6) as Hlen_x6.
+    pose proof (ws2bs_felem_length x7) as Hlen_x7.
+    (* 8-layer cascade dispatch: G, F, C, T1, B, A, YmX1, YpX1 *)
+    unfold sep at 1 in Hlast.
+    destruct Hlast as (m13 & rest1 & Hsplit13 & Harr13 & Hrest1).
+    exists rest1, m13; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr13 as Hany13;
+        rewrite Hlen_x7 in Hany13; exact Hany13
+      | apply Properties.map.split_comm; exact Hsplit13 | ].
+    unfold sep at 1 in Hrest1.
+    destruct Hrest1 as (m16 & rest2 & Hsplit16 & Harr16 & Hrest2).
+    exists rest2, m16; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr16 as Hany16;
+        rewrite Hlen_x6 in Hany16; exact Hany16
+      | apply Properties.map.split_comm; exact Hsplit16 | ].
+    unfold sep at 1 in Hrest2.
+    destruct Hrest2 as (m10' & rest3 & Hsplit10 & Harr10 & Hrest3).
+    exists rest3, m10'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr10 as Hany10;
+        rewrite Hlen_x4 in Hany10; exact Hany10
+      | apply Properties.map.split_comm; exact Hsplit10 | ].
+    unfold sep at 1 in Hrest3.
+    destruct Hrest3 as (m7' & rest4 & Hsplit7 & Harr7 & Hrest4).
+    exists rest4, m7'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr7 as Hany7;
+        rewrite Hlen_x3 in Hany7; exact Hany7
+      | apply Properties.map.split_comm; exact Hsplit7 | ].
+    unfold sep at 1 in Hrest4.
+    destruct Hrest4 as (m4' & rest5 & Hsplit4 & Harr4 & Hrest5).
+    exists rest5, m4'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr4 as Hany4;
+        rewrite Hlen_x2 in Hany4; exact Hany4
+      | apply Properties.map.split_comm; exact Hsplit4 | ].
+    unfold sep at 1 in Hrest5.
+    destruct Hrest5 as (m0'' & rest6 & Hsplit0 & Harr0 & Hrest6).
+    exists rest6, m0''; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr0 as Hany0;
+        rewrite Hlen_x1 in Hany0; exact Hany0
+      | apply Properties.map.split_comm; exact Hsplit0 | ].
+    unfold sep at 1 in Hrest6.
+    destruct Hrest6 as (m2' & rest7 & Hsplit2 & Harr2 & Hrest7).
+    exists rest7, m2'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr2 as Hany2;
+        rewrite Hlen_x0 in Hany2; exact Hany2
+      | apply Properties.map.split_comm; exact Hsplit2 | ].
+    unfold sep at 1 in Hrest7.
+    destruct Hrest7 as (mA & rest8 & HsplitA & HarrA & Hrest8).
+    exists rest8, mA; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrA as HanyA;
+        rewrite Hlen_x in HanyA; exact HanyA
+      | apply Properties.map.split_comm; exact HsplitA | ].
+    repeat straightline.
+    (* Sigma-form discharge *)
+    unshelve eexists.
+    eexists (_, _, _, _, _).
+    2: split; [solve_mem|].
+    ssplit; try solve_bounds.
+    apply HPost.
+    all: cbv [proj1_sig m1add_precomputed_coordinates bin_model bin_add bin_mul bin_sub
+              coords_to_point feval_projective_coords precomputed_coords_to_precomputed
+              feval_precomputed_coords] in *;
+         repeat match goal with H : feval (felem_to_list _) = _ |- _ => rewrite H in * end;
+         reflexivity.
+  Qed.
 
   (** readd64_ok — 6 stackallocs (A, B, C, D, F, G), sigma-form post.
       Same pattern as add_precomputed64_ok: 6 seprewrites + 6-layer manual cascade
@@ -761,6 +861,83 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
-  Admitted.
+    (* Identify the latest sep hyp via pattern matching *)
+    match goal with
+    | H : Separation.sep _ _ ?m |- _ =>
+        tryif (match goal with _ : map.split _ m _ |- _ => idtac end) then fail
+        else rename H into Hlast
+    end.
+    (* Rename cascade addresses for clarity *)
+    match goal with |- exists _ _, Memory.anybytes ?a1 _ _ /\ map.split ?m _ _ /\
+                                    exists _ _, Memory.anybytes ?a2 _ _ /\ _ /\
+                                    exists _ _, Memory.anybytes ?a3 _ _ /\ _ /\
+                                    exists _ _, Memory.anybytes ?a4 _ _ /\ _ /\
+                                    exists _ _, Memory.anybytes ?a5 _ _ /\ _ /\
+                                    exists _ _, Memory.anybytes ?a6 _ _ /\ _ =>
+      rename a1 into ag; rename a2 into af; rename a3 into ad;
+      rename a4 into ac; rename a5 into ab; rename a6 into aa
+    end.
+    (* Convert all 6 stack FElems → array_ptsto in REVERSE cascade order *)
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) aa x0) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ab x2) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ac x4) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ad x5) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) af x7) Hlast.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ag x8) Hlast.
+    pose proof (ws2bs_felem_length x0) as Hlen_x0.
+    pose proof (ws2bs_felem_length x2) as Hlen_x2.
+    pose proof (ws2bs_felem_length x4) as Hlen_x4.
+    pose proof (ws2bs_felem_length x5) as Hlen_x5.
+    pose proof (ws2bs_felem_length x7) as Hlen_x7.
+    pose proof (ws2bs_felem_length x8) as Hlen_x8.
+    (* 6-layer cascade dispatch: G, F, D, C, B, A *)
+    unfold sep at 1 in Hlast.
+    destruct Hlast as (mG & rest1 & HsplitG & HarrG & Hrest1).
+    exists rest1, mG; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrG as HanyG;
+        rewrite Hlen_x8 in HanyG; exact HanyG
+      | apply Properties.map.split_comm; exact HsplitG | ].
+    unfold sep at 1 in Hrest1.
+    destruct Hrest1 as (mF & rest2 & HsplitF & HarrF & Hrest2).
+    exists rest2, mF; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrF as HanyF;
+        rewrite Hlen_x7 in HanyF; exact HanyF
+      | apply Properties.map.split_comm; exact HsplitF | ].
+    unfold sep at 1 in Hrest2.
+    destruct Hrest2 as (mD & rest3 & HsplitD & HarrD & Hrest3).
+    exists rest3, mD; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrD as HanyD;
+        rewrite Hlen_x5 in HanyD; exact HanyD
+      | apply Properties.map.split_comm; exact HsplitD | ].
+    unfold sep at 1 in Hrest3.
+    destruct Hrest3 as (mC & rest4 & HsplitC & HarrC & Hrest4).
+    exists rest4, mC; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrC as HanyC;
+        rewrite Hlen_x4 in HanyC; exact HanyC
+      | apply Properties.map.split_comm; exact HsplitC | ].
+    unfold sep at 1 in Hrest4.
+    destruct Hrest4 as (mB & rest5 & HsplitB & HarrB & Hrest5).
+    exists rest5, mB; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrB as HanyB;
+        rewrite Hlen_x2 in HanyB; exact HanyB
+      | apply Properties.map.split_comm; exact HsplitB | ].
+    unfold sep at 1 in Hrest5.
+    destruct Hrest5 as (mAA & rest6 & HsplitA & HarrA & Hrest6).
+    exists rest6, mAA; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrA as HanyA;
+        rewrite Hlen_x0 in HanyA; exact HanyA
+      | apply Properties.map.split_comm; exact HsplitA | ].
+    repeat straightline.
+    (* Sigma-form discharge *)
+    unshelve eexists.
+    eexists (_, _, _, _, _).
+    2: split; [solve_mem|].
+    ssplit; try solve_bounds.
+    apply HPost.
+    all: cbv [proj1_sig m1_readd bin_model bin_add bin_mul bin_sub coords_to_point
+              feval_projective_coords cached_coords_to_cached feval_cached_coords] in *;
+         repeat match goal with H : feval (felem_to_list _) = _ |- _ => rewrite H in * end;
+         reflexivity.
+  Qed.
 
 End Ed25519XYZT64.

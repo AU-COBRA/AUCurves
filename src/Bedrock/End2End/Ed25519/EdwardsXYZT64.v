@@ -729,91 +729,14 @@ Module Ed25519XYZT64.
     repeat straightline.
     exists x9, x10, x11, x7, x5; ssplit; try solve_bounds.
     all: try ecancel_assumption.
-    (* Remaining: proj_eq goal — m1double's algebraic output equals
-       (feval x9, feval x10, feval x11, feval x7, feval x5).
-       Upstream's `apply HPost; Prod.inversion_prod; rewrite F.pow_2_r in *; congruence`
-       chain doesn't quite close at 64-bit due to bin_model expansion
-       differences. Pending refinement of the algebraic chase. *)
-    (* PROVEN STATE (MCP session #7, 2026-04-28):
-       Goal at this point (now READABLE thanks to Set Printing + clear):
-         exists m' mStack', anybytes a18 40 mStack' /\ map.split a26 m' mStack' /\
-         (exists m'0 mStack'0, anybytes a10 40 mStack'0 /\ map.split m' m'0 mStack'0 /\
-          ... 7-layer cascade for cT/cZ/rY/trT/t0/trZ/trX ...
-          list_map (get l6) nil (fun rets =>
-            rets = nil /\ a13 = a13 /\
-            exists X Y Z Ta Tb : felem,
-              valid_projective_coords X Y Z Ta Tb /\
-              bounded_by tight_bounds X /\ ... /\ bounded_by loose_bounds Tb /\
-              (FElem p_out X * FElem (p_out.+40) Y * FElem (p_out.+80) Z *
-               FElem (p_out.+120) Ta * FElem (p_out.+160) Tb) * a p5@ p_a * R /\
-              proj1_sig (m1double ...) = (feval X, ..., feval Tb)))
-
-       BLOCKER: `straightline_stackdealloc` requires `array ptsto _ a stack`
-       in scope but H82 has `FElem a18 x8` etc. Need to convert via
-       `seprewrite_in (felem_to_bytearray a18 x8) H82` per layer — but ecancel
-       (in seprewrite_in) fails to find FElem a18 x8 inside the nested
-       right-associated `_ ⋆ (_ ⋆ (_ ⋆ ...))` chain in H82. Likely needs
-       `flatten_seps_in H82` first to make the chain ecancel-friendly.
-
-       Path forward: write `prep_dealloc_cascade` Ltac:
-         flatten_seps_in H82;
-         repeat (lazymatch goal with
-                 | |- exists _ _, anybytes ?a _ _ /\ _ =>
-                     match goal with H : context[FElem a ?v] |- _ =>
-                       seprewrite_in (felem_to_bytearray a v) H
-                     end
-                 end);
-         repeat straightline_stackdealloc;
-         repeat straightline.
-       Then provide felem witnesses + bounds + sep + proj_eq.
-
-       MCP session #9 (2026-04-28) — TWO BREAKTHROUGHS:
-
-       BREAKTHROUGH 1: `seprewrite_in (felem_to_bytearray addr v) H82`
-       was silently picking wrong typeclass instance. Fix: pass the
-       field_representation explicitly:
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) addr v) H82.
-
-       BREAKTHROUGH 2: Bypass `straightline_stackdealloc` (which has
-       an ecancel-reordering blocker on flat 17-element sep chains)
-       by MANUALLY destructing H82 layer-by-layer. The pattern:
-
-         (* Convert all 7 stack FElems → array_ptsto in REVERSE cascade order,
-            so a18 (cT, last cascade) ends up at the FRONT of H82 *)
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a x) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a2 x0) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a0 x4) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a4 x2) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a7 x3) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a10 x6) H82.
-         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a18 x8) H82.
-         (* Length proofs *)
-         pose proof (ws2bs_felem_length x8) as Hlen_x8.   (* ... etc for all 7 *)
-
-         (* Per-layer dispatch (×7): unfold sep at front, destruct, provide witnesses *)
-         unfold sep at 1 in H82.
-         destruct H82 as (m18 & rest1 & Hsplit18 & Harr18 & Hrest1).
-         exists rest1, m18; ssplit;
-           [ pose proof Array.array_1_to_anybytes _ _ _ Harr18 as Hany18;
-             rewrite Hlen_x8 in Hany18; exact Hany18
-           | apply Properties.map.split_comm; exact Hsplit18 | ].
-         (* Repeat for layers 2-7: a10, a7, a4, a0, a2, a *)
-
-       Then `repeat straightline; exists x9, x10, x11, x7, x5; ssplit;
-       try solve_bounds; all: try ecancel_assumption.` closes the
-       sep + bounds. Final `apply HPost; cbv [...] in *; congruence`
-       handles the proj_eq.
-
-       FULL VERIFICATION (state 649 in MCP session #9): 7 layers
-       dispatched cleanly, sep + bounds + most proj_eq goals closed,
-       1 residual goal in proj_eq congruence (suspect cleared
-       intermediate feval hyps; pending refinement).
-
-       Pattern is REUSABLE for add_precomputed64_ok (3 calls, similar
-       cascade) and readd64_ok (3 calls). Memory:
-       feedback_seprewrite_explicit_typeclass.md +
-       feedback_clear_intermediate_seps.md. *)
-  Admitted.
+    apply HPost.
+    all: cbv [bin_model bin_add bin_mul bin_sub bin_carry_add bin_carry_sub
+              un_model un_square coords_to_point feval_projective_coords
+              projective_coords proj1_sig m1double] in *;
+         rewrite ?ModularArithmeticTheorems.F.pow_2_r in *;
+         rewrite H74, H77, H80, H64, H54, H71, H51, H48, H61, H41, H34, H27, H20;
+         reflexivity.
+  Qed.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`
       as the abstract op and 3-word arg `(p_out p_a p_b)` (so `do 4 straightline`).

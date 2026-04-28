@@ -668,7 +668,72 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
-    clear_double_intermediates.   (* shrink env from 50K to 10K chars *)
+    (* MCP session #9 breakthrough: explicit field_representation for FElem→bytes *)
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a x) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a2 x0) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a0 x4) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a4 x2) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a7 x3) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a10 x6) H82.
+    seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a18 x8) H82.
+    pose proof (ws2bs_felem_length x) as Hlen_x.
+    pose proof (ws2bs_felem_length x0) as Hlen_x0.
+    pose proof (ws2bs_felem_length x4) as Hlen_x4.
+    pose proof (ws2bs_felem_length x2) as Hlen_x2.
+    pose proof (ws2bs_felem_length x3) as Hlen_x3.
+    pose proof (ws2bs_felem_length x6) as Hlen_x6.
+    pose proof (ws2bs_felem_length x8) as Hlen_x8.
+    (* 7-layer cascade dispatch via manual sep destruct *)
+    unfold sep at 1 in H82.
+    destruct H82 as (m18 & rest1 & Hsplit18 & Harr18 & Hrest1).
+    exists rest1, m18; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr18 as Hany18;
+        rewrite Hlen_x8 in Hany18; exact Hany18
+      | apply Properties.map.split_comm; exact Hsplit18 | ].
+    unfold sep at 1 in Hrest1.
+    destruct Hrest1 as (m10' & rest2 & Hsplit10 & Harr10 & Hrest2).
+    exists rest2, m10'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr10 as Hany10;
+        rewrite Hlen_x6 in Hany10; exact Hany10
+      | apply Properties.map.split_comm; exact Hsplit10 | ].
+    unfold sep at 1 in Hrest2.
+    destruct Hrest2 as (m7' & rest3 & Hsplit7 & Harr7 & Hrest3).
+    exists rest3, m7'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr7 as Hany7;
+        rewrite Hlen_x3 in Hany7; exact Hany7
+      | apply Properties.map.split_comm; exact Hsplit7 | ].
+    unfold sep at 1 in Hrest3.
+    destruct Hrest3 as (m4' & rest4 & Hsplit4 & Harr4 & Hrest4).
+    exists rest4, m4'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr4 as Hany4;
+        rewrite Hlen_x2 in Hany4; exact Hany4
+      | apply Properties.map.split_comm; exact Hsplit4 | ].
+    unfold sep at 1 in Hrest4.
+    destruct Hrest4 as (m0'' & rest5 & Hsplit0 & Harr0 & Hrest5).
+    exists rest5, m0''; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr0 as Hany0;
+        rewrite Hlen_x4 in Hany0; exact Hany0
+      | apply Properties.map.split_comm; exact Hsplit0 | ].
+    unfold sep at 1 in Hrest5.
+    destruct Hrest5 as (m2' & rest6 & Hsplit2 & Harr2 & Hrest6).
+    exists rest6, m2'; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ Harr2 as Hany2;
+        rewrite Hlen_x0 in Hany2; exact Hany2
+      | apply Properties.map.split_comm; exact Hsplit2 | ].
+    unfold sep at 1 in Hrest6.
+    destruct Hrest6 as (mA & rest7 & HsplitA & HarrA & Hrest7).
+    exists rest7, mA; ssplit;
+      [ pose proof Array.array_1_to_anybytes _ _ _ HarrA as HanyA;
+        rewrite Hlen_x in HanyA; exact HanyA
+      | apply Properties.map.split_comm; exact HsplitA | ].
+    repeat straightline.
+    exists x9, x10, x11, x7, x5; ssplit; try solve_bounds.
+    all: try ecancel_assumption.
+    (* Remaining: proj_eq goal — m1double's algebraic output equals
+       (feval x9, feval x10, feval x11, feval x7, feval x5).
+       Upstream's `apply HPost; Prod.inversion_prod; rewrite F.pow_2_r in *; congruence`
+       chain doesn't quite close at 64-bit due to bin_model expansion
+       differences. Pending refinement of the algebraic chase. *)
     (* PROVEN STATE (MCP session #7, 2026-04-28):
        Goal at this point (now READABLE thanks to Set Printing + clear):
          exists m' mStack', anybytes a18 40 mStack' /\ map.split a26 m' mStack' /\

@@ -700,7 +700,34 @@ Module Ed25519XYZT64.
                  end);
          repeat straightline_stackdealloc;
          repeat straightline.
-       Then provide felem witnesses + bounds + sep + proj_eq. *)
+       Then provide felem witnesses + bounds + sep + proj_eq.
+
+       MCP session #8 (2026-04-28) further findings:
+       - `seprewrite_in @felem_to_bytearray H82` succeeds but rewrites the
+         FIRST FElem in the chain (FElem (p_out.+80) x11) instead of the
+         intended cT/cZ/etc stack one. Need to specify the address.
+       - `seprewrite_in (felem_to_bytearray a18) H82` fails with "No
+         matching clauses for match" — the partial application doesn't
+         trigger the rewrite machinery the way upstream's
+         `dealloc_preprocess` expects.
+       - `seprewrite_in (felem_to_bytearray a18 x8) H82` fails with
+         "failed to find FElem a18 x8 in seps[...] using ecancel" — even
+         after flatten_seps_in puts H82 in flat list form. Some scope/
+         instance mismatch in ecancel's unifier.
+       - `dealloc_preprocess` itself doesn't fire because its lazymatch
+         requires `context [map.split ?m _ _]` in goal, but our goal has
+         `exists m' mStack', _ /\ map.split a26 m' mStack' /\ _` and
+         lazymatch's context apparently doesn't penetrate the outer exists.
+
+       This is a structural bedrock2-internals issue. The recipe through
+       `clear_double_intermediates` + `Set Printing` is solid; the final
+       7-LoC of cascade dispatch + inner discharge needs an upstream
+       contributor's expertise on the seprewrite/ecancel/dealloc_preprocess
+       interaction.
+
+       Committed infrastructure (commits 6c3da34 + later) is REUSABLE for
+       all future bedrock2 WP proofs in the tree, regardless of whether
+       this specific lemma closes. *)
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

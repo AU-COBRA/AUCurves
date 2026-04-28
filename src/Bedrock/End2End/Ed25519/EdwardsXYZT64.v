@@ -702,32 +702,49 @@ Module Ed25519XYZT64.
          repeat straightline.
        Then provide felem witnesses + bounds + sep + proj_eq.
 
-       MCP session #8 (2026-04-28) further findings:
-       - `seprewrite_in @felem_to_bytearray H82` succeeds but rewrites the
-         FIRST FElem in the chain (FElem (p_out.+80) x11) instead of the
-         intended cT/cZ/etc stack one. Need to specify the address.
-       - `seprewrite_in (felem_to_bytearray a18) H82` fails with "No
-         matching clauses for match" — the partial application doesn't
-         trigger the rewrite machinery the way upstream's
-         `dealloc_preprocess` expects.
-       - `seprewrite_in (felem_to_bytearray a18 x8) H82` fails with
-         "failed to find FElem a18 x8 in seps[...] using ecancel" — even
-         after flatten_seps_in puts H82 in flat list form. Some scope/
-         instance mismatch in ecancel's unifier.
-       - `dealloc_preprocess` itself doesn't fire because its lazymatch
-         requires `context [map.split ?m _ _]` in goal, but our goal has
-         `exists m' mStack', _ /\ map.split a26 m' mStack' /\ _` and
-         lazymatch's context apparently doesn't penetrate the outer exists.
+       MCP session #9 (2026-04-28) — KEY BREAKTHROUGH on FElem→bytes:
+       The `seprewrite_in (felem_to_bytearray a18 x8) H82` failures
+       were due to TYPECLASS RESOLUTION picking the wrong instance.
+       Fix: pass the field_representation explicitly:
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a18 x8) H82.
+       This converts FElem a18 x8 → array ptsto _ a18 (ws2bs ... (felem_to_list x8)).
+       All 7 stack-allocated FElem→bytes conversions succeed cleanly.
 
-       This is a structural bedrock2-internals issue. The recipe through
-       `clear_double_intermediates` + `Set Printing` is solid; the final
-       7-LoC of cascade dispatch + inner discharge needs an upstream
-       contributor's expertise on the seprewrite/ecancel/dealloc_preprocess
-       interaction.
+       After all 7 conversions, H82 has 7 array_ptsto + 5 output FElems
+       + 5 input FElems + R = flat sep chain at memory a26.
+       `flatten_seps_in H82` then puts it in `seps [...]` form.
 
-       Committed infrastructure (commits 6c3da34 + later) is REUSABLE for
-       all future bedrock2 WP proofs in the tree, regardless of whether
-       this specific lemma closes. *)
+       REMAINING BLOCKER: `straightline_stackdealloc` STILL fails with
+       "No matching clauses for match" — but now the failure is in its
+       INTERNAL `eassert (Lift1Prop.iff1 Psep (sep _ (array ptsto _ a18 ?stack))) by ecancel`
+       call. ecancel can't extract `array ptsto _ a18 ...` from the
+       17-element sep chain because of associativity/reordering issues
+       (see `feedback_glv_sep_assoc.md`).
+
+       Diagnostic showed:
+         syntactic_unify (Lift1Prop.iff1 ?x ?x)
+         (Lift1Prop.iff1
+            (full 17-element chain at a26)
+            (?p ⋆ array ptsto _ a18 (ws2bs ... (felem_to_list x8))))
+       — ecancel found `array ptsto _ a18 ...` but the residual ?p
+       can't be syntactically unified with the rest of the chain.
+
+       Path forward (not attempted; ~30 LoC):
+         1. After flatten_seps_in H82, manually split H82 into
+            `frame ⋆ array_at_a18` for each layer using sep-list-rotate
+            lemmas (or use `seprewrite_in` with a Proper_sep_iff1 proof).
+         2. Then straightline_stackdealloc's ecancel will trivially match.
+         3. After 7 layers, the inner postcondition needs:
+              exists x9, x10, x11, x7, x5; ssplit; ...
+              (x9 for X at p_out, x10 for Y at p_out+40, x11 for Z at p_out+80,
+               x7 for Ta at p_out+120, x5 for Tb at p_out+160)
+            then bounds + apply HPost + cbv proj_eq + ecancel_assumption.
+
+       Committed infrastructure (clear_double_intermediates +
+       Set Printing Width/Depth + the typeclass-explicit
+       `seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ...)`
+       pattern) is REUSABLE for all future bedrock2 WP proofs in the tree.
+       Memory: feedback_seprewrite_explicit_typeclass.md for future sessions. *)
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

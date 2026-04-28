@@ -702,49 +702,52 @@ Module Ed25519XYZT64.
          repeat straightline.
        Then provide felem witnesses + bounds + sep + proj_eq.
 
-       MCP session #9 (2026-04-28) — KEY BREAKTHROUGH on FElem→bytes:
-       The `seprewrite_in (felem_to_bytearray a18 x8) H82` failures
-       were due to TYPECLASS RESOLUTION picking the wrong instance.
-       Fix: pass the field_representation explicitly:
+       MCP session #9 (2026-04-28) — TWO BREAKTHROUGHS:
+
+       BREAKTHROUGH 1: `seprewrite_in (felem_to_bytearray addr v) H82`
+       was silently picking wrong typeclass instance. Fix: pass the
+       field_representation explicitly:
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) addr v) H82.
+
+       BREAKTHROUGH 2: Bypass `straightline_stackdealloc` (which has
+       an ecancel-reordering blocker on flat 17-element sep chains)
+       by MANUALLY destructing H82 layer-by-layer. The pattern:
+
+         (* Convert all 7 stack FElems → array_ptsto in REVERSE cascade order,
+            so a18 (cT, last cascade) ends up at the FRONT of H82 *)
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a x) H82.
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a2 x0) H82.
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a0 x4) H82.
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a4 x2) H82.
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a7 x3) H82.
+         seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a10 x6) H82.
          seprewrite_in (felem_to_bytearray (field_representation:=frep25519) a18 x8) H82.
-       This converts FElem a18 x8 → array ptsto _ a18 (ws2bs ... (felem_to_list x8)).
-       All 7 stack-allocated FElem→bytes conversions succeed cleanly.
+         (* Length proofs *)
+         pose proof (ws2bs_felem_length x8) as Hlen_x8.   (* ... etc for all 7 *)
 
-       After all 7 conversions, H82 has 7 array_ptsto + 5 output FElems
-       + 5 input FElems + R = flat sep chain at memory a26.
-       `flatten_seps_in H82` then puts it in `seps [...]` form.
+         (* Per-layer dispatch (×7): unfold sep at front, destruct, provide witnesses *)
+         unfold sep at 1 in H82.
+         destruct H82 as (m18 & rest1 & Hsplit18 & Harr18 & Hrest1).
+         exists rest1, m18; ssplit;
+           [ pose proof Array.array_1_to_anybytes _ _ _ Harr18 as Hany18;
+             rewrite Hlen_x8 in Hany18; exact Hany18
+           | apply Properties.map.split_comm; exact Hsplit18 | ].
+         (* Repeat for layers 2-7: a10, a7, a4, a0, a2, a *)
 
-       REMAINING BLOCKER: `straightline_stackdealloc` STILL fails with
-       "No matching clauses for match" — but now the failure is in its
-       INTERNAL `eassert (Lift1Prop.iff1 Psep (sep _ (array ptsto _ a18 ?stack))) by ecancel`
-       call. ecancel can't extract `array ptsto _ a18 ...` from the
-       17-element sep chain because of associativity/reordering issues
-       (see `feedback_glv_sep_assoc.md`).
+       Then `repeat straightline; exists x9, x10, x11, x7, x5; ssplit;
+       try solve_bounds; all: try ecancel_assumption.` closes the
+       sep + bounds. Final `apply HPost; cbv [...] in *; congruence`
+       handles the proj_eq.
 
-       Diagnostic showed:
-         syntactic_unify (Lift1Prop.iff1 ?x ?x)
-         (Lift1Prop.iff1
-            (full 17-element chain at a26)
-            (?p ⋆ array ptsto _ a18 (ws2bs ... (felem_to_list x8))))
-       — ecancel found `array ptsto _ a18 ...` but the residual ?p
-       can't be syntactically unified with the rest of the chain.
+       FULL VERIFICATION (state 649 in MCP session #9): 7 layers
+       dispatched cleanly, sep + bounds + most proj_eq goals closed,
+       1 residual goal in proj_eq congruence (suspect cleared
+       intermediate feval hyps; pending refinement).
 
-       Path forward (not attempted; ~30 LoC):
-         1. After flatten_seps_in H82, manually split H82 into
-            `frame ⋆ array_at_a18` for each layer using sep-list-rotate
-            lemmas (or use `seprewrite_in` with a Proper_sep_iff1 proof).
-         2. Then straightline_stackdealloc's ecancel will trivially match.
-         3. After 7 layers, the inner postcondition needs:
-              exists x9, x10, x11, x7, x5; ssplit; ...
-              (x9 for X at p_out, x10 for Y at p_out+40, x11 for Z at p_out+80,
-               x7 for Ta at p_out+120, x5 for Tb at p_out+160)
-            then bounds + apply HPost + cbv proj_eq + ecancel_assumption.
-
-       Committed infrastructure (clear_double_intermediates +
-       Set Printing Width/Depth + the typeclass-explicit
-       `seprewrite_in (felem_to_bytearray (field_representation:=frep25519) ...)`
-       pattern) is REUSABLE for all future bedrock2 WP proofs in the tree.
-       Memory: feedback_seprewrite_explicit_typeclass.md for future sessions. *)
+       Pattern is REUSABLE for add_precomputed64_ok (3 calls, similar
+       cascade) and readd64_ok (3 calls). Memory:
+       feedback_seprewrite_explicit_typeclass.md +
+       feedback_clear_intermediate_seps.md. *)
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

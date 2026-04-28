@@ -441,6 +441,24 @@ Module Ed25519XYZT64.
   Local Ltac single_step :=
     repeat straightline; straightline_call; ssplit; try solve_mem; try solve_bounds; try solve_length.
 
+  (** clear_call_intermediates: drop sep hyps, intermediate map.rep variables,
+      and `let l_k := map.put` bindings that are subsumed by the final state.
+      WHY: After `repeat single_step` for double/add_precomputed/readd, the env
+      accumulates ~20 intermediate H_k sep hyps + 10+ a_k map.rep vars + 7
+      l_k let-bindings. Each sep hyp shows the FULL nested FElem chain, so
+      the env hits 50-100K chars and MCP truncates output before the actual
+      goal is visible. This kills interactive debug. See
+      `feedback_clear_intermediate_seps.md`.
+      The H-number list below is specific to the DOUBLE recipe (12 calls); if
+      add_precomputed (13 calls) or readd (12 calls) have different counts,
+      adjust. `try clear` is robust to missing names. *)
+  Local Ltac clear_double_intermediates :=
+    try clear H20 H21 H22 H23 H27 H28 H29 H30 H34 H35 H36 H37
+              H41 H42 H43 H44 H48 H49 H50 H51 H52 H53 H54 H55 H56 H57
+              H61 H62 H63 H64 H65 H66 H67 H71 H72 H73 H74 H75 H76 H77 H78 H79;
+    try clear a3 a6 a9 a12 a14 a15 a17 a19 a21 a23 a24 a25;
+    try clear l l0 l1 l2 l3 l4 l5 l6.
+
   Ltac solve_deallocation := dealloc_preprocess; repeat straightline.
 
   Ltac split_output_stack stack_var ptr_var num_points :=
@@ -638,6 +656,8 @@ Module Ed25519XYZT64.
       and applies the right hypothesis. *)
   Lemma double64_ok : program_logic_goal_for_function! double64.
   Proof.
+    Set Printing Width 60.       (* shrink line width *)
+    Set Printing Depth 8.        (* cap nested-sep display depth *)
     Strategy -1000 [un_xbounds bin_xbounds bin_ybounds un_square bin_mul bin_add bin_carry_add bin_sub
         bin_carry_sub un_outbounds bin_outbounds].
     do 3 straightline.
@@ -648,20 +668,39 @@ Module Ed25519XYZT64.
     Time repeat single_step.
     repeat straightline.
     solve_deallocation.
-    (* Cascade dispatch + inner discharge (Path A spec, MCP session #6):
-       - straightline_stackdealloc closes the per-layer dealloc cascade
-       - exists stack5 fills a remaining list-byte evar from WP frame
-       - The remaining goal closes to 1 shelved evar via reflexivity +
-         ecancel + solve_bounds. The shelved evar is the missing X Y Z
-         Ta Tb felem witnesses — needs targeted `exists x9, x10, x11,
-         x7, x5` at the right point in the chain. *)
-    do 3 eexists. ssplit.
-    all: try (repeat straightline_stackdealloc).
-    repeat straightline.
-    exists stack5. ssplit.
-    all: try reflexivity.
-    all: try ecancel_assumption.
-    all: try solve_bounds.
+    clear_double_intermediates.   (* shrink env from 50K to 10K chars *)
+    (* PROVEN STATE (MCP session #7, 2026-04-28):
+       Goal at this point (now READABLE thanks to Set Printing + clear):
+         exists m' mStack', anybytes a18 40 mStack' /\ map.split a26 m' mStack' /\
+         (exists m'0 mStack'0, anybytes a10 40 mStack'0 /\ map.split m' m'0 mStack'0 /\
+          ... 7-layer cascade for cT/cZ/rY/trT/t0/trZ/trX ...
+          list_map (get l6) nil (fun rets =>
+            rets = nil /\ a13 = a13 /\
+            exists X Y Z Ta Tb : felem,
+              valid_projective_coords X Y Z Ta Tb /\
+              bounded_by tight_bounds X /\ ... /\ bounded_by loose_bounds Tb /\
+              (FElem p_out X * FElem (p_out.+40) Y * FElem (p_out.+80) Z *
+               FElem (p_out.+120) Ta * FElem (p_out.+160) Tb) * a p5@ p_a * R /\
+              proj1_sig (m1double ...) = (feval X, ..., feval Tb)))
+
+       BLOCKER: `straightline_stackdealloc` requires `array ptsto _ a stack`
+       in scope but H82 has `FElem a18 x8` etc. Need to convert via
+       `seprewrite_in (felem_to_bytearray a18 x8) H82` per layer — but ecancel
+       (in seprewrite_in) fails to find FElem a18 x8 inside the nested
+       right-associated `_ ⋆ (_ ⋆ (_ ⋆ ...))` chain in H82. Likely needs
+       `flatten_seps_in H82` first to make the chain ecancel-friendly.
+
+       Path forward: write `prep_dealloc_cascade` Ltac:
+         flatten_seps_in H82;
+         repeat (lazymatch goal with
+                 | |- exists _ _, anybytes ?a _ _ /\ _ =>
+                     match goal with H : context[FElem a ?v] |- _ =>
+                       seprewrite_in (felem_to_bytearray a v) H
+                     end
+                 end);
+         repeat straightline_stackdealloc;
+         repeat straightline.
+       Then provide felem witnesses + bounds + sep + proj_eq. *)
   Admitted.
 
   (** add_precomputed64_ok — same recipe as double64_ok, with `m1add_precomputed_coordinates`

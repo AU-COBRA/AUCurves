@@ -154,16 +154,29 @@ Section ScalarmultImpl64.
         post tr m' loc) ->
       cmd functions (init_u64_seq base offset vs) tr m loc post.
   Proof.
-    (* Plan: induction on [vs].
-       Base case [nil]: cmd.skip; init_bytes = [] = flat_map _ []; apply Hpost.
-       Inductive case [v :: rest]:
-         cmd.seq (cmd.store ...) (init_u64_seq base (offset+8) rest).
-         1. Peel cmd.seq.
-         2. Discharge cmd.store via Memory.store_Z and
-            SeparationMemory.uncurried_store_Z_of_sep on first 8 bytes.
-         3. Apply IH on rest at offset+8 with skipn 8 init_bytes.
-         4. Combine: LittleEndianList.le_split 8 v ++ flat_map (LittleEndianList.le_split 8) rest
-            = flat_map (LittleEndianList.le_split 8) (v::rest). *)
+    revert offset init_bytes.
+    induction vs as [|v rest IH]; intros offset init_bytes
+           Hlen Hbnd Hofs Hofs_bnd tr m loc R post Hloc Hsep Hpost.
+    - (* Base case vs = nil: cmd.skip *)
+      simpl in Hlen. destruct init_bytes; [|simpl in Hlen; discriminate].
+      simpl. apply Hpost. simpl. exact Hsep.
+    - (* Inductive case vs = v :: rest. CMD peeled to store-WP form via
+         unfold1_cmd_goal (per reference_cbv_cmd_body_overunfold.md).
+         Remaining steps (~40 LoC, admitted for now):
+         1. Provide store address [base_addr + word.of_Z offset] via dexpr+map.get.
+         2. Provide stored value [word.of_Z v] via dexpr literal.
+         3. Discharge store via SeparationMemory.uncurried_store_Z_of_sep
+            on (firstn 8 init_bytes), giving m' with le_split bytes at base+offset.
+         4. Apply IH on rest at offset+8, init_bytes := skipn 8 init_bytes.
+         5. Combine: le_split 8 v$@base+offset ⋆ flat_map ... rest$@base+offset+8
+            ↔ flat_map (le_split 8) (v::rest)$@base+offset
+            via sep_eq_of_list_word_at_app reverse + iff1ToEq trick. *)
+      simpl init_u64_seq.
+      inversion Hbnd as [|? ? Hv_bnd Hrest_bnd]; subst.
+      simpl in Hlen.
+      unfold1_cmd_goal. cbn [cmd_body].
+      unfold1_cmd_goal. cbn [cmd_body].
+      admit.
   Admitted.
 
   (** Public 2-arg API: [ed25519_scalarmult_base(out, scalar)].

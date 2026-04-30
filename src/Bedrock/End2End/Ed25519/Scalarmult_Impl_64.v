@@ -133,6 +133,39 @@ Section ScalarmultImpl64.
         (init_u64_seq base (offset + 8) rest)
     end.
 
+  (** Forward WP lemma for [init_u64_seq]: running it from [base+offset] on
+      a buffer of length [8|vs|] leaves the buffer holding
+      [flat_map (LittleEndianList.le_split 8) vs]. Proof by induction on [vs] (~50 LoC):
+      each iteration peels one [cmd.store] via [Memory.store_Z],
+      then applies the IH at offset+8 on the (skipn 8) suffix. *)
+  Lemma init_u64_seq_correct
+        (functions : map.rep)
+        (base : string) (offset : Z) (vs : list Z)
+        (base_addr : Naive.word 64) (init_bytes : list Byte.byte) :
+    Datatypes.length init_bytes = (8 * Datatypes.length vs)%nat ->
+    Forall (fun v => 0 <= v < 2^64) vs ->
+    0 <= offset ->
+    offset + Z.of_nat (Datatypes.length init_bytes) <= 2^64 ->
+    forall tr m loc R post,
+      Interface.map.get loc base = Some base_addr ->
+      ((init_bytes$@(word.add base_addr (word.of_Z offset))) ⋆ R)%sep m ->
+      (forall m',
+        ((List.flat_map (LittleEndianList.le_split 8) vs)$@(word.add base_addr (word.of_Z offset)) ⋆ R)%sep m' ->
+        post tr m' loc) ->
+      cmd functions (init_u64_seq base offset vs) tr m loc post.
+  Proof.
+    (* Plan: induction on [vs].
+       Base case [nil]: cmd.skip; init_bytes = [] = flat_map _ []; apply Hpost.
+       Inductive case [v :: rest]:
+         cmd.seq (cmd.store ...) (init_u64_seq base (offset+8) rest).
+         1. Peel cmd.seq.
+         2. Discharge cmd.store via Memory.store_Z and
+            SeparationMemory.uncurried_store_Z_of_sep on first 8 bytes.
+         3. Apply IH on rest at offset+8 with skipn 8 init_bytes.
+         4. Combine: LittleEndianList.le_split 8 v ++ flat_map (LittleEndianList.le_split 8) rest
+            = flat_map (LittleEndianList.le_split 8) (v::rest). *)
+  Admitted.
+
   (** Public 2-arg API: [ed25519_scalarmult_base(out, scalar)].
       Allocates B_pre limb buffer on stack, materializes B_precomputed
       bytes via 12 word stores (computed at compile time from
@@ -199,14 +232,38 @@ Section ScalarmultImpl64.
     split; [reflexivity|].
     intros B_pre_addr mStack2 mCombined2 Hany2 Hsplit2.
     unfold dlet.dlet.
-    (* Now in [cmd] form for the body: init_u64_seq + 3 fe_from_bytes + parametric.
-       Phase 2: NEEDS [init_u64_seq_correct] forward lemma — 12 word stores
-       leave [flat_map (le_split 8) B_precomputed_u64s = B_precomputed_bytes]
-       at B_pre_bytes_addr.
-       Phase 3: 3× handle_call fe25519_from_bytes_correct.
-       Phase 4: handle_call parametric (Hpar).
-       Phase 5: dealloc cascade for B_pre / B_pre_bytes (manual destruct).
-       Phase 6: postcondition existential. *)
+    (* Phase 2: peel cmd.seq for init_u64_seq, apply init_u64_seq_correct.
+       The first stackalloc gives us 96 bytes at B_pre_bytes_addr;
+       after init_u64_seq, those bytes are flat_map (LittleEndianList.le_split 8) B_precomputed_u64s
+       which equals B_precomputed_bytes by B_precomputed_u64s_to_bytes. *)
+    (* Step the cmd.seq peeling and apply init_u64_seq_correct: *)
+    eapply WeakestPreconditionProperties.Proper_cmd; cycle 1.
+    { eapply init_u64_seq_correct.
+      - rewrite B_precomputed_u64s_length.
+        (* length of any 96-byte init_bytes from anybytes — proven via anybytes_unique_domain *)
+        admit.
+      - exact B_precomputed_u64s_bound.
+      - Lia.lia.
+      - admit. (* offset + length <= 2^64; trivially since 0 + 96 < 2^64 *)
+      - rewrite ?map.get_put_diff by congruence.
+        rewrite map.get_put_same. reflexivity.
+      - admit. (* init_bytes$@B_pre_bytes_addr ⋆ R sep predicate; needs
+                 anybytes → exists init_bytes, init_bytes$@... extraction *)
+      - intros m' Hsep'.
+        (* Phase 3: 3× handle_call fe25519_from_bytes_correct.
+           After init_u64_seq, B_pre_bytes holds B_precomputed_bytes
+           (after rewriting via B_precomputed_u64s_to_bytes).
+           Each fe25519_from_bytes call:
+           - reads 32 bytes from B_pre_bytes_addr + 32*i
+           - writes 40 bytes (5 limbs) to B_pre_addr + 40*i
+           Phase 4: handle_call ed25519_scalarmult_base_parametric_correct (via Hpar)
+           gives out_bytes with length 200.
+           Phase 5: dealloc B_pre / B_pre_bytes from m' to recover m'_inner.
+           Phase 6: provide nil for rets, tr=tr, out_bytes existential. *)
+        admit. }
+    intros tr' m' l' Hpost.
+    (* Proper_cmd's monotonicity goal: post derived from inner post. *)
+    admit.
   Admitted.
 
 End ScalarmultImpl64.

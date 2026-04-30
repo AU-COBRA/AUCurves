@@ -184,20 +184,24 @@ Section ScalarmultImpl64.
     cbv [spec_of_ed25519_scalarmult_base].
     intros out_ptr scalar_ptr out_init scalar R tr mem
            (Hlen_out & Hlen_scalar & Hsep).
-    repeat straightline.
-    (* Plan:
+    (* Expand the [call] goal: provide argnames/retnames/body witnesses via
+       Hf, then provide the locals map and unfold to [exec] over body. *)
+    unfold call.
+    do 3 eexists. split; [exact Hf|].
+    eexists. split; [reflexivity|].
+    (* Now in [exec functions body tr mem locals post] form.
+       Plan:
        1. straightline through both stackallocs (96 + 120 bytes).
        2. Process the [coq:(init_u64_seq ...)] sequence: 12 word stores.
-          By induction over [B_precomputed_u64s] or via explicit unrolling.
-          After 12 stores, the 96-byte buffer at B_pre_bytes contains
-          exactly [B_precomputed_bytes] (proved as a forward lemma).
+          NEEDS [init_u64_seq_correct] forward lemma proved by induction
+          on the u64 list. After invocation, the 96-byte buffer at
+          B_pre_bytes contains [flat_map (le_split 8) B_precomputed_u64s
+          = B_precomputed_bytes] (via [B_precomputed_u64s_to_bytes]).
        3. handle_call fe25519_from_bytes_correct × 3 to convert each
-          32-byte chunk to 40-byte limb form. Each call needs the
-          frep25519 typeclass; established by EdwardsXYZT64_Imports.
-       4. handle_call ed25519_scalarmult_base_parametric_correct.
-       5. Postcondition: existence of out_bytes follows from the
-          parametric postcondition; length 200 is preserved through
-          the sep manipulation. *)
+          32-byte chunk to 40-byte limb form.
+       4. handle_call ed25519_scalarmult_base_parametric_correct (Hpar).
+       5. Stackalloc dealloc cascade for B_pre / B_pre_bytes.
+       6. Postcondition: existence of out_bytes from parametric postcondition. *)
   Admitted.
 
 End ScalarmultImpl64.

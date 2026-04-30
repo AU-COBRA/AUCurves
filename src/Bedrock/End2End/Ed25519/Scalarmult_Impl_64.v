@@ -179,6 +179,12 @@ Section ScalarmultImpl64.
          EdwardsXYZT64_Imports → Field25519_64. *)
       spec_of_ed25519_scalarmult_base functions.
   Proof.
+    intros functions Hf Hpar.
+    cbv [program_logic_goal_for]; intros.
+    cbv [spec_of_ed25519_scalarmult_base].
+    intros out_ptr scalar_ptr out_init scalar R tr mem
+           (Hlen_out & Hlen_scalar & Hsep).
+    repeat straightline.
     (* Plan:
        1. straightline through both stackallocs (96 + 120 bytes).
        2. Process the [coq:(init_u64_seq ...)] sequence: 12 word stores.

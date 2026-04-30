@@ -35,22 +35,46 @@ Section BPrecomputed64.
 
   (** Pack the 96-byte LE encoding into 12 u64 values for cheaper
       bedrock2 materialization (12 word stores vs 96 byte stores).
-      Each u64 holds 8 consecutive bytes in little-endian order. *)
+      Each u64 holds 8 consecutive bytes in little-endian order.
+
+      Defined symbolically via [List.chunk] so the round-trip lemma below
+      can use [flat_map_le_split_combine_chunk] directly. *)
   Definition B_precomputed_u64s : list Z :=
-    Eval vm_compute in
-      List.map (fun i =>
-        le_combine (List.firstn 8 (List.skipn (i * 8) B_precomputed_bytes)))
-        (List.seq 0 12).
+    List.map le_combine (List.chunk 8 B_precomputed_bytes).
 
   Lemma B_precomputed_u64s_length : Datatypes.length B_precomputed_u64s = 12%nat.
-  Proof. vm_compute. reflexivity. Qed.
+  Proof.
+    unfold B_precomputed_u64s.
+    rewrite List.length_map, List.length_chunk by Lia.lia.
+    rewrite B_precomputed_bytes_length. reflexivity.
+  Qed.
 
-  (** TODO: [B_precomputed_u64s_to_bytes : flat_map (le_split 8) B_precomputed_u64s = B_precomputed_bytes]
-      and [B_precomputed_u64s_bound : Forall (fun v => 0 <= v < 2^64) ...].
-      Both are needed for [ed25519_scalarmult_base_correct] (R10.E). vm_compute
-      and native_compute on these took >8 min in iter 47 — likely due to F.div
-      symbolic re-traversal in the closed-form B_precomputed_bytes. The faster
-      path: prove abstractly via le_combine/le_split round-trip + length, NOT
-      by full reflexivity-style computation. *)
+  (** Round-trip: re-splitting reconstructs B_precomputed_bytes. Used by
+      [ed25519_scalarmult_base_correct] (R10.E) to bridge between
+      [init_u64_seq B_precomputed_u64s] (writes le_split bytes) and the
+      byte form expected by [fe25519_from_bytes]. *)
+  Lemma B_precomputed_u64s_to_bytes :
+    List.flat_map (le_split 8) B_precomputed_u64s = B_precomputed_bytes.
+  Proof.
+    unfold B_precomputed_u64s.
+    apply ArrayCasts.flat_map_le_split_combine_chunk; [Lia.lia |].
+    rewrite B_precomputed_bytes_length. reflexivity.
+  Qed.
+
+  (** Each u64 in [B_precomputed_u64s] fits in [2^64] — needed as a
+      [Forall] precondition for [init_u64_seq_correct]. *)
+  Lemma B_precomputed_u64s_bound :
+    List.Forall (fun v => 0 <= v < 2^64) B_precomputed_u64s.
+  Proof.
+    unfold B_precomputed_u64s.
+    apply List.Forall_map.
+    pose proof (List.Forall_chunk_length_le 8 ltac:(Lia.lia) B_precomputed_bytes) as Hchunks.
+    eapply List.Forall_impl; [|exact Hchunks].
+    intros bs [Hpos Hle].
+    pose proof (le_combine_bound bs) as Hbnd.
+    split; [Lia.lia |].
+    apply Z.lt_le_trans with (1 := proj2 Hbnd).
+    apply Z.pow_le_mono_r; [Lia.lia |]. Lia.lia.
+  Qed.
 
 End BPrecomputed64.

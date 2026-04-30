@@ -45,4 +45,12 @@ Section BPrecomputed64.
   Lemma B_precomputed_u64s_length : Datatypes.length B_precomputed_u64s = 12%nat.
   Proof. vm_compute. reflexivity. Qed.
 
+  (** TODO: [B_precomputed_u64s_to_bytes : flat_map (le_split 8) B_precomputed_u64s = B_precomputed_bytes]
+      and [B_precomputed_u64s_bound : Forall (fun v => 0 <= v < 2^64) ...].
+      Both are needed for [ed25519_scalarmult_base_correct] (R10.E). vm_compute
+      and native_compute on these took >8 min in iter 47 — likely due to F.div
+      symbolic re-traversal in the closed-form B_precomputed_bytes. The faster
+      path: prove abstractly via le_combine/le_split round-trip + length, NOT
+      by full reflexivity-style computation. *)
+
 End BPrecomputed64.

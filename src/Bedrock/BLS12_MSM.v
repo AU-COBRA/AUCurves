@@ -3426,9 +3426,101 @@ Section PippengerSpec.
               rewrite map.get_put_same. reflexivity. }
             cbv [Semantics.interp_binop]. reflexivity. }
           split.
-          { (* limb < 3 TRUE inner branch: 3 cmd.sets *)
+          { (* TRUE-inner: cross-limb fired + limb < 3, 3 cmd.sets path.
+               (Original comment said `TRUE` here — actually correct.) *)
             intro Hlimb_lt.
-            admit. }
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            (* cmd.set "load_off2" := (limb + 1) * 8 *)
+            peel_cmd_set lo2_w
+              (word.mul (word.add limb_w (word.of_Z 1)) (word.of_Z 8)).
+            (* cmd.set "load_addr2" := scalar_ptr + load_off2 *)
+            peel_cmd_set la2_w (word.add sp_w lo2_w).
+            (* Establish limb_nat < 3 (so limb_nat+1 in [1,3], a valid limb index). *)
+            assert (Hlimb_lt3 : (limb_nat < 3)%nat).
+            { destruct (word.ltu limb_w (word.of_Z 3 : word)) eqn:Hltu in Hlimb_lt.
+              - rewrite word.unsigned_ltu in Hltu.
+                rewrite word.unsigned_of_Z_nowrap in Hltu
+                  by (rewrite Hwidth64; Lia.lia).
+                apply Z.ltb_lt in Hltu.
+                pose proof (word.unsigned_range limb_w) as Hlr.
+                subst limb_nat.
+                apply Nat2Z.inj_lt. rewrite Z2Nat.id by Lia.lia.
+                change (Z.of_nat 3) with 3.
+                rewrite Hlimb_unsigned in Hltu. exact Hltu.
+              - rewrite word.unsigned_of_Z_nowrap in Hlimb_lt
+                  by (rewrite Hwidth64; Lia.lia).
+                contradiction Hlimb_lt. reflexivity. }
+            assert (Hlimb_succ_bound : ((limb_nat + 1) < scalar_limbs)%nat)
+              by (cbv [scalar_limbs]; Lia.lia).
+            (* Apply ScalarsArray_load_limb for limb_nat+1. *)
+            pose proof (ScalarsArray_load_limb scalars_p scalars n (limb_nat + 1)
+                          (array (FElem (Some tight_bounds))
+                             (word.of_Z felem_size_in_bytes) buckets_x bs_x'
+                           * array (FElem (Some tight_bounds))
+                               (word.of_Z felem_size_in_bytes) buckets_y bs_y'
+                           * array (FElem (Some tight_bounds))
+                               (word.of_Z felem_size_in_bytes) buckets_z bs_z'
+                           * G1Array3 ppx ppy ppz px py pz * R)%sep
+                          m1 Hn_lt Hlimb_succ_bound) as Hload2_pre.
+            assert (Hla2_eq : la2_w =
+                      word.add scalars_p
+                        (word.of_Z (Z.of_nat n * 32 +
+                                    Z.of_nat (limb_nat + 1) * 8))).
+            { subst la2_w lo2_w sp_w. rewrite Hlimb_w_eq.
+              clear - Hwidth64 word_ok BW Hiw'_unsigned Hn_small Hlimb_small.
+              ZnWords. }
+            assert (Hload2 : Memory.load access_size.word m1 la2_w =
+                            Some (nth (limb_nat + 1) (nth n scalars [])
+                                      (word.of_Z 0))).
+            { rewrite Hla2_eq. apply Hload2_pre. ecancel_assumption. }
+            (* cmd.set "val" := val | (slu (load la2) (64 - shift)) *)
+            cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body].
+            fold WeakestPrecondition.cmd.
+            eexists. split.
+            { cbv [WeakestPrecondition.dexpr WeakestPrecondition.expr
+                   WeakestPrecondition.expr_body WeakestPrecondition.literal
+                   WeakestPrecondition.get WeakestPrecondition.load dlet.dlet].
+              eexists; split.
+              { (* get "val" — diff through load_addr2, load_off2, then put_same *)
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              eexists; split.
+              { (* get "load_addr2" — outermost *)
+                rewrite map.get_put_same. reflexivity. }
+              eexists; split.
+              { (* Memory.load la2 *)
+                exact Hload2. }
+              eexists; split.
+              { (* get "shift" — diff through load_addr2, load_off2, val,
+                   load_addr1, load_off1, scalar_ptr, mask; then put_same *)
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_diff by congruence.
+                rewrite map.get_put_same. reflexivity. }
+              cbv [Semantics.interp_binop]. reflexivity. }
+            cbv [dlet.dlet].
+            set (val_combined :=
+              word.or val1_w
+                (word.slu (nth (limb_nat + 1) (nth n scalars []) (word.of_Z 0))
+                          (word.sub (word.of_Z 64) shift_w)) : word.rep).
+            (* val_combined-based body for cmd.set "idx" + idx-cond + close inv:
+               structurally identical to FALSE-inner (the second `{` block
+               above) but with `val_combined` substituted for `val1_w` in
+               the cmd.set "idx" peel and the `Hval1_unsigned` derivation.
+               The Hval1_unsigned proof needs:
+                 word.unsigned val_combined =
+                   Z.lor v1 (Z.shiftl v_succ (64 - shift))
+               via word.unsigned_or, word.unsigned_slu_nowrap (with side
+               condition (64 - shift) < width = 64), and the cross+limb<3
+               reductions of the get_window expression.  ~50-100 LoC. *)
+            admit.
+          }
           { (* FALSE-inner: cmd.skip on the inner cmd.cond when limb >= 3.
                WP delivers `=0 ->` here; intro gives `Hlimb_eq3 : ... = 0`. *)
             intro Hlimb_eq3.

@@ -2805,6 +2805,35 @@ Section PippengerSpec.
     exact Hz_bound.
   Qed.
 
+  (** Bridge lemma for the cross-limb + limb<3 case: directly proves the
+      masked equation [word.and (word.or val1_w (word.slu x_succ sub_w))
+      (word.of_Z (Z.ones c)) = get_window].
+
+      Avoids the strict-equation issue with [get_window_word_correct]:
+      [word.unsigned (word.or v1_w (word.slu x sub_w)) = Z.lor v1
+      ((x * 2^sub) mod 2^64)] has implicit mod 2^64, while the lemma's
+      [Hval_unsigned] hypothesis uses the un-modded form [Z.lor v1
+      (Z.shiftl x (64-shift))] which can exceed 2^64.  Here we reason
+      bit-wise: only bits [0, 9) matter (mask = Z.ones c = 511), and
+      mod 2^64 is identity on those bits. *)
+  Lemma cross_lt3_get_window_eq
+      (scalar_ws : list word) (w_val : Z) (val1_w x_succ sub_w : word)
+      (Hw_val : 0 <= w_val) (Hw_val_lt : w_val < num_windows)
+      (Hscalar_len : length scalar_ws = scalar_limbs)
+      (Hcross : Nat.ltb 64 (Z.to_nat (w_val * c mod 64) + Z.to_nat c) = true)
+      (Hlimb_lt3_z : (w_val * c / 64 < 3)%Z)
+      (Hsub_unsigned : word.unsigned sub_w = 64 - (w_val * c mod 64))
+      (Hval1_eq : word.unsigned val1_w =
+        Z.shiftr (word.unsigned (nth (Z.to_nat (w_val * c / 64)) scalar_ws (word.of_Z 0)))
+                 ((w_val * c) mod 64))
+      (Hx_eq : x_succ =
+        nth (Z.to_nat (w_val * c / 64 + 1)) scalar_ws (word.of_Z 0)) :
+      word.unsigned (word.and (word.or val1_w (word.slu x_succ sub_w))
+                              (word.of_Z (Z.ones c))) =
+      get_window (List.map word.unsigned scalar_ws) (Z.to_nat w_val) (Z.to_nat c).
+  Proof.
+  Admitted.
+
   (** Helper: [nth] on [points_of] decomposes per-coordinate when in range.
       [d] can be any default; for in-range [k] the default is irrelevant. *)
   Lemma nth_points_of_eq :

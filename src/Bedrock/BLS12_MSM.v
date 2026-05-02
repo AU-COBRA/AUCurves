@@ -2832,7 +2832,109 @@ Section PippengerSpec.
                               (word.of_Z (Z.ones c))) =
       get_window (List.map word.unsigned scalar_ws) (Z.to_nat w_val) (Z.to_nat c).
   Proof.
-  Admitted.
+    unfold get_window.
+    rewrite word.unsigned_and.
+    rewrite !word.unsigned_of_Z.
+    unfold word.wrap.
+    assert (Hwidth_ge9 : 9 <= width) by (rewrite Hwidth64; lia).
+    assert (Hones_small : Z.ones c mod 2 ^ width = Z.ones c).
+    { apply Z.mod_small; cbv [c]; change (Z.ones 9) with 511; split;
+        [lia | apply Z.lt_le_trans with (2 ^ 9); [lia | apply Z.pow_le_mono_r; lia]]. }
+    rewrite Hones_small.
+    assert (Hland_small : forall y, Z.land y (Z.ones c) mod 2 ^ width = Z.land y (Z.ones c)).
+    { intro y; cbv [c]; change (Z.ones 9) with 511.
+      apply Z.mod_small; split.
+      - apply Z.land_nonneg; right; lia.
+      - apply Z.le_lt_trans with 511.
+        + change 511 with (Z.ones 9). rewrite Z.land_ones by lia.
+          pose proof (Z.mod_pos_bound y (2 ^ 9) ltac:(lia)).
+          change (Z.ones 9) with 511 in *. lia.
+        + apply Z.lt_le_trans with (2 ^ 9); [lia | apply Z.pow_le_mono_r; lia]. }
+    rewrite Hland_small.
+    change (Z.to_nat c) with 9%nat.
+    change (Z.of_nat 9) with 9.
+    set (limb := (w_val * c / 64)%Z).
+    set (shift := (w_val * c mod 64)%Z).
+    assert (Hshift_nonneg : 0 <= shift) by (subst shift; apply Z.mod_pos_bound; lia).
+    assert (Hshift_lt64 : shift < 64) by (subst shift; apply Z.mod_pos_bound; lia).
+    assert (Hlimb_nonneg : 0 <= limb) by (subst limb; apply Z_div_nonneg_nonneg; lia).
+    assert (Hnat_lim : (Z.to_nat w_val * 9 / 64 = Z.to_nat limb)%nat).
+    { subst limb; cbv [c]; rewrite Z2Nat.inj_div by lia;
+        rewrite Z2Nat.inj_mul by lia; reflexivity. }
+    assert (Hnat_sh : (Z.to_nat w_val * 9 mod 64 = Z.to_nat shift)%nat).
+    { subst shift; cbv [c]; rewrite Z2Nat.inj_mod by lia;
+        rewrite Z2Nat.inj_mul by lia; reflexivity. }
+    rewrite Hnat_lim, Hnat_sh.
+    assert (Hcross_true : (64 <? Z.to_nat shift + 9)%nat = true).
+    { pose proof Hcross as Hc. cbv [c] in Hc.
+      rewrite Z2Nat.inj_mod in Hc by lia.
+      rewrite Z2Nat.inj_mul in Hc by lia.
+      change (Z.to_nat 9) with 9%nat in Hc.
+      change (Z.to_nat 64) with 64%nat in Hc.
+      rewrite Hnat_sh in Hc. exact Hc. }
+    rewrite Hcross_true.
+    assert (Hlimb_lt_len : (Z.to_nat limb < length scalar_ws)%nat).
+    { rewrite Hscalar_len. cbv [scalar_limbs].
+      apply Nat2Z.inj_lt. rewrite Z2Nat.id by lia.
+      cbv [c] in Hlimb_lt3_z. lia. }
+    assert (Hlimb1_lt_len : (Z.to_nat limb + 1 < length scalar_ws)%nat).
+    { rewrite Hscalar_len. cbv [scalar_limbs].
+      apply Nat2Z.inj_lt. rewrite Nat2Z.inj_add. rewrite Z2Nat.id by lia.
+      cbv [c] in Hlimb_lt3_z. simpl. lia. }
+    rewrite (List.nth_error_nth' (List.map word.unsigned scalar_ws) 0
+               ltac:(rewrite List.length_map; exact Hlimb1_lt_len)).
+    rewrite (List.nth_error_nth' (List.map word.unsigned scalar_ws) 0
+               ltac:(rewrite List.length_map; exact Hlimb_lt_len)).
+    assert (Hd_eq : (0 : Z) = @word.unsigned width word (word.of_Z 0)).
+    { rewrite word.unsigned_of_Z. unfold word.wrap.
+      rewrite Z.mod_0_l by (apply Z.pow_nonzero; lia). reflexivity. }
+    rewrite Hd_eq.
+    rewrite (List.map_nth (@word.unsigned width word) scalar_ws
+               (word.of_Z 0) (Z.to_nat limb + 1)).
+    rewrite (List.map_nth (@word.unsigned width word) scalar_ws
+               (word.of_Z 0) (Z.to_nat limb)).
+    rewrite Z2Nat.id by lia.
+    assert (H64sh : Z.of_nat (64 - Z.to_nat shift) = 64 - shift).
+    { rewrite Nat2Z.inj_sub by lia. rewrite Z2Nat.id by lia. reflexivity. }
+    rewrite H64sh.
+    assert (Hlimb_eq : Z.to_nat limb = Z.to_nat (w_val * c / 64))
+      by (subst limb; reflexivity).
+    assert (Hlimb1_eq : (Z.to_nat limb + 1)%nat = Z.to_nat (w_val * c / 64 + 1)).
+    { rewrite Z2Nat.inj_add by lia. subst limb. reflexivity. }
+    rewrite Hlimb1_eq. rewrite Hlimb_eq.
+    rewrite <- Hx_eq.
+    subst shift.
+    rewrite <- Hval1_eq.
+    change (Z.ones 9) with (Z.ones c).
+    rewrite word.unsigned_or_nowrap.
+    assert (Hshift_gt55 : (w_val * c) mod 64 > 55).
+    { apply Nat.ltb_lt in Hcross_true.
+      apply Nat2Z.inj_lt in Hcross_true.
+      change (Z.of_nat 64) with 64 in Hcross_true.
+      rewrite Nat2Z.inj_add in Hcross_true.
+      rewrite Z2Nat.id in Hcross_true by lia.
+      change (Z.of_nat 9) with 9 in Hcross_true. lia. }
+    rewrite word.unsigned_slu
+      by (rewrite Hsub_unsigned; rewrite Hwidth64; lia).
+    rewrite Hsub_unsigned.
+    unfold word.wrap.
+    assert (Htwo64 : 2 ^ width = 2 ^ 64) by (rewrite Hwidth64; reflexivity).
+    rewrite Htwo64.
+    cbv [c]. change (Z.ones 9) with 511. change 511 with (Z.ones 9).
+    rewrite !Z.land_ones by lia.
+    apply Z.bits_inj. intro k.
+    destruct (Z.le_gt_cases 0 k) as [Hk_ge | Hk_lt].
+    2: { rewrite !Z.testbit_neg_r by lia. reflexivity. }
+    rewrite !Z.testbit_mod_pow2 by lia.
+    rewrite !Z.lor_spec.
+    destruct (k <? 9) eqn:Hk9.
+    2: reflexivity.
+    apply Z.ltb_lt in Hk9.
+    f_equal.
+    rewrite Z.testbit_mod_pow2 by lia.
+    assert (Hk64 : k <? 64 = true) by (apply Z.ltb_lt; lia).
+    rewrite Hk64. reflexivity.
+  Qed.
 
   (** Helper: [nth] on [points_of] decomposes per-coordinate when in range.
       [d] can be any default; for in-range [k] the default is irrelevant. *)

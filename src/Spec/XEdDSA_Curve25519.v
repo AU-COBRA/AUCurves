@@ -10,10 +10,13 @@ From Stdlib Require Import ZArith.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Algebra.Hierarchy.
+Require Import Crypto.Algebra.Field.
 Require Import Crypto.Algebra.ScalarMult.
 Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Crypto.Util.Decidable.
 Require Import Spec.XEdDSA.
+
+Local Existing Instance Curve25519.field.
 
 Local Notation p := Curve25519.p.
 Local Notation l := Curve25519.l.
@@ -40,19 +43,12 @@ Definition Scalar := F l.
     (coordinate pair + proof of on-curve). *)
 Definition point_eq (P Q : Point) : Prop := P = Q.
 
-(** Scalar multiplication: repeated doubling via [scalarmult_ref]. *)
 (** Edwards point negation: (x, y) ↦ (-x, y). *)
 Program Definition opp_25519 (P : Point) : Point :=
   exist _ (F.opp (fst (proj1_sig P)), snd (proj1_sig P)) _.
 Next Obligation.
   destruct P as [[x y] H]. simpl.
-  (* (-x)*(-x) = x*x in any ring *)
-  pose proof (Hierarchy.field_commutative_ring (field := field_25519)) as Hcr.
-  rewrite (@Algebra.Ring.mul_opp_l _ _ _ _ _ _ _ _ Hcr x (F.opp x)).
-  rewrite (@Algebra.Ring.mul_opp_r _ _ _ _ _ _ _ _ Hcr x x).
-  rewrite (@Hierarchy.Group.inv_inv _ _ _ _
-             (@Hierarchy.Ring.ring_group _ _ _ _ _ _ _ _ Hcr)).
-  exact H.
+  fsatz.
 Qed.
 
 (** Scalar multiplication via repeated doubling (Z-indexed). *)
@@ -96,7 +92,20 @@ Section WithMsg.
              (point_add (sig_R sig) (scalar_mul e A)).
 
   (** Correctness: honest signatures verify.
-      Standard Schnorr: s·G = (r + e*a)·G = r·G ⊕ e·(a·G) = R ⊕ e·A. *)
+      Standard Schnorr: s·G = (r + e*a)·G = r·G ⊕ e·(a·G) = R ⊕ e·A.
+
+      The two hypotheses below are FALSE for arbitrary [P] in the full
+      Edwards25519 group (cofactor 8): scalar reduction modulo [l] only
+      respects group law on the prime-order subgroup ⟨[basepoint]⟩.
+      They DO hold when [P = basepoint] (or any prime-order subgroup
+      element). Discharging requires:
+        (i)  basepoint-restricted statements;
+        (ii) the order axiom [l · basepoint = 0] (computationally true,
+             provable via Edwards–Montgomery transport from
+             [Spec.Test.X25519.order_basepoint]);
+        (iii) [ScalarMult.scalarmult_mod_order] +
+             [ScalarMult.scalarmult_add_l] / [scalarmult_assoc].
+      See [project_signal_x25519.md] for the complete refactor sketch. *)
   Hypothesis scalar_mul_add :
     forall n m P, point_eq (scalar_mul (F.add n m) P)
                            (point_add (scalar_mul n P) (scalar_mul m P)).

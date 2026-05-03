@@ -2,10 +2,12 @@
 -R src/Implementations Implementations
 -R src/Bedrock Bedrock
 -R src/Hacspec Hacspec
+-R src/Spec Spec
 -R _build/default/src/Theory Theory
 -R _build/default/src/Implementations Implementations
 -R _build/default/src/Bedrock Bedrock
 -R _build/default/src/Hacspec Hacspec
+-R _build/default/src/Spec Spec
 -Q _build/default/fiat-crypto/src Crypto
 -Q fiat-crypto/src Crypto
 

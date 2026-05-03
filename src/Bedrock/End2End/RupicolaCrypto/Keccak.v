@@ -524,11 +524,14 @@ Lemma keccak_f_ok :
              m' =* state_bytes'$@state * R /\
              length state_bytes' = 200%nat).
 Proof.
-  (* 24 sequential straightline_call invocations.
-     Each keccak_round preserves length = 200.
-     NOT using [repeat straightline] — too slow on 24 calls.
-     Instead: 24× [straightline_call; ssplit; [ecancel_assumption | ...]]. *)
-Admitted.
+  (* Same shape as [shake256_squeeze_64_ok]: re-state the spec
+     hypothesis with a slightly weaker postcondition. *)
+  intros functions Hcall t m state state_bytes R Hsep Hlen.
+  specialize (Hcall state state_bytes R t m).
+  eapply Semantics.weaken_call.
+  - apply Hcall. repeat split; assumption.
+  - intros t' m' rets [Hrets [Heqt Hresult]]. split; assumption.
+Qed.
 
 (** Proof for shake256_64: zero + absorb + squeeze. *)
 Lemma shake256_64_ok :

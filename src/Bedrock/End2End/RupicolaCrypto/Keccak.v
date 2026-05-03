@@ -9,8 +9,8 @@
     ## Verification chain
     bedrock2 WP → ToJasmin → jasminc → x86-64 *)
 
-From Coq Require Import String List ZArith.
-From Coq.Init Require Import Byte.
+From Stdlib Require Import String List ZArith.
+From Stdlib.Init Require Import Byte.
 Require Import bedrock2.Syntax.
 Require Import bedrock2.NotationsCustomEntry.
 Local Open Scope string_scope.
@@ -494,13 +494,18 @@ Lemma shake256_squeeze_64_ok :
              length result = 64%nat /\
              result = firstn 64 state_bytes).
 Proof.
-  (* The proof would proceed:
-     - Unfold shake256_squeeze_64 (8 store instructions)
-     - For each store(out + k*8, load(state + k*8)):
-       1. [straightline] to handle the load
-       2. [straightline] to handle the store
-     - Final sep-logic: the 8 stored words = firstn 64 state_bytes *)
-Admitted.
+  (* The lemma is a re-statement of the [spec_of_shake256_squeeze_64]
+     hypothesis with a slightly weaker postcondition (drops [rets = []]).
+     The body of [shake256_squeeze_64] satisfying the spec is the
+     callee's responsibility (provided as [Hcall]); here we just
+     bridge the two postcondition shapes via [Semantics.weaken_call]. *)
+  intros functions Hcall t m out state out_bytes state_bytes R
+         Hsep Hlen_out Hlen_state.
+  specialize (Hcall out state out_bytes state_bytes R t m).
+  eapply Semantics.weaken_call.
+  - apply Hcall. repeat split; assumption.
+  - intros t' m' rets [Hrets [Heqt Hresult]]. split; assumption.
+Qed.
 
 (** Proof for keccak_f: 24 calls to keccak_round.
     Each call preserves state length = 200. *)

@@ -393,8 +393,15 @@ Definition shake256_64 := func! (out, msg, msg_len) {
 Require Import bedrock2.WeakestPrecondition bedrock2.Semantics bedrock2.ProgramLogic.
 Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
 Require Import bedrock2.Array bedrock2.Scalars.
-Require Import bedrock2.FE310CSemantics.
-Require Import coqutil.Word.Bitwidth32.
+(* Keccak permutation requires 64-bit lanes — bodies use shifts
+   << $44, << $63 and 64-bit literals like 9223372036854808714.
+   The earlier FE310CSemantics + Bitwidth32 imports were a clear
+   bug: under 32-bit semantics each [store(out, load(state))] pair
+   copies 4 bytes (not 8), so the [length result = 64 /\ result =
+   firstn 64 state_bytes] post is provably impossible.  64-bit is
+   the correct target for Keccak. *)
+Require Import bedrock2.BasicC64Semantics.
+Require Import coqutil.Word.Bitwidth64.
 Require Import coqutil.Word.Interface.
 Require Import coqutil.Word.Naive.
 Require Import coqutil.Map.Interface coqutil.Map.SortedListWord.

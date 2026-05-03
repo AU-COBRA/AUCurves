@@ -14,6 +14,21 @@
  *             [M.scalarmult (Z.pos l) M.B ~ M.zero] under M.eq.
  *  - Phase 5: transport through [M.of_Edwards] homomorphism →
  *             [E.scalarmult (Z.pos l) E.B ~ E.zero] under E.eq.
+ *
+ *  Build-time note (2026-05-03): a clean build of this file pegs a
+ *  rocqworker at 99% CPU for 10+ minutes with steady ~340 MB RSS.
+ *  The ondemand-native-cascade (Root Cause 9 in
+ *  reference_slow_proofs_fiat.md) is *unlikely* to be the cause —
+ *  per-sentence [-time] reports 0.0 secs for every visible sentence,
+ *  and the certs in the dependency chain are all Qed-sealed
+ *  (vm_decide / native_cast_no_check produce opaque proof terms,
+ *  not redex-shaped bodies).  The hang is post-elaboration on the
+ *  last sentence (likely a Qed kernel-conversion check on a large
+ *  proof term).  Suspects: [cbv [MxDH.ladderstep M.xzladderstep]]
+ *  expansions inside [mxdh_m_step_eq]/[downto_while_eq] producing
+ *  large polynomial terms that the kernel re-checks at Qed; or
+ *  [inversion Heq; subst] in [mxdh_eq_M_montladder] generating
+ *  a deep [eq_rect] cascade.  Investigation pending.
  *)
 
 From Stdlib Require Import ZArith BinNat BinPos.
@@ -288,22 +303,44 @@ Definition M_zero_two_torsion : Curve25519.M.point.
   Decidable.vm_decide.
 Defined.
 
-(** Restate Spec.Test.X25519.order_basepoint as an equality on F p:
-    [MxDH.montladder 255 (testbit (N.pos l)) 9 = 0]. *)
+(** Restate Spec.Test.X25519.order_basepoint as an equality on F p,
+    keeping the [monty] form rather than the unfolded
+    [MxDH.montladder ... 255 ...] form.  This is critical for build
+    speed: stating the goal in unfolded form makes [exact
+    order_basepoint] trigger the kernel to unify the goal's
+    [MxDH.montladder] with the type's [monty] by δ-unfolding [monty]
+    and walking inside the body — which forces evaluation of the
+    255-iteration [downto] symbolically (~10 min wall on this hardware).
+    Keeping the goal in [monty] form avoids that walk. *)
 Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
-Lemma mxdh_l_eq_zero :
-  @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
-    (cswap_FF (F:=F p)) 255 (BinNat.N.testbit_nat (N.pos l)) (F.of_Z _ 9)
-  = F.zero.
+Lemma monty_l_eq_zero :
+  Spec.Test.X25519.monty (N.pos l) (F.of_Z _ 9) = F.zero.
 Proof.
   apply F.eq_to_Z_iff.
   rewrite (F.to_Z_0 (m := p)).
-  pose proof Spec.Test.X25519.order_basepoint as H.
-  cbv [Spec.Test.X25519.monty Spec.Test.X25519.cswap] in H.
-  (* [cswap_FF] specialised at [F:=F p] is definitionally the polymorphic
-     [cswap] from [Spec.Test.X25519] applied at [T := F p * F p]. *)
-  exact H.
+  exact Spec.Test.X25519.order_basepoint.
 Qed.
+
+(** Bridge from [monty] to the explicit [MxDH.montladder] form.
+    [monty s u := @MxDH.montladder ... 255 (BinNat.N.testbit_nat s) u]
+    by definition.  Kernel handles this direction fast (proves both
+    sides convertible without walking inside the iteration). *)
+Lemma monty_unfold :
+  Spec.Test.X25519.monty (N.pos l) (F.of_Z _ 9) =
+  @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    (@Spec.Test.X25519.cswap (F p * F p))
+    255 (BinNat.N.testbit_nat (N.pos l)) (F.of_Z _ 9).
+Proof. reflexivity. Qed.
+
+(** Combined: MxDH.montladder applied at the basepoint X-coord 9,
+    255 iterations, with [N.pos l] testbits, equals zero in F p.
+    Phrased to feed into Phase 2's [mxdh_eq_M_montladder] bridge. *)
+Lemma mxdh_l_eq_zero :
+  @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    (@Spec.Test.X25519.cswap (F p * F p))
+    255 (BinNat.N.testbit_nat (N.pos l)) (F.of_Z _ 9)
+  = F.zero.
+Proof. rewrite <- monty_unfold. exact monty_l_eq_zero. Qed.
 
 (** ================================================================ *)
 (** Phases 4 and 5: NOT YET PROVED                                    *)

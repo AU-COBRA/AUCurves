@@ -10,18 +10,22 @@ From Stdlib Require Import ZArith.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Algebra.Hierarchy.
-Require Import Crypto.Algebra.Field.
+Require Import Crypto.Algebra.Group.
+Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Algebra.ScalarMult.
-Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Crypto.Util.Decidable.
 Require Import Spec.XEdDSA.
-
-Local Existing Instance Curve25519.field.
 
 Local Notation p := Curve25519.p.
 Local Notation l := Curve25519.l.
 Local Notation F_p := (F p).
 Local Notation F_l := (F l).
+
+(** Don't let Program try its default obligation tactic — that tactic
+    elaborates against the concrete [Curve25519.field] instance and
+    can take 30+ minutes per [Program Definition].  We close every
+    obligation ourselves with [Next Obligation]. *)
+Local Obligation Tactic := idtac.
 
 (** ================================================================ *)
 (** Concrete types                                                     *)
@@ -47,8 +51,20 @@ Definition point_eq (P Q : Point) : Prop := P = Q.
 Program Definition opp_25519 (P : Point) : Point :=
   exist _ (F.opp (fst (proj1_sig P)), snd (proj1_sig P)) _.
 Next Obligation.
-  destruct P as [[x y] H]. simpl.
-  fsatz.
+  intros P. destruct P as [[x y] H]. simpl.
+  (* Goal: E.a*(opp x)*(opp x) + y*y = 1 + E.d*((opp x)*(opp x))*(y*y).
+     Reduce to [H : E.a*x*x + y*y = 1 + E.d*(x*x)*(y*y)] via the abstract
+     ring identity (-x)*(-x) = x*x.  Pull the ring witness out of the
+     [Curve25519.field] instance once, then use opaque [Ring] lemmas;
+     no [Add Ring] / [fsatz] needed, no Program default tactic. *)
+  pose proof (Hierarchy.field_commutative_ring (field := Curve25519.field)) as Hcr.
+  pose proof (Hierarchy.commutative_ring_ring (commutative_ring := Hcr)) as Hr.
+  rewrite (@Algebra.Ring.mul_opp_l _ _ _ _ _ _ _ _ Hr x (F.opp x)).
+  rewrite (@Algebra.Ring.mul_opp_r _ _ _ _ _ _ _ _ Hr x x).
+  pose proof (@Hierarchy.ring_commutative_group_add _ _ _ _ _ _ _ _ Hr) as Hcg_add.
+  pose proof (@Hierarchy.commutative_group_group _ _ _ _ _ Hcg_add) as Hg.
+  rewrite (@Algebra.Group.inv_inv _ _ _ _ _ Hg).
+  exact H.
 Qed.
 
 (** Scalar multiplication via repeated doubling (Z-indexed). *)

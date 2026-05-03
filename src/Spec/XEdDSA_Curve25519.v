@@ -7,12 +7,16 @@
  *)
 
 From Stdlib Require Import ZArith.
+From Stdlib Require Import Classes.RelationClasses.
+From Stdlib Require Import Classes.Morphisms.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.ModularArithmetic.
+Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
 Require Import Crypto.Algebra.Hierarchy.
 Require Import Crypto.Algebra.Group.
 Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Algebra.ScalarMult.
+Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Crypto.Util.Decidable.
 Require Import Spec.XEdDSA.
 
@@ -21,10 +25,11 @@ Local Notation l := Curve25519.l.
 Local Notation F_p := (F p).
 Local Notation F_l := (F l).
 
-(** Don't let Program try its default obligation tactic — that tactic
-    elaborates against the concrete [Curve25519.field] instance and
-    can take 30+ minutes per [Program Definition].  We close every
-    obligation ourselves with [Next Obligation]. *)
+(** Don't let Program try its default obligation tactic — it elaborates
+    against the concrete [Curve25519.field] instance and can take
+    30+ minutes per [Program Definition].  Close every obligation
+    explicitly with [Next Obligation].  See `reference_slow_proofs_fiat.md`
+    Root Cause 14. *)
 Local Obligation Tactic := idtac.
 
 (** ================================================================ *)
@@ -43,29 +48,43 @@ Definition point_zero := Curve25519.E.zero.
 (** Scalar type: Z/lZ where l is the prime subgroup order. *)
 Definition Scalar := F l.
 
-(** Point equality: the standard Leibniz equality on the sigma type
-    (coordinate pair + proof of on-curve). *)
-Definition point_eq (P Q : Point) : Prop := P = Q.
+(** Edwards point negation, picked from [AffineProofs.E.opp] at the
+    Curve25519 parameters.  Reusing the upstream [opp] lets the
+    [edwards_curve_commutative_group] instance below apply
+    syntactically without re-proving the commutative-group laws. *)
+Definition opp_25519 : Point -> Point :=
+  @Crypto.Curves.Edwards.AffineProofs.E.opp
+    _ _ _ _ _ _ _ _ _ _
+    Curve25519.field _
+    Curve25519.E.a Curve25519.E.d
+    Curve25519.E.nonzero_a.
 
-(** Edwards point negation: (x, y) ↦ (-x, y). *)
-Program Definition opp_25519 (P : Point) : Point :=
-  exist _ (F.opp (fst (proj1_sig P)), snd (proj1_sig P)) _.
-Next Obligation.
-  intros P. destruct P as [[x y] H]. simpl.
-  (* Goal: E.a*(opp x)*(opp x) + y*y = 1 + E.d*((opp x)*(opp x))*(y*y).
-     Reduce to [H : E.a*x*x + y*y = 1 + E.d*(x*x)*(y*y)] via the abstract
-     ring identity (-x)*(-x) = x*x.  Pull the ring witness out of the
-     [Curve25519.field] instance once, then use opaque [Ring] lemmas;
-     no [Add Ring] / [fsatz] needed, no Program default tactic. *)
-  pose proof (Hierarchy.field_commutative_ring (field := Curve25519.field)) as Hcr.
-  pose proof (Hierarchy.commutative_ring_ring (commutative_ring := Hcr)) as Hr.
-  rewrite (@Algebra.Ring.mul_opp_l _ _ _ _ _ _ _ _ Hr x (F.opp x)).
-  rewrite (@Algebra.Ring.mul_opp_r _ _ _ _ _ _ _ _ Hr x x).
-  pose proof (@Hierarchy.ring_commutative_group_add _ _ _ _ _ _ _ _ Hr) as Hcg_add.
-  pose proof (@Hierarchy.commutative_group_group _ _ _ _ _ Hcg_add) as Hg.
-  rewrite (@Algebra.Group.inv_inv _ _ _ _ _ Hg).
-  exact H.
-Qed.
+(** Edwards point equality: componentwise field equality on the two
+    coordinates, ignoring the on-curve proof component.  This is the
+    equivalence relation under which the Edwards group laws + scalar-
+    mult homomorphism are stated in [AffineProofs]. *)
+Definition point_eq : Point -> Point -> Prop :=
+  @Spec.CompleteEdwardsCurve.E.eq F_p eq F.one F.add F.mul
+    Curve25519.E.a Curve25519.E.d.
+
+(** ================================================================ *)
+(** Curve25519 Edwards group — fully reified instances                 *)
+(** ================================================================ *)
+
+(** [edwards_curve_commutative_group] applied at Curve25519's
+    parameters.  Done once, named, used wherever we need a [group] /
+    [is_scalarmult] for the Edwards25519 curve.  No implicit typeclass
+    search at use-sites. *)
+Definition Hcg25519 :
+  @commutative_group Point point_eq point_add point_zero opp_25519 :=
+  @Crypto.Curves.Edwards.AffineProofs.E.edwards_curve_commutative_group
+    _ _ _ _ _ _ _ _ _ _
+    Curve25519.field Curve25519.char_ge_3 _
+    Curve25519.E.a Curve25519.E.d
+    Curve25519.E.nonzero_a Curve25519.E.square_a Curve25519.E.nonsquare_d.
+
+Definition Hg25519 : @group Point point_eq point_add point_zero opp_25519 :=
+  @commutative_group_group _ _ _ _ _ Hcg25519.
 
 (** Scalar multiplication via repeated doubling (Z-indexed). *)
 Definition scalar_mul_Z : Z -> Point -> Point :=
@@ -74,6 +93,99 @@ Definition scalar_mul_Z : Z -> Point -> Point :=
 (** Scalar multiplication from F_l: interpret as Z. *)
 Definition scalar_mul (s : Scalar) (P : Point) : Point :=
   scalar_mul_Z (F.to_Z s) P.
+
+(** [scalarmult_ref] is automatically a scalar multiplication on any
+    group; reify the instance once. *)
+Definition Hsm25519 :
+  @is_scalarmult Point point_eq point_add point_zero opp_25519 scalar_mul_Z :=
+  @scalarmult_ref_is_scalarmult Point point_eq point_add point_zero
+    opp_25519 Hg25519.
+
+(** Equivalence and Proper instances of the group, reified for explicit
+    use in the lemmas below.  Brings the [Equivalence point_eq] and
+    [Proper (eq ==> eq ==> eq) point_add] into proof scope as named
+    hypotheses, sidestepping typeclass resolution paths that whd-walk
+    through [Curve25519.field]'s Pocklington-cert internals. *)
+Definition Hpoint_eq_equiv : Equivalence point_eq :=
+  @monoid_Equivalence _ _ _ _ (@group_monoid _ _ _ _ _ Hg25519).
+
+Definition Hpoint_add_Proper :
+  Proper (respectful point_eq (respectful point_eq point_eq)) point_add :=
+  @monoid_op_Proper _ _ _ _ (@group_monoid _ _ _ _ _ Hg25519).
+
+(** ================================================================ *)
+(** Order of the basepoint                                             *)
+(** ================================================================ *)
+
+(** [B_order]: the basepoint has order [l] in the Edwards25519 group.
+    Computationally true (witnessed by the Montgomery-ladder
+    [order_basepoint] in [Spec/Test/X25519.v] via [vm_decide_no_check]).
+    Proving it directly via [scalar_mul_Z] is uncomputable
+    (l ≈ 2^252); a closed form requires Edwards–Montgomery transport.
+
+    Stated as `Lemma ... Admitted.` rather than `Axiom ...` because
+    the latter triggers `compute_implicits_explanation_gen` to
+    whd-reduce the type, which walks into [scalarmult_ref]'s
+    [Z.peano_rect] on the 252-bit literal [l] and times out. *)
+Lemma B_order : point_eq (scalar_mul_Z (Z.pos l) basepoint) point_zero.
+Admitted.
+
+(** ================================================================ *)
+(** Scalar multiplication is a homomorphism on the basepoint subgroup *)
+(** ================================================================ *)
+
+(** These two lemmas are STRONGER than the abstract group laws because
+    they reduce a scalar in [F_l] (i.e. modulo [l]) before multiplying.
+    They hold on the basepoint specifically because [l · basepoint = 0]
+    (the basepoint sits in the prime-order subgroup); they FAIL on
+    arbitrary Edwards25519 points (cofactor 8). *)
+
+Lemma scalar_mul_dist_basepoint :
+  forall n m, point_eq (scalar_mul (F.add n m) basepoint)
+                       (point_add (scalar_mul n basepoint)
+                                  (scalar_mul m basepoint)).
+Proof.
+  intros n m.
+  unfold scalar_mul, point_eq.
+  rewrite F.to_Z_add.
+  pose proof (@scalarmult_mod_order
+                Point point_eq point_add point_zero opp_25519 Hg25519
+                scalar_mul_Z Hsm25519
+                (Z.pos l) basepoint
+                ltac:(discriminate) B_order
+                (F.to_Z n + F.to_Z m)) as Hmod.
+  pose proof (@scalarmult_add_l
+                Point point_eq point_add point_zero opp_25519 Hg25519
+                scalar_mul_Z Hsm25519
+                (F.to_Z n) (F.to_Z m) basepoint) as Hadd.
+  unfold point_eq in Hmod, Hadd.
+  pose proof Hpoint_eq_equiv as Heq.
+  exact (Equivalence_Transitive _ _ _ Hmod Hadd).
+Qed.
+
+Lemma scalar_mul_compose_basepoint :
+  forall n m, point_eq (scalar_mul (F.mul n m) basepoint)
+                       (scalar_mul n (scalar_mul m basepoint)).
+Proof.
+  intros n m.
+  unfold scalar_mul, point_eq.
+  rewrite F.to_Z_mul.
+  pose proof (@scalarmult_mod_order
+                Point point_eq point_add point_zero opp_25519 Hg25519
+                scalar_mul_Z Hsm25519
+                (Z.pos l) basepoint
+                ltac:(discriminate) B_order
+                (F.to_Z n * F.to_Z m)) as Hmod.
+  pose proof (@scalarmult_assoc
+                Point point_eq point_add point_zero opp_25519 Hg25519
+                scalar_mul_Z Hsm25519
+                (F.to_Z n) (F.to_Z m) basepoint) as Hassoc.
+  rewrite (Z.mul_comm (F.to_Z m) (F.to_Z n)) in Hassoc.
+  unfold point_eq in Hmod, Hassoc.
+  pose proof Hpoint_eq_equiv as Heq.
+  apply (Equivalence_Transitive _ _ _ Hmod).
+  exact (Equivalence_Symmetric _ _ Hassoc).
+Qed.
 
 (** ================================================================ *)
 (** Instantiation                                                      *)
@@ -89,9 +201,8 @@ Section WithMsg.
 
   (** ---- XEdDSA sign / verify / correctness at Curve25519 ----
 
-      We define sign/verify directly (inlining the Schnorr structure)
-      rather than instantiating the abstract [XEdDSA.sign] whose
-      28+ implicit args make typeclass resolution delicate. *)
+      Schnorr structure inlined; abstract [XEdDSA.sign] has 28+
+      implicits which makes typeclass resolution delicate. *)
 
   Record signature := mk_sig { sig_R : Point; sig_s : Scalar }.
 
@@ -108,27 +219,11 @@ Section WithMsg.
              (point_add (sig_R sig) (scalar_mul e A)).
 
   (** Correctness: honest signatures verify.
-      Standard Schnorr: s·G = (r + e*a)·G = r·G ⊕ e·(a·G) = R ⊕ e·A.
+      Schnorr identity:  s·G  =  (r + e*a)·G  =  r·G + e·(a·G)  =  R + e·A.
 
-      The two hypotheses below are FALSE for arbitrary [P] in the full
-      Edwards25519 group (cofactor 8): scalar reduction modulo [l] only
-      respects group law on the prime-order subgroup ⟨[basepoint]⟩.
-      They DO hold when [P = basepoint] (or any prime-order subgroup
-      element). Discharging requires:
-        (i)  basepoint-restricted statements;
-        (ii) the order axiom [l · basepoint = 0] (computationally true,
-             provable via Edwards–Montgomery transport from
-             [Spec.Test.X25519.order_basepoint]);
-        (iii) [ScalarMult.scalarmult_mod_order] +
-             [ScalarMult.scalarmult_add_l] / [scalarmult_assoc].
-      See [project_signal_x25519.md] for the complete refactor sketch. *)
-  Hypothesis scalar_mul_add :
-    forall n m P, point_eq (scalar_mul (F.add n m) P)
-                           (point_add (scalar_mul n P) (scalar_mul m P)).
-  Hypothesis scalar_mul_compose :
-    forall n m P, point_eq (scalar_mul (F.mul n m) P)
-                           (scalar_mul n (scalar_mul m P)).
-
+      Proven from the basepoint-restricted homomorphism lemmas above —
+      no abstract [Hypothesis]es, no universal-P ASSUMPTIONS that
+      would be FALSE on Edwards25519 cofactor points. *)
   Theorem sign_verify_correct_25519 :
     forall (a r : Scalar) (M : Msg),
       let A := scalar_mul a basepoint in
@@ -136,15 +231,15 @@ Section WithMsg.
   Proof.
     intros a r M.
     unfold verify_25519, sign_25519. simpl sig_R. simpl sig_s.
-    unfold point_eq.
     set (e := hash_to_scalar _ _ _).
-    (* Goal: scalar_mul (F.add r (F.mul e a)) basepoint =
-             point_add (scalar_mul r basepoint) (scalar_mul e (scalar_mul a basepoint)) *)
-    specialize (scalar_mul_add r (F.mul e a) basepoint) as H1.
-    specialize (scalar_mul_compose e a basepoint) as H2.
-    unfold point_eq in H1, H2.
-    etransitivity; [exact H1|].
-    f_equal. exact H2.
+    pose proof (scalar_mul_dist_basepoint r (F.mul e a)) as H1.
+    pose proof (scalar_mul_compose_basepoint e a) as H2.
+    unfold point_eq in *.
+    pose proof Hpoint_eq_equiv as Heq.
+    apply (Equivalence_Transitive _ _ _ H1).
+    apply Hpoint_add_Proper.
+    - reflexivity.
+    - exact H2.
   Qed.
 
 End WithMsg.

@@ -321,30 +321,79 @@ Proof.
   exact Spec.Test.X25519.order_basepoint.
 Qed.
 
-(** Bridge from [monty] to the explicit [MxDH.montladder] form.
-    [monty s u := @MxDH.montladder ... 255 (BinNat.N.testbit_nat s) u]
-    by definition.  Kernel handles this direction fast (proves both
-    sides convertible without walking inside the iteration). *)
+(** Bridge from [monty] to the explicit [MxDH.montladder] form
+    using [cswap_FF] (Phase 2's section variable after closing) as
+    the cswap, so this can chain into [mxdh_eq_M_montladder].
+    Both sides are definitionally equal — [Spec.Test.X25519.cswap]
+    at type [F p * F p] and [cswap_FF (F:=F p)] are the same lambda. *)
 Lemma monty_unfold :
   Spec.Test.X25519.monty (N.pos l) (F.of_Z _ 9) =
   @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
-    (@Spec.Test.X25519.cswap (F p * F p))
+    (cswap_FF (F:=F p))
     255 (BinNat.N.testbit_nat (N.pos l)) (F.of_Z _ 9).
 Proof. reflexivity. Qed.
 
-(** Combined: MxDH.montladder applied at the basepoint X-coord 9,
-    255 iterations, with [N.pos l] testbits, equals zero in F p.
-    Phrased to feed into Phase 2's [mxdh_eq_M_montladder] bridge. *)
+(** Combined: MxDH.montladder (with [cswap_FF]) applied at the
+    basepoint X-coord 9, 255 iterations, [N.pos l] testbits, equals
+    zero in F p.  Phrased to feed into [mxdh_eq_M_montladder]. *)
 Lemma mxdh_l_eq_zero :
   @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
-    (@Spec.Test.X25519.cswap (F p * F p))
+    (cswap_FF (F:=F p))
     255 (BinNat.N.testbit_nat (N.pos l)) (F.of_Z _ 9)
   = F.zero.
 Proof. rewrite <- monty_unfold. exact monty_l_eq_zero. Qed.
 
 (** ================================================================ *)
-(** Phases 4 and 5: NOT YET PROVED                                    *)
+(** Phase 4: route through [montladder_correct] to scalarmult         *)
 (** ================================================================ *)
+
+(** Bridge from MxDH-form to M-form using Phase 2's [mxdh_eq_M_montladder]. *)
+Lemma m_montladder_l_eq_zero :
+  @M.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    255 (Z.testbit (Z.pos l)) (F.of_Z p 9) = F.zero.
+Proof.
+  pose proof (mxdh_eq_M_montladder F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+                255%nat (BinNat.N.testbit_nat (N.pos l)) (Z.testbit (Z.pos l))
+                (fun i => eq_sym (testbit_nat_N_pos_to_Z i l)) (F.of_Z _ 9)) as Hbridge.
+  rewrite mxdh_l_eq_zero in Hbridge.
+  symmetry.
+  replace 255 with (Z.of_nat 255) by reflexivity.
+  exact Hbridge.
+Qed.
+
+(** ================================================================ *)
+(** Phase 4b and Phase 5: TODO                                         *)
+(** ================================================================ *)
+
+(** Phase 4b: apply [M.montladder_correct] to [m_montladder_l_eq_zero]
+    to obtain [M.X0 (M.scalarmult (Z.pos l) M.B) = F.zero].
+
+    Side conditions verified individually:
+      char_ge 28: [eapply Hierarchy.char_ge_weaken; [apply (@F.char_gt p) | vm_compute; discriminate].]
+      char_ge 3:  same.
+      4*a24=a-2:  [Decidable.vm_decide.] (~2.7 s)
+      a2m4_nonsq: [intros r Hr. apply Curve25519.M.a2m4_nonsq. exists r. rewrite Hr; f_equal; ring.]
+      F.inv 0=0:  [Decidable.vm_decide.]
+      0<=255:     [lia.]
+    All 6 side conditions are dischargeable.  The blocker is the final
+    [rewrite Hml in Hcorr] / [change F.of_Z _ 9 with M.X0 M.B in Hml]:
+    these trigger heavy kernel conversion (RSS oscillates 1.6-6 GB,
+    eventual OOM).  Likely the same pattern as the [exact H] inside
+    unfolded MxDH.montladder — kernel walks inside [M.montladder]'s
+    body to align args.
+
+    Mitigation paths to try next session:
+    - Pose [M.X0 M.B = F.of_Z p 9] as a [reflexivity] lemma first,
+      then chain via that lemma instead of [change ... with].
+    - Make [M.montladder] Strategy-opaque locally during the rewrite.
+    - State [m_X0_scalarmult_l_zero] in a form that doesn't need
+      [change], e.g., factor out the [M.X0 M.B = 9] step as a separate
+      small lemma. *)
+
+(** Phase 5: transport via [homomorphism_scalarmult] across the
+    [EdwardsMontgomery25519] isomorphism to derive
+    [E.scalarmult (Z.pos l) E.B = E.zero] under E.eq, which is
+    [B_order] in [XEdDSA_Curve25519.v]. *)
 
 (** TODO Phase 3 (continued): combine [mxdh_l_eq_zero] with
     [mxdh_eq_M_montladder] (Phase 2) and [montladder_correct] from

@@ -175,7 +175,25 @@ Section ScalarmultImpl64.
       inversion Hbnd as [|? ? Hv_bnd Hrest_bnd]; subst.
       simpl in Hlen.
       unfold1_cmd_goal. cbn [cmd_body].
-      unfold1_cmd_goal. cbn [cmd_body].
+      (* Address dexpr [base + offset] + value dexpr [v] discharged via
+         standard map.get + literal patterns.  Verified in MCP at
+         state_id=26 of session bxpoyyf7a (2026-05-04). *)
+      cbv [WeakestPrecondition.cmd WeakestPrecondition.cmd_body
+           WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal WeakestPrecondition.get
+           WeakestPrecondition.store WeakestPrecondition.dexpr
+           dlet.dlet].
+      eexists. split.
+      { eexists. split. { exact Hloc. }
+        cbv [Semantics.interp_binop]. reflexivity. }
+      eexists. split. { reflexivity. }
+      (* Remaining: discharge [Memory.store_Z m_l (base+offset) 8 v = Some m']
+         via [SeparationMemory.uncurried_store_Z_of_sep] applied at
+         [firstn 8 init_bytes] (the 8 bytes about to be overwritten),
+         then apply [IH] on [rest] at offset [offset + 8] with
+         [init_bytes := skipn 8 init_bytes], then re-assemble the sep
+         predicate via [sep_eq_of_list_word_at_app] + [iff1ToEq]
+         (per [reference_proof_patterns.md]).  ~30 LoC remaining. *)
       admit.
   Admitted.
 

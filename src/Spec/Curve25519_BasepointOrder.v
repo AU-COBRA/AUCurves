@@ -576,10 +576,75 @@ Lemma scalarmult_l_eq_zero :
 Admitted.
 
 (** ================================================================ *)
-(** Phase 5: Edwards-Montgomery transport (TODO)                      *)
+(** Phase 5: Edwards-Montgomery transport                              *)
 (** ================================================================ *)
 
-(** Phase 5: transport via [homomorphism_scalarmult] across the
-    [EdwardsMontgomery25519] isomorphism to derive
-    [E.scalarmult (Z.pos l) E.B = E.zero] under E.eq, which is
-    [B_order] in [XEdDSA_Curve25519.v]. *)
+(** Phase 5 derives the Edwards-side basepoint-order fact from the
+    Montgomery-side [scalarmult_l_eq_zero] via [E.of_Montgomery] (the
+    M→E direction of [EdwardsMontgomery25519]'s
+    [isomorphic_commutative_groups]).  The transport uses
+    [Algebra.ScalarMult.homomorphism_scalarmult]. *)
+
+Local Definition Hcg_E : Hierarchy.commutative_group :=
+  @Group.isomorphic_commutative_groups_group_G _ _ _ _ _ _ _ _ _ _ _ _ EdwardsMontgomery25519.
+
+Local Definition Hg_E : Hierarchy.group :=
+  @Hierarchy.commutative_group_group _ _ _ _ _ Hcg_E.
+
+Local Definition Hsm_E : ScalarMult.is_scalarmult :=
+  @ScalarMult.scalarmult_ref_is_scalarmult _ _ _ _ _ Hg_E.
+
+Local Definition E_of_M_homom :
+  @Monoid.is_homomorphism _ _ _ _ _ _ E.of_Montgomery :=
+  @Group.isomorphic_commutative_groups_hom_HG _ _ _ _ _ _ _ _ _ _ _ _ EdwardsMontgomery25519.
+
+Lemma E_of_M_zero :
+  @CompleteEdwardsCurve.E.eq _ eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d
+    (E.of_Montgomery (@MontgomeryCurve.M.zero _ eq F.add F.mul Curve25519.M.a Curve25519.M.b))
+    Curve25519.E.zero.
+Proof. exact (@Group.homomorphism_id _ _ _ _ _ Hg_M _ _ _ _ _ Hg_E _ E_of_M_homom). Qed.
+
+Local Definition Hmon_E : Hierarchy.monoid := @Hierarchy.group_monoid _ _ _ _ _ Hg_E.
+
+Local Definition E_eq_equiv : Equivalence (@CompleteEdwardsCurve.E.eq _ eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d) :=
+  @Hierarchy.monoid_Equivalence _ _ _ _ Hmon_E.
+
+Lemma E_of_M_B :
+  @CompleteEdwardsCurve.E.eq _ eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d (E.of_Montgomery Curve25519.M.B) Curve25519.E.B.
+Proof.
+  exact (@RelationClasses.Equivalence_Symmetric _ _ E_eq_equiv _ _ EdwardsMontgomery25519.E.of_Montgomery_B).
+Qed.
+
+(** Key transport: [scalarmult_l_eq_zero] (M-side) implies the same
+    fact on the E-side at Curve25519's basepoint.  The lemma's type
+    matches [scalar_mul_Z (Z.pos l) basepoint] in [XEdDSA_Curve25519]. *)
+Lemma E_basepoint_order :
+  @CompleteEdwardsCurve.E.eq _ eq F.one F.add F.mul Curve25519.E.a Curve25519.E.d
+    (@ScalarMult.scalarmult_ref _ Curve25519.E.add Curve25519.E.zero
+        (@Crypto.Curves.Edwards.AffineProofs.E.opp
+            _ _ _ _ _ _ _ _ _ _ Curve25519.field _
+            Curve25519.E.a Curve25519.E.d Curve25519.E.nonzero_a)
+        (Z.pos l) Curve25519.E.B)
+    Curve25519.E.zero.
+Proof.
+  pose proof scalarmult_l_eq_zero as HMzero.
+  pose proof E_of_M_homom as Hhom_witness.
+  destruct Hhom_witness as [_h_op _phi_proper].
+  pose proof (_phi_proper _ _ HMzero) as HEzero.
+  pose proof (@RelationClasses.Equivalence_Transitive _ _ E_eq_equiv _ _ _ HEzero E_of_M_zero) as HEzero'.
+  pose proof (@ScalarMult.homomorphism_scalarmult
+                Curve25519.M.point _ Curve25519.M.add
+                  (@MontgomeryCurve.M.zero _ eq F.add F.mul Curve25519.M.a Curve25519.M.b)
+                  Curve25519.M.opp Hg_M
+                Curve25519.E.point _ Curve25519.E.add Curve25519.E.zero _ Hg_E
+                Curve25519.M.scalarmult Hsm_M
+                _ Hsm_E
+                E.of_Montgomery E_of_M_homom
+                (Z.pos l) Curve25519.M.B) as Hhom.
+  pose proof (@RelationClasses.Equivalence_Transitive _ _ E_eq_equiv _ _ _
+                (@RelationClasses.Equivalence_Symmetric _ _ E_eq_equiv _ _ Hhom) HEzero') as Hgoal1.
+  pose proof (@ScalarMult.scalarmult_Proper _ _ _ _ _ _ Hsm_E (Z.pos l) (Z.pos l) eq_refl
+                _ _ E_of_M_B) as HscalarP.
+  exact (@RelationClasses.Equivalence_Transitive _ _ E_eq_equiv _ _ _
+           (@RelationClasses.Equivalence_Symmetric _ _ E_eq_equiv _ _ HscalarP) Hgoal1).
+Qed.

@@ -4,11 +4,17 @@
  * [ed25519_scalarmult_base_parametric] (Scalarmult_Impl_64.v):
  *
  *     i = i - 1;
- *     double(ACC, ACC);
+ *     double(TMP, ACC);                  (* TMP := 2·ACC; see commit c93d2be *)
+ *     cmov_5felems(ACC, TMP, $1);        (* ACC := TMP via mask=1 memcpy *)
  *     byte = load1(scalar + (i >> 3));
  *     bit = (byte >> (i & 7)) & 1;
  *     add_precomputed(TMP, ACC, B_pre);
  *     cmov_5felems(ACC, TMP, bit)
+ *
+ * The split-double pattern was introduced in commit c93d2be to avoid
+ * the sep-aliasing that [spec_of_double64] forbids — its precondition
+ * requires [out] and [a] to be disjoint, which [double(ACC, ACC)] could
+ * not satisfy.
  *
  * Statement: given the loop invariant at body entry — locals carry
  * pointers to {out, scalar, B_pre, ACC, TMP, i}; the byte buffers at
@@ -62,7 +68,10 @@ Section LoopBodyPreserves.
   Definition loop_body_cmd : cmd.cmd :=
     cmd.seq (cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1)))
     (cmd.seq (cmd.call (@nil String.string) "double"
-                (cons (expr.var "ACC") (cons (expr.var "ACC") nil)))
+                (cons (expr.var "TMP") (cons (expr.var "ACC") nil)))
+    (cmd.seq (cmd.call (@nil String.string) "cmov_5felems"
+                (cons (expr.var "ACC") (cons (expr.var "TMP")
+                  (cons (expr.literal 1) nil))))
     (cmd.seq (cmd.set "byte"
         (expr.load access_size.one
            (expr.op bopname.add (expr.var "scalar")
@@ -77,7 +86,7 @@ Section LoopBodyPreserves.
                   (cons (expr.var "B_pre") nil))))
              (cmd.call (@nil String.string) "cmov_5felems"
                 (cons (expr.var "ACC") (cons (expr.var "TMP")
-                  (cons (expr.var "bit") nil)))))))).
+                  (cons (expr.var "bit") nil))))))))).
 
   (** The loop body invariant carries 200-byte ACC and TMP buffers (byte
       form, since [cmov_5felems] consumes byte form), plus the algebraic

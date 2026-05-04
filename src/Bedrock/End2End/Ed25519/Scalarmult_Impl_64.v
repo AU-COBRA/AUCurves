@@ -23,6 +23,8 @@
 Require Import Bedrock.End2End.Ed25519.EdwardsXYZT64_Imports.
 Require Import Bedrock.End2End.Ed25519.Cmov5Felems_64.
 Require Import Bedrock.End2End.Ed25519.B_precomputed_64.
+Require Import Bedrock.End2End.Ed25519.BytesToFelem3.
+Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 
 Section ScalarmultImpl64.
   Local Open Scope string_scope.
@@ -383,6 +385,10 @@ Section ScalarmultImpl64.
       ed25519_scalarmult_base_parametric(out, scalar, B_pre)
     }.
 
+  (** Callee spec wiring: [fe25519_from_bytes] from Field25519_64. *)
+  Local Instance spec_of_fe25519_from_bytes :
+    spec_of "fe25519_from_bytes" := Field.spec_of_from_bytes.
+
   (** Hoare-spec for the public 2-arg API. Shape mirrors the existing
       [Axiom ed25519_scalarmult_base_correct] in [Scalarmult.v]; once
       the [Lemma] below is closed (Qed), [Scalarmult.v] can be edited
@@ -409,11 +415,10 @@ Section ScalarmultImpl64.
       Interface.map.get functions "ed25519_scalarmult_base"
         = Some ed25519_scalarmult_base ->
       spec_of_ed25519_scalarmult_base_parametric functions ->
-      (* Plus callees: spec_of_fe25519_from_bytes wired from
-         EdwardsXYZT64_Imports → Field25519_64. *)
+      spec_of_fe25519_from_bytes functions ->
       spec_of_ed25519_scalarmult_base functions.
   Proof.
-    intros functions Hf Hpar.
+    intros functions Hf Hpar Hfb.
     cbv [program_logic_goal_for]; intros.
     cbv [spec_of_ed25519_scalarmult_base].
     intros out_ptr scalar_ptr out_init scalar R tr mem
@@ -512,24 +517,45 @@ Section ScalarmultImpl64.
       - assert (Heq : word.add B_pre_bytes_addr (word.of_Z 0) = B_pre_bytes_addr) by ZnWords.
         rewrite Heq. exact HsepC2_ra.
       - intros m' Hsep'.
-        (* Phase 3: 3× handle_call fe25519_from_bytes_correct.
-           After init_u64_seq, B_pre_bytes holds B_precomputed_bytes
-           (after rewriting via B_precomputed_u64s_to_bytes).
-           Each fe25519_from_bytes call:
-           - reads 32 bytes from B_pre_bytes_addr + 32*i
-           - writes 40 bytes (5 limbs) to B_pre_addr + 40*i
-           Phase 4: handle_call ed25519_scalarmult_base_parametric_correct (via Hpar)
-           gives out_bytes with length 200.
-           Phase 5: dealloc B_pre / B_pre_bytes from m' to recover m'_inner.
-           Phase 6: provide nil for rets, tr=tr, out_bytes existential.
-           ~300-500 LoC of WP plumbing remains; mirrors EdwardsXYZT64.v
-           double64_ok dealloc-cascade pattern. Spec wiring blocker:
-           spec_of_fe25519_from_bytes is not exposed at this layer (need
-           Existing Instance from Field25519_64). *)
+        (* Phase 3: rewrite flat_map → B_precomputed_bytes; normalize offset 0;
+           abstract the 96-byte buffer; split into 3 × 32-byte chunks; split
+           B_pre_init (120 bytes) into 3 × 40-byte FElems. *)
+        rewrite B_precomputed_u64s_to_bytes in Hsep'.
+        replace (word.add B_pre_bytes_addr (word.of_Z 0)) with B_pre_bytes_addr in Hsep' by ZnWords.
+        remember B_precomputed_bytes as bs eqn:Hbs.
+        assert (Hbs_len : Datatypes.length bs = 96%nat)
+          by (rewrite Hbs; apply B_precomputed_bytes_length).
+        clear Hbs.
+        set (chunk32_0 := List.firstn 32 bs).
+        set (chunk32_1 := List.firstn 32 (List.skipn 32 bs)).
+        set (chunk32_2 := List.skipn 64 bs).
+        assert (Hc0_len : Datatypes.length chunk32_0 = 32%nat) by
+          (subst chunk32_0; rewrite List.length_firstn, Hbs_len; lia).
+        assert (Hc1_len : Datatypes.length chunk32_1 = 32%nat) by
+          (subst chunk32_1; rewrite List.length_firstn, List.length_skipn, Hbs_len; lia).
+        assert (Hc2_len : Datatypes.length chunk32_2 = 32%nat) by
+          (subst chunk32_2; rewrite List.length_skipn, Hbs_len; lia).
+        assert (Hbs_split : bs = (chunk32_0 ++ chunk32_1 ++ chunk32_2)%list).
+        { subst chunk32_0 chunk32_1 chunk32_2.
+          rewrite <- (List.firstn_skipn 32 bs) at 1; f_equal.
+          rewrite <- (List.firstn_skipn 32 (ListDef.skipn 32 bs)) at 1.
+          f_equal. rewrite skipn_skipn. f_equal. }
+        rewrite Hbs_split in Hsep' at 1.
+        epose proof (SeparationMemory.sep_eq_of_list_word_at_app B_pre_bytes_addr
+                       chunk32_0 (chunk32_1 ++ chunk32_2)%list 32
+                       ltac:(rewrite Hc0_len; reflexivity)
+                       ltac:(rewrite Hc0_len, !List.length_app, Hc1_len, Hc2_len; cbv [Bitwidth64.BW64]; lia)) as Hs0.
+        apply iff1ToEq in Hs0; rewrite Hs0 in Hsep'; clear Hs0.
+        epose proof (SeparationMemory.sep_eq_of_list_word_at_app
+                       (word.add B_pre_bytes_addr (word.of_Z 32))
+                       chunk32_1 chunk32_2 32
+                       ltac:(rewrite Hc1_len; reflexivity)
+                       ltac:(rewrite Hc1_len, Hc2_len; cbv [Bitwidth64.BW64]; lia)) as Hs1.
+        apply iff1ToEq in Hs1; rewrite Hs1 in Hsep'; clear Hs1.
+        replace (word.add (word.add B_pre_bytes_addr (word.of_Z 32)) (word.of_Z 32)) with
+          (word.add B_pre_bytes_addr (word.of_Z 64)) in Hsep' by ring.
         admit. }
     intros tr' m' l' Hpost.
-    (* Proper_cmd's monotonicity goal: post derived from inner post.
-       Inner post is shelved (Goal 1 above); discharged once Phase 3-6 lands. *)
     admit.
   Admitted.
 

@@ -520,6 +520,32 @@ Proof.
   - reflexivity.
 Qed.
 
+Lemma M_eq_trans : forall P Q R : Curve25519.M.point,
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b P Q ->
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b Q R ->
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b P R.
+Proof.
+  intros P Q R HPQ HQR.
+  cbv [MontgomeryCurve.M.eq MontgomeryCurve.M.coordinates] in *.
+  destruct P as [[[xP yP]|[]] HP];
+  destruct Q as [[[xQ yQ]|[]] HQ];
+  destruct R as [[[xR yR]|[]] HR]; cbn in *;
+    try contradiction; try tauto.
+  destruct HPQ as [HxPQ HyPQ]; destruct HQR as [HxQR HyQR].
+  split; congruence.
+Qed.
+
+Lemma M_eq_refl_B :
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
+    Curve25519.M.B Curve25519.M.B.
+Proof.
+  cbv [MontgomeryCurve.M.eq Curve25519.M.B MontgomeryCurve.M.coordinates proj1_sig].
+  split; reflexivity.
+Qed.
+
+Lemma Z_succ_pos_eq : forall p : positive, Z.succ (Z.pos p) = Z.pos (Pos.succ p).
+Proof. intros pp. lia. Qed.
+
 (** [Phase 4c] combines [m_X0_scalarmult_l_zero] with the parity
     argument at scalar [l+1] to conclude that the only point with
     X-coord 0 reachable as [l·B] is [M.zero].

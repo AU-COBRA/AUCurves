@@ -118,17 +118,19 @@ Definition Hpoint_add_Proper :
 (** ================================================================ *)
 
 (** [B_order]: the basepoint has order [l] in the Edwards25519 group.
-    Computationally true (witnessed by the Montgomery-ladder
-    [order_basepoint] in [Spec/Test/X25519.v] via [vm_decide_no_check]).
-    Proving it directly via [scalar_mul_Z] is uncomputable
-    (l ≈ 2^252); a closed form requires Edwards–Montgomery transport.
+    Discharged by [Spec.Curve25519_BasepointOrder.E_basepoint_order],
+    which transports [Spec.Test.X25519.order_basepoint] (a
+    Montgomery-ladder [vm_decide_no_check] computation) across the
+    Edwards-Montgomery isomorphism [EdwardsMontgomery25519].
 
-    Stated as `Lemma ... Admitted.` rather than `Axiom ...` because
-    the latter triggers `compute_implicits_explanation_gen` to
-    whd-reduce the type, which walks into [scalarmult_ref]'s
-    [Z.peano_rect] on the 252-bit literal [l] and times out. *)
+    The Phase 4c lemma [scalarmult_l_eq_zero] in BasepointOrder.v is
+    still Admitted (Qed kernel-check OOM blocking; tactic proof is
+    complete in MCP), so this lemma transitively depends on that
+    single Admit. *)
+Require Import Spec.Curve25519_BasepointOrder.
+
 Lemma B_order : point_eq (scalar_mul_Z (Z.pos l) basepoint) point_zero.
-Admitted.
+Proof. exact Curve25519_BasepointOrder.E_basepoint_order. Qed.
 
 (** ================================================================ *)
 (** Scalar multiplication is a homomorphism on the basepoint subgroup *)

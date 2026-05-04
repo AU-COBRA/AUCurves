@@ -95,28 +95,127 @@ Section ScalarmultImpl64.
       spec_of_cmov_5felems functions ->
       spec_of_ed25519_scalarmult_base_parametric functions.
   Proof.
-    (* Plan:
-       1. straightline through the two stackallocs and 5 from_word calls
-          to set ACC = identity.
-       2. Apply Loops.while_localsmap with measure = nat counting
-          remaining iterations (from 256 down to 0). Loop invariant:
-            - locals contain {out, scalar, B_pre, ACC, TMP, i}
-            - i is a word with unsigned value n ∈ [0, 256]
-            - sep predicate: 200 bytes at out_ptr (some content) +
-              200 bytes at ACC (current accumulator) +
-              200 bytes at TMP (don't-care) +
-              32 bytes at scalar (unchanged) +
-              120 bytes at B_pre (unchanged) +
-              R
-            - measure decreases each iteration (handle_call double,
-              add_precomputed, cmov each preserve sep + don't change i).
-       3. Each iteration: handle_call double_correct,
-          handle_call add_precomputed64_correct,
-          handle_call cmov_5felems_correct, decrement i, prove invariant.
-       4. Loop exit (i = 0): handle_call cmov_5felems_correct with
-          mask=1 to copy ACC bytes to out_ptr. Postcondition follows.
+    (* === Phase 0 (verified in MCP, 2026-05-04, state_id=185): ===
+       cbv [program_logic_goal_for]. intros funs Hf Hcmov.
+       cbv [spec_of_ed25519_scalarmult_base_parametric].
+       intros out_ptr scalar_ptr B_pre_ptr out scalar B_pre R tr mem
+              (Hlen_out & Hlen_scalar & Hlen_Bpre & Hsep).
+       unfold call.
+       do 3 eexists. split; [exact Hf|].
+       eexists. split; [reflexivity|].
+       apply sound_cmd; try typeclasses eauto.
+       (* Two stackallocs: *)
+       straightline. split; [reflexivity|].
+       intros ACC_addr mStack1 mCombined1 Hany_ACC Hsplit_ACC.
+       unfold dlet.dlet.
+       straightline. split; [reflexivity|].
+       intros TMP_addr mStack2 mCombined2 Hany_TMP Hsplit_TMP.
+       unfold dlet.dlet.
 
-       Estimated 300-500 LoC of bedrock2 WP plumbing. *)
+       === Realistic scope assessment (after deep MCP exploration): ===
+       The originally estimated 300-500 LoC undercounts the work by ~4×.
+       This proof realistically requires ~1500-2000 LoC of WP plumbing,
+       comparable to Bedrock.Field.Synthesis.Examples.BLS12_GLV_ScalarMultBedrock
+       (1542 LoC, 2 Qed = ~700 LoC/lemma). Key reasons:
+
+       * SPEC SHAPE MISMATCH. cmov_5felems is BYTE-level (200-byte buffer
+         in/out). double + add_precomputed64 are FELEM-level (5 separate
+         FElem chunks via the p5@ notation), and require valid_projective_coords
+         + 5 bounds proofs in their preconditions. The loop accumulator ACC
+         must alternate between byte-form (for cmov_5felems input) and
+         FElem-decomposed form (for double's input/output) at every iteration.
+
+         Bridging is via felem_from_bytes / felem_to_bytes (Lift1Prop.iff1
+         rewrites in EdwardsXYZT64_Imports → Field25519_64), but each transition
+         requires:
+         - Extracting 5 chunks of 40 bytes via List.firstn/skipn at offsets
+           0, 40, 80, 120, 160.
+         - Showing each 40-byte chunk decodes to a felem with feval = the
+           algebraic value (and bounds).
+         - For the *initial* identity (0,1,1,0,0), proving valid_projective_coords
+           with feval Z = F.one ≠ 0 (vm_decide).
+         - After each double / add_precomputed, taking the 5 fresh FElem
+           chunks and re-merging them into 200 bytes (each via length_le_split
+           on whatever bs2felem witnesses are extracted).
+
+       * HANDLE_CALL boilerplate. For each of (5 from_word) + (256 × 3 calls in
+         body) + (1 cmov_5felems at exit), we need:
+         - dexpr discharge for arg-list (eexists; split; map.get_put_diff chain).
+         - unify the hypothesized sep predicate against the spec's pre.
+         - peel the post: instantiate existentials, sep manipulation.
+         - map.get_put_diff chain (~10 puts deep at the loop body interior).
+
+       * IDENTITY VALIDITY witnesses. The 5 from_word calls produce 5 FElems
+         X, Y, Z, Ta, Tb with feval X = 0, feval Y = 1, feval Z = 1, feval Ta = 0,
+         feval Tb = 0. We must construct an `acc0 : projective_coords` whose
+         proj1_sig is (X, Y, Z, Ta, Tb) — discharging valid_projective_coords:
+           a*0^2*1^2 + 1^2*1^2 = 1^2^2 + d*0^2*1^2  (clearly true)
+           0 * 1 = 1 * 0 * 0                          (clearly true)
+           1 ≠ 0                                       (Curve25519 inhabited)
+         These need to be exhibited in a sigma type — ~50 LoC of glue.
+
+       === Required additional callee specs (NOT YET WIRED): ===
+       The current Lemma signature only exposes spec_of_cmov_5felems. To run
+       handle_call on the four other callees, the signature must be extended:
+         spec_of_fe25519_from_word functions ->
+         spec_of_double64 functions ->
+         spec_of_add_precomputed64 functions ->
+       These can be added either as additional hypotheses or via Existing Instance.
+
+       === Sub-obligations for a future session (in order, with LoC budget): ===
+
+       (A) Phase 0: setup + 2 stackallocs.    [verified 2026-05-04, ~30 LoC]
+       (B) anybytes → 200-byte split.          [~30 LoC; uses anybytes_to_array_1]
+       (C) 5 × from_word handle_call:          [~500 LoC]
+           - split 200 bytes into 5 × 40 byte chunks at ACC_addr + 0/40/80/120/160
+           - per call: dexpr address (ACC + literal offset), dexpr value (literal),
+             handle_call with the 40-byte chunk + R-frame containing the other 160 bytes
+           - extract FElem from output postcondition
+       (D) Identity projective_coords witness. [~80 LoC]
+           - assemble (X0, Y1, Z1, Ta0, Tb0) into projective_coords identity
+           - valid_projective_coords proof on (0,1,1,0,0)
+       (E) Convert ACC's 5 FElems back to a 200-byte view for the loop invariant.
+           [~60 LoC; setoid_rewrite felem_to_bytes 5×]
+       (F) Set i = 256.                         [~5 LoC]
+       (G) Loop invariant definition.           [~80 LoC]
+           Carries: locals {out,scalar,B_pre,ACC,TMP,i}, i = word.of_Z (Z.of_nat n),
+           n ∈ [0,256], EITHER (acc_bytes : list byte, length 200, plus dummy TMP_bytes
+           length 200, plus sep) OR (acc_pcoords : projective_coords + p5@ at ACC_addr,
+           plus 200 anybytes at TMP_addr, plus the byte sep). The byte form is needed
+           at cmov_5felems boundaries; FElem form at double/add_precomputed.
+           Likely best to carry BYTE form in invariant; convert in/out at each call.
+       (H) Apply Loops.while_localsmap; entry case (n=256). [~50 LoC]
+       (I) Loop body, n = S n':                 [~600 LoC]
+           - i = i - 1
+           - byte→FElem split for ACC (5×)
+           - handle_call double  (input: a p5@ ACC_addr + 200 bytes at TMP_addr;
+             output: 5 FElems at ACC_addr forming new acc_pcoords)
+           - FElem→byte merge for ACC (5×) to recover ACC bytes for cmov input
+           - byte→FElem split for ACC (again, for add_precomputed input)
+           - dexpr discharge for byte = load1(scalar + (i >> 3))
+           - dexpr discharge for bit = (byte >> (i & 7)) & 1
+           - byte→FElem split for B_pre (3×) for add_precomputed input
+           - handle_call add_precomputed (input: a p5@ ACC_addr + 200 bytes at TMP_addr
+             + b p3@ B_pre_ptr; output: a_plus_b p5@ TMP_addr)
+           - FElem→byte merge for ACC, TMP, B_pre (back to byte form)
+           - handle_call cmov_5felems(ACC, TMP, bit) with mask = bit ∈ {0,1}
+             (Note: bit-validity {0,1} requires Z.land bound proof + word.eqb cast)
+           - prove invariant for n' (sep + locals + measure decrease)
+       (J) Loop exit, n = 0:                    [~30 LoC]
+           handle_call cmov_5felems(out, ACC, 1) — pure byte copy.
+       (K) Stackalloc dealloc cascade.           [~80 LoC]
+           Need to recover m' such that (out'$@out_ptr ⋆ scalar$@scalar_ptr ⋆
+             B_pre$@B_pre_ptr ⋆ R)%sep m' from the post-loop sep including
+           ACC bytes (200) + TMP bytes (200) at the stackalloc'd addrs.
+           Provide anybytes ACC_addr 200 mStack' + map.split via the impl1
+           direction of byte → anybytes (array_1_to_anybytes).
+       (L) Postcondition: provide rets=nil, tr=tr, out' = out_bytes_after_final_cmov.
+
+       Without phases (C) through (J), this proof cannot reach Qed.
+       Phases (A) and (B) alone are reproducible in MCP; phases (G)-(I) are
+       the hard meat (~600-800 LoC) that requires either (a) a 3-7 day session
+       or (b) factoring out heavy lemmas (e.g., a generic `byte_chunk_to_felem`
+       wrapper) into separate Qed'd Lemmas before re-attempting. *)
   Admitted.
 
   (** Helper: emit a sequence of word-sized stores to materialize a

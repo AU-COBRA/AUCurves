@@ -362,38 +362,78 @@ Proof.
 Qed.
 
 (** ================================================================ *)
-(** Phase 4b, 4c, 5: TODO                                              *)
+(** Phase 4b: M.X0 of [scalarmult l B] is zero                         *)
 (** ================================================================ *)
 
-(** Phase 4b: apply [M.montladder_correct] to [m_montladder_l_eq_zero]
-    to obtain [M.X0 (M.scalarmult (Z.pos l) M.B) = F.zero].
+Add Ring _Fp_ring : (F.ring_theory p) (morphism (F.ring_morph p), constants [F.is_constant]).
 
-    All 6 side conditions verified individually in MCP (each <3 s):
-      char_ge 28: [eapply Hierarchy.char_ge_weaken; [apply (@F.char_gt p) | vm_compute; discriminate].]
-      char_ge 3:  same.
-      4*a24=a-2:  [Decidable.vm_decide.] (~2.7 s)
-      a2m4_nonsq: [intros r Hr. apply Curve25519.M.a2m4_nonsq. exists r. rewrite Hr; f_equal; ring.]
-      F.inv 0=0:  [Decidable.vm_decide.]
-      0<=255:     [lia.]
-    Bridge lemma [MB_X0_eq_9 : @MontgomeryCurve.M.X0 ... M.B = F.of_Z p 9]
-    proved by [reflexivity] in 132 ms.
+(** Bridge lemmas — pay the wrapper-vs-primitive convertibility check
+    once at Qed (~10 ms each via [reflexivity]).  Downstream uses the
+    wrapped form without forcing the kernel to walk inside
+    [M.montladder]'s 255-iteration body. *)
+Lemma Curve25519_M_X0_unfold : forall P,
+  Curve25519.M.X0 P
+  = @MontgomeryCurve.M.X0 _ eq F.zero F.add F.mul
+      Curve25519.M.a Curve25519.M.b P.
+Proof. reflexivity. Qed.
 
-    Open issue: the kernel keeps δ-walking inside [M.montladder]'s body
-    when trying to align [Curve25519.M.X0] / [Curve25519.M.scalarmult]
-    with the [MontgomeryCurve.M.X0] / [ScalarMult.scalarmult_ref] forms
-    that [montladder_correct] produces.  Tried:
-    - [rewrite MB_X0_eq_9 in Hcorr] — RSS 4.6+ GB, OOMs.
-    - [rewrite <- Hcorr; rewrite MB_X0_eq_9; exact Hml] — pattern
-      mismatch on goal's [Curve25519.M.X0] vs Hcorr's [MontgomeryCurve.M.X0].
-    - [unfold Curve25519.M.scalarmult] before rewrite — same mismatch.
-    - Building [Hml'] as pure term via [eq_trans + f_equal] — same
-      pattern mismatch in subsequent [rewrite Hml' in Hcorr].
+Lemma MB_X0_eq_9 : Curve25519.M.X0 Curve25519.M.B = F.of_Z p 9.
+Proof. reflexivity. Qed.
 
-    Path forward: state the lemma using [@MontgomeryCurve.M.X0 ...]
-    + [@ScalarMult.scalarmult_ref ...] directly (matching Hcorr's
-    output shape), with all wrapper args expanded.  Then derive the
-    [Curve25519.M.X0 (Curve25519.M.scalarmult ...) = ...] form via
-    a separate [reflexivity] bridge lemma. *)
+(** [Curve25519_montladder_correct]: apply [M.montladder_correct] at
+    Curve25519's parameters once.  All 5 side conditions discharged
+    inline.  Build: 1.8 s. *)
+Lemma Curve25519_montladder_correct : forall (n : Z) (P : Curve25519.M.point),
+  0 <= n ->
+  @M.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    255 (Z.testbit n) (Curve25519.M.X0 P)
+  = Curve25519.M.X0
+      (@ScalarMult.scalarmult_ref _
+         (@MontgomeryCurve.M.add _ eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+            Curve25519.field _ Curve25519.char_ge_3
+            Curve25519.M.a Curve25519.M.b Curve25519.M.b_nonzero)
+         (@MontgomeryCurve.M.zero _ eq F.add F.mul Curve25519.M.a Curve25519.M.b)
+         (@MontgomeryCurve.M.opp _ eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+            Curve25519.field _ Curve25519.M.a Curve25519.M.b Curve25519.M.b_nonzero)
+         (n mod 2 ^ 255) P).
+Proof.
+  intros n P Hn.
+  rewrite Curve25519_M_X0_unfold.
+  unshelve eapply (@M.montladder_correct
+    _ eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+    Curve25519.field _ _ _
+    Curve25519.M.a Curve25519.M.b Curve25519.M.b_nonzero Curve25519.M.a24).
+  - eapply Hierarchy.char_ge_weaken; [apply (@F.char_gt p) | vm_compute; discriminate].
+  - Decidable.vm_decide.
+  - intros r Hr. apply Curve25519.M.a2m4_nonsq. exists r.
+    rewrite Hr. f_equal; try ring; reflexivity.
+  - Decidable.vm_decide.
+  - lia.
+Qed.
+
+(** Phase 4b proper: combine [m_montladder_l_eq_zero] with
+    [Curve25519_montladder_correct] via term composition (avoiding
+    [rewrite ... in Hwrapped] which would scan inside [M.montladder]
+    and trigger kernel δ-walk → OOM). *)
+Lemma m_X0_scalarmult_l_zero :
+  Curve25519.M.X0 (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B) = F.zero.
+Proof.
+  pose proof m_montladder_l_eq_zero as Hml.
+  pose proof (Curve25519_montladder_correct (Z.pos l) Curve25519.M.B
+                ltac:(lia)) as Hwrapped.
+  assert (Hmod : Z.pos l mod 2 ^ 255 = Z.pos l) by (vm_compute; reflexivity).
+  rewrite Hmod in Hwrapped.
+  unfold Curve25519.M.scalarmult.
+  exact (eq_trans (eq_sym Hwrapped)
+                  (eq_trans (f_equal (fun x =>
+                      @M.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+                        255 (Z.testbit (Z.pos l)) x) MB_X0_eq_9)
+                            Hml)).
+Qed.
+
+(** ================================================================ *)
+(** Phase 4c and Phase 5: TODO                                        *)
+(** ================================================================ *)
 
 (** Phase 4c: rule out the (0,0) 2-torsion case to conclude
     [M.scalarmult (Z.pos l) M.B = M.zero] (under M.eq).  Approach:

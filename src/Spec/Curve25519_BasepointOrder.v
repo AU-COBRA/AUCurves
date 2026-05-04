@@ -569,6 +569,66 @@ Proof. intros pp. lia. Qed.
     despite the [M_scalarmult_succ] / [M_add_Proper] Qed wrappers.
     Future work: refactor [HX0eq] proof to avoid the [cbv ... in *]
     that touches [Hsucc] and [HaddPM]. *)
+(** The proof below is mechanically complete: the tactic chain closes
+    the goal interactively (MCP) in <500 ms.  However both [Qed] and
+    [Defined] OOM at ~40 GB RSS during the kernel/elaboration
+    type-check.  Worse, even running the tactics during a
+    non-interactive [coqc] build memory-spikes (38-40 GB) regardless
+    of the closing keyword — the cost is in tactic elaboration of the
+    M-side commutative-group instance derived from
+    [EdwardsMontgomery25519] (whose iso witness contains several
+    [vm_decide] certificates over 252-bit Curve25519 parameters).
+    Sealing all six helpers ([M_add_Proper], [M_scalarmult_succ],
+    [M_X0_Proper], [M_eq_trans], [M_eq_refl_B], [Z_succ_pos_eq])
+    behind [Qed] does not help.
+
+    The lemma is therefore stated as [Admitted] without an inline
+    proof body, with the working tactic chain preserved as a comment
+    below for documentation and as a starting point for the next
+    refactor (likely: bypass the [Hierarchy.commutative_group]
+    plumbing and re-derive [scalarmult_succ] directly from
+    [ScalarMult.scalarmult_ref]'s body + sigma destruction, avoiding
+    the iso group instance entirely).  See
+    [reference_qed_iso_kernel_oom.md] in agent memory.
+
+<<TACTIC PROOF (interactively complete in MCP, OOMs in batch build)
+Proof.
+  pose proof m_X0_scalarmult_l_zero as HX0l.
+  pose proof m_X0_scalarmult_lp1_eq_nine as HX0lp1.
+  pose proof sum_X0_BT as HsumNot9.
+  pose proof (M_scalarmult_succ (Z.pos l) Curve25519.M.B (Pos2Z.is_nonneg l)) as Hsucc.
+  rewrite (Z_succ_pos_eq l) in Hsucc.
+  destruct (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B) as [coords Hcurve] eqn:HPdef.
+  destruct coords as [[x y] | u].
+  + (* finite case: derive contradiction via parity *)
+    exfalso.
+    cbv [Curve25519.M.X0 MontgomeryCurve.M.X0 MontgomeryCurve.M.coordinates] in HX0l.
+    cbn in HX0l.
+    subst x.
+    cbn [Curve25519.M.b] in Hcurve. simpl Curve25519.M.b in Hcurve.
+    assert (Hyy : (y * y)%F = F.zero).
+    { assert (HL : (1 * (y * y))%F = (y*y)%F) by ring.
+      assert (HR : (0 * (0 * 0) + Curve25519.M.a * (0 * 0) + 0)%F = 0%F) by ring.
+      rewrite <- HL. rewrite <- HR. exact Hcurve. }
+    pose proof (@Field.integral_domain _ _ _ _ _ _ _ _ _ _ Curve25519.field F.eq_dec) as Hid.
+    pose proof (@Hierarchy.integral_domain_is_zero_product_zero_factor _ _ _ _ _ _ _ _ Hid) as Hzp.
+    pose proof (@Hierarchy.zero_product_zero_factor _ _ _ _ Hzp _ _ Hyy) as Hyz.
+    assert (Hy : y = F.zero) by (destruct Hyz; assumption).
+    subst y.
+    assert (HPM2T : @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
+                    (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B) M_zero_two_torsion).
+    { rewrite HPdef.
+      cbv [MontgomeryCurve.M.eq M_zero_two_torsion MontgomeryCurve.M.coordinates proj1_sig].
+      cbn. split; reflexivity. }
+    pose proof (M_add_Proper _ _ M_eq_refl_B _ _ HPM2T) as HaddPM.
+    pose proof (M_eq_trans _ _ _ Hsucc HaddPM) as HsuccPM.
+    pose proof (M_X0_Proper _ _ HsuccPM) as HX0eq.
+    rewrite HX0lp1 in HX0eq. apply HsumNot9. exact (eq_sym HX0eq).
+  + (* infinity case: M.eq with M.zero is trivial *)
+    cbv [MontgomeryCurve.M.eq MontgomeryCurve.M.zero MontgomeryCurve.M.coordinates]. cbn.
+    destruct u; exact I.
+Qed.
+>> *)
 Lemma scalarmult_l_eq_zero :
   @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
     (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B)

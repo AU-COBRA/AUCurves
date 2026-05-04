@@ -38,9 +38,16 @@ Section ScalarmultImpl64.
         B_pre  — 120 bytes (3 felems: half_ypx, half_ymx, xyd)
 
       ACC starts at the identity ((0, 1, 1, 0, 0)). For i from 255 down
-      to 0: double ACC, then unconditionally compute TMP = ACC + B (via
-      add_precomputed), then constant-time cmov ACC ← TMP if bit i of
-      scalar is 1.
+      to 0: double ACC into TMP (via [double(TMP, ACC)]), unconditionally
+      cmov ACC ← TMP (memcpy via [cmov_5felems(ACC, TMP, $1)]),
+      unconditionally compute TMP = ACC + B (via add_precomputed),
+      then constant-time cmov ACC ← TMP if bit i of scalar is 1.
+
+      The [double(TMP, ACC); cmov_5felems(ACC, TMP, $1)] pattern (rather
+      than the natural [double(ACC, ACC)]) avoids the sep-aliasing that
+      [spec_of_double64] forbids — its precondition requires [out] and
+      [a] to be sep-disjoint.  TMP is reused as scratch for the doubling
+      output before being overwritten by the subsequent add_precomputed.
 
       Final memcpy ACC → out is via an unconditional cmov_5felems with
       mask=1, reusing the same primitive (no separate memmove needed). *)
@@ -56,7 +63,8 @@ Section ScalarmultImpl64.
       i = $256;
       while ($0 < i) {
         i = i - $1;
-        double(ACC, ACC);
+        double(TMP, ACC);
+        cmov_5felems(ACC, TMP, $1);
         byte = load1(scalar + (i >> $3));
         bit = (byte >> (i & $7)) & $1;
         add_precomputed(TMP, ACC, B_pre);

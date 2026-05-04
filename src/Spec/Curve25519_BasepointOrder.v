@@ -482,22 +482,55 @@ Qed.
 Lemma sum_X0_BT : Curve25519.M.X0 (Curve25519.M.add Curve25519.M.B M_zero_two_torsion) <> F.of_Z p 9.
 Proof. Decidable.vm_decide. Qed.
 
-(** Phase 4c proper: combine [m_X0_scalarmult_l_zero] with the (l+1)
-    parity argument to conclude [M.eq (scalarmult l B) M.zero].
+(** Qed-sealed M-side helpers. Reifying the iso group eagerly inside
+    the main proof made the kernel re-check [EdwardsMontgomery25519]'s
+    body during Qed.  Wrapping in opaque lemmas keeps the kernel away
+    from that body. *)
+Local Definition Hcg_M : Hierarchy.commutative_group :=
+  @Group.isomorphic_commutative_groups_group_H _ _ _ _ _ _ _ _ _ _ _ _ EdwardsMontgomery25519.
+Local Definition Hg_M : Hierarchy.group :=
+  @Hierarchy.commutative_group_group _ _ _ _ _ Hcg_M.
+Local Definition Hmon_M : Hierarchy.monoid := @Hierarchy.group_monoid _ _ _ _ _ Hg_M.
+Local Definition Hsm_M : ScalarMult.is_scalarmult :=
+  @ScalarMult.scalarmult_ref_is_scalarmult _ _ _ _ _ Hg_M.
 
-    TODO: discharge the case analysis on the underlying coordinates of
-    scalarmult l B + the (0,0) → contradiction step.  Ingredients in
-    scope:
-    - [m_X0_scalarmult_l_zero]: M.X0 (l·B) = 0 → either M.zero or (0,0).
-    - [m_X0_scalarmult_lp1_eq_nine]: M.X0 ((l+1)·B) = 9.
-    - [sum_X0_BT]: M.X0 (B + (0,0)) ≠ 9.
-    - [(l+1)·B = B + l·B] via [scalarmult_succ_l_nn] applied at the
-      M-side group from [EdwardsMontgomery25519]'s
-      [isomorphic_commutative_groups_group_H].
-    - y² = 0 → y = 0 via [Field.integral_domain Curve25519.field
-      F.eq_dec] + [Hierarchy.zero_product_zero_factor].
-    Build cost: ~5+ min when the M-side group instance is reified
-    eagerly; better to inline only the pieces the proof body needs. *)
+Lemma M_add_Proper :
+  Proper (
+    @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b ==>
+    @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b ==>
+    @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b)
+    Curve25519.M.add.
+Proof. exact (@Hierarchy.monoid_op_Proper _ _ _ _ Hmon_M). Qed.
+
+Lemma M_scalarmult_succ : forall (n : Z) (P : Curve25519.M.point), 0 <= n ->
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
+    (Curve25519.M.scalarmult (Z.succ n) P)
+    (Curve25519.M.add P (Curve25519.M.scalarmult n P)).
+Proof. intros. exact (@ScalarMult.scalarmult_succ_l_nn _ _ _ _ _ _ Hsm_M n P H). Qed.
+
+(** [Phase 4c] combines [m_X0_scalarmult_l_zero] with the parity
+    argument at scalar [l+1] to conclude that the only point with
+    X-coord 0 reachable as [l·B] is [M.zero].
+
+    Status: tactic proof is mechanically complete and goes through
+    interactively (MCP), but the Qed kernel-check times out at >10 min
+    on this hardware.  The proof goes:
+      - case-split on [proj1_sig (l·B)]:
+        - infinity: M.eq with M.zero is trivial.
+        - finite (x, y): from [m_X0_scalarmult_l_zero], x = 0; from
+          curve eqn + integral domain, y = 0.  So [l·B] M.eq
+          [M_zero_two_torsion = (0,0)].  Then by [M_scalarmult_succ]
+          and [M_add_Proper] (Qed-sealed above), we have
+          M.eq ((l+1)·B) (B + (0,0)).  Hence X0 of both is equal.  But
+          [m_X0_scalarmult_lp1_eq_nine] says X0((l+1)·B) = 9, while
+          [sum_X0_BT] says X0(B + (0,0)) ≠ 9.  Contradiction.
+
+    Kernel slowness suspected on the [cbv ... in HsuccPM] step inside
+    the [HX0eq] [assert] — the iso-sourced group instances expand
+    through [scalarmult_succ_l_nn]'s body when type-checking [HsuccPM]
+    despite the [M_scalarmult_succ] / [M_add_Proper] Qed wrappers.
+    Future work: refactor [HX0eq] proof to avoid the [cbv ... in *]
+    that touches [Hsucc] and [HaddPM]. *)
 Lemma scalarmult_l_eq_zero :
   @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
     (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B)

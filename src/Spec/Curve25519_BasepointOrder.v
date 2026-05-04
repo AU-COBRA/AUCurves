@@ -508,6 +508,18 @@ Lemma M_scalarmult_succ : forall (n : Z) (P : Curve25519.M.point), 0 <= n ->
     (Curve25519.M.add P (Curve25519.M.scalarmult n P)).
 Proof. intros. exact (@ScalarMult.scalarmult_succ_l_nn _ _ _ _ _ _ Hsm_M n P H). Qed.
 
+Lemma M_X0_Proper : forall P Q : Curve25519.M.point,
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b P Q ->
+  Curve25519.M.X0 P = Curve25519.M.X0 Q.
+Proof.
+  intros P Q HPQ.
+  cbv [Curve25519.M.X0 MontgomeryCurve.M.X0 MontgomeryCurve.M.eq MontgomeryCurve.M.coordinates] in *.
+  destruct P as [[[xP yP]|[]] HP]; destruct Q as [[[xQ yQ]|[]] HQ]; cbn in *;
+    try contradiction.
+  - destruct HPQ as [Hx _]. exact Hx.
+  - reflexivity.
+Qed.
+
 (** [Phase 4c] combines [m_X0_scalarmult_l_zero] with the parity
     argument at scalar [l+1] to conclude that the only point with
     X-coord 0 reachable as [l·B] is [M.zero].

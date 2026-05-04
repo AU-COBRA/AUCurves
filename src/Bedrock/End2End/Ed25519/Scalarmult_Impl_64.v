@@ -187,15 +187,78 @@ Section ScalarmultImpl64.
       { eexists. split. { exact Hloc. }
         cbv [Semantics.interp_binop]. reflexivity. }
       eexists. split. { reflexivity. }
-      (* Remaining: discharge [Memory.store_Z m_l (base+offset) 8 v = Some m']
-         via [SeparationMemory.uncurried_store_Z_of_sep] applied at
-         [firstn 8 init_bytes] (the 8 bytes about to be overwritten),
-         then apply [IH] on [rest] at offset [offset + 8] with
-         [init_bytes := skipn 8 init_bytes], then re-assemble the sep
-         predicate via [sep_eq_of_list_word_at_app] + [iff1ToEq]
-         (per [reference_proof_patterns.md]).  ~30 LoC remaining. *)
-      admit.
-  Admitted.
+      (* Discharge [Memory.store_Z m (base+offset) 8 v = Some m1] via
+         [SeparationMemory.uncurried_store_Z_of_sep] applied at
+         [firstn 8 init_bytes] (the 8 bytes about to be overwritten).
+         Then apply [IH] on [rest] at offset [offset + 8] with
+         [init_bytes := skipn 8 init_bytes], using the post-store sep
+         predicate (the [le_split 8 v] block goes into the IH's R0).
+         Finally re-assemble flat_map (le_split 8) (v::rest) =
+         le_split 8 v ++ flat_map (le_split 8) rest via
+         [sep_eq_of_list_word_at_app] + [iff1ToEq]. *)
+      assert (Hsplit_init : init_bytes = (List.firstn 8 init_bytes ++ List.skipn 8 init_bytes)%list)
+        by (rewrite List.firstn_skipn; reflexivity).
+      assert (Hlen_first : Datatypes.length (List.firstn 8 init_bytes) = 8%nat).
+      { rewrite List.length_firstn, Hlen. cbv [Bitwidth64.BW64]. Lia.lia. }
+      assert (Hlen_skip : Datatypes.length (List.skipn 8 init_bytes) = (8 * Datatypes.length rest)%nat).
+      { rewrite List.length_skipn, Hlen. Lia.lia. }
+      epose proof (SeparationMemory.sep_eq_of_list_word_at_app
+                     (word.add base_addr (word.of_Z offset))
+                     (List.firstn 8 init_bytes) (List.skipn 8 init_bytes) 8) as Hm1.
+      specialize (Hm1 ltac:(rewrite Hlen_first; reflexivity)).
+      specialize (Hm1 ltac:(rewrite Hlen_first, Hlen_skip; cbv [Bitwidth64.BW64]; Lia.lia)).
+      apply iff1ToEq in Hm1.
+      rewrite Hsplit_init in Hsep at 1.
+      rewrite Hm1 in Hsep.
+      edestruct (SeparationMemory.uncurried_store_Z_of_sep
+                  (word.add base_addr (word.of_Z offset)) 8%nat
+                  (List.firstn 8 init_bytes) v
+                  (sepclause_of_map ((List.skipn 8 init_bytes)$@(word.add (word.add base_addr (word.of_Z offset)) (word.of_Z 8))) ⋆ R)%sep
+                  m)
+        as [m1 [Hstore_eq Hsep1]].
+      { ssplit.
+        - ecancel_assumption.
+        - exact Hlen_first.
+        - cbv [Bitwidth64.BW64]. Lia.lia. }
+      exists m1. split.
+      { unfold Memory.store. cbn [bytes_per bytes_per_word].
+        rewrite word.unsigned_of_Z. cbv [word.wrap].
+        rewrite Z.mod_small by Lia.lia.
+        exact Hstore_eq. }
+      apply IH with
+        (R := (sepclause_of_map ((LittleEndianList.le_split 8 v)$@(word.add base_addr (word.of_Z offset))) ⋆ R)%sep)
+        (init_bytes := List.skipn 8 init_bytes).
+      + exact Hlen_skip.
+      + exact Hrest_bnd.
+      + Lia.lia.
+      + rewrite Hlen_skip. Lia.lia.
+      + exact Hloc.
+      + assert (Haddr_eq : word.add base_addr (word.of_Z (offset + 8)) =
+                           word.add (word.add base_addr (word.of_Z offset)) (word.of_Z 8))
+          by ZnWords.
+        rewrite Haddr_eq.
+        ecancel_assumption.
+      + intros m' Hsep_post.
+        apply Hpost.
+        cbn [flat_map].
+        epose proof (SeparationMemory.sep_eq_of_list_word_at_app
+                       (word.add base_addr (word.of_Z offset))
+                       (LittleEndianList.le_split 8 v)
+                       (List.flat_map (LittleEndianList.le_split 8) rest)
+                       8) as Hm2.
+        specialize (Hm2 ltac:(rewrite LittleEndianList.length_le_split; reflexivity)).
+        specialize (Hm2 ltac:(
+          rewrite LittleEndianList.length_le_split;
+          rewrite (List.flat_map_const_length _ 8) by (intros; apply LittleEndianList.length_le_split);
+          cbv [Bitwidth64.BW64]; Lia.lia)).
+        apply iff1ToEq in Hm2.
+        rewrite Hm2.
+        assert (Haddr_eq2 : word.add base_addr (word.of_Z (offset + 8)) =
+                           word.add (word.add base_addr (word.of_Z offset)) (word.of_Z 8))
+          by ZnWords.
+        rewrite Haddr_eq2 in Hsep_post.
+        ecancel_assumption.
+  Qed.
 
   (** Public 2-arg API: [ed25519_scalarmult_base(out, scalar)].
       Allocates B_pre limb buffer on stack, materializes B_precomputed

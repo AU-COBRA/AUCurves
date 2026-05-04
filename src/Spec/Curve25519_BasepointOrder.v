@@ -362,33 +362,47 @@ Proof.
 Qed.
 
 (** ================================================================ *)
-(** Phase 4b and Phase 5: TODO                                         *)
+(** Phase 4b, 4c, 5: TODO                                              *)
 (** ================================================================ *)
 
 (** Phase 4b: apply [M.montladder_correct] to [m_montladder_l_eq_zero]
     to obtain [M.X0 (M.scalarmult (Z.pos l) M.B) = F.zero].
 
-    Side conditions verified individually:
+    All 6 side conditions verified individually in MCP (each <3 s):
       char_ge 28: [eapply Hierarchy.char_ge_weaken; [apply (@F.char_gt p) | vm_compute; discriminate].]
       char_ge 3:  same.
       4*a24=a-2:  [Decidable.vm_decide.] (~2.7 s)
       a2m4_nonsq: [intros r Hr. apply Curve25519.M.a2m4_nonsq. exists r. rewrite Hr; f_equal; ring.]
       F.inv 0=0:  [Decidable.vm_decide.]
       0<=255:     [lia.]
-    All 6 side conditions are dischargeable.  The blocker is the final
-    [rewrite Hml in Hcorr] / [change F.of_Z _ 9 with M.X0 M.B in Hml]:
-    these trigger heavy kernel conversion (RSS oscillates 1.6-6 GB,
-    eventual OOM).  Likely the same pattern as the [exact H] inside
-    unfolded MxDH.montladder — kernel walks inside [M.montladder]'s
-    body to align args.
+    Bridge lemma [MB_X0_eq_9 : @MontgomeryCurve.M.X0 ... M.B = F.of_Z p 9]
+    proved by [reflexivity] in 132 ms.
 
-    Mitigation paths to try next session:
-    - Pose [M.X0 M.B = F.of_Z p 9] as a [reflexivity] lemma first,
-      then chain via that lemma instead of [change ... with].
-    - Make [M.montladder] Strategy-opaque locally during the rewrite.
-    - State [m_X0_scalarmult_l_zero] in a form that doesn't need
-      [change], e.g., factor out the [M.X0 M.B = 9] step as a separate
-      small lemma. *)
+    Open issue: the kernel keeps δ-walking inside [M.montladder]'s body
+    when trying to align [Curve25519.M.X0] / [Curve25519.M.scalarmult]
+    with the [MontgomeryCurve.M.X0] / [ScalarMult.scalarmult_ref] forms
+    that [montladder_correct] produces.  Tried:
+    - [rewrite MB_X0_eq_9 in Hcorr] — RSS 4.6+ GB, OOMs.
+    - [rewrite <- Hcorr; rewrite MB_X0_eq_9; exact Hml] — pattern
+      mismatch on goal's [Curve25519.M.X0] vs Hcorr's [MontgomeryCurve.M.X0].
+    - [unfold Curve25519.M.scalarmult] before rewrite — same mismatch.
+    - Building [Hml'] as pure term via [eq_trans + f_equal] — same
+      pattern mismatch in subsequent [rewrite Hml' in Hcorr].
+
+    Path forward: state the lemma using [@MontgomeryCurve.M.X0 ...]
+    + [@ScalarMult.scalarmult_ref ...] directly (matching Hcorr's
+    output shape), with all wrapper args expanded.  Then derive the
+    [Curve25519.M.X0 (Curve25519.M.scalarmult ...) = ...] form via
+    a separate [reflexivity] bridge lemma. *)
+
+(** Phase 4c: rule out the (0,0) 2-torsion case to conclude
+    [M.scalarmult (Z.pos l) M.B = M.zero] (under M.eq).  Approach:
+    use a separate computational fact [monty (l+1) 9 = 9] (provable
+    by [vm_decide_no_check] like [order_basepoint] itself), derive
+    [X0 (M.scalarmult (l+1) M.B) = 9] via the same chain as Phase 4b,
+    then case-split on whether [M.scalarmult l M.B = M.zero] vs
+    [(0,0)]: the latter would imply [M.scalarmult (l+1) M.B = (0,0)+B]
+    whose X0 ≠ 9 (vm_decide).  Contradiction → former. *)
 
 (** Phase 5: transport via [homomorphism_scalarmult] across the
     [EdwardsMontgomery25519] isomorphism to derive

@@ -425,6 +425,69 @@ Section ScalarmultImpl64.
     split; [reflexivity|].
     intros B_pre_addr mStack2 mCombined2 Hany2 Hsplit2.
     unfold dlet.dlet.
+    (* Phase 1.5: extract bytes from anybytes hypotheses, convert to $@ form. *)
+    destruct (Array.anybytes_to_array_1 _ _ _ Hany1) as [init_bytes [Harr1 Hlen1]].
+    destruct (Array.anybytes_to_array_1 _ _ _ Hany2) as [B_pre_init [Harr2 Hlen2]].
+    change (Z.to_nat 96) with 96%nat in Hlen1.
+    change (Z.to_nat 120) with 120%nat in Hlen2.
+    pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr init_bytes
+                  ltac:(rewrite Hlen1; cbn; Lia.lia)) as Hiff1.
+    apply iff1ToEq in Hiff1. rewrite Hiff1 in Harr1.
+    pose proof (array1_iff_eq_of_list_word_at B_pre_addr B_pre_init
+                  ltac:(rewrite Hlen2; cbn; Lia.lia)) as Hiff2.
+    apply iff1ToEq in Hiff2. rewrite Hiff2 in Harr2.
+    (* Build the combined sep predicate (init ⋆ B_pre ⋆ out ⋆ scalar ⋆ R) on mCombined2. *)
+    assert (HsepC1 :
+      (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+       sepclause_of_map (out_init$@out_ptr) ⋆
+       sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep mCombined1).
+    { assert (Hiff : Lift1Prop.iff1
+        (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+         sepclause_of_map (out_init$@out_ptr) ⋆
+         sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep
+        (sep (sepclause_of_map (init_bytes$@B_pre_bytes_addr))
+             (sepclause_of_map (out_init$@out_ptr) ⋆
+              sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep)) by cancel.
+      apply Hiff.
+      exists mStack1, mem. ssplit.
+      - apply Properties.map.split_comm. exact Hsplit1.
+      - exact Harr1.
+      - exact Hsep. }
+    assert (HsepC2 :
+      (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+       sepclause_of_map (B_pre_init$@B_pre_addr) ⋆
+       sepclause_of_map (out_init$@out_ptr) ⋆
+       sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep mCombined2).
+    { assert (Hiff : Lift1Prop.iff1
+        (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+         sepclause_of_map (B_pre_init$@B_pre_addr) ⋆
+         sepclause_of_map (out_init$@out_ptr) ⋆
+         sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep
+        (sep (sepclause_of_map (B_pre_init$@B_pre_addr))
+             (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+              sepclause_of_map (out_init$@out_ptr) ⋆
+              sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep)) by cancel.
+      apply Hiff.
+      exists mStack2, mCombined1. ssplit.
+      - apply Properties.map.split_comm. exact Hsplit2.
+      - exact Harr2.
+      - exact HsepC1. }
+    (* Right-associated form needed by init_u64_seq_correct's hypothesis: *)
+    assert (HsepC2_ra :
+      sep (sepclause_of_map (init_bytes$@B_pre_bytes_addr))
+          (sep (sepclause_of_map (B_pre_init$@B_pre_addr))
+               (sep (sepclause_of_map (out_init$@out_ptr))
+                    (sep (sepclause_of_map (scalar$@scalar_ptr)) R))) mCombined2).
+    { assert (Hiff: Lift1Prop.iff1
+        (sepclause_of_map (init_bytes$@B_pre_bytes_addr) ⋆
+         sepclause_of_map (B_pre_init$@B_pre_addr) ⋆
+         sepclause_of_map (out_init$@out_ptr) ⋆
+         sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep
+        (sep (sepclause_of_map (init_bytes$@B_pre_bytes_addr))
+             (sep (sepclause_of_map (B_pre_init$@B_pre_addr))
+                  (sep (sepclause_of_map (out_init$@out_ptr))
+                       (sep (sepclause_of_map (scalar$@scalar_ptr)) R))))) by cancel.
+      apply Hiff. exact HsepC2. }
     (* Phase 2: peel cmd.seq for init_u64_seq, apply init_u64_seq_correct.
        The first stackalloc gives us 96 bytes at B_pre_bytes_addr;
        after init_u64_seq, those bytes are flat_map (LittleEndianList.le_split 8) B_precomputed_u64s
@@ -432,16 +495,14 @@ Section ScalarmultImpl64.
     (* Step the cmd.seq peeling and apply init_u64_seq_correct: *)
     eapply WeakestPreconditionProperties.Proper_cmd; cycle 1.
     { eapply init_u64_seq_correct.
-      - rewrite B_precomputed_u64s_length.
-        (* length of any 96-byte init_bytes from anybytes — proven via anybytes_unique_domain *)
-        admit.
+      - rewrite B_precomputed_u64s_length. exact Hlen1.
       - exact B_precomputed_u64s_bound.
       - Lia.lia.
-      - admit. (* offset + length <= 2^64; trivially since 0 + 96 < 2^64 *)
+      - rewrite Hlen1. cbv [Bitwidth64.BW64]. Lia.lia.
       - rewrite ?map.get_put_diff by congruence.
         rewrite map.get_put_same. reflexivity.
-      - admit. (* init_bytes$@B_pre_bytes_addr ⋆ R sep predicate; needs
-                 anybytes → exists init_bytes, init_bytes$@... extraction *)
+      - assert (Heq : word.add B_pre_bytes_addr (word.of_Z 0) = B_pre_bytes_addr) by ZnWords.
+        rewrite Heq. exact HsepC2_ra.
       - intros m' Hsep'.
         (* Phase 3: 3× handle_call fe25519_from_bytes_correct.
            After init_u64_seq, B_pre_bytes holds B_precomputed_bytes
@@ -452,10 +513,15 @@ Section ScalarmultImpl64.
            Phase 4: handle_call ed25519_scalarmult_base_parametric_correct (via Hpar)
            gives out_bytes with length 200.
            Phase 5: dealloc B_pre / B_pre_bytes from m' to recover m'_inner.
-           Phase 6: provide nil for rets, tr=tr, out_bytes existential. *)
+           Phase 6: provide nil for rets, tr=tr, out_bytes existential.
+           ~300-500 LoC of WP plumbing remains; mirrors EdwardsXYZT64.v
+           double64_ok dealloc-cascade pattern. Spec wiring blocker:
+           spec_of_fe25519_from_bytes is not exposed at this layer (need
+           Existing Instance from Field25519_64). *)
         admit. }
     intros tr' m' l' Hpost.
-    (* Proper_cmd's monotonicity goal: post derived from inner post. *)
+    (* Proper_cmd's monotonicity goal: post derived from inner post.
+       Inner post is shelved (Goal 1 above); discharged once Phase 3-6 lands. *)
     admit.
   Admitted.
 

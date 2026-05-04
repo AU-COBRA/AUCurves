@@ -432,33 +432,83 @@ Proof.
 Qed.
 
 (** ================================================================ *)
-(** Phase 4c and Phase 5: TODO                                        *)
+(** Phase 4c: parity argument at scalar [l+1]                          *)
 (** ================================================================ *)
 
-(** Phase 4c: rule out the (0,0) 2-torsion case to conclude
-    [M.scalarmult (Z.pos l) M.B = M.zero] (under M.eq).  Approach:
-    use a separate computational fact [monty (l+1) 9 = 9] (provable
-    by [vm_decide_no_check] like [order_basepoint] itself), derive
-    [X0 (M.scalarmult (l+1) M.B) = 9] via the same chain as Phase 4b,
-    then case-split on whether [M.scalarmult l M.B = M.zero] vs
-    [(0,0)]: the latter would imply [M.scalarmult (l+1) M.B = (0,0)+B]
-    whose X0 ≠ 9 (vm_decide).  Contradiction → former. *)
+(** Computational fact at [l+1]: the X-coord of [(l+1)·B] is 9.
+    Proved by [vm_decide] (same Montgomery-ladder calculation as
+    [order_basepoint], with N.pos l replaced by N.pos (Pos.succ l)).
+    Build cost ≈ 12 s. *)
+Lemma monty_lp1_eq_nine :
+  Spec.Test.X25519.monty (N.pos (Pos.succ l)) (F.of_Z _ 9) = F.of_Z _ 9.
+Proof. Decidable.vm_decide. Qed.
+
+Lemma mxdh_lp1_eq_nine :
+  @MxDH.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    (cswap_FF (F:=F p))
+    255 (BinNat.N.testbit_nat (N.pos (Pos.succ l))) (F.of_Z _ 9)
+  = F.of_Z _ 9.
+Proof. Decidable.vm_decide. Qed.
+
+Lemma m_montladder_lp1_eq_nine :
+  @M.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+    255 (Z.testbit (Z.pos (Pos.succ l))) (F.of_Z p 9) = F.of_Z p 9.
+Proof.
+  pose proof (mxdh_eq_M_montladder F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+                255%nat (BinNat.N.testbit_nat (N.pos (Pos.succ l))) (Z.testbit (Z.pos (Pos.succ l)))
+                (fun i => eq_sym (testbit_nat_N_pos_to_Z i (Pos.succ l))) (F.of_Z _ 9)) as Hbridge.
+  rewrite mxdh_lp1_eq_nine in Hbridge.
+  symmetry. replace 255 with (Z.of_nat 255) by reflexivity. exact Hbridge.
+Qed.
+
+Lemma m_X0_scalarmult_lp1_eq_nine :
+  Curve25519.M.X0 (Curve25519.M.scalarmult (Z.pos (Pos.succ l)) Curve25519.M.B) = F.of_Z p 9.
+Proof.
+  pose proof m_montladder_lp1_eq_nine as Hml.
+  pose proof (Curve25519_montladder_correct (Z.pos (Pos.succ l)) Curve25519.M.B
+                ltac:(lia)) as Hwrapped.
+  assert (Hmod : Z.pos (Pos.succ l) mod 2 ^ 255 = Z.pos (Pos.succ l)) by (vm_compute; reflexivity).
+  rewrite Hmod in Hwrapped.
+  unfold Curve25519.M.scalarmult.
+  exact (eq_trans (eq_sym Hwrapped)
+                  (eq_trans (f_equal (fun x =>
+                      @M.montladder _ F.zero F.one F.add F.sub F.mul F.inv Curve25519.M.a24
+                        255 (Z.testbit (Z.pos (Pos.succ l))) x) MB_X0_eq_9)
+                            Hml)).
+Qed.
+
+(** Direct vm_decide computational fact: M.X0 of (B + (0,0)) ≠ 9.
+    Closes the parity contradiction for the 2-torsion case. *)
+Lemma sum_X0_BT : Curve25519.M.X0 (Curve25519.M.add Curve25519.M.B M_zero_two_torsion) <> F.of_Z p 9.
+Proof. Decidable.vm_decide. Qed.
+
+(** Phase 4c proper: combine [m_X0_scalarmult_l_zero] with the (l+1)
+    parity argument to conclude [M.eq (scalarmult l B) M.zero].
+
+    TODO: discharge the case analysis on the underlying coordinates of
+    scalarmult l B + the (0,0) → contradiction step.  Ingredients in
+    scope:
+    - [m_X0_scalarmult_l_zero]: M.X0 (l·B) = 0 → either M.zero or (0,0).
+    - [m_X0_scalarmult_lp1_eq_nine]: M.X0 ((l+1)·B) = 9.
+    - [sum_X0_BT]: M.X0 (B + (0,0)) ≠ 9.
+    - [(l+1)·B = B + l·B] via [scalarmult_succ_l_nn] applied at the
+      M-side group from [EdwardsMontgomery25519]'s
+      [isomorphic_commutative_groups_group_H].
+    - y² = 0 → y = 0 via [Field.integral_domain Curve25519.field
+      F.eq_dec] + [Hierarchy.zero_product_zero_factor].
+    Build cost: ~5+ min when the M-side group instance is reified
+    eagerly; better to inline only the pieces the proof body needs. *)
+Lemma scalarmult_l_eq_zero :
+  @MontgomeryCurve.M.eq _ eq F.add F.mul Curve25519.M.a Curve25519.M.b
+    (Curve25519.M.scalarmult (Z.pos l) Curve25519.M.B)
+    (@MontgomeryCurve.M.zero _ eq F.add F.mul Curve25519.M.a Curve25519.M.b).
+Admitted.
+
+(** ================================================================ *)
+(** Phase 5: Edwards-Montgomery transport (TODO)                      *)
+(** ================================================================ *)
 
 (** Phase 5: transport via [homomorphism_scalarmult] across the
     [EdwardsMontgomery25519] isomorphism to derive
     [E.scalarmult (Z.pos l) E.B = E.zero] under E.eq, which is
-    [B_order] in [XEdDSA_Curve25519.v]. *)
-
-(** TODO Phase 3 (continued): combine [mxdh_l_eq_zero] with
-    [mxdh_eq_M_montladder] (Phase 2) and [montladder_correct] from
-    [Curves.Montgomery.XZProofs] to derive
-    [X0 (M.scalarmult (Z.pos l) M.B) = 0] under M.eq.
-
-    TODO Phase 4: rule out the (0,0) 2-torsion case via the parity
-    argument [X0 (M.scalarmult (l+1) M.B) = 9 ≠ X0 ((0,0) + M.B)],
-    concluding [M.scalarmult (Z.pos l) M.B ~ M.zero] under M.eq.
-
-    TODO Phase 5: transport through the [EdwardsMontgomery25519]
-    isomorphism via [homomorphism_scalarmult] to obtain
-    [E.scalarmult (Z.pos l) E.B ~ E.zero] under E.eq, which is
     [B_order] in [XEdDSA_Curve25519.v]. *)

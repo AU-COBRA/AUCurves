@@ -554,9 +554,49 @@ Section ScalarmultImpl64.
         apply iff1ToEq in Hs1; rewrite Hs1 in Hsep'; clear Hs1.
         replace (word.add (word.add B_pre_bytes_addr (word.of_Z 32)) (word.of_Z 32)) with
           (word.add B_pre_bytes_addr (word.of_Z 64)) in Hsep' by ring.
+        (* Phase 4: split B_pre_init (120 bytes) into 3 × 40-byte FElem chunks
+           via [BytesToFelem3.byte_3felem_iff]. Hsep' becomes:
+             chunk32_0$@B_pre_bytes_addr ⋆
+             chunk32_1$@(B_pre_bytes_addr+32) ⋆
+             chunk32_2$@(B_pre_bytes_addr+64) ⋆
+             FElem B_pre_addr (bs2felem (firstn 40 B_pre_init)) ⋆
+             FElem (B_pre_addr+40) (bs2felem (firstn 40 (skipn 40 B_pre_init))) ⋆
+             FElem (B_pre_addr+80) (bs2felem (firstn 40 (skipn 80 B_pre_init))) ⋆
+             out_init$@out_ptr ⋆ scalar$@scalar_ptr ⋆ R *)
+        pose proof (BytesToFelem3.byte_3felem_iff B_pre_init B_pre_addr Hlen2) as Hbpfe.
+        apply iff1ToEq in Hbpfe; rewrite Hbpfe in Hsep'; clear Hbpfe.
+        cbv zeta in Hsep'.
+        (* Phase 5: peel cmd.seq via cbn [cmd_body] to expose 3 from_bytes calls
+           + 1 parametric call as nested [exists args, dexprs ⋆ call] structure. *)
+        cbn [cmd_body].
+        (* INCOMPLETE — Phase 6-9 remain (estimated 300-500 LoC):
+           - 3× from_bytes [handle_call] discharge.  Each call needs:
+             * dexprs computing args = [B_pre_addr+(40*i), B_pre_bytes_addr+(32*i)]
+             * spec_of_from_bytes precondition: FElemBytes for input bytes
+               (NB: chunk32_i$@addr only encodes raw bytes; FElemBytes adds
+                emp(length=encoded_felem_size_in_bytes /\ bytes_in_bounds bs).
+                bytes_in_bounds for B_precomputed_bytes follows from
+                their concrete F p value < p < 2^255 — needs vm_compute proof)
+             * FElem precondition for output (existing FElem at B_pre_addr+(40*i))
+             * after: extract feval X = feval_bytes chunk32_i, FElem (X) at output
+           - handle_call parametric (Hpar):
+             * needs to convert 3 FElem chunks back to 120-byte form via
+               byte_3felem_iff in reverse (apply iff1ToEq + symm + rewrite)
+             * spec args: out, scalar, B_pre; sep predicate exactly matches
+               spec_of_ed25519_scalarmult_base_parametric's pre.
+           - dealloc cascade:
+             * apply byte_buffer_to_anybytes_120 for B_pre stackalloc
+             * apply byte_buffer_to_anybytes (n=96) for B_pre_bytes stackalloc
+             * use Hsplit1, Hsplit2 to thread map.split chain
+           - postcondition: rets=nil, tr=tr, out_bytes := out' (length 200).
+           Outer Proper_cmd monotonicity (last admit) follows by [exact Hpost]
+           once the inner post is fully discharged.
+
+           Spec wiring is in place: spec_of_fe25519_from_bytes is a hypothesis.
+           Setup phases A-D are done: 96-byte split + 120-byte split + WP form.
+           Estimated 3-7 hours of additional WP plumbing to close. *)
         admit. }
-    intros tr' m' l' Hpost.
-    admit.
+    intros tr' m' l' Hpost. exact Hpost.
   Admitted.
 
 End ScalarmultImpl64.

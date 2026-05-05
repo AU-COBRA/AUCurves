@@ -24,6 +24,7 @@ Require Import Bedrock.End2End.Ed25519.EdwardsXYZT64_Imports.
 Require Import Bedrock.End2End.Ed25519.Cmov5Felems_64.
 Require Import Bedrock.End2End.Ed25519.B_precomputed_64.
 Require Import Bedrock.End2End.Ed25519.BytesToFelem3.
+Require Import Bedrock.End2End.Ed25519.Felems3ToBytes.
 Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 
 Section ScalarmultImpl64.
@@ -726,36 +727,64 @@ Section ScalarmultImpl64.
             exact Hsep_b2.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
           - subst chunk32_2. rewrite Hbs. vm_compute. intuition. }
-        (* OPTION B PROGRESS — Proper_cmd removed (commit c923e5c) makes
-           body's post the explicit dealloc cascade.  Remaining work
-           (~150 LoC, structurally written below at sketch-level):
+        (* Post-3rd-from_bytes: extract X_b2, advance dexprs for parametric. *)
+        match goal with
+        | H : _ = nil /\ _ = _ /\ exists _ : felem, _ |- _ =>
+            destruct H as (Hr_b2 & Htr_b2 & X_b2 & Hfeval_b2 & Hbnd_b2 & Hsep_b2_post)
+        end.
+        clear Hsep_b0_post Hsep_b1_post.
+        rewrite Hr_b2.
+        eexists. split. { reflexivity. }
+        repeat straightline.
+        (* Parametric call.  Use felems3_to_bytes_iff helper backward
+           (iff1_sym) on the goal's concat → FElem chain, so the precond's
+           sep matches Hsep_b2_post directly via ecancel_assumption_impl. *)
+        straightline_call.
+        1: { ssplit.
+             - exact Hlen_out.
+             - exact Hlen_scalar.
+             - instantiate (1 := ((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
+                                 ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
+                                 ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2)))%list).
+               rewrite !List.length_app, !ws2bs_felem_length. cbn. reflexivity.
+             - pose proof (felems3_to_bytes_iff X_b0 X_b1 X_b2 B_pre_addr) as Hhelper.
+               apply iff1ToEq in Hhelper.
+               rewrite <- Hhelper.
+               instantiate (1 := (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
+                                  ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+                                  ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+                                  ⋆ R)%sep).
+               ecancel_assumption_impl. }
+        (* Post-parametric: extract out_par, then dealloc cascade.
+           Match by structure since auto-intro variable names vary. *)
+        match goal with
+        | H : _ = nil /\ _ = _ /\ exists _ : list Init.Byte.byte, _ |- _ =>
+            destruct H as (Hr_par & Htr_par & out_par & Hlen_par & Hsep_par)
+        end.
+        (* Clear stale state to speed up ecancel_assumption_impl. *)
+        clear Hsep_b2_post Hsep' HsepC0 HsepC1 HsepC2 HsepC2_ra Hsep_b0_post
+              Hsep_b1_post Hsep0 HsepC1 || idtac.
+        rewrite Hr_par.
+        eexists. split. { reflexivity. }
+        (* DEALLOC CASCADE — fully written but ecancel_assumption_impl times
+           out (>60s) on the heavily-accumulated proof state.  The structure:
 
-           1. Destructure post-3rd-from_bytes H to get X_b2 + Hsep_b2_post.
-           2. straightline_call for parametric:
-              - Discharge length conjuncts via Hlen_out, Hlen_scalar, list_app+ws2bs lengths.
-              - Discharge sep conjunct: convert Hsep_b2_post's 3 FElems
-                to ws2bs via felem_to_bytes (3x), concat via
-                sep_eq_of_list_word_at_app (2x), then `use_sep_assumption +
-                cancel + cancel_seps_at_indices 0 2 / 0 1 / 0 0` for the
-                reverse-vs-forward sep ordering.
-           3. Destructure post-parametric H to get out_par + Hsep_par.
-           4. Dealloc 1 (B_pre 120 bytes): byte_buffer_to_anybytes_120
-              applied to a sep-rearranged Hsep_par.
-           5. Dealloc 2 (B_pre_bytes 96 bytes): combine 3×32-byte chunks
-              via sep_eq_of_list_word_at_app reverse, then byte_buffer_to_anybytes.
-           6. Final post: out_par witness, length=200, sep with R.
+           1. Reorder Hsep_par via assert+ecancel to put 120-byte concat
+              at the front, then byte_buffer_to_anybytes_120 → mStack_120.
+           2. From the residual (HsepInner_120) at B_pre_bytes_addr:
+              combine chunk32_0/1/2 (3×32 bytes) into a 96-byte concat via
+              sep_eq_of_list_word_at_app reverse, then byte_buffer_to_anybytes
+              (n=96) → mStack_96.
+           3. Final post: rets=nil, tr'=tr (from Htr_par), out_par witness,
+              Hlen_par, HsepInner_96.
 
-           BLOCKER: the FElem-to-ws2bs conversion in Hsep_b2_post requires
-           [setoid_rewrite Hf2b0/1/2] because plain rewrite has implicit-
-           arg mismatches.  setoid_rewrite times out (>60s) on the proof
-           state even with stale-hyp clearing, due to traversal of nested
-           let-bindings (chunk32_0/1/2, chunk40_0/1/2) in the env.
+           The Felems3ToBytes helper has been used; the main precond's sep
+           goal closes via [pose proof helper; rewrite <- (iff1ToEq helper);
+           instantiate; ecancel_assumption_impl] (~5 LoC).
 
-           CLEAN FIX: factor the FElem-3-block-to-bytes conversion as a
-           standalone Qed'd helper lemma (similar to BytesToFelem3.v but
-           in the reverse direction — Felems3ToBytes).  Then a single
-           `apply (Felems3ToBytes_iff B_pre_addr X_b0 X_b1 X_b2)` replaces
-           the setoid_rewrite chain.  ~30 LoC helper, then ~120 LoC main. *)
+           Remaining gap: 60s timeout in ecancel_assumption_impl on the
+           dealloc-step assert.  Fix: aggressive pre-clear of accumulated
+           Hsep* / chunk* facts, or rebuild as multiple small asserts. *)
         admit.
   Admitted.
 

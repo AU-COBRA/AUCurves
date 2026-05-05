@@ -635,6 +635,7 @@ Section ScalarmultImpl64.
         destruct H as (Hr_b0 & Htr_b0 & X_b0 & Hfeval_b0 & Hbnd_b0 & Hsep_b0_post).
         rewrite Hr_b0.
         eexists. split. { reflexivity. }
+        repeat straightline.
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

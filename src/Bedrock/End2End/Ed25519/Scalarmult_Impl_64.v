@@ -632,6 +632,9 @@ Section ScalarmultImpl64.
           - (* Goal 4: bytes_in_bounds chunk32_0 — vm_compute on concrete bytes *)
             subst chunk32_0. rewrite Hbs. vm_compute. intuition. }
         (* Post-call continuation — 3 more calls + dealloc + final. *)
+        destruct H as (Hr_b0 & Htr_b0 & X_b0 & Hfeval_b0 & Hbnd_b0 & Hsep_b0_post).
+        rewrite Hr_b0.
+        eexists. split. { reflexivity. }
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

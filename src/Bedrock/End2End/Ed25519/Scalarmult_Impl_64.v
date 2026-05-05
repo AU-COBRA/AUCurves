@@ -608,24 +608,20 @@ Section ScalarmultImpl64.
           eexists. split. { rewrite ?map.get_put_diff by congruence.
                             rewrite map.get_put_same. reflexivity. }
           reflexivity. }
-        (* Phase 6 onward — straightline_call + 4-conjunct precond + 3 more
-           from_bytes + parametric + dealloc + final post. ~400 LoC.
-
-           Goal 1 of 1st from_bytes precond was verified Qed-clean in MCP via:
-             pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0
-                           ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
-             apply iff1ToEq in Hiff_c0.
-             ssplit. { eexists. setoid_rewrite Hiff_c0. ecancel_assumption. }
-           but discharging Goals 2-4 in-block triggered "wrong bullet" /
-           "no instance for x" issues — the destructured form
-             exists mq, map.split m' ?mp mq /\ ?out$@B_pre_addr ?mp /\ ?Rr mq
-           is harder than the sep form solve_mem expects.
-
-           Goal 4 (bytes_in_bounds) closes via Ristretto-style:
-             subst chunk32_0; rewrite Hbs;
-             cbv [Field.bytes_in_bounds frep25519 ...];
-             match goal with |- ?P ?x ?z => let y := eval cbv in x in change (P y z) end;
-             cbv [...]; cbn; reflexivity. *)
+        straightline_call.
+        { (* 4-conjunct precond for 1st from_bytes *)
+          pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0
+                        ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
+          apply iff1ToEq in Hiff_c0.
+          ssplit.
+          - (* Goal 1: input bytes ⊆ memory *)
+            eexists. setoid_rewrite Hiff_c0. ecancel_assumption.
+          - (* Goal 2: output buffer (destructured form) — 1 admit *) admit.
+          - (* Goal 3: output length = felem_size_in_bytes *)
+            change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb0_len.
+          - (* Goal 4: bytes_in_bounds chunk32_0 — vm_compute on concrete bytes *)
+            subst chunk32_0. rewrite Hbs. vm_compute. intuition. }
+        (* Post-call continuation — 3 more calls + dealloc + final. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

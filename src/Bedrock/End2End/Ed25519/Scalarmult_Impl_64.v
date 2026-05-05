@@ -505,9 +505,11 @@ Section ScalarmultImpl64.
        The first stackalloc gives us 96 bytes at B_pre_bytes_addr;
        after init_u64_seq, those bytes are flat_map (LittleEndianList.le_split 8) B_precomputed_u64s
        which equals B_precomputed_bytes by B_precomputed_u64s_to_bytes. *)
-    (* Step the cmd.seq peeling and apply init_u64_seq_correct: *)
-    eapply WeakestPreconditionProperties.Proper_cmd; cycle 1.
-    { eapply init_u64_seq_correct.
+    (* Apply init_u64_seq_correct directly (no Proper_cmd) — keeps the
+       body cmd's post as the concrete POST_inner2 (the dealloc cascade)
+       rather than introducing a Type-codomain ?x evar that resists
+       Prop-typed instantiation.  Option B per session 2026-05-05. *)
+    eapply init_u64_seq_correct.
       - rewrite B_precomputed_u64s_length. exact Hlen1.
       - exact B_precomputed_u64s_bound.
       - Lia.lia.
@@ -734,8 +736,7 @@ Section ScalarmultImpl64.
            fill needs the 2-level dealloc cascade — see
            memory/reference_r10_proper_call_strategy.md.
            Estimated ~150 LoC.  Deferred. *)
-        admit. }
-    intros tr' m' l' Hpost. exact Hpost.
+        admit.
   Admitted.
 
 End ScalarmultImpl64.

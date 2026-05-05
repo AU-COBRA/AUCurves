@@ -188,6 +188,65 @@ Section LoopBodyPreserves.
     eexists. split.
     { eexists. split. { exact Hl_i. }
       cbv [Semantics.interp_binop]. reflexivity. }
+    (* Step 2 (partial) — [double(TMP, ACC)] call.
+       Sub-steps verified in MCP:
+         2a. Build [a_proj] sigma witness from [acc_bytes] FElem chunks.
+         2b. Sep-rewrite [acc_bytes$@ACC_ptr ↔ FElem chunks] via
+             [byte_acc_5felem_iff].
+         2c. Discharge dexprs for arg-list [TMP; ACC].
+         2d. Apply [Hdouble] (via [weaken_call]) — discharge sep precond
+             ([cbn[seps]; ecancel]) and length precond ([Hlen_tmp]).
+       Sub-step 2e (post-extraction → byte form for next step) is NOT
+       discharged. The blocker is felem-to-bytes back-conversion: after
+       [double] writes 5 fresh FElems at TMP_ptr, the subsequent
+       [cmov_5felems] call expects byte-level FElems. [felem_from_bytes]
+       gives bytes→FElem; the reverse needs a separate lemma stating
+       that for any [x : felem], there exists [bs : list byte] with
+       [Datatypes.length bs = Z.to_nat felem_size_in_bytes] and
+       [bs2felem bs = x] satisfying [iff1 (bs$@p) (FElem p x)].
+       Such a lemma may require [feval]-based equivalence (since
+       different byte representations may yield equal field values), or
+       a primitive [felem_to_bytes] hypothesis. *)
+    cbv [Ed25519XYZT64.spec_of_double64] in Hdouble.
+    pose (a_proj :=
+        exist (fun c : felem * felem * felem * felem * felem =>
+                 let '(X,Y,Z,Ta,Tb) := c in
+                 Ed25519XYZT64.valid_projective_coords X Y Z Ta Tb /\
+                 bounded_by tight_bounds X /\ bounded_by tight_bounds Y /\
+                 bounded_by tight_bounds Z /\ bounded_by loose_bounds Ta /\
+                 bounded_by loose_bounds Tb)
+              (bs2felem (ListDef.firstn 40 acc_bytes),
+               bs2felem (ListDef.firstn 40 (ListDef.skipn 40 acc_bytes)),
+               bs2felem (ListDef.firstn 40 (ListDef.skipn 80 acc_bytes)),
+               bs2felem (ListDef.firstn 40 (ListDef.skipn 120 acc_bytes)),
+               bs2felem (ListDef.firstn 40 (ListDef.skipn 160 acc_bytes)))
+              (conj Hvp_acc (conj Hb_X (conj Hb_Y (conj Hb_Z (conj Hb_Ta Hb_Tb))))) :
+        Ed25519XYZT64.projective_coords).
+    epose proof (BytesToFelem5.byte_acc_5felem_iff acc_bytes ACC_ptr Hlen_acc) as Hbytes_acc.
+    apply iff1ToEq in Hbytes_acc; rewrite Hbytes_acc in Hsep; clear Hbytes_acc.
+    eexists. split.
+    { cbv [WeakestPrecondition.dexprs WeakestPrecondition.list_map
+           WeakestPrecondition.list_map_body
+           WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get dlet.dlet].
+      eexists. split.
+      { rewrite map.get_put_diff by congruence. exact Hl_TMP. }
+      eexists. split.
+      { rewrite map.get_put_diff by congruence. exact Hl_ACC. }
+      reflexivity. }
+    eapply weaken_call.
+    { eapply (Hdouble TMP_ptr ACC_ptr a_proj tmp_bytes
+                      ((out$@out_ptr) ⋆ (scalar$@scalar_ptr)
+                       ⋆ (B_pre$@B_pre_ptr) ⋆ R)%sep _ _).
+      split.
+      2: { rewrite Hlen_tmp. reflexivity. }
+      subst a_proj. cbv [proj1_sig].
+      replace (40 + 40)%Z with 80%Z by reflexivity.
+      replace (40 + 40 + 40)%Z with 120%Z by reflexivity.
+      replace (40 + 40 + 40 + 40)%Z with 160%Z by reflexivity.
+      use_sep_assumption; cbn [seps]; cancel.
+      reflexivity. }
+    intros t_post m_post rets_post Hpost_double.
     (* === Remaining proof outline (~600 LoC for full Qed): ===
 
        After Step 1, the WP form is flat (dexprs/call/dexprs/call/dexprs/call),

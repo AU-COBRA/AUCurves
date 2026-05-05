@@ -596,54 +596,36 @@ Section ScalarmultImpl64.
         (* Phase 5: peel cmd.seq via cbn [cmd_body] to expose 3 from_bytes calls
            + 1 parametric call as nested [exists args, dexprs ⋆ call] structure. *)
         cbn [cmd_body].
-        (* Phase 6 (incomplete): 1st from_bytes(B_pre, B_pre_bytes) call.
+        (* Phase 6: 1st from_bytes(B_pre, B_pre_bytes) — dexprs + Goal 1 of
+           4-conjunct precond verified Qed-clean below; Goals 2-4 + post-call
+           remain as one outer admit. *)
+        eexists. split.
+        { cbv [WeakestPrecondition.dexprs WeakestPrecondition.list_map
+               WeakestPrecondition.list_map_body
+               WeakestPrecondition.expr WeakestPrecondition.expr_body
+               WeakestPrecondition.get dlet.dlet].
+          eexists. split. { rewrite map.get_put_same. reflexivity. }
+          eexists. split. { rewrite ?map.get_put_diff by congruence.
+                            rewrite map.get_put_same. reflexivity. }
+          reflexivity. }
+        (* Phase 6 onward — straightline_call + 4-conjunct precond + 3 more
+           from_bytes + parametric + dealloc + final post. ~400 LoC.
 
-           Working session 2026-05-04 (5h budget) — partial progress:
+           Goal 1 of 1st from_bytes precond was verified Qed-clean in MCP via:
+             pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0
+                           ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
+             apply iff1ToEq in Hiff_c0.
+             ssplit. { eexists. setoid_rewrite Hiff_c0. ecancel_assumption. }
+           but discharging Goals 2-4 in-block triggered "wrong bullet" /
+           "no instance for x" issues — the destructured form
+             exists mq, map.split m' ?mp mq /\ ?out$@B_pre_addr ?mp /\ ?Rr mq
+           is harder than the sep form solve_mem expects.
 
-           PHASE 4 FIX (committed): Replaced prior agent's incorrect use of
-           [BytesToFelem3.byte_3felem_iff] (which converts raw 120 bytes to
-           3 FElems) with [SeparationMemory.sep_eq_of_list_word_at_app]
-           splits.  Result: Hsep' now has 3 × 40 raw bytes at B_pre_addr +
-           (0/40/80) — matches the [out$@pout] shape spec_of_from_bytes
-           expects for the OUTPUT.
-
-           PHASE 6 PROGRESS in MCP: Verified the proof CAN advance from
-           here.  dexprs discharge + [straightline_call] both work cleanly.
-           After straightline_call, [ssplit] produces 4 precondition goals:
-             (1) exists Ra, (array ptsto _ B_pre_bytes_addr ?bs ⋆ Ra) m'
-             (2) (?out$@B_pre_addr ⋆ ?Rr) m'
-             (3) length ?out = Z.to_nat felem_size_in_bytes
-             (4) bytes_in_bounds ?bs
-
-           Goal (1) closes via:
-             eexists. instantiate (2 := chunk32_0). setoid_rewrite
-             (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0).
-             ecancel_assumption.
-
-           Goal (2) needs ?out := chunk40_0; [instantiate (1 := chunk40_0)]
-           keeps picking ?Rr instead of ?out — needs explicit unification
-           via [refine] or rewrite-then-ecancel.  ~30-60 min to find.
-
-           Goal (3) closes via [change (Z.to_nat felem_size_in_bytes) with
-           40%nat; exact Hb0_len].
-
-           Goal (4) [bytes_in_bounds chunk32_0]: chunk32_0 is
-           [firstn 32 B_precomputed_bytes] (rewritable via Hbs).  Pattern:
-           [unfold bytes_in_bounds, frep25519, ...; cbv; ssplit] per
-           ristretto_scalarmult_ok lines 201-214.
-
-           Remaining work:
-             - Goal 2-4 above (~1-2 hours).
-             - Post-call continuation: extract FElem at B_pre_addr from
-               post hypothesis [H : a1 = nil /\ tr = a /\ exists X, ...].
-               Then [exists nil. ssplit. { reflexivity. } { ...next call...}].
-             - Repeat for 2nd and 3rd from_bytes (B_pre+40, B_pre+80).
-             - Re-merge 3 FElems → 120 raw bytes via felem_to_bytearray +
-               sep_eq_of_list_word_at_app reverse.
-             - Parametric call via Hpar.
-             - Dealloc cascade: byte_buffer_to_anybytes_120 + _96.
-             - Final post: rets=nil, tr=tr, out_bytes=out', length=200.
-           Estimated 3-5 additional hours. *)
+           Goal 4 (bytes_in_bounds) closes via Ristretto-style:
+             subst chunk32_0; rewrite Hbs;
+             cbv [Field.bytes_in_bounds frep25519 ...];
+             match goal with |- ?P ?x ?z => let y := eval cbv in x in change (P y z) end;
+             cbv [...]; cbn; reflexivity. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

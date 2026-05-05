@@ -766,26 +766,82 @@ Section ScalarmultImpl64.
               Hsep_b1_post Hsep0 HsepC1 || idtac.
         rewrite Hr_par.
         eexists. split. { reflexivity. }
-        (* DEALLOC CASCADE — fully written but ecancel_assumption_impl times
-           out (>60s) on the heavily-accumulated proof state.  The structure:
-
-           1. Reorder Hsep_par via assert+ecancel to put 120-byte concat
-              at the front, then byte_buffer_to_anybytes_120 → mStack_120.
-           2. From the residual (HsepInner_120) at B_pre_bytes_addr:
-              combine chunk32_0/1/2 (3×32 bytes) into a 96-byte concat via
-              sep_eq_of_list_word_at_app reverse, then byte_buffer_to_anybytes
-              (n=96) → mStack_96.
-           3. Final post: rets=nil, tr'=tr (from Htr_par), out_par witness,
-              Hlen_par, HsepInner_96.
-
-           The Felems3ToBytes helper has been used; the main precond's sep
-           goal closes via [pose proof helper; rewrite <- (iff1ToEq helper);
-           instantiate; ecancel_assumption_impl] (~5 LoC).
-
-           Remaining gap: 60s timeout in ecancel_assumption_impl on the
-           dealloc-step assert.  Fix: aggressive pre-clear of accumulated
-           Hsep* / chunk* facts, or rebuild as multiple small asserts. *)
+        (* Dealloc cascade — fully written below.  ecancel_assumption_impl
+           on the assert times out (>60s) on the heavily-accumulated proof
+           state (>30 hyps).  Aggressive context cleanup before this point
+           via WPCleanup tactics would unblock; deferred. *)
         admit.
   Admitted.
+
+(* DEAD CODE — preserved for documentation of the intended cascade structure.
+   Once WPCleanup tactics are adopted to slim the context before this point,
+   the cascade closes via the following sequence (verified at sub-step level
+   in MCP at state 1134; ecancel times out only at the composite assert):
+
+        (* Dealloc 1: B_pre (120 bytes) via byte_buffer_to_anybytes_120.
+           Inline chunk32_* let-bindings before the assert — without this,
+           ecancel_assumption_impl goes exponential on the deep nested
+           binders. *)
+        cbv beta delta [chunk32_0 chunk32_1 chunk32_2] in *.
+        match type of Hsep_par with
+        | _ ?m =>
+          assert (Hsep_par_b :
+            (sepclause_of_map (((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
+                                ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
+                                ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2)))$@B_pre_addr)
+              ⋆ (sepclause_of_map (out_par$@out_ptr) ⋆ sepclause_of_map (scalar$@scalar_ptr)
+                ⋆ sepclause_of_map ((List.firstn 32 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0))$@B_pre_bytes_addr)
+                ⋆ sepclause_of_map ((List.firstn 32 (List.skipn 32 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0)))$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+                ⋆ sepclause_of_map ((List.skipn 64 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0))$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+                ⋆ R))%sep m)
+            by ecancel_assumption_impl
+        end.
+        edestruct (byte_buffer_to_anybytes_120 _ B_pre_addr _ _
+                     ltac:(rewrite !List.length_app, !ws2bs_felem_length; cbn; reflexivity)
+                     Hsep_par_b)
+          as (mStack_120 & mInner_120 & Hany_120 & Hsplit_120 & HsepInner_120).
+        exists mInner_120, mStack_120. ssplit; [exact Hany_120 | exact Hsplit_120 |].
+        (* Dealloc 2: B_pre_bytes (96 bytes) — combine 3 × 32-byte chunks.
+           After [cbv beta delta] above, chunk32_* are inlined; use the
+           raw List.firstn / List.skipn expressions directly. *)
+        set (c0 := List.firstn 32 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0)).
+        set (c1 := List.firstn 32 (List.skipn 32 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0))).
+        set (c2 := List.skipn 64 (List.firstn 32 bs0 ++ List.firstn 32 (List.skipn 32 bs0) ++ List.skipn 64 bs0)).
+        assert (Hc0_len' : Datatypes.length c0 = 32%nat) by
+          (subst c0; rewrite List.length_firstn, List.length_app, List.length_firstn,
+                                List.length_app, List.length_firstn, List.length_skipn, Hbs_len; lia).
+        assert (Hc1_len' : Datatypes.length c1 = 32%nat) by
+          (subst c1; rewrite List.length_firstn, List.length_skipn, List.length_app,
+                                List.length_firstn, List.length_app, List.length_firstn,
+                                List.length_skipn, Hbs_len; lia).
+        assert (Hc2_len' : Datatypes.length c2 = 32%nat) by
+          (subst c2; rewrite List.length_skipn, List.length_app, List.length_firstn,
+                                List.length_app, List.length_firstn, List.length_skipn, Hbs_len; lia).
+        epose proof (sep_eq_of_list_word_at_app B_pre_bytes_addr
+                       c0 (c1 ++ c2)%list 32
+                       ltac:(rewrite Hc0_len'; reflexivity)
+                       ltac:(rewrite Hc0_len', !List.length_app, Hc1_len', Hc2_len'; cbv [Bitwidth64.BW64]; lia)) as Hbpb0.
+        epose proof (sep_eq_of_list_word_at_app (word.add B_pre_bytes_addr (word.of_Z 32))
+                       c1 c2 32
+                       ltac:(rewrite Hc1_len'; reflexivity)
+                       ltac:(rewrite Hc1_len', Hc2_len'; cbv [Bitwidth64.BW64]; lia)) as Hbpb1.
+        replace (word.add (word.add B_pre_bytes_addr (word.of_Z 32)) (word.of_Z 32))
+          with (word.add B_pre_bytes_addr (word.of_Z 64)) in Hbpb1 by ring.
+        assert (Hbpb_combined : (sepclause_of_map ((c0 ++ c1 ++ c2)$@B_pre_bytes_addr)
+            ⋆ (sepclause_of_map (out_par$@out_ptr) ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep mInner_120).
+        { seprewrite Hbpb0. seprewrite Hbpb1. ecancel_assumption_impl. }
+        edestruct (byte_buffer_to_anybytes _ B_pre_bytes_addr _ _
+                     ltac:(rewrite !List.length_app, Hc0_len', Hc1_len', Hc2_len'; reflexivity)
+                     ltac:(rewrite !List.length_app, Hc0_len', Hc1_len', Hc2_len'; cbv [Bitwidth64.BW64]; lia)
+                     Hbpb_combined)
+          as (mStack_96 & mInner_96 & Hany_96 & Hsplit_96 & HsepInner_96).
+        exists mInner_96, mStack_96. ssplit; [exact Hany_96 | exact Hsplit_96 |].
+        (* Final post: rets=nil + tr=tr + exists out_bytes, length=200, sep. *)
+        eexists. split. { reflexivity. }
+        ssplit. { reflexivity. } { exact Htr_par. }
+        exists out_par. split.
+        { exact Hlen_par. }
+        { exact HsepInner_96. }
+*)
 
 End ScalarmultImpl64.

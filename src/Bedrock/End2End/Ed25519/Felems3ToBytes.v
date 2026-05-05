@@ -50,19 +50,19 @@ Section Felems3ToBytes.
                          change (Z.to_nat felem_size_in_bytes) with 40%nat in *; cbv [Bitwidth64.BW64]; lia)) as Hcat1.
     replace (word.add (word.add addr (word.of_Z 40)) (word.of_Z 40))
       with (word.add addr (word.of_Z 80)) in Hcat1 by ring.
-    (* Proof body: the iff1 follows by combining Hf2b0/1/2 (FElem ↔ ws2bs)
-       with Hcat0/1 (concat ↔ split via sep_eq_of_list_word_at_app).
-       Specifically:
-         FElem₀ ⋆ FElem₁ ⋆ FElem₂            [LHS]
-       ↔ ws2bs(X₀)$@a ⋆ ws2bs(X₁)$@(a+40) ⋆ ws2bs(X₂)$@(a+80)   [via Hf2b{0,1,2}]
-       ↔ ws2bs(X₀)$@a ⋆ (ws2bs(X₁)++ws2bs(X₂))$@(a+40)            [via ←Hcat1]
-       ↔ (ws2bs(X₀)++ws2bs(X₁)++ws2bs(X₂))$@a                      [via ←Hcat0] = RHS
-       Tactic chains tried (all fail in this Section's universe context):
-       - rewrite Hf2b... + rewrite ←Hcat...  (implicit-arg mismatch)
-       - setoid_rewrite                       (>60s timeout)
-       - Proper_sep_iff1 + etransitivity     (universe inference fails)
-       This is a pure equational fact; the proof is transcribed from
-       existing patterns in BytesToFelem3.v but reverse direction. *)
-  Admitted.
+    intros m. split; intros HH.
+    - seprewrite_in Hf2b0 HH.
+      seprewrite_in Hf2b1 HH.
+      seprewrite_in Hf2b2 HH.
+      seprewrite Hcat0.
+      seprewrite Hcat1.
+      ecancel_assumption_impl.
+    - seprewrite_in Hcat0 HH.
+      seprewrite_in Hcat1 HH.
+      seprewrite Hf2b0.
+      seprewrite Hf2b1.
+      seprewrite Hf2b2.
+      ecancel_assumption_impl.
+  Qed.
 
 End Felems3ToBytes.

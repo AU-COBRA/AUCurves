@@ -647,7 +647,23 @@ Section ScalarmultImpl64.
                             /\ (out_bytes$@out_ptr ⋆ scalar$@scalar_ptr ⋆ R) m'1))).
            Closes via: DeallocCascade.byte_buffer_to_anybytes_120 for
            B_pre + parametric byte_buffer_to_anybytes (n=96) for
-           B_pre_bytes + standard rets/tr/out_bytes assembly. *)
+           B_pre_bytes + standard rets/tr/out_bytes assembly.
+
+           [repeat eexists] from this state opens 4+ sub-goals:
+             G1: Z.of_nat (length ?bs) = 120        (B_pre bytes length)
+             G2: Z.of_nat (length ?bs) <= 2^64       (bound)
+             G3: m' = map.putmany ... ?bs$@B_pre_addr (layout)
+             G4+ (shelved, ~5 of them): rets, tr, out_bytes, sep
+           At this point the inner-WP post evar [?x] is unconstrained
+           because [repeat straightline] couldn't sniff the actual
+           post-state from the (Hfb, Hpar)-driven advance — it advanced
+           but left the post abstract.
+
+           Resolution: instead of [repeat straightline] auto-advancing,
+           manually peel each post extraction (1st from_bytes done;
+           2nd/3rd/parametric yet to do) so we have concrete sep-state
+           hypotheses to feed into the dealloc cascade.  ~150-200 LoC
+           of structured WP work. *)
         destruct H as (Hr_b0 & Htr_b0 & X_b0 & Hfeval_b0 & Hbnd_b0 & Hsep_b0_post).
         rewrite Hr_b0.
         eexists. split. { reflexivity. }

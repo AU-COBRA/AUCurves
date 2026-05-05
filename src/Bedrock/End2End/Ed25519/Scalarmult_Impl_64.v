@@ -668,6 +668,36 @@ Section ScalarmultImpl64.
         rewrite Hr_b0.
         eexists. split. { reflexivity. }
         repeat straightline.
+        (* 2nd from_bytes(B_pre + 40, B_pre_bytes + 32) — same 4-conjunct
+           pattern as 1st, but pulling chunk40_1 / chunk32_1.  Verified Qed
+           via MCP at state 869 (2026-05-05). *)
+        straightline_call.
+        { pose proof (array1_iff_eq_of_list_word_at
+                        (word.add B_pre_bytes_addr (word.of_Z 32)) chunk32_1
+                        ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
+          apply iff1ToEq in Hiff_c1.
+          ssplit.
+          - eexists. setoid_rewrite Hiff_c1. ecancel_assumption.
+          - assert (Hsep_b1 :
+              (sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40))) ⋆
+               (FElem B_pre_addr X_b0
+                ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
+                ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+                ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+                ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
+                ⋆ sepclause_of_map (out_init$@out_ptr)
+                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a0)
+              by (use_sep_assumption; cancel; reflexivity).
+            exact Hsep_b1.
+          - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb1_len.
+          - subst chunk32_1. rewrite Hbs. vm_compute. intuition. }
+        (* Outer post-call continuation for 3rd from_bytes + parametric +
+           dealloc cascade.  Closing this requires (a) symmetric 3rd from_bytes
+           discharge, (b) parametric precond with felem_to_bytes 3× to recover
+           the 120-byte view at B_pre, (c) DeallocCascade.byte_buffer_to_anybytes
+           reverse for both stackallocs.  Estimated ~150 LoC; deferred as outer
+           [Admitted] in this iteration to ship the verified 2nd from_bytes
+           bridge. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

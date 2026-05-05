@@ -525,7 +525,8 @@ Section ScalarmultImpl64.
         remember B_precomputed_bytes as bs eqn:Hbs.
         assert (Hbs_len : Datatypes.length bs = 96%nat)
           by (rewrite Hbs; apply B_precomputed_bytes_length).
-        clear Hbs.
+        (* Keep Hbs : bs = B_precomputed_bytes for later vm_compute on
+           bytes_in_bounds (chunk32_i = firstn 32 (skipn _ B_precomputed_bytes)). *)
         set (chunk32_0 := List.firstn 32 bs).
         set (chunk32_1 := List.firstn 32 (List.skipn 32 bs)).
         set (chunk32_2 := List.skipn 64 bs).
@@ -554,47 +555,95 @@ Section ScalarmultImpl64.
         apply iff1ToEq in Hs1; rewrite Hs1 in Hsep'; clear Hs1.
         replace (word.add (word.add B_pre_bytes_addr (word.of_Z 32)) (word.of_Z 32)) with
           (word.add B_pre_bytes_addr (word.of_Z 64)) in Hsep' by ring.
-        (* Phase 4: split B_pre_init (120 bytes) into 3 × 40-byte FElem chunks
-           via [BytesToFelem3.byte_3felem_iff]. Hsep' becomes:
-             chunk32_0$@B_pre_bytes_addr ⋆
-             chunk32_1$@(B_pre_bytes_addr+32) ⋆
-             chunk32_2$@(B_pre_bytes_addr+64) ⋆
-             FElem B_pre_addr (bs2felem (firstn 40 B_pre_init)) ⋆
-             FElem (B_pre_addr+40) (bs2felem (firstn 40 (skipn 40 B_pre_init))) ⋆
-             FElem (B_pre_addr+80) (bs2felem (firstn 40 (skipn 80 B_pre_init))) ⋆
-             out_init$@out_ptr ⋆ scalar$@scalar_ptr ⋆ R *)
-        pose proof (BytesToFelem3.byte_3felem_iff B_pre_init B_pre_addr Hlen2) as Hbpfe.
-        apply iff1ToEq in Hbpfe; rewrite Hbpfe in Hsep'; clear Hbpfe.
-        cbv zeta in Hsep'.
+        (* Phase 4: split B_pre_init (120 raw bytes) into 3 × 40-byte raw chunks.
+
+           NB: The previous attempt used [BytesToFelem3.byte_3felem_iff] to
+           convert bytes → FElem here.  That was WRONG — spec_of_from_bytes
+           wants the output buffer in raw [out$@pout] form, and only gives
+           back [FElem pout X] AFTER the call.  Pre-converting to FElem
+           breaks the precondition shape.
+
+           Approach: keep raw bytes, split via sep_eq_of_list_word_at_app. *)
+        set (chunk40_0 := List.firstn 40 B_pre_init).
+        set (chunk40_1 := List.firstn 40 (List.skipn 40 B_pre_init)).
+        set (chunk40_2 := List.skipn 80 B_pre_init).
+        assert (Hb0_len : Datatypes.length chunk40_0 = 40%nat) by
+          (subst chunk40_0; rewrite List.length_firstn, Hlen2; lia).
+        assert (Hb1_len : Datatypes.length chunk40_1 = 40%nat) by
+          (subst chunk40_1; rewrite List.length_firstn, List.length_skipn, Hlen2; lia).
+        assert (Hb2_len : Datatypes.length chunk40_2 = 40%nat) by
+          (subst chunk40_2; rewrite List.length_skipn, Hlen2; lia).
+        assert (Hb_split : B_pre_init = (chunk40_0 ++ chunk40_1 ++ chunk40_2)%list).
+        { subst chunk40_0 chunk40_1 chunk40_2.
+          rewrite <- (List.firstn_skipn 40 B_pre_init) at 1; f_equal.
+          rewrite <- (List.firstn_skipn 40 (ListDef.skipn 40 B_pre_init)) at 1.
+          f_equal. rewrite skipn_skipn. f_equal. }
+        rewrite Hb_split in Hsep' at 1.
+        epose proof (SeparationMemory.sep_eq_of_list_word_at_app B_pre_addr
+                       chunk40_0 (chunk40_1 ++ chunk40_2)%list 40
+          ltac:(rewrite Hb0_len; reflexivity)
+          ltac:(rewrite Hb0_len, !List.length_app, Hb1_len, Hb2_len;
+                cbv [Bitwidth64.BW64]; lia)) as Hb0.
+        apply iff1ToEq in Hb0; rewrite Hb0 in Hsep'; clear Hb0.
+        epose proof (SeparationMemory.sep_eq_of_list_word_at_app
+                       (word.add B_pre_addr (word.of_Z 40))
+                       chunk40_1 chunk40_2 40
+          ltac:(rewrite Hb1_len; reflexivity)
+          ltac:(rewrite Hb1_len, Hb2_len; cbv [Bitwidth64.BW64]; lia)) as Hb1.
+        apply iff1ToEq in Hb1; rewrite Hb1 in Hsep'; clear Hb1.
+        replace (word.add (word.add B_pre_addr (word.of_Z 40)) (word.of_Z 40)) with
+          (word.add B_pre_addr (word.of_Z 80)) in Hsep' by ring.
         (* Phase 5: peel cmd.seq via cbn [cmd_body] to expose 3 from_bytes calls
            + 1 parametric call as nested [exists args, dexprs ⋆ call] structure. *)
         cbn [cmd_body].
-        (* INCOMPLETE — Phase 6-9 remain (estimated 300-500 LoC):
-           - 3× from_bytes [handle_call] discharge.  Each call needs:
-             * dexprs computing args = [B_pre_addr+(40*i), B_pre_bytes_addr+(32*i)]
-             * spec_of_from_bytes precondition: FElemBytes for input bytes
-               (NB: chunk32_i$@addr only encodes raw bytes; FElemBytes adds
-                emp(length=encoded_felem_size_in_bytes /\ bytes_in_bounds bs).
-                bytes_in_bounds for B_precomputed_bytes follows from
-                their concrete F p value < p < 2^255 — needs vm_compute proof)
-             * FElem precondition for output (existing FElem at B_pre_addr+(40*i))
-             * after: extract feval X = feval_bytes chunk32_i, FElem (X) at output
-           - handle_call parametric (Hpar):
-             * needs to convert 3 FElem chunks back to 120-byte form via
-               byte_3felem_iff in reverse (apply iff1ToEq + symm + rewrite)
-             * spec args: out, scalar, B_pre; sep predicate exactly matches
-               spec_of_ed25519_scalarmult_base_parametric's pre.
-           - dealloc cascade:
-             * apply byte_buffer_to_anybytes_120 for B_pre stackalloc
-             * apply byte_buffer_to_anybytes (n=96) for B_pre_bytes stackalloc
-             * use Hsplit1, Hsplit2 to thread map.split chain
-           - postcondition: rets=nil, tr=tr, out_bytes := out' (length 200).
-           Outer Proper_cmd monotonicity (last admit) follows by [exact Hpost]
-           once the inner post is fully discharged.
+        (* Phase 6 (incomplete): 1st from_bytes(B_pre, B_pre_bytes) call.
 
-           Spec wiring is in place: spec_of_fe25519_from_bytes is a hypothesis.
-           Setup phases A-D are done: 96-byte split + 120-byte split + WP form.
-           Estimated 3-7 hours of additional WP plumbing to close. *)
+           Working session 2026-05-04 (5h budget) — partial progress:
+
+           PHASE 4 FIX (committed): Replaced prior agent's incorrect use of
+           [BytesToFelem3.byte_3felem_iff] (which converts raw 120 bytes to
+           3 FElems) with [SeparationMemory.sep_eq_of_list_word_at_app]
+           splits.  Result: Hsep' now has 3 × 40 raw bytes at B_pre_addr +
+           (0/40/80) — matches the [out$@pout] shape spec_of_from_bytes
+           expects for the OUTPUT.
+
+           PHASE 6 PROGRESS in MCP: Verified the proof CAN advance from
+           here.  dexprs discharge + [straightline_call] both work cleanly.
+           After straightline_call, [ssplit] produces 4 precondition goals:
+             (1) exists Ra, (array ptsto _ B_pre_bytes_addr ?bs ⋆ Ra) m'
+             (2) (?out$@B_pre_addr ⋆ ?Rr) m'
+             (3) length ?out = Z.to_nat felem_size_in_bytes
+             (4) bytes_in_bounds ?bs
+
+           Goal (1) closes via:
+             eexists. instantiate (2 := chunk32_0). setoid_rewrite
+             (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0).
+             ecancel_assumption.
+
+           Goal (2) needs ?out := chunk40_0; [instantiate (1 := chunk40_0)]
+           keeps picking ?Rr instead of ?out — needs explicit unification
+           via [refine] or rewrite-then-ecancel.  ~30-60 min to find.
+
+           Goal (3) closes via [change (Z.to_nat felem_size_in_bytes) with
+           40%nat; exact Hb0_len].
+
+           Goal (4) [bytes_in_bounds chunk32_0]: chunk32_0 is
+           [firstn 32 B_precomputed_bytes] (rewritable via Hbs).  Pattern:
+           [unfold bytes_in_bounds, frep25519, ...; cbv; ssplit] per
+           ristretto_scalarmult_ok lines 201-214.
+
+           Remaining work:
+             - Goal 2-4 above (~1-2 hours).
+             - Post-call continuation: extract FElem at B_pre_addr from
+               post hypothesis [H : a1 = nil /\ tr = a /\ exists X, ...].
+               Then [exists nil. ssplit. { reflexivity. } { ...next call...}].
+             - Repeat for 2nd and 3rd from_bytes (B_pre+40, B_pre+80).
+             - Re-merge 3 FElems → 120 raw bytes via felem_to_bytearray +
+               sep_eq_of_list_word_at_app reverse.
+             - Parametric call via Hpar.
+             - Dealloc cascade: byte_buffer_to_anybytes_120 + _96.
+             - Final post: rets=nil, tr=tr, out_bytes=out', length=200.
+           Estimated 3-5 additional hours. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

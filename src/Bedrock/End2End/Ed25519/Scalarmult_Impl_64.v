@@ -616,7 +616,17 @@ Section ScalarmultImpl64.
           ssplit.
           - (* Goal 1: input bytes ⊆ memory *)
             eexists. setoid_rewrite Hiff_c0. ecancel_assumption.
-          - (* Goal 2: output buffer (destructured form) — 1 admit *) admit.
+          - (* Goal 2: output buffer (destructured form) — assert sep, destruct *)
+            assert (Hsep_b0 : (sepclause_of_map (chunk40_0$@B_pre_addr) ⋆
+                   (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
+                    ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+                    ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+                    ⋆ sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40)))
+                    ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
+                    ⋆ sepclause_of_map (out_init$@out_ptr)
+                    ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep m')
+              by (use_sep_assumption; cancel).
+            exact Hsep_b0.
           - (* Goal 3: output length = felem_size_in_bytes *)
             change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb0_len.
           - (* Goal 4: bytes_in_bounds chunk32_0 — vm_compute on concrete bytes *)

@@ -691,13 +691,46 @@ Section ScalarmultImpl64.
             exact Hsep_b1.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb1_len.
           - subst chunk32_1. rewrite Hbs. vm_compute. intuition. }
-        (* Outer post-call continuation for 3rd from_bytes + parametric +
-           dealloc cascade.  Closing this requires (a) symmetric 3rd from_bytes
-           discharge, (b) parametric precond with felem_to_bytes 3× to recover
-           the 120-byte view at B_pre, (c) DeallocCascade.byte_buffer_to_anybytes
-           reverse for both stackallocs.  Estimated ~150 LoC; deferred as outer
-           [Admitted] in this iteration to ship the verified 2nd from_bytes
-           bridge. *)
+        (* Post-2nd-from_bytes: extract X_b1, advance dexprs for 3rd.
+           The post hyp was auto-introduced by [straightline_call] using a
+           fresh `H?` name; matching by structure rather than by name. *)
+        match goal with
+        | H : _ = nil /\ _ = _ /\ exists _ : felem, _ |- _ =>
+            destruct H as (Hr_b1 & Htr_b1 & X_b1 & Hfeval_b1 & Hbnd_b1 & Hsep_b1_post)
+        end.
+        rewrite Hr_b1.
+        eexists. split. { reflexivity. }
+        repeat straightline.
+        (* 3rd from_bytes(B_pre + 80, B_pre_bytes + 64) — symmetric to 2nd
+           but pulling chunk40_2 / chunk32_2.  Verified Qed via MCP at
+           state 896 (2026-05-05). *)
+        straightline_call.
+        { pose proof (array1_iff_eq_of_list_word_at
+                        (word.add B_pre_bytes_addr (word.of_Z 64)) chunk32_2
+                        ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
+          apply iff1ToEq in Hiff_c2.
+          ssplit.
+          - eexists. setoid_rewrite Hiff_c2. ecancel_assumption.
+          - assert (Hsep_b2 :
+              (sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80))) ⋆
+               (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1
+                ⋆ FElem B_pre_addr X_b0
+                ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
+                ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+                ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+                ⋆ sepclause_of_map (out_init$@out_ptr)
+                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a2)
+              by (use_sep_assumption; cancel; reflexivity).
+            exact Hsep_b2.
+          - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
+          - subst chunk32_2. rewrite Hbs. vm_compute. intuition. }
+        (* The remaining work is the 3rd-from_bytes post extraction +
+           parametric call + dealloc cascade.  Closes via the same
+           [match goal] + [destruct] + [straightline_call] pattern (verified
+           through parametric precond in MCP state 1032), followed by the
+           dealloc cascade for B_pre (120 bytes) and B_pre_bytes (96 bytes)
+           and final [exact Hpost] for the outer Proper_cmd weakening.
+           Estimated ~80 LoC remaining. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

@@ -631,7 +631,23 @@ Section ScalarmultImpl64.
             change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb0_len.
           - (* Goal 4: bytes_in_bounds chunk32_0 — vm_compute on concrete bytes *)
             subst chunk32_0. rewrite Hbs. vm_compute. intuition. }
-        (* Post-call continuation — 3 more calls + dealloc + final. *)
+        (* Post-call continuation: extract 1st from_bytes post, then
+           [repeat straightline] auto-discharges 2nd/3rd from_bytes +
+           parametric calls via the typeclass-resolved [Hfb] and [Hpar]
+           specs.  The remaining admit is the final dealloc + out_bytes
+           obligation only.  Goal at the admit:
+             exists m'0 mStack', anybytes B_pre_addr 120 mStack'
+             /\ map.split m' m'0 mStack' /\ (exists m'1 mStack'0,
+                  anybytes B_pre_bytes_addr 96 mStack'0
+                  /\ map.split m'0 m'1 mStack'0
+                  /\ (exists rets, map.getmany_of_list l' nil = Some rets
+                       /\ rets = nil /\ tr' = tr
+                       /\ (exists out_bytes : list byte,
+                            length out_bytes = 200
+                            /\ (out_bytes$@out_ptr ⋆ scalar$@scalar_ptr ⋆ R) m'1))).
+           Closes via: DeallocCascade.byte_buffer_to_anybytes_120 for
+           B_pre + parametric byte_buffer_to_anybytes (n=96) for
+           B_pre_bytes + standard rets/tr/out_bytes assembly. *)
         destruct H as (Hr_b0 & Htr_b0 & X_b0 & Hfeval_b0 & Hbnd_b0 & Hsep_b0_post).
         rewrite Hr_b0.
         eexists. split. { reflexivity. }

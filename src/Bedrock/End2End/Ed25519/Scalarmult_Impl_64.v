@@ -724,13 +724,16 @@ Section ScalarmultImpl64.
             exact Hsep_b2.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
           - subst chunk32_2. rewrite Hbs. vm_compute. intuition. }
-        (* The remaining work is the 3rd-from_bytes post extraction +
-           parametric call + dealloc cascade.  Closes via the same
-           [match goal] + [destruct] + [straightline_call] pattern (verified
-           through parametric precond in MCP state 1032), followed by the
-           dealloc cascade for B_pre (120 bytes) and B_pre_bytes (96 bytes)
-           and final [exact Hpost] for the outer Proper_cmd weakening.
-           Estimated ~80 LoC remaining. *)
+        (* Post-3rd-from_bytes + parametric + dealloc cascade.
+           [straightline_call] auto-chains via Hfb/Hpar typeclass
+           resolution, burying the post-3rd hypothesis.  Workaround
+           (verified via MCP state 1119): use [eapply Proper_call;
+           cycle 1; eapply Hfb; all: cycle 1.] BEFORE this call instead
+           of [straightline_call] — that surfaces post-call as Goal 1.
+           Then symmetric for parametric with [eapply Hpar].  Final ?x
+           fill needs the 2-level dealloc cascade — see
+           memory/reference_r10_proper_call_strategy.md.
+           Estimated ~150 LoC.  Deferred. *)
         admit. }
     intros tr' m' l' Hpost. exact Hpost.
   Admitted.

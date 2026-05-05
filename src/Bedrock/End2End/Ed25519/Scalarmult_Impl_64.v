@@ -726,16 +726,36 @@ Section ScalarmultImpl64.
             exact Hsep_b2.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
           - subst chunk32_2. rewrite Hbs. vm_compute. intuition. }
-        (* Post-3rd-from_bytes + parametric + dealloc cascade.
-           [straightline_call] auto-chains via Hfb/Hpar typeclass
-           resolution, burying the post-3rd hypothesis.  Workaround
-           (verified via MCP state 1119): use [eapply Proper_call;
-           cycle 1; eapply Hfb; all: cycle 1.] BEFORE this call instead
-           of [straightline_call] — that surfaces post-call as Goal 1.
-           Then symmetric for parametric with [eapply Hpar].  Final ?x
-           fill needs the 2-level dealloc cascade — see
-           memory/reference_r10_proper_call_strategy.md.
-           Estimated ~150 LoC.  Deferred. *)
+        (* OPTION B PROGRESS — Proper_cmd removed (commit c923e5c) makes
+           body's post the explicit dealloc cascade.  Remaining work
+           (~150 LoC, structurally written below at sketch-level):
+
+           1. Destructure post-3rd-from_bytes H to get X_b2 + Hsep_b2_post.
+           2. straightline_call for parametric:
+              - Discharge length conjuncts via Hlen_out, Hlen_scalar, list_app+ws2bs lengths.
+              - Discharge sep conjunct: convert Hsep_b2_post's 3 FElems
+                to ws2bs via felem_to_bytes (3x), concat via
+                sep_eq_of_list_word_at_app (2x), then `use_sep_assumption +
+                cancel + cancel_seps_at_indices 0 2 / 0 1 / 0 0` for the
+                reverse-vs-forward sep ordering.
+           3. Destructure post-parametric H to get out_par + Hsep_par.
+           4. Dealloc 1 (B_pre 120 bytes): byte_buffer_to_anybytes_120
+              applied to a sep-rearranged Hsep_par.
+           5. Dealloc 2 (B_pre_bytes 96 bytes): combine 3×32-byte chunks
+              via sep_eq_of_list_word_at_app reverse, then byte_buffer_to_anybytes.
+           6. Final post: out_par witness, length=200, sep with R.
+
+           BLOCKER: the FElem-to-ws2bs conversion in Hsep_b2_post requires
+           [setoid_rewrite Hf2b0/1/2] because plain rewrite has implicit-
+           arg mismatches.  setoid_rewrite times out (>60s) on the proof
+           state even with stale-hyp clearing, due to traversal of nested
+           let-bindings (chunk32_0/1/2, chunk40_0/1/2) in the env.
+
+           CLEAN FIX: factor the FElem-3-block-to-bytes conversion as a
+           standalone Qed'd helper lemma (similar to BytesToFelem3.v but
+           in the reverse direction — Felems3ToBytes).  Then a single
+           `apply (Felems3ToBytes_iff B_pre_addr X_b0 X_b1 X_b2)` replaces
+           the setoid_rewrite chain.  ~30 LoC helper, then ~120 LoC main. *)
         admit.
   Admitted.
 

@@ -13,8 +13,10 @@
 
 From Stdlib Require Import List ZArith Lia.
 Require Import coqutil.Map.Interface coqutil.Map.Properties.
+Require Import coqutil.Sorting.OrderToPermutation.
 Require Import bedrock2.Map.Separation bedrock2.Map.SeparationLogic.
 Require Import bedrock2.Lift1Prop.
+Require Import bedrock2.TransferSepsOrder.
 Import ListNotations.
 
 Section SepReflectiveAC.
@@ -148,20 +150,24 @@ Ltac flatten_seps_in_strict H :=
       let tree := SeparationLogic.reify nested in
       change (SeparationLogic.Tree.to_sep tree m) in H;
       apply (proj2 (SeparationLogic.Tree.flatten_iff1_to_sep tree m)) in H;
-      cbv [SeparationLogic.Tree.flatten SeparationLogic.app] in H
+      cbv [SeparationLogic.Tree.flatten SeparationLogic.Tree.interp
+           SeparationLogic.app List.app] in H
   end.
 
 (** [find_index_of_atom atom l] — Ltac that returns the index of [atom] in [l]
     (a Coq nat), or fails if not found. *)
 Ltac find_index_of_atom atom l :=
-  let rec go l n :=
-    lazymatch l with
-    | nil => fail "find_index_of_atom: atom not found"
-    | cons ?head ?tail =>
-        tryif constr_eq head atom then n
-        else go tail uconstr:(S n)
-    end
-  in let n := go l O in constr:(n).
+  lazymatch l with
+  | nil => fail "find_index_of_atom: atom not found"
+  | cons ?head ?tail =>
+      match constr:(Set) with
+      | _ => let _ := match constr:(Set) with
+                      | _ => constr_eq head atom
+                      end in
+             constr:(O)
+      | _ => let n := find_index_of_atom atom tail in constr:(S n)
+      end
+  end.
 
 (** [reflective_ecancel H] — close a goal of shape [(target ⋆ ?Rr)%sep m] by
     finding [target] as an atom in [H : <some ⋆-tree>%sep m].
@@ -179,15 +185,103 @@ Ltac find_index_of_atom atom l :=
     bound proof. *)
 Ltac reflective_ecancel H :=
   flatten_seps_in_strict H;
-  SeparationLogic.flatten_seps_in_goal;
-  lazymatch type of H with
-  | seps ?Hin ?m =>
-      lazymatch goal with
-      | |- seps (?target :: _) _ =>
+  lazymatch goal with
+  | |- (?target ⋆ _)%sep ?m =>
+      lazymatch type of H with
+      | seps ?Hin _ =>
           let i := find_index_of_atom target Hin in
-          apply (proj1 (seps_pick_iff1 Hin i ltac:(cbv [List.length]; lia))
-                       m) in H;
+          (* Permute Hin so target is at position 0 *)
+          apply (proj1 (seps_pick_iff1 Hin i ltac:(cbv [List.length]; lia)
+                       m)) in H;
           cbn [List.nth List.firstn List.skipn List.app] in H;
+          (* Convert Hin back from [seps (target :: rest)] to
+             [(target ⋆ seps rest)] form so the goal's [?Rr] evar
+             can unify with [seps rest]. *)
+          lazymatch type of H with
+          | seps (?t :: ?rest) ?m' =>
+              apply (proj1 (SeparationLogic.seps_cons t rest m')) in H
+          end;
+          exact H
+      end
+  end.
+
+(** [reflective_seps_perm] — close a goal of shape [seps L1 m] given a
+    hypothesis [H : seps L2 m] where [L2] is a permutation of [L1].
+
+    Used when both sides have been flattened to seps lists with the same
+    atoms in different order.  Builds an explicit permutation order from
+    [L2] to [L1] via [find_index_of_atom] in a tail-recursive Ltac, then
+    applies [reorder_is_iff1] (Qed-sealed in coqutil). *)
+Ltac build_order_from_to from to acc :=
+  lazymatch to with
+  | nil => acc
+  | cons ?head ?tail =>
+      let i := find_index_of_atom head from in
+      let acc' := uconstr:(cons i acc) in
+      build_order_from_to from tail acc'
+  end.
+
+(** [reflective_seps_iff1] — closes a goal of shape
+    [iff1 (seps L1) (seps L2)] when L1 and L2 are permutations of each
+    other.  Computes the order via Ltac, applies [reorder_is_iff1]
+    (Qed-sealed), vm_computes the permutation, and uses [reflexivity].
+
+    The Qed-sealed [reorder_is_iff1] absorbs the cancel work; the per-call
+    proof-term contribution is a single application of that lemma plus
+    a vm_compute-checked permutation list. *)
+Ltac reflective_seps_iff1 :=
+  lazymatch goal with
+  | |- iff1 (seps ?L1) (seps ?L2) =>
+      let order_rev := build_order_from_to L1 L2 uconstr:(@nil nat) in
+      let order := constr:(List.rev order_rev) in
+      (* Use existing reorder_is_iff1 from coqutil *)
+      etransitivity;
+      [ apply (TransferSepsOrder.reorder_is_iff1 order L1
+                                                ltac:(reflexivity)) |];
+      cbv [OrderToPermutation.reorder
+           OrderToPermutation.apply_permutation
+           OrderToPermutation.apply_permutation_with_default
+           OrderToPermutation.my_list_map OrderToPermutation.my_list_nth];
+      let r := eval vm_compute in (OrderToPermutation.order_to_permutation order) in
+        change (OrderToPermutation.order_to_permutation order) with r;
+      cbn [List.nth List.map seps];
+      reflexivity
+  end.
+
+(** [reflective_reshape H target_form] — close a goal of shape
+    [target_form m] (a specific ⋆-tree) given [H : nested m] where
+    nested is some ⋆-tree of the same atoms.
+
+    Workflow:
+      1. flatten_seps_in_strict H  →  H : seps L_H m
+      2. flatten_seps_in_goal      →  goal: seps L_G m
+      3. reflective_seps_iff1 to bridge L_H to L_G permutation
+      4. exact H
+
+    Useful for replacing the [(use_sep_assumption; cancel; reflexivity)]
+    pattern when both H and goal have a fixed shape with the same atoms.
+    Unlike [reflective_ecancel], the goal here has NO evar — it's a
+    concrete sep tree to be matched. *)
+Ltac reflective_reshape H :=
+  flatten_seps_in_strict H;
+  SeparationLogic.flatten_seps_in_goal;
+  lazymatch goal with
+  | |- seps ?L_G ?m =>
+      lazymatch type of H with
+      | seps ?L_H _ =>
+          (* Convert goal: seps L_G m  ->  seps L_H m via iff1. *)
+          let order_rev := build_order_from_to L_G L_H uconstr:(@nil nat) in
+          let order := constr:(List.rev order_rev) in
+          apply (proj1 (TransferSepsOrder.reorder_is_iff1 order L_G
+                                                          ltac:(reflexivity)
+                                                          m));
+          cbv [OrderToPermutation.reorder
+               OrderToPermutation.apply_permutation
+               OrderToPermutation.apply_permutation_with_default
+               OrderToPermutation.my_list_map OrderToPermutation.my_list_nth];
+          let r := eval vm_compute in (OrderToPermutation.order_to_permutation order) in
+            change (OrderToPermutation.order_to_permutation order) with r;
+          cbn [List.nth List.map seps List.app];
           exact H
       end
   end.

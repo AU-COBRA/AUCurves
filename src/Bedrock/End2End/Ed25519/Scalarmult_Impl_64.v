@@ -27,12 +27,8 @@ Require Import Bedrock.End2End.Ed25519.BytesToFelem3.
 Require Import Bedrock.End2End.Ed25519.Felems3ToBytes.
 Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
-(* TODO(R10.E follow-up): wire reflective_ecancel from
-   Bedrock.Util.SepReflectiveAC at the from_bytes Goal 1 sites once the
-   Ltac match-goal pattern issue (currently "No matching clauses for match"
-   on the [(target ⋆ ?Rr)%sep m] goal shape after [setoid_rewrite]) is
-   resolved.  Phase 1 (flatten_seps_in_strict) + Phase 3 (seps_pick_iff1)
-   are already landed in SepReflectiveAC.v. *)
+Require Import Bedrock.End2End.Ed25519.FromBytesCallHelpers.
+Require Import Bedrock.Util.SepReflectiveAC.
 
 (** Strategy 0 on field-rep + sep coercion was tested 2026-05-07 to reduce
     Qed kernel-check time on this lemma — it does NOT help.  Multiple
@@ -616,8 +612,8 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
           apply iff1ToEq in Hiff_c0.
           ssplit.
-          - (* Goal 1: input bytes ⊆ memory *)
-            eexists. setoid_rewrite Hiff_c0. ecancel_assumption.
+          - (* Goal 1: input bytes ⊆ memory — reflective ecancel *)
+            eexists. setoid_rewrite Hiff_c0. reflective_ecancel Hsep'.
           - (* Goal 2: output buffer — Qed-sealed iff1 helper *)
             pose proof (reshape_iff_b0 chunk32_0 chunk32_1 chunk32_2
                           chunk40_0 chunk40_1 chunk40_2 out_init scalar
@@ -684,7 +680,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
           apply iff1ToEq in Hiff_c1.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c1. ecancel_assumption.
+          - eexists. setoid_rewrite Hiff_c1. reflective_ecancel Hsep_b0_post.
           - assert (Hsep_b1 :
               (sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40))) ⋆
                (FElem B_pre_addr X_b0
@@ -721,7 +717,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
           apply iff1ToEq in Hiff_c2.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c2. ecancel_assumption.
+          - eexists. setoid_rewrite Hiff_c2. reflective_ecancel Hsep_b1_post.
           - assert (Hsep_b2 :
               (sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80))) ⋆
                (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1
@@ -806,6 +802,10 @@ Section ScalarmultImpl64.
         { exact Hlen_par. }
         { exact HRest_96. }
   Admitted.
+  (* NOTE: proof body fully discharges every conjunct (~0.1s elaboration),
+     but [Qed] kernel-check on the resulting term consistently runs >60 min
+     across all interventions tried.  Awaiting upstream bedrock2 refactor —
+     see the long STATUS comment block below. *)
   (* ============================================================================
      STATUS: Admitted — needs an upstream bedrock2 refactor to close.
      ============================================================================

@@ -77,4 +77,23 @@ Section BPrecomputed64.
     apply Z.pow_le_mono_r; [Lia.lia |]. Lia.lia.
   Qed.
 
+  (** [bytes_in_bounds] for each 32-byte chunk of [B_precomputed_bytes].
+      These are isolated as [Qed]-clean helpers so the [vm_compute] proof
+      term stays in this file (small) rather than bleeding into the
+      [ed25519_scalarmult_base_correct] proof's [Qed] kernel-check
+      (where it becomes part of an exponential blowup). *)
+  Lemma chunk32_0_in_bounds :
+    bytes_in_bounds (FieldRepresentation:=frep25519) (List.firstn 32 B_precomputed_bytes).
+  Proof. vm_compute. intuition. Qed.
+
+  Lemma chunk32_1_in_bounds :
+    bytes_in_bounds (FieldRepresentation:=frep25519)
+      (List.firstn 32 (List.skipn 32 B_precomputed_bytes)).
+  Proof. vm_compute. intuition. Qed.
+
+  Lemma chunk32_2_in_bounds :
+    bytes_in_bounds (FieldRepresentation:=frep25519)
+      (List.skipn 64 B_precomputed_bytes).
+  Proof. vm_compute. intuition. Qed.
+
 End BPrecomputed64.

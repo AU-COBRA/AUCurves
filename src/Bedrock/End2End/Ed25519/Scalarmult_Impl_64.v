@@ -26,6 +26,7 @@ Require Import Bedrock.End2End.Ed25519.B_precomputed_64.
 Require Import Bedrock.End2End.Ed25519.BytesToFelem3.
 Require Import Bedrock.End2End.Ed25519.Felems3ToBytes.
 Require Import Bedrock.End2End.Ed25519.DeallocCascade.
+Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
 
 Section ScalarmultImpl64.
   Local Open Scope string_scope.
@@ -544,20 +545,13 @@ Section ScalarmultImpl64.
           rewrite <- (List.firstn_skipn 32 bs) at 1; f_equal.
           rewrite <- (List.firstn_skipn 32 (ListDef.skipn 32 bs)) at 1.
           f_equal. rewrite skipn_skipn. f_equal. }
-        rewrite Hbs_split in Hsep' at 1.
-        epose proof (SeparationMemory.sep_eq_of_list_word_at_app B_pre_bytes_addr
-                       chunk32_0 (chunk32_1 ++ chunk32_2)%list 32
-                       ltac:(rewrite Hc0_len; reflexivity)
-                       ltac:(rewrite Hc0_len, !List.length_app, Hc1_len, Hc2_len; cbv [Bitwidth64.BW64]; lia)) as Hs0.
-        apply iff1ToEq in Hs0; rewrite Hs0 in Hsep'; clear Hs0.
-        epose proof (SeparationMemory.sep_eq_of_list_word_at_app
-                       (word.add B_pre_bytes_addr (word.of_Z 32))
-                       chunk32_1 chunk32_2 32
-                       ltac:(rewrite Hc1_len; reflexivity)
-                       ltac:(rewrite Hc1_len, Hc2_len; cbv [Bitwidth64.BW64]; lia)) as Hs1.
-        apply iff1ToEq in Hs1; rewrite Hs1 in Hsep'; clear Hs1.
-        replace (word.add (word.add B_pre_bytes_addr (word.of_Z 32)) (word.of_Z 32)) with
-          (word.add B_pre_bytes_addr (word.of_Z 64)) in Hsep' by ring.
+        (* Single Qed-sealed split via [split_3x32_iff1] helper. *)
+        match type of Hsep' with
+        | (sepclause_of_map (bs$@?a) ⋆ ?rest)%sep _ =>
+          pose proof (split_3x32_iff1 bs chunk32_0 chunk32_1 chunk32_2 a rest
+                        Hbs_split Hc0_len Hc1_len Hc2_len) as Hsplit32
+        end.
+        apply iff1ToEq in Hsplit32; rewrite Hsplit32 in Hsep'; clear Hsplit32.
         (* Phase 4: split B_pre_init (120 raw bytes) into 3 × 40-byte raw chunks.
 
            NB: The previous attempt used [BytesToFelem3.byte_3felem_iff] to
@@ -581,21 +575,13 @@ Section ScalarmultImpl64.
           rewrite <- (List.firstn_skipn 40 B_pre_init) at 1; f_equal.
           rewrite <- (List.firstn_skipn 40 (ListDef.skipn 40 B_pre_init)) at 1.
           f_equal. rewrite skipn_skipn. f_equal. }
-        rewrite Hb_split in Hsep' at 1.
-        epose proof (SeparationMemory.sep_eq_of_list_word_at_app B_pre_addr
-                       chunk40_0 (chunk40_1 ++ chunk40_2)%list 40
-          ltac:(rewrite Hb0_len; reflexivity)
-          ltac:(rewrite Hb0_len, !List.length_app, Hb1_len, Hb2_len;
-                cbv [Bitwidth64.BW64]; lia)) as Hb0.
-        apply iff1ToEq in Hb0; rewrite Hb0 in Hsep'; clear Hb0.
-        epose proof (SeparationMemory.sep_eq_of_list_word_at_app
-                       (word.add B_pre_addr (word.of_Z 40))
-                       chunk40_1 chunk40_2 40
-          ltac:(rewrite Hb1_len; reflexivity)
-          ltac:(rewrite Hb1_len, Hb2_len; cbv [Bitwidth64.BW64]; lia)) as Hb1.
-        apply iff1ToEq in Hb1; rewrite Hb1 in Hsep'; clear Hb1.
-        replace (word.add (word.add B_pre_addr (word.of_Z 40)) (word.of_Z 40)) with
-          (word.add B_pre_addr (word.of_Z 80)) in Hsep' by ring.
+        (* Single Qed-sealed split via [split_3x40_iff1] helper. *)
+        match type of Hsep' with
+        | context[(sepclause_of_map (B_pre_init$@?a) ⋆ ?rest)%sep] =>
+          pose proof (split_3x40_iff1 B_pre_init chunk40_0 chunk40_1 chunk40_2 a rest
+                        Hb_split Hb0_len Hb1_len Hb2_len) as Hsplit40
+        end.
+        apply iff1ToEq in Hsplit40; rewrite Hsplit40 in Hsep'; clear Hsplit40.
         (* Phase 5: peel cmd.seq via cbn [cmd_body] to expose 3 from_bytes calls
            + 1 parametric call as nested [exists args, dexprs ⋆ call] structure. *)
         cbn [cmd_body].
@@ -619,7 +605,11 @@ Section ScalarmultImpl64.
           ssplit.
           - (* Goal 1: input bytes ⊆ memory *)
             eexists. setoid_rewrite Hiff_c0. ecancel_assumption.
-          - (* Goal 2: output buffer (destructured form) — assert sep, destruct *)
+          - (* Goal 2: output buffer — Qed-sealed iff1 helper *)
+            pose proof (reshape_iff_b0 chunk32_0 chunk32_1 chunk32_2
+                          chunk40_0 chunk40_1 chunk40_2 out_init scalar
+                          out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R) as Hiff_b0.
+            apply iff1ToEq in Hiff_b0.
             assert (Hsep_b0 : (sepclause_of_map (chunk40_0$@B_pre_addr) ⋆
                    (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
                     ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
@@ -628,12 +618,13 @@ Section ScalarmultImpl64.
                     ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
                     ⋆ sepclause_of_map (out_init$@out_ptr)
                     ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep m')
-              by (use_sep_assumption; cancel).
+              by (rewrite <- Hiff_b0; ecancel_assumption).
+            clear Hiff_b0.
             exact Hsep_b0.
           - (* Goal 3: output length = felem_size_in_bytes *)
             change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb0_len.
-          - (* Goal 4: bytes_in_bounds chunk32_0 — vm_compute on concrete bytes *)
-            subst chunk32_0. rewrite Hbs. vm_compute. intuition. }
+          - (* Goal 4: bytes_in_bounds chunk32_0 — apply Qed-clean helper. *)
+            subst chunk32_0. rewrite Hbs. apply chunk32_0_in_bounds. }
         (* Post-call continuation: extract 1st from_bytes post, then
            [repeat straightline] auto-discharges 2nd/3rd from_bytes +
            parametric calls via the typeclass-resolved [Hfb] and [Hpar]
@@ -689,11 +680,15 @@ Section ScalarmultImpl64.
                 ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
                 ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
                 ⋆ sepclause_of_map (out_init$@out_ptr)
-                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a0)
-              by (use_sep_assumption; cancel; reflexivity).
+                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a0).
+            { apply (reshape_b1 a0 chunk32_0 chunk32_1 chunk32_2
+                       chunk40_1 chunk40_2 (FElem B_pre_addr X_b0)
+                       out_init scalar
+                       out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R).
+              exact Hsep_b0_post. }
             exact Hsep_b1.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb1_len.
-          - subst chunk32_1. rewrite Hbs. vm_compute. intuition. }
+          - subst chunk32_1. rewrite Hbs. apply chunk32_1_in_bounds. }
         (* Post-2nd-from_bytes: extract X_b1, advance dexprs for 3rd.
            The post hyp was auto-introduced by [straightline_call] using a
            fresh `H?` name; matching by structure rather than by name. *)
@@ -722,11 +717,16 @@ Section ScalarmultImpl64.
                 ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
                 ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
                 ⋆ sepclause_of_map (out_init$@out_ptr)
-                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a2)
-              by (use_sep_assumption; cancel; reflexivity).
+                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a2).
+            { apply (reshape_b2 a2 chunk32_0 chunk32_1 chunk32_2 chunk40_2
+                       (FElem B_pre_addr X_b0)
+                       (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1)
+                       out_init scalar
+                       out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R).
+              exact Hsep_b1_post. }
             exact Hsep_b2.
           - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
-          - subst chunk32_2. rewrite Hbs. vm_compute. intuition. }
+          - subst chunk32_2. rewrite Hbs. apply chunk32_2_in_bounds. }
         (* Post-3rd-from_bytes: extract X_b2, advance dexprs for parametric. *)
         match goal with
         | H : _ = nil /\ _ = _ /\ exists _ : felem, _ |- _ =>
@@ -766,12 +766,83 @@ Section ScalarmultImpl64.
               Hsep_b1_post Hsep0 HsepC1 || idtac.
         rewrite Hr_par.
         eexists. split. { reflexivity. }
-        (* Dealloc cascade — fully written below.  ecancel_assumption_impl
-           on the assert times out (>60s) on the heavily-accumulated proof
-           state (>30 hyps).  Aggressive context cleanup before this point
-           via WPCleanup tactics would unblock; deferred. *)
-        admit.
+        (* Drop iff1 facts to keep the context clean for ecancel. *)
+        repeat match goal with
+        | H : Lift1Prop.iff1 _ _ |- _ => clear H
+        end.
+        pose proof (sep_rearrange_for_dealloc _ out_par scalar
+                      ((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
+                       ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
+                       ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2)))%list
+                      chunk32_0 chunk32_1 chunk32_2
+                      out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R
+                      Hsep_par) as Hsep_par_b.
+        pose proof (dealloc_cascade_helper _ out_par scalar X_b0 X_b1 X_b2
+                      out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr
+                      chunk32_0 chunk32_1 chunk32_2 R
+                      Hc0_len Hc1_len Hc2_len Hsep_par_b) as Hcasc.
+        destruct Hcasc as (mInner_a & mStack_a & Hany_120 & Hsplit_120 &
+                           mInner_b & mStack_b & Hany_96 & Hsplit_96 & HRest_96).
+        exists mInner_a, mStack_a.
+        ssplit; [exact Hany_120 | exact Hsplit_120 |].
+        exists mInner_b, mStack_b.
+        ssplit; [exact Hany_96 | exact Hsplit_96 |].
+        eexists. split. { reflexivity. }
+        ssplit. { reflexivity. } { exact Htr_par. }
+        exists out_par. split.
+        { exact Hlen_par. }
+        { exact HRest_96. }
   Admitted.
+  (* ============================================================================
+     STATUS: Admitted — needs an upstream bedrock2 refactor to close.
+     ============================================================================
+
+     The proof body fully elaborates (~0.1 sec) and discharges every conjunct via
+     the helpers in DeallocCascadeHelper.v.  But `Qed` kernel-check on the
+     resulting proof term runs >30 min (last measurement: build #34, 2026-05-07,
+     killed at 30 min before completion).
+
+     Helpers landed and used in this proof:
+       - sep_rearrange_for_dealloc, dealloc_cascade_helper  (post-parametric cascade)
+       - reshape_iff_b0, reshape_b1, reshape_b2             (cancel for output buffer)
+       - split_3x32_iff1, split_3x40_iff1                   (bs / B_pre_init splits)
+       - chunk32_{0,1,2}_in_bounds (in B_precomputed_64.v)  (vm_compute on bytes)
+     Total proof-term reduction vs the original inline-cancel form: estimated
+     ~50 KB of ~80 KB.  The reflective Ltac `reflective_reshape` in
+     DeallocCascadeHelper.v is also defined (verified working via MCP) but only
+     applicable to non-FElem hypotheses; left for future use.
+
+     Why this isn't enough.  The remaining 30 KB of proof term comes from the
+     5 `straightline_call` invocations + their post-call destructure + the
+     `repeat straightline` glue between them.  These are bedrock2-supplied
+     tactics that produce sizable terms.  Per `reference_slow_proofs_fiat.md`
+     Root Cause 15, the fundamental fix is per-call factoring, but that
+     requires the bedrock2 spec_of / call machinery to be amenable to
+     factor-out-the-proof-term-and-reuse — which it currently is not without
+     significant restructuring of how WP-call posts thread through the proof.
+
+     Per `reference_slow_proofs_fiat.md`'s "Reflective tactics for sep-logic"
+     section: a fully reflective fix would require Rtac-style deep embedding
+     of the bedrock2 sep predicate (Malecha ESOP 2016, ~88× speedup on similar
+     problems), explicitly noted as a multi-week project.
+
+     Pitfalls verified in the 2026-05-06/07 sessions (don't retry):
+     - `replace x with y by exact eq` is SLOWER than `rewrite eq at 1` when
+       subordinate lets reference x (chunk32_X bodies contain `bs`).
+     - `abstract` on cancel makes things WORSE (sub-Qed blowup from context closure).
+     - `clearbody chunk32_*` before the cascade does NOT help (proof term up
+       to the clearbody is what's blowing up, not the residual after).
+     - `flatten_seps_in H` fails on FElem-bearing hypotheses (the
+       `iff1_syntactic_reflexivity` step inside flatten can't bridge typeclass-
+       method elaboration differences).  `flatten_seps_in_goal` works on the
+       same shapes — different code path.
+
+     Recommended next-session approach:
+       Either (a) accept Admitted indefinitely and wire the parametric spec
+       through to the wrapper without proving correctness; or (b) commit to
+       the multi-week Rtac/SepReflectiveAC-style deep-embedding refactor of
+       the bedrock2 sep predicate.
+     ============================================================================ *)
 
 (* DEAD CODE — preserved for documentation of the intended cascade structure.
    Once WPCleanup tactics are adopted to slim the context before this point,

@@ -27,6 +27,12 @@ Require Import Bedrock.End2End.Ed25519.BytesToFelem3.
 Require Import Bedrock.End2End.Ed25519.Felems3ToBytes.
 Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
+(* TODO(R10.E follow-up): wire reflective_ecancel from
+   Bedrock.Util.SepReflectiveAC at the from_bytes Goal 1 sites once the
+   Ltac match-goal pattern issue (currently "No matching clauses for match"
+   on the [(target ⋆ ?Rr)%sep m] goal shape after [setoid_rewrite]) is
+   resolved.  Phase 1 (flatten_seps_in_strict) + Phase 3 (seps_pick_iff1)
+   are already landed in SepReflectiveAC.v. *)
 
 (** Strategy 0 on field-rep + sep coercion was tested 2026-05-07 to reduce
     Qed kernel-check time on this lemma — it does NOT help.  Multiple

@@ -2,7 +2,7 @@
 
 (coq.theory
  (name Bedrock)
- (mode vo)
+ (mode native)
  (flags -time)
  (modules
   (:standard

@@ -28,6 +28,13 @@ Require Import Bedrock.End2End.Ed25519.Felems3ToBytes.
 Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
 
+(** Strategy 0 on field-rep + sep coercion was tested 2026-05-07 to reduce
+    Qed kernel-check time on this lemma — it does NOT help.  Multiple
+    Strategy 0 sets and native compilation (.cmxs cached for fiat-crypto)
+    were tried; all give the same 60+ min Qed profile.  Left as documentation;
+    re-enable if profiling tools (perf/gdb, root-only) become available. *)
+(* Strategy 0 [frep25519 sepclause_of_map]. *)
+
 Section ScalarmultImpl64.
   Local Open Scope string_scope.
   Local Open Scope Z_scope.

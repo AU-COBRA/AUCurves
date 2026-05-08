@@ -17,6 +17,8 @@ Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
 Require Import bedrock2.TransferSepsOrder.
 Require Import coqutil.Sorting.OrderToPermutation.
+Require Import bedrock2.Semantics.
+Require Import bedrock2.BasicC64Semantics.
 
 Section DeallocCascadeHelper.
   Local Open Scope Z_scope.
@@ -131,6 +133,77 @@ Section DeallocCascadeHelper.
     split; [exact Hany_96 |].
     split; [apply Properties.map.split_comm; exact Hsplit_96 |].
     exact HRest_96.
+  Qed.
+
+  (** [dealloc_cascade_full]: packs lines 729-750 of
+      [Scalarmult_Impl_64.ed25519_scalarmult_base_correct]'s
+      post-parametric WP-post assembly into a single Qed-sealed Lemma.
+
+      Input: the post-parametric sep state (after [sep_rearrange_for_dealloc]
+      pre-massage) plus the spec's three trace/length/locals facts.
+
+      Output: the entire 4-level-existential WP post that the call's
+      [post] expects, ready for [exact] at the call site.
+
+      Caller usage replaces:
+          pose proof (sep_rearrange_for_dealloc ...) as Hsep_par_b.
+          pose proof (dealloc_cascade_helper ...) as Hcasc.
+          destruct Hcasc as (mInner_a & mStack_a & Hany_120 & ...).
+          exists mInner_a, mStack_a. ssplit; [exact ... | exact ... |].
+          exists mInner_b, mStack_b. ssplit; [exact ... | exact ... |].
+          eexists. split. { reflexivity. }
+          ssplit. { reflexivity. } { exact Htr_par. }
+          exists out_par. split. { exact Hlen_par. } { exact HRest_96. }
+
+      with a single:
+          eapply dealloc_cascade_full; eassumption.  *)
+  Lemma dealloc_cascade_full
+    (m : mem) (out_par scalar : list Byte.byte)
+    (X_b0 X_b1 X_b2 : felem)
+    (out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr : word)
+    (chunk32_0 chunk32_1 chunk32_2 : list Byte.byte)
+    (R : mem -> Prop)
+    (l' : Interface.map.rep (map:=BasicC64Semantics.locals))
+    (tr_new tr_old : Semantics.trace) :
+    Datatypes.length out_par = 200%nat ->
+    Datatypes.length chunk32_0 = 32%nat ->
+    Datatypes.length chunk32_1 = 32%nat ->
+    Datatypes.length chunk32_2 = 32%nat ->
+    tr_new = tr_old ->
+    (sepclause_of_map (((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
+                        ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
+                        ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2)))$@B_pre_addr)
+      ⋆ (sepclause_of_map (out_par$@out_ptr) ⋆ sepclause_of_map (scalar$@scalar_ptr)
+        ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
+        ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
+        ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
+        ⋆ R))%sep m ->
+    (* Full WP post — mirrors lines 740-750's manual existential assembly. *)
+    exists mInner_a mStack_a,
+      Memory.anybytes B_pre_addr 120 mStack_a /\
+      map.split m mInner_a mStack_a /\
+      (exists mInner_b mStack_b,
+         Memory.anybytes B_pre_bytes_addr 96 mStack_b /\
+         map.split mInner_a mInner_b mStack_b /\
+         (exists rets : list (Interface.word.rep (word:=Naive.word 64)),
+            Interface.map.getmany_of_list l' nil = Some rets /\
+            rets = nil /\
+            tr_new = tr_old /\
+            (exists out_bytes : list Byte.byte,
+               Datatypes.length out_bytes = 200%nat /\
+               (sepclause_of_map (out_bytes$@out_ptr)
+                 ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep mInner_b))).
+  Proof.
+    intros Hlen_out Hc0 Hc1 Hc2 Htr Hsep.
+    pose proof (dealloc_cascade_helper m out_par scalar X_b0 X_b1 X_b2
+                  out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr
+                  chunk32_0 chunk32_1 chunk32_2 R Hc0 Hc1 Hc2 Hsep)
+      as (mInner_a & mStack_a & Hany_120 & Hsplit_120 &
+          mInner_b & mStack_b & Hany_96 & Hsplit_96 & HRest_96).
+    exists mInner_a, mStack_a. split; [exact Hany_120|]. split; [exact Hsplit_120|].
+    exists mInner_b, mStack_b. split; [exact Hany_96|]. split; [exact Hsplit_96|].
+    exists nil. split; [reflexivity|]. split; [reflexivity|]. split; [exact Htr|].
+    exists out_par. split; [exact Hlen_out|]. exact HRest_96.
   Qed.
 
   (** Sep-reshape helpers for the 3 from_bytes call discharges in

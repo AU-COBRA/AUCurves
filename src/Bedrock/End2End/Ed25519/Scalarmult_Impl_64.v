@@ -726,6 +726,10 @@ Section ScalarmultImpl64.
         repeat match goal with
         | H : Lift1Prop.iff1 _ _ |- _ => clear H
         end.
+        (* Single Qed-sealed Lemma absorbs lines previously spent on
+           [sep_rearrange_for_dealloc] + [dealloc_cascade_helper] +
+           manual existential threading.  See
+           [DeallocCascadeHelper.dealloc_cascade_full]. *)
         pose proof (sep_rearrange_for_dealloc _ out_par scalar
                       ((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
                        ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
@@ -733,21 +737,9 @@ Section ScalarmultImpl64.
                       chunk32_0 chunk32_1 chunk32_2
                       out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R
                       Hsep_par) as Hsep_par_b.
-        pose proof (dealloc_cascade_helper _ out_par scalar X_b0 X_b1 X_b2
-                      out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr
-                      chunk32_0 chunk32_1 chunk32_2 R
-                      Hc0_len Hc1_len Hc2_len Hsep_par_b) as Hcasc.
-        destruct Hcasc as (mInner_a & mStack_a & Hany_120 & Hsplit_120 &
-                           mInner_b & mStack_b & Hany_96 & Hsplit_96 & HRest_96).
-        exists mInner_a, mStack_a.
-        ssplit; [exact Hany_120 | exact Hsplit_120 |].
-        exists mInner_b, mStack_b.
-        ssplit; [exact Hany_96 | exact Hsplit_96 |].
-        eexists. split. { reflexivity. }
-        ssplit. { reflexivity. } { exact Htr_par. }
-        exists out_par. split.
-        { exact Hlen_par. }
-        { exact HRest_96. }
+        eapply dealloc_cascade_full;
+          [ exact Hlen_par | exact Hc0_len | exact Hc1_len | exact Hc2_len
+          | exact Htr_par | exact Hsep_par_b ].
   Admitted.
   (* ============================================================================
      STATUS: Admitted — needs an upstream bedrock2 refactor to close.

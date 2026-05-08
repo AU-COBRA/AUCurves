@@ -627,33 +627,11 @@ Section ScalarmultImpl64.
                             rewrite map.get_put_same. reflexivity. }
           reflexivity. }
         vm_call_compat.
-        { (* 4-conjunct precond for 1st from_bytes *)
-          pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0
-                        ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
-          apply iff1ToEq in Hiff_c0.
-          ssplit.
-          - (* Goal 1: input bytes ⊆ memory — deep ecancel via vm_compute *)
-            eexists. setoid_rewrite Hiff_c0 at 1. reflective_ecancel Hsep'.
-          - (* Goal 2: output buffer — Qed-sealed iff1 helper *)
-            pose proof (reshape_iff_b0 chunk32_0 chunk32_1 chunk32_2
-                          chunk40_0 chunk40_1 chunk40_2 out_init scalar
-                          out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R) as Hiff_b0.
-            apply iff1ToEq in Hiff_b0.
-            assert (Hsep_b0 : (sepclause_of_map (chunk40_0$@B_pre_addr) ⋆
-                   (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-                    ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-                    ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-                    ⋆ sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40)))
-                    ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
-                    ⋆ sepclause_of_map (out_init$@out_ptr)
-                    ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep m')
-              by (rewrite <- Hiff_b0; ecancel_assumption).
-            clear Hiff_b0.
-            exact Hsep_b0.
-          - (* Goal 3: output length = felem_size_in_bytes *)
-            change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb0_len.
-          - (* Goal 4: bytes_in_bounds chunk32_0 — apply Qed-clean helper. *)
-            subst chunk32_0. rewrite Hbs. apply chunk32_0_in_bounds. }
+        { (* 4-conjunct precond for 1st from_bytes — single Qed-sealed
+             helper [from_bytes_precond_b0] in [FromBytesCallHelpers.v]. *)
+          eapply from_bytes_precond_b0;
+            [ ecancel_assumption | exact Hc0_len | exact Hb0_len
+            | subst chunk32_0; rewrite Hbs; apply chunk32_0_in_bounds ]. }
         (* Post-call continuation: extract 1st from_bytes post, then
            [repeat straightline] auto-discharges 2nd/3rd from_bytes +
            parametric calls via the typeclass-resolved [Hfb] and [Hpar]

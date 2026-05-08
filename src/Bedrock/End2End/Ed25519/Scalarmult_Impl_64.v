@@ -673,29 +673,10 @@ Section ScalarmultImpl64.
            pattern as 1st, but pulling chunk40_1 / chunk32_1.  Verified Qed
            via MCP at state 869 (2026-05-05). *)
         vm_call_compat.
-        { pose proof (array1_iff_eq_of_list_word_at
-                        (word.add B_pre_bytes_addr (word.of_Z 32)) chunk32_1
-                        ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
-          apply iff1ToEq in Hiff_c1.
-          ssplit.
-          - eexists. setoid_rewrite Hiff_c1 at 1. reflective_ecancel Hsep_b0_post.
-          - assert (Hsep_b1 :
-              (sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40))) ⋆
-               (FElem B_pre_addr X_b0
-                ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-                ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-                ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-                ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
-                ⋆ sepclause_of_map (out_init$@out_ptr)
-                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a0).
-            { apply (reshape_b1 a0 chunk32_0 chunk32_1 chunk32_2
-                       chunk40_1 chunk40_2 (FElem B_pre_addr X_b0)
-                       out_init scalar
-                       out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R).
-              exact Hsep_b0_post. }
-            exact Hsep_b1.
-          - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb1_len.
-          - subst chunk32_1. rewrite Hbs. apply chunk32_1_in_bounds. }
+        { (* 4-conjunct precond for 2nd from_bytes — Qed-sealed helper. *)
+          eapply from_bytes_precond_b1;
+            [ ecancel_assumption | exact Hc1_len | exact Hb1_len
+            | subst chunk32_1; rewrite Hbs; apply chunk32_1_in_bounds ]. }
         (* Post-2nd-from_bytes: extract X_b1, advance dexprs for 3rd.
            The post hyp was auto-introduced by [straightline_call] using a
            fresh `H?` name; matching by structure rather than by name. *)
@@ -710,30 +691,10 @@ Section ScalarmultImpl64.
            but pulling chunk40_2 / chunk32_2.  Verified Qed via MCP at
            state 896 (2026-05-05). *)
         vm_call_compat.
-        { pose proof (array1_iff_eq_of_list_word_at
-                        (word.add B_pre_bytes_addr (word.of_Z 64)) chunk32_2
-                        ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
-          apply iff1ToEq in Hiff_c2.
-          ssplit.
-          - eexists. setoid_rewrite Hiff_c2 at 1. reflective_ecancel Hsep_b1_post.
-          - assert (Hsep_b2 :
-              (sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80))) ⋆
-               (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1
-                ⋆ FElem B_pre_addr X_b0
-                ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-                ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-                ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-                ⋆ sepclause_of_map (out_init$@out_ptr)
-                ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R))%sep a2).
-            { apply (reshape_b2 a2 chunk32_0 chunk32_1 chunk32_2 chunk40_2
-                       (FElem B_pre_addr X_b0)
-                       (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1)
-                       out_init scalar
-                       out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr R).
-              exact Hsep_b1_post. }
-            exact Hsep_b2.
-          - change (Z.to_nat felem_size_in_bytes) with 40%nat. exact Hb2_len.
-          - subst chunk32_2. rewrite Hbs. apply chunk32_2_in_bounds. }
+        { (* 4-conjunct precond for 3rd from_bytes — Qed-sealed helper. *)
+          eapply from_bytes_precond_b2;
+            [ ecancel_assumption | exact Hc2_len | exact Hb2_len
+            | subst chunk32_2; rewrite Hbs; apply chunk32_2_in_bounds ]. }
         (* Post-3rd-from_bytes: extract X_b2, advance dexprs for parametric. *)
         match goal with
         | H : _ = nil /\ _ = _ /\ exists _ : felem, _ |- _ =>
@@ -747,21 +708,9 @@ Section ScalarmultImpl64.
            (iff1_sym) on the goal's concat → FElem chain, so the precond's
            sep matches Hsep_b2_post directly via ecancel_assumption_impl. *)
         vm_call_compat.
-        1: { ssplit.
-             - exact Hlen_out.
-             - exact Hlen_scalar.
-             - instantiate (1 := ((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0))
-                                 ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1))
-                                 ++ (ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2)))%list).
-               rewrite !List.length_app, !ws2bs_felem_length. cbn. reflexivity.
-             - pose proof (felems3_to_bytes_iff X_b0 X_b1 X_b2 B_pre_addr) as Hhelper.
-               apply iff1ToEq in Hhelper.
-               rewrite <- Hhelper.
-               instantiate (1 := (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-                                  ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-                                  ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-                                  ⋆ R)%sep).
-               ecancel_assumption_impl. }
+        1: { (* 4-conjunct precond for parametric call — Qed-sealed helper. *)
+             eapply parametric_call_precond;
+               [ exact Hlen_out | exact Hlen_scalar | ecancel_assumption ]. }
         (* Post-parametric: extract out_par, then dealloc cascade.
            Match by structure since auto-intro variable names vary. *)
         match goal with

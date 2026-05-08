@@ -418,7 +418,10 @@ Ltac reify_cmd c :=
 Ltac vm_straightline :=
   lazymatch goal with
   | |- WeakestPrecondition.cmd ?e ?c ?t ?m ?l ?post =>
-      let a := reify_cmd c in
+      (* Expand any Definition wrappers around c so reify_cmd sees
+         the constructor. *)
+      let c' := eval hnf in c in
+      let a := reify_cmd c' in
       let aT := type of (a : cmdAST) in (* force typecheck *)
       apply (proj1 (cmd_reflect_correct e a ltac:(reflexivity) t m l post));
       cbn [cmd_reflect denote]
@@ -470,6 +473,31 @@ Module Phase5SmokeTest.
       intros t m l post H.
       apply (proj1 (cmd_reflect_correct e test_AST eq_refl t m l post)).
       rewrite test_denote_eq. exact H.
+    Qed.
+
+    (** End-to-end test: prove a [WP.cmd e test_cmd] goal via
+        [vm_straightline].  The user discharge is ASSUMED via
+        explicit witnessing of the [cmd_reflect]-shape residual. *)
+    Goal forall (t : trace) (m : mem) (l : locals)
+                (post : trace -> mem -> locals -> Prop)
+                (v42 v7 : word)
+                (Hd42 : dexpr m l (Syntax.expr.literal 42) v42)
+                (Hd7  : dexpr m (map.put l "x" v42) (Syntax.expr.literal 7) v7)
+                (Hpost : post t m (map.put (map.put l "x" v42) "y" v7)),
+      WeakestPrecondition.cmd e
+        (cmd.seq (cmd.set "x" (Syntax.expr.literal 42))
+                 (cmd.seq (cmd.set "y" (Syntax.expr.literal 7)) cmd.skip))
+        t m l post.
+    Proof.
+      intros.
+      vm_straightline.
+      (* Goal: cmd_reflect e <reified> t m l post — reduces to a chain of
+         [exists v, dexpr ... /\ ...]. *)
+      exists v42. split; [exact Hd42|].
+      cbv [dlet.dlet].
+      exists v7. split; [exact Hd7|].
+      cbv [dlet.dlet].
+      exact Hpost.
     Qed.
 
   End Test.

@@ -793,6 +793,37 @@ Section ScalarmultImpl64.
        method elaboration differences).  `flatten_seps_in_goal` works on the
        same shapes — different code path.
 
+     2026-05-08 measurements (a)+(b)+vm_call_compat all in:
+     - [setoid_rewrite Hiff_c{0,1,2} at 1] (b) fixes the elaboration-time
+       OOM at line ~617 (the `at 1` modifier limits search to the first
+       occurrence; without it, setoid_rewrite scans every position
+       exponentially).  Now elaboration completes cleanly under
+       (mode native) with ~7 GB peak.
+     - [vm_call_compat] (sibling Util/SepCallReflect.v) replaces
+       [straightline_call]'s [eapply Proper_call; ...; eabstract] with
+       [eapply Proper_call; ...; try (solve [solve_proper])] — skips the
+       Qed-sealed _subproof_NN packaging for morphism instances.  Drop-in
+       at all 4 call sites here.
+     - [eapply from_bytes_precond_b{0,1,2} + parametric_call_precond] (a)
+       factors each call's 4-conjunct discharge into a single Qed-sealed
+       Lemma application + [ecancel_assumption] (bridges the live
+       right-assoc sep state vs the helper's left-assoc expected form).
+       Source: 60+ lines saved across 4 sites.
+
+     With ALL three landed, [Time Qed] still hits the 30-min ceiling
+     (measured 2026-05-08 16:19, INNER_EXIT=124).  Conclusion: the
+     dominant Qed kernel-check cost lives BELOW our extracted helpers —
+     in the [repeat straightline] glue between calls and/or the dealloc
+     cascade's nested anybytes destructure (lines ~720-750).  Both
+     produce bedrock2-internal proof-term shapes that don't factor out
+     the way the WP-call helpers did.
+
+     Outstanding paths (none scoped for current session):
+     - Refactor [repeat straightline] to a reflective normalizer.
+     - Rewrite the dealloc cascade as a single Qed-sealed Lemma
+       (currently relies on [DeallocCascadeHelper.v]'s atomic helpers
+       chained at the call-site level).
+
      Recommended next-session approach:
        Either (a) accept Admitted indefinitely and wire the parametric spec
        through to the wrapper without proving correctness; or (b) commit to

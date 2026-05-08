@@ -98,7 +98,7 @@ Module Ed25519Scalarmult.
   Axiom ed25519_scalarmult_base_correct :
     forall (functions : Interface.map.rep (map:=Semantics.env))
            (t : Semantics.trace) (m : Interface.map.rep)
-           (out_ptr scalar_ptr : word)
+           (out_ptr scalar_ptr : Naive.word 64)
            (out_init : list Byte.byte) (scalar : list Byte.byte)
            (R : Interface.map.rep -> Prop),
       Datatypes.length out_init = 200%nat ->  (* 5 felems × 40 bytes *)
@@ -119,7 +119,7 @@ Module Ed25519Scalarmult.
   Axiom ed25519_scalarmult_correct :
     forall (functions : Interface.map.rep (map:=Semantics.env))
            (t : Semantics.trace) (m : Interface.map.rep)
-           (out_ptr scalar_ptr p_ptr : word)
+           (out_ptr scalar_ptr p_ptr : Naive.word 64)
            (out_init : list Byte.byte) (scalar : list Byte.byte)
            (p_bytes : list Byte.byte)
            (R : Interface.map.rep -> Prop),

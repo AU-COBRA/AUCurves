@@ -30,6 +30,7 @@ Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
 Require Import Bedrock.End2End.Ed25519.FromBytesCallHelpers.
 Require Import Bedrock.Util.SepReflectiveAC.
 Require Import Bedrock.Util.SepDeep.  (* deep_ecancel infra; not currently wired *)
+Require Import Bedrock.Util.SepCallReflect. (* vm_call drop-in for straightline_call *)
 
 (** ** Deep [vm_compute] cancel — experimental, REVERTED.
 

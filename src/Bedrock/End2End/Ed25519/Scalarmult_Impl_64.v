@@ -29,7 +29,25 @@ Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
 Require Import Bedrock.End2End.Ed25519.FromBytesCallHelpers.
 Require Import Bedrock.Util.SepReflectiveAC.
-Require Import Bedrock.Util.SepDeep.
+Require Import Bedrock.Util.SepDeep.  (* deep_ecancel infra; not currently wired *)
+
+(** ** Deep [vm_compute] cancel — experimental, REVERTED.
+
+    [Bedrock.Util.SepDeep.deep_ecancel] was wired in for the 3 [from_bytes]
+    Goal-1 sites at lines ~617/684/721 in commit [34e175b].  Despite
+    deep_ecancel running AFTER [setoid_rewrite Hiff_c{0,1,2}], the mere
+    presence of the [deep_ecancel Hsep'] call in the file text triggered a
+    fatal-out-of-memory at the immediately preceding [setoid_rewrite Hiff_c0]
+    (line ~617) — confirmed by 3 isolation tests on 2026-05-08:
+      - Import [SepDeep] alone, keep [reflective_ecancel]:  builds clean.
+      - Import [SepDeep] + use [deep_ecancel]:               OOM at line 617.
+      - No [SepDeep] import, [reflective_ecancel] only:      builds clean.
+    Likely cause: Rocq's tactic interpreter pre-resolves typeclass instances
+    for the upcoming [seps_pick_iff1_decb] call at the surrounding [bullet]
+    level, which interacts badly with [setoid_rewrite]'s class search.  The
+    [SepDeep.v] infrastructure is left in place (Qed-clean lemmas + tactic +
+    tested standalone via [deep_ecancel_test]) for future iteration.  The 3
+    R10 sites stay on [reflective_ecancel].  *)
 
 (** Strategy 0 on field-rep + sep coercion was tested 2026-05-07 to reduce
     Qed kernel-check time on this lemma — it does NOT help.  Multiple
@@ -614,7 +632,7 @@ Section ScalarmultImpl64.
           apply iff1ToEq in Hiff_c0.
           ssplit.
           - (* Goal 1: input bytes ⊆ memory — deep ecancel via vm_compute *)
-            eexists. setoid_rewrite Hiff_c0. deep_ecancel Hsep'.
+            eexists. setoid_rewrite Hiff_c0. reflective_ecancel Hsep'.
           - (* Goal 2: output buffer — Qed-sealed iff1 helper *)
             pose proof (reshape_iff_b0 chunk32_0 chunk32_1 chunk32_2
                           chunk40_0 chunk40_1 chunk40_2 out_init scalar
@@ -681,7 +699,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
           apply iff1ToEq in Hiff_c1.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c1. deep_ecancel Hsep_b0_post.
+          - eexists. setoid_rewrite Hiff_c1. reflective_ecancel Hsep_b0_post.
           - assert (Hsep_b1 :
               (sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40))) ⋆
                (FElem B_pre_addr X_b0
@@ -718,7 +736,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
           apply iff1ToEq in Hiff_c2.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c2. deep_ecancel Hsep_b1_post.
+          - eexists. setoid_rewrite Hiff_c2. reflective_ecancel Hsep_b1_post.
           - assert (Hsep_b2 :
               (sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80))) ⋆
                (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1
@@ -803,10 +821,6 @@ Section ScalarmultImpl64.
         { exact Hlen_par. }
         { exact HRest_96. }
   Admitted.
-  (* NOTE: proof body fully discharges every conjunct (~0.1s elaboration),
-     but [Qed] kernel-check on the resulting term consistently runs >60 min
-     across all interventions tried.  Awaiting upstream bedrock2 refactor —
-     see the long STATUS comment block below. *)
   (* ============================================================================
      STATUS: Admitted — needs an upstream bedrock2 refactor to close.
      ============================================================================

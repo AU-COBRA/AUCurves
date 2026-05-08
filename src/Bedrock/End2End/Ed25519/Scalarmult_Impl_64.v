@@ -29,6 +29,7 @@ Require Import Bedrock.End2End.Ed25519.DeallocCascade.
 Require Import Bedrock.End2End.Ed25519.DeallocCascadeHelper.
 Require Import Bedrock.End2End.Ed25519.FromBytesCallHelpers.
 Require Import Bedrock.Util.SepReflectiveAC.
+Require Import Bedrock.Util.SepDeep.
 
 (** Strategy 0 on field-rep + sep coercion was tested 2026-05-07 to reduce
     Qed kernel-check time on this lemma — it does NOT help.  Multiple
@@ -612,8 +613,8 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
           apply iff1ToEq in Hiff_c0.
           ssplit.
-          - (* Goal 1: input bytes ⊆ memory — reflective ecancel *)
-            eexists. setoid_rewrite Hiff_c0. reflective_ecancel Hsep'.
+          - (* Goal 1: input bytes ⊆ memory — deep ecancel via vm_compute *)
+            eexists. setoid_rewrite Hiff_c0. deep_ecancel Hsep'.
           - (* Goal 2: output buffer — Qed-sealed iff1 helper *)
             pose proof (reshape_iff_b0 chunk32_0 chunk32_1 chunk32_2
                           chunk40_0 chunk40_1 chunk40_2 out_init scalar
@@ -680,7 +681,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
           apply iff1ToEq in Hiff_c1.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c1. reflective_ecancel Hsep_b0_post.
+          - eexists. setoid_rewrite Hiff_c1. deep_ecancel Hsep_b0_post.
           - assert (Hsep_b1 :
               (sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40))) ⋆
                (FElem B_pre_addr X_b0
@@ -717,7 +718,7 @@ Section ScalarmultImpl64.
                         ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
           apply iff1ToEq in Hiff_c2.
           ssplit.
-          - eexists. setoid_rewrite Hiff_c2. reflective_ecancel Hsep_b1_post.
+          - eexists. setoid_rewrite Hiff_c2. deep_ecancel Hsep_b1_post.
           - assert (Hsep_b2 :
               (sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80))) ⋆
                (FElem (word.add B_pre_addr (word.of_Z 40)) X_b1

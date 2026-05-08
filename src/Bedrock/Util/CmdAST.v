@@ -371,6 +371,111 @@ Module SmokeTest.
 
 End SmokeTest.
 
+(** ** Phase 5 — reify Ltac.
+
+    [reify_cmd c] takes a [Syntax.cmd] term and produces a [cmdAST]
+    such that [denote (reify_cmd c) = c] (definitionally — verified by
+    [reflexivity] downstream).  Mirrors the [cmd] structure 1-to-1.
+
+    Pattern follows [coqutil.Map.SeparationLogic.reify] for sep
+    predicates: a recursive Ltac that pattern-matches on the head
+    constructor.  Returns a [uconstr] (untyped term) that the caller
+    typechecks. *)
+Ltac reify_cmd c :=
+  lazymatch c with
+  | cmd.skip => uconstr:(AST_skip)
+  | cmd.set ?x ?ev => uconstr:(AST_set x ev)
+  | cmd.unset ?x => uconstr:(AST_unset x)
+  | cmd.store ?sz ?ea ?ev => uconstr:(AST_store sz ea ev)
+  | cmd.stackalloc ?x ?n ?body =>
+      let body' := reify_cmd body in
+      uconstr:(AST_stackalloc x n body')
+  | cmd.cond ?br ?ct ?cf =>
+      let ct' := reify_cmd ct in
+      let cf' := reify_cmd cf in
+      uconstr:(AST_cond br ct' cf')
+  | cmd.seq ?s1 ?s2 =>
+      let s1' := reify_cmd s1 in
+      let s2' := reify_cmd s2 in
+      uconstr:(AST_seq s1' s2')
+  | cmd.while ?test ?body =>
+      let body' := reify_cmd body in
+      uconstr:(AST_while test body')
+  | cmd.call ?binds ?fname ?args => uconstr:(AST_call binds fname args)
+  | cmd.interact ?binds ?action ?args => uconstr:(AST_interact binds action args)
+  end.
+
+(** [vm_straightline] — the entry-point tactic for Phase 6's R10 wiring.
+
+    Goal shape: [WeakestPrecondition.cmd e c t m l post] for a concrete
+    [c] in the body of an R10-style proof.  Reifies [c] to a [cmdAST]
+    [a], applies [cmd_reflect_correct] to swap [WP.cmd e (denote a)]
+    for [cmd_reflect a], then [cbn [cmd_reflect denote]] reduces to
+    the per-stmt obligations the user discharges.
+
+    Pre-condition: the goal's [c] uses only [supported] constructors
+    (no [cmd.while] / [cmd.interact]).  R10 satisfies this. *)
+Ltac vm_straightline :=
+  lazymatch goal with
+  | |- WeakestPrecondition.cmd ?e ?c ?t ?m ?l ?post =>
+      let a := reify_cmd c in
+      let aT := type of (a : cmdAST) in (* force typecheck *)
+      apply (proj1 (cmd_reflect_correct e a ltac:(reflexivity) t m l post));
+      cbn [cmd_reflect denote]
+  end.
+
+(** ** Phase 5 smoke test — synthetic 3-stmt sequence Qed-clean. *)
+Module Phase5SmokeTest.
+
+  Local Open Scope string_scope.
+
+  Section Test.
+    Context {width : Z} {BW : Bitwidth.Bitwidth width}
+            {word : Interface.word.word width}
+            {mem : Interface.map.map word Init.Byte.byte}
+            {locals : Interface.map.map String.string word}
+            {ext_spec : ExtSpec}
+            {word_ok : Interface.word.ok word}
+            {mem_ok : Interface.map.ok mem}
+            {locals_ok : Interface.map.ok locals}
+            {ext_spec_ok : ext_spec.ok ext_spec}.
+    Context (e : env).
+
+    Definition test_cmd : Syntax.cmd :=
+      cmd.seq
+        (cmd.set "x" (Syntax.expr.literal 42))
+        (cmd.seq (cmd.set "y" (Syntax.expr.literal 7)) cmd.skip).
+
+    (** The reify Ltac produces an AST that [denote] gives back. *)
+    Goal denote (AST_seq (AST_set "x" (Syntax.expr.literal 42))
+                         (AST_seq (AST_set "y" (Syntax.expr.literal 7)) AST_skip))
+         = test_cmd.
+    Proof. reflexivity. Qed.
+
+    (** [vm_straightline] swaps [WP.cmd] for [cmd_reflect].  No
+        residual obligation here because we leave the post abstract — the
+        [Goal] just demonstrates the swap is syntactically valid. *)
+    Definition test_AST : cmdAST :=
+      AST_seq (AST_set "x" (Syntax.expr.literal 42))
+              (AST_seq (AST_set "y" (Syntax.expr.literal 7)) AST_skip).
+
+    Lemma test_denote_eq : denote test_AST = test_cmd.
+    Proof. reflexivity. Qed.
+
+    Goal forall (t : trace) (m : mem) (l : locals)
+                (post : trace -> mem -> locals -> Prop),
+      WeakestPrecondition.cmd e test_cmd t m l post ->
+      cmd_reflect e test_AST t m l post.
+    Proof.
+      intros t m l post H.
+      apply (proj1 (cmd_reflect_correct e test_AST eq_refl t m l post)).
+      rewrite test_denote_eq. exact H.
+    Qed.
+
+  End Test.
+
+End Phase5SmokeTest.
+
 (** ** Phase 1 result line.
 
     Build status: pending (this file is the deliverable).

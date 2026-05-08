@@ -133,6 +133,31 @@ Ltac vm_call :=
       [ eapply Hcall | intros ? ? ? ? ]
   end.
 
+(** [vm_call_compat] — drop-in alternative trying to match
+    [straightline_call]'s post-hypothesis shape exactly.  Same
+    [eapply Hcall + intros] pattern but uses
+    [WeakestPreconditionProperties.Proper_call] underneath (matching
+    upstream), with the [eabstract] bypassed.
+
+    Trade-off: less proof-term savings (you keep the Proper-instance
+    cast wrappers in the term) but exact compatibility with
+    [match goal with H : _ = nil /\ _ = _ /\ exists _, _ |- _ => ...]
+    style downstream patterns that depend on Proper_call's specific
+    output shape.
+
+    Use [vm_call] for fresh proofs (max savings).  Use
+    [vm_call_compat] when porting existing [straightline_call]-using
+    proofs without adapting downstream Ltac. *)
+Ltac vm_call_compat :=
+  lazymatch goal with
+  | |- WeakestPrecondition.call ?functions ?callee _ _ _ _ =>
+    let callee_spec := lazymatch constr:(_:spec_of callee) with ?s => s end in
+    let Hcall := lazymatch goal with H: callee_spec functions |- _ => H end in
+    eapply WeakestPreconditionProperties.Proper_call; cycle -1;
+      [ eapply Hcall | try (solve [Morphisms.solve_proper]) .. ];
+      [ .. | intros ? ? ? ? ]
+  end.
+
 (** ** Synthetic test — Outcome A success criterion.
 
     Build a tiny synthetic 1-call WP goal in two ways.  Compare proof-

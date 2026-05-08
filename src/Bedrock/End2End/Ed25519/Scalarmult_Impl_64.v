@@ -626,7 +626,7 @@ Section ScalarmultImpl64.
           eexists. split. { rewrite ?map.get_put_diff by congruence.
                             rewrite map.get_put_same. reflexivity. }
           reflexivity. }
-        straightline_call.
+        vm_call_compat.
         { (* 4-conjunct precond for 1st from_bytes *)
           pose proof (array1_iff_eq_of_list_word_at B_pre_bytes_addr chunk32_0
                         ltac:(rewrite Hc0_len; cbn; lia)) as Hiff_c0.
@@ -694,7 +694,7 @@ Section ScalarmultImpl64.
         (* 2nd from_bytes(B_pre + 40, B_pre_bytes + 32) — same 4-conjunct
            pattern as 1st, but pulling chunk40_1 / chunk32_1.  Verified Qed
            via MCP at state 869 (2026-05-05). *)
-        straightline_call.
+        vm_call_compat.
         { pose proof (array1_iff_eq_of_list_word_at
                         (word.add B_pre_bytes_addr (word.of_Z 32)) chunk32_1
                         ltac:(rewrite Hc1_len; cbn; lia)) as Hiff_c1.
@@ -731,7 +731,7 @@ Section ScalarmultImpl64.
         (* 3rd from_bytes(B_pre + 80, B_pre_bytes + 64) — symmetric to 2nd
            but pulling chunk40_2 / chunk32_2.  Verified Qed via MCP at
            state 896 (2026-05-05). *)
-        straightline_call.
+        vm_call_compat.
         { pose proof (array1_iff_eq_of_list_word_at
                         (word.add B_pre_bytes_addr (word.of_Z 64)) chunk32_2
                         ltac:(rewrite Hc2_len; cbn; lia)) as Hiff_c2.
@@ -768,7 +768,7 @@ Section ScalarmultImpl64.
         (* Parametric call.  Use felems3_to_bytes_iff helper backward
            (iff1_sym) on the goal's concat → FElem chain, so the precond's
            sep matches Hsep_b2_post directly via ecancel_assumption_impl. *)
-        straightline_call.
+        vm_call_compat.
         1: { ssplit.
              - exact Hlen_out.
              - exact Hlen_scalar.

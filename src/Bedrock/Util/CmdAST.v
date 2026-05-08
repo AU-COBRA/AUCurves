@@ -249,6 +249,79 @@ Section CmdReflect.
       apply IHa1. exact H.
   Qed.
 
+  (** ** Phase 2-rest — soundness for [AST_stackalloc].
+
+      Pattern mirrors seq but the post threads through the
+      [anybytes / map.split] wrapper. *)
+  Lemma cmd_reflect_correct_stackalloc (x : String.string) (n : Z) (body : cmdAST)
+        (IHbody : forall t m l post,
+                    WeakestPrecondition.cmd e (denote body) t m l post <->
+                    cmd_reflect body t m l post) :
+    forall t m l post,
+      WeakestPrecondition.cmd e (denote (AST_stackalloc x n body)) t m l post <->
+      cmd_reflect (AST_stackalloc x n body) t m l post.
+  Proof.
+    intros t m l post. cbn [denote cmd_reflect].
+    cbv [WeakestPrecondition.cmd]. cbn [WeakestPrecondition.cmd_body].
+    fold (WeakestPrecondition.cmd e).
+    split; intros [Hmod H]; split; [exact Hmod | | exact Hmod |];
+      intros a' mStack mCombined Han Hsplit;
+      specialize (H a' mStack mCombined Han Hsplit); cbv [dlet.dlet] in *.
+    - apply IHbody. exact H.
+    - apply IHbody. exact H.
+  Qed.
+
+  (** ** Phase 2-rest — soundness for [AST_cond]. *)
+  Lemma cmd_reflect_correct_cond (br : Syntax.expr) (ct cf : cmdAST)
+        (IHct : forall t m l post,
+                  WeakestPrecondition.cmd e (denote ct) t m l post <->
+                  cmd_reflect ct t m l post)
+        (IHcf : forall t m l post,
+                  WeakestPrecondition.cmd e (denote cf) t m l post <->
+                  cmd_reflect cf t m l post) :
+    forall t m l post,
+      WeakestPrecondition.cmd e (denote (AST_cond br ct cf)) t m l post <->
+      cmd_reflect (AST_cond br ct cf) t m l post.
+  Proof.
+    intros t m l post. cbn [denote cmd_reflect].
+    cbv [WeakestPrecondition.cmd]. cbn [WeakestPrecondition.cmd_body].
+    fold (WeakestPrecondition.cmd e).
+    split.
+    - intros (v & Hd & Hnz & Hz). exists v. split; [exact Hd|]. split.
+      + intros Hne. apply IHct. apply (Hnz Hne).
+      + intros Heq. apply IHcf. apply (Hz Heq).
+    - intros (v & Hd & Hnz & Hz). exists v. split; [exact Hd|]. split.
+      + intros Hne. apply IHct. apply (Hnz Hne).
+      + intros Heq. apply IHcf. apply (Hz Heq).
+  Qed.
+
+  (** ** Phase 2-final — combined soundness for [supported] AST.
+
+      Wraps the leaf + seq + stackalloc + cond cases into a single
+      structural induction. *)
+  Lemma cmd_reflect_correct (a : cmdAST) :
+    supported a = true ->
+    forall t m l post,
+      WeakestPrecondition.cmd e (denote a) t m l post <->
+      cmd_reflect a t m l post.
+  Proof.
+    induction a; intros Hsup t m l post; cbn [supported] in Hsup;
+      try discriminate.
+    - apply cmd_reflect_correct_leaf. reflexivity.
+    - apply cmd_reflect_correct_leaf. reflexivity.
+    - apply cmd_reflect_correct_leaf. reflexivity.
+    - apply cmd_reflect_correct_leaf. reflexivity.
+    - apply cmd_reflect_correct_stackalloc. apply IHa. exact Hsup.
+    - apply Bool.andb_true_iff in Hsup as [Hsup1 Hsup2].
+      apply cmd_reflect_correct_cond.
+      + apply IHa1. exact Hsup1.
+      + apply IHa2. exact Hsup2.
+    - apply Bool.andb_true_iff in Hsup as [Hsup1 Hsup2].
+      apply cmd_reflect_correct_seq.
+      + apply IHa1. exact Hsup1.
+      + apply IHa2. exact Hsup2.
+  Qed.
+
 End CmdReflect.
 
 (** ** Smoke test: [denote] of a simple AST gives back the expected

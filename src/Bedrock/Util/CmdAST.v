@@ -38,7 +38,10 @@
         Coq values. *)
 
 From Stdlib Require Import String List ZArith.
-Require Import bedrock2.Syntax.
+Require Import coqutil.Map.Interface coqutil.Word.Interface coqutil.Word.Bitwidth.
+Require Import coqutil.dlet.
+Require Import bedrock2.Syntax bedrock2.Semantics bedrock2.WeakestPrecondition.
+Import Coq.Init.Byte.
 
 (** ** Mirror of [bedrock2.Syntax.cmd].
 
@@ -46,21 +49,21 @@ Require Import bedrock2.Syntax.
     arity match [Syntax.cmd] exactly. *)
 Inductive cmdAST : Set :=
 | AST_skip
-| AST_set        (lhs : String.string) (rhs : expr)
+| AST_set        (lhs : String.string) (rhs : Syntax.expr)
 | AST_unset      (lhs : String.string)
-| AST_store      (sz : access_size) (address : expr) (value : expr)
+| AST_store      (sz : access_size) (address : Syntax.expr) (value : Syntax.expr)
 | AST_stackalloc (lhs : String.string) (nbytes : Z) (body : cmdAST)
-| AST_cond       (condition : expr) (nonzero_branch zero_branch : cmdAST)
+| AST_cond       (condition : Syntax.expr) (nonzero_branch zero_branch : cmdAST)
 | AST_seq        (s1 s2 : cmdAST)
-| AST_while      (test : expr) (body : cmdAST)
-| AST_call       (binds : list String.string) (function : String.string) (args : list expr)
-| AST_interact   (binds : list String.string) (action : String.string) (args : list expr).
+| AST_while      (test : Syntax.expr) (body : cmdAST)
+| AST_call       (binds : list String.string) (function : String.string) (args : list Syntax.expr)
+| AST_interact   (binds : list String.string) (action : String.string) (args : list Syntax.expr).
 
 (** ** Denotation [cmdAST → cmd].
 
     Trivial structural recursion: each [AST_*] maps to [cmd.*].  A
     fixpoint, not a notation, so [vm_compute] can step through it. *)
-Fixpoint denote (a : cmdAST) : cmd :=
+Fixpoint denote (a : cmdAST) : Syntax.cmd :=
   match a with
   | AST_skip => cmd.skip
   | AST_set x e => cmd.set x e
@@ -73,6 +76,111 @@ Fixpoint denote (a : cmdAST) : cmd :=
   | AST_call binds f args => cmd.call binds f args
   | AST_interact binds a args => cmd.interact binds a args
   end.
+
+(** ** Phase 2: reflective WP fixpoint [cmd_reflect].
+
+    Mirrors [WeakestPrecondition.cmd_body]'s case-split, but as a
+    direct [Fixpoint] on [cmdAST] (no Knaster-Tarski / [Fixpoint cmd c
+    := cmd_body cmd c] indirection).
+
+    Restricted in this phase to [AST_skip / AST_set / AST_unset /
+    AST_store / AST_seq / AST_stackalloc / AST_cond].  [AST_while /
+    AST_call / AST_interact] fall through to a sentinel [True] for now
+    — their reflective-friendly forms are deferred to phases 3-4. *)
+Section CmdReflect.
+  Context {width : Z} {BW : Bitwidth width}
+          {word : word.word width} {mem : map.map word Init.Byte.byte}
+          {locals : map.map String.string word}
+          {ext_spec : ExtSpec}.
+  Context (e : env).
+
+  Local Notation post_ty := (trace -> mem -> locals -> Prop).
+
+  Fixpoint cmd_reflect (a : cmdAST) (t : trace) (m : mem) (l : locals)
+                       (post : post_ty) : Prop :=
+    match a with
+    | AST_skip => post t m l
+    | AST_set x ev =>
+        exists v, dexpr m l ev v /\
+        dlet! l := map.put l x v in
+        post t m l
+    | AST_unset x =>
+        dlet! l := map.remove l x in
+        post t m l
+    | AST_store sz ea ev =>
+        exists a', dexpr m l ea a' /\
+        exists v, dexpr m l ev v /\
+        WeakestPrecondition.store sz m a' v (fun m =>
+        post t m l)
+    | AST_stackalloc x n c =>
+        Z.modulo n (bytes_per_word width) = 0 /\
+        forall a' mStack mCombined,
+          Memory.anybytes a' n mStack ->
+          map.split mCombined m mStack ->
+          dlet! l := map.put l x a' in
+          cmd_reflect c t mCombined l (fun t' mCombined' l' =>
+            exists m' mStack',
+            Memory.anybytes a' n mStack' /\
+            map.split mCombined' m' mStack' /\
+            post t' m' l')
+    | AST_cond br ct cf =>
+        exists v, dexpr m l br v /\
+        (word.unsigned v <> 0%Z -> cmd_reflect ct t m l post) /\
+        (word.unsigned v = 0%Z -> cmd_reflect cf t m l post)
+    | AST_seq s1 s2 =>
+        cmd_reflect s1 t m l (fun t m l => cmd_reflect s2 t m l post)
+    | AST_while _ _ => True   (* Phase 3 *)
+    | AST_call _ _ _ => True   (* Phase 4 *)
+    | AST_interact _ _ _ => True   (* Phase 4 *)
+    end.
+
+  (** ** Phase 2 soundness — equivalence with [WeakestPrecondition.cmd]
+      for the supported subset.
+
+      [a]-restricted: while / call / interact must not appear.  We
+      encode this as a Boolean check [supported] and only prove the
+      iff when [supported a = true]. *)
+  Fixpoint supported (a : cmdAST) : bool :=
+    match a with
+    | AST_skip => true
+    | AST_set _ _ => true
+    | AST_unset _ => true
+    | AST_store _ _ _ => true
+    | AST_stackalloc _ _ b => supported b
+    | AST_cond _ ct cf => andb (supported ct) (supported cf)
+    | AST_seq s1 s2 => andb (supported s1) (supported s2)
+    | AST_while _ _ => false
+    | AST_call _ _ _ => false
+    | AST_interact _ _ _ => false
+    end.
+
+  (** Phase 2 (this commit): leaf-only soundness — [AST_skip / AST_set
+      / AST_unset / AST_store].  These reduce to identical normal
+      forms under [cbv [WeakestPrecondition.cmd]] vs [cbn [cmd_reflect]],
+      so the equivalence is [reflexivity].
+
+      The recursive constructors ([AST_seq / AST_stackalloc / AST_cond])
+      need an induction principle threading the post; their soundness
+      proofs are non-trivial (need [Proper_cmd] for monotonicity) and
+      are deferred to the next iteration of Phase 2. *)
+  Definition supported_leaf (a : cmdAST) : bool :=
+    match a with
+    | AST_skip | AST_set _ _ | AST_unset _ | AST_store _ _ _ => true
+    | _ => false
+    end.
+
+  Lemma cmd_reflect_correct_leaf (a : cmdAST) :
+    supported_leaf a = true ->
+    forall (t : trace) (m : mem) (l : locals) (post : post_ty),
+      WeakestPrecondition.cmd e (denote a) t m l post <->
+      cmd_reflect a t m l post.
+  Proof.
+    destruct a; intros Hsup t m l post; cbn [denote cmd_reflect] in *;
+      try (cbv [WeakestPrecondition.cmd]; reflexivity);
+      try discriminate.
+  Qed.
+
+End CmdReflect.
 
 (** ** Smoke test: [denote] of a simple AST gives back the expected
     [cmd]. *)

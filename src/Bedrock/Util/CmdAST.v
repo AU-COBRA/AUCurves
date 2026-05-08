@@ -130,8 +130,12 @@ Section CmdReflect.
     | AST_seq s1 s2 =>
         cmd_reflect s1 t m l (fun t m l => cmd_reflect s2 t m l post)
     | AST_while _ _ => True   (* Phase 3 *)
-    | AST_call _ _ _ => True   (* Phase 4 *)
-    | AST_interact _ _ _ => True   (* Phase 4 *)
+    | AST_call binds fname arges =>
+        exists args, dexprs m l arges args /\
+        Semantics.call e fname t m args (fun t' m' rets =>
+          exists l', map.putmany_of_list_zip binds rets l = Some l' /\
+          post t' m' l')
+    | AST_interact _ _ _ => True   (* Phase 4-rest (skipped — out of scope for R10) *)
     end.
 
   (** ** Phase 2 soundness — equivalence with [WeakestPrecondition.cmd]
@@ -149,8 +153,8 @@ Section CmdReflect.
     | AST_stackalloc _ _ b => supported b
     | AST_cond _ ct cf => andb (supported ct) (supported cf)
     | AST_seq s1 s2 => andb (supported s1) (supported s2)
+    | AST_call _ _ _ => true
     | AST_while _ _ => false
-    | AST_call _ _ _ => false
     | AST_interact _ _ _ => false
     end.
 
@@ -215,7 +219,10 @@ Section CmdReflect.
       + intros Heq. eapply IHa2; [exact Himp|]. apply (Hz Heq).
     - eapply IHa1; [|exact H]. intros t' m' l' Hp. eapply IHa2; [exact Himp|]. exact Hp.
     - exact I.
-    - exact I.
+    - (* AST_call *)
+      destruct H as (vs & Hd & Hc). exists vs. split; [exact Hd|].
+      eapply Semantics.weaken_call; [exact Hc|].
+      intros t' m' rets (l' & Hpm & Hp). exists l'. split; [exact Hpm|]. apply Himp. exact Hp.
     - exact I.
   Qed.
 
@@ -295,10 +302,25 @@ Section CmdReflect.
       + intros Heq. apply IHcf. apply (Hz Heq).
   Qed.
 
-  (** ** Phase 2-final — combined soundness for [supported] AST.
+  (** ** Phase 4 — soundness for [AST_call].
 
-      Wraps the leaf + seq + stackalloc + cond cases into a single
-      structural induction. *)
+      Trivial because [cmd_reflect]'s [AST_call] case is a copy of
+      [cmd_body]'s [cmd.call] case.  No induction needed. *)
+  Lemma cmd_reflect_correct_call (binds : list String.string)
+        (fname : String.string) (arges : list Syntax.expr) :
+    forall t m l post,
+      WeakestPrecondition.cmd e (denote (AST_call binds fname arges)) t m l post <->
+      cmd_reflect (AST_call binds fname arges) t m l post.
+  Proof.
+    intros t m l post. cbn [denote cmd_reflect].
+    cbv [WeakestPrecondition.cmd]. cbn [WeakestPrecondition.cmd_body].
+    reflexivity.
+  Qed.
+
+  (** ** Phase 2+4 final — combined soundness for [supported] AST.
+
+      Wraps the leaf + seq + stackalloc + cond + call cases into a
+      single structural induction. *)
   Lemma cmd_reflect_correct (a : cmdAST) :
     supported a = true ->
     forall t m l post,
@@ -320,6 +342,7 @@ Section CmdReflect.
       apply cmd_reflect_correct_seq.
       + apply IHa1. exact Hsup1.
       + apply IHa2. exact Hsup2.
+    - apply cmd_reflect_correct_call.
   Qed.
 
 End CmdReflect.

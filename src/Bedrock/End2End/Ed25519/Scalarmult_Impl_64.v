@@ -31,6 +31,7 @@ Require Import Bedrock.End2End.Ed25519.FromBytesCallHelpers.
 Require Import Bedrock.Util.SepReflectiveAC.
 Require Import Bedrock.Util.SepDeep.  (* deep_ecancel infra; not currently wired *)
 Require Import Bedrock.Util.SepCallReflect. (* vm_call drop-in for straightline_call *)
+Require Import Bedrock.Util.CmdAST.  (* Phase 6: vm_straightline drop-in for repeat straightline *)
 
 (** ** Deep [vm_compute] cancel — experimental, REVERTED.
 
@@ -669,6 +670,22 @@ Section ScalarmultImpl64.
         rewrite Hr_b0.
         eexists. split. { reflexivity. }
         repeat straightline.
+        (* NOTE 2026-05-08: tried [vm_straightline] from CmdAST.v as a
+           drop-in here — failed with "No matching clauses for match"
+           because the goal at this point is NOT [WP.cmd e c t m l post]
+           shape but is embedded in bedrock2's post-extraction
+           machinery ([getmany_of_list]-binding, [eexists]-bound [l']).
+           [repeat straightline] knows how to navigate that; ours only
+           handles direct [WP.cmd] goals.  Bridging the gap requires
+           either:
+             (a) a separate Ltac that walks the post-extraction wrapper
+                 and exposes the inner [WP.cmd], OR
+             (b) extending vm_straightline's lazymatch to recognize
+                 the wrapped shapes (the [exists l', ... = Some l' /\
+                 WP.cmd ...] form bedrock2 emits).
+           Both are tractable but were out of scope for the current
+           session.  The CmdAST infrastructure stands; integration to
+           R10 deferred. *)
         (* 2nd from_bytes(B_pre + 40, B_pre_bytes + 32) — same 4-conjunct
            pattern as 1st, but pulling chunk40_1 / chunk32_1.  Verified Qed
            via MCP at state 869 (2026-05-05). *)

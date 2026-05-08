@@ -40,7 +40,7 @@
 From Stdlib Require Import String List ZArith.
 Require Import coqutil.Map.Interface coqutil.Word.Interface coqutil.Word.Bitwidth.
 Require Import coqutil.dlet.
-Require Import bedrock2.Syntax bedrock2.Semantics bedrock2.WeakestPrecondition.
+Require Import bedrock2.Syntax bedrock2.Semantics bedrock2.WeakestPrecondition bedrock2.WeakestPreconditionProperties.
 Import Coq.Init.Byte.
 
 (** ** Mirror of [bedrock2.Syntax.cmd].
@@ -178,6 +178,75 @@ Section CmdReflect.
     destruct a; intros Hsup t m l post; cbn [denote cmd_reflect] in *;
       try (cbv [WeakestPrecondition.cmd]; reflexivity);
       try discriminate.
+  Qed.
+
+  (** ** Phase 2.5 — [Proper_cmd_reflect] for recursive-case soundness.
+
+      To prove [AST_seq] / [AST_stackalloc] / [AST_cond] soundness, we
+      need [cmd_reflect] to respect post-condition weakening (a Proper
+      instance).  This is structural induction on the AST.
+
+      We prove it once here and use it for the recursive constructors
+      below. *)
+  Context {word_ok : word.ok word} {mem_ok : map.ok mem}
+          {locals_ok : map.ok locals}
+          {ext_spec_ok : ext_spec.ok ext_spec}.
+
+  Lemma Proper_cmd_reflect (a : cmdAST) :
+    forall (t : trace) (m : mem) (l : locals) (post1 post2 : post_ty),
+      (forall t' m' l', post1 t' m' l' -> post2 t' m' l') ->
+      cmd_reflect a t m l post1 -> cmd_reflect a t m l post2.
+  Proof.
+    induction a; intros t m l post1 post2 Himp H;
+      cbn [cmd_reflect] in *.
+    - apply Himp. exact H.
+    - destruct H as (v & Hd & Hp). exists v. split; [exact Hd|]. cbv [dlet.dlet] in *. apply Himp. exact Hp.
+    - cbv [dlet.dlet] in *. apply Himp. exact H.
+    - destruct H as (a' & Hda & v & Hdv & m' & Hst & Hp). exists a'. split; [exact Hda|].
+      exists v. split; [exact Hdv|]. exists m'. split; [exact Hst|]. apply Himp. exact Hp.
+    - destruct H as [Hmod H]. split; [exact Hmod|].
+      intros a' mStack mCombined Han Hsplit.
+      specialize (H a' mStack mCombined Han Hsplit). cbv [dlet.dlet] in *.
+      eapply IHa; [|exact H].
+      intros t' m' l' (m'1 & mStack' & Han' & Hsplit' & Hp).
+      exists m'1, mStack'. split; [exact Han'|]. split; [exact Hsplit'|]. apply Himp. exact Hp.
+    - destruct H as (v & Hd & Hnz & Hz). exists v. split; [exact Hd|]. split.
+      + intros Hne. eapply IHa1; [exact Himp|]. apply (Hnz Hne).
+      + intros Heq. eapply IHa2; [exact Himp|]. apply (Hz Heq).
+    - eapply IHa1; [|exact H]. intros t' m' l' Hp. eapply IHa2; [exact Himp|]. exact Hp.
+    - exact I.
+    - exact I.
+    - exact I.
+  Qed.
+
+  (** ** Phase 2.5 — soundness for [AST_seq] (the critical inter-call
+      glue case). *)
+  Lemma cmd_reflect_correct_seq (a1 a2 : cmdAST)
+        (IHa1 : forall t m l post,
+                  WeakestPrecondition.cmd e (denote a1) t m l post <->
+                  cmd_reflect a1 t m l post)
+        (IHa2 : forall t m l post,
+                  WeakestPrecondition.cmd e (denote a2) t m l post <->
+                  cmd_reflect a2 t m l post) :
+    forall t m l post,
+      WeakestPrecondition.cmd e (denote (AST_seq a1 a2)) t m l post <->
+      cmd_reflect (AST_seq a1 a2) t m l post.
+  Proof.
+    intros t m l post. cbn [denote cmd_reflect].
+    cbv [WeakestPrecondition.cmd].
+    cbn [WeakestPrecondition.cmd_body].
+    fold (WeakestPrecondition.cmd e).
+    split; intros H.
+    - (* WP.cmd ... seq → cmd_reflect ... seq *)
+      apply IHa1 in H.
+      eapply Proper_cmd_reflect; [|exact H].
+      intros t' m' l' Hp. apply IHa2. exact Hp.
+    - (* cmd_reflect ... seq → WP.cmd ... seq *)
+      eapply Proper_cmd_reflect with
+        (post1 := (fun t' m' l' => cmd_reflect a2 t' m' l' post))
+        in H;
+        [| intros t' m' l' Hp; apply IHa2 in Hp; exact Hp].
+      apply IHa1. exact H.
   Qed.
 
 End CmdReflect.

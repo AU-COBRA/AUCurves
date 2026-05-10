@@ -193,6 +193,24 @@ Fixpoint rs_emit (indent : string) (c : rust_cmd_ed) : string :=
         join ", " (List.map rs_dest_arg dests ++
                    List.map rs_input_arg args) ++
       ") }"
+  | REdCallFn fname dest args =>
+      (* Verified-helper call: same Rust emit as REdCall — the
+         emitted Rust crate links the helper symbol; the verification
+         side of the framework just tracks whether the body was
+         externally axiomatized (REdCall) or Rocq-verified (REdCallFn). *)
+      indent ++ "unsafe { " ++ fname ++ "(" ++
+        join ", " (rs_dest_arg dest ::
+                   List.map rs_input_arg args ++
+                   rs_call_inject_lens fname args) ++
+      ") }"
+  | REdBlock body =>
+      (* Scoped Rust block: { ... }.  Any [REdLetZero] decls inside
+         the body have their lifetime end at the closing brace,
+         freeing the corresponding stack slot.  Matches Rust's
+         block-scoped variables. *)
+      indent ++ "{" ++ LF ++
+      rs_emit ("    " ++ indent) body ++ LF ++
+      indent ++ "}"
   end.
 
 (* ================================================================ *)
@@ -308,8 +326,13 @@ Inductive rust_stmt_ast : Type :=
 | RSFor        (v : String.string) (n : nat) (body : rust_stmt_ast)
 | RSSelect     (cond : rust_expr_ast)
                (if_t if_f dest : String.string)
-| RSCallN      (fname : String.string) (args : list String.string).
+| RSCallN      (fname : String.string) (args : list String.string)
                               (** Multi-output: dests + args pre-rendered. *)
+| RSCallFn     (fname : String.string) (args : list String.string)
+                              (** Verified-helper: same rendering as RSCall. *)
+| RSBlock      (body : rust_stmt_ast).
+                              (** Scoped block: { body }.  Body's [RSLetZero]
+                                  decls have their lifetime end at the brace. *)
 
 (** sexpr_ed → rust_expr_ast. *)
 Fixpoint sexpr_to_ast (e : sexpr_ed) : rust_expr_ast :=
@@ -357,6 +380,12 @@ Fixpoint cmd_to_ast (c : rust_cmd_ed) : rust_stmt_ast :=
   | REdCallN fname dests args =>
       RSCallN fname (List.map rs_dest_arg dests ++
                      List.map rs_input_arg args)
+  | REdCallFn fname dest args =>
+      RSCallFn fname (rs_dest_arg dest ::
+                      List.map rs_input_arg args ++
+                      rs_call_inject_lens fname args)
+  | REdBlock body =>
+      RSBlock (cmd_to_ast body)
   end.
 
 (** **Concrete** pretty-printer for expressions, mirroring
@@ -417,6 +446,12 @@ Fixpoint rs_pretty_stmt (indent : String.string) (s : rust_stmt_ast) : String.st
       indent ++ "  } }"
   | RSCallN fname args =>
       indent ++ "unsafe { " ++ fname ++ "(" ++ join ", " args ++ ") }"
+  | RSCallFn fname args =>
+      indent ++ "unsafe { " ++ fname ++ "(" ++ join ", " args ++ ") }"
+  | RSBlock body =>
+      indent ++ "{" ++ LF ++
+      rs_pretty_stmt ("    " ++ indent) body ++ LF ++
+      indent ++ "}"
   end.
 
 (** Helper: pretty-printing expressions agrees with [rs_sexpr]. *)
@@ -514,7 +549,7 @@ Axiom ed25519_sign_strong_correctness :
   forall (rs1 rs2 : rust_state_ed),
     True ->     (* seed and msg loaded into rs1's typed slots *)
     True ->     (* per-callee strong bridges satisfied *)
-    rust_exec_ed (fun _ _ _ _ _ => True) (fun _ _ _ _ _ => True)
+    rust_exec_ed (fun _ _ _ _ _ => True) (fun _ _ _ _ _ => True) nil
                  ed25519_sign_rs rs1 rs2 ->
     True.       (* placeholder for: ed25519_valid_signature seed msg (sig_of rs2) *)
 

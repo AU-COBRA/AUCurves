@@ -58,6 +58,9 @@ Local Open Scope Z_scope.
 Section TypedTriple.
   Context (callee_post : String.string -> list located_ed -> located_ed ->
                          rust_state_ed -> rust_state_ed -> Prop).
+  Context (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                           rust_state_ed -> rust_state_ed -> Prop).
+  Context (function_table : function_table_ed).
 
   (* ================================================================ *)
   (* §1. compile_red_copy_typed_slot                                    *)
@@ -94,7 +97,7 @@ Section TypedTriple.
                  (exist_tval_ed (TBytes n) (VBytes n bs))) ->
       pred (rs_set_tower_ed rs dst_var
               (exist_tval_ed (TBytes n) (VBytes n bs))) ->
-      rhoare callee_post rs
+      rhoare callee_post callee_post_n function_table rs
         (REdCall "copy_typed_slot"
                  {| loc_var := dst_var; loc_type := TBytes n |}
                  [{| loc_var := src_var; loc_type := TBytes n |}])
@@ -120,7 +123,7 @@ Section TypedTriple.
            (dst : located_ed) (args : list located_ed) (pred : rpred),
       borrow_ok_ed (REdCall fname dst args) = true ->
       (forall rs', callee_post fname args dst rs rs' -> pred rs') ->
-      rhoare callee_post rs (REdCall fname dst args) pred.
+      rhoare callee_post callee_post_n function_table rs (REdCall fname dst args) pred.
   Proof.
     intros rs fname dst args pred _Hbok Hcp.
     eapply compile_red_call. exact Hcp.
@@ -161,7 +164,7 @@ Section TypedTriple.
       pred (rs_set_tower_ed rs dst_var
               (exist_tval_ed (TBytes chunk_len)
                  (VBytes _ (bytes_at_chunk src_bs offset chunk_len)))) ->
-      rhoare callee_post rs
+      rhoare callee_post callee_post_n function_table rs
         (REdCall fname
                  {| loc_var := dst_var; loc_type := TBytes chunk_len |}
                  [{| loc_var := src_var; loc_type := TBytes (length src_bs) |}])

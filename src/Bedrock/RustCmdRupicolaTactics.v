@@ -81,31 +81,31 @@ Local Open Scope Z_scope.
     sees the per-state subgoal directly. *)
 Ltac compile_step :=
   lazymatch goal with
-  | |- rhoare _ _ REdSkip _ =>
+  | |- rhoare _ _ _ _ REdSkip _ =>
       apply compile_red_skip
-  | |- rhoare _ _ (REdSeq _ _) _ =>
+  | |- rhoare _ _ _ _ (REdSeq _ _) _ =>
       eapply compile_red_seq
-  | |- rhoare _ _ (REdLetZero _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdLetZero _ _ _) _ =>
       apply compile_red_let_zero; intros
-  | |- rhoare _ _ (REdLetU64 _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdLetU64 _ _ _) _ =>
       eapply compile_red_let_u64
-  | |- rhoare _ _ (REdScalarSet _ _) _ =>
+  | |- rhoare _ _ _ _ (REdScalarSet _ _) _ =>
       eapply compile_red_scalar_set
-  | |- rhoare _ _ (REdCall _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdCall _ _ _) _ =>
       apply compile_red_call; intros
-  | |- rhoare _ _ (REdIfNz _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdIfNz _ _ _) _ =>
       apply compile_red_if_nz; intros
-  | |- rhoare _ _ (REdWhileNz _ _) _ =>
+  | |- rhoare _ _ _ _ (REdWhileNz _ _) _ =>
       fail "compile_step: REdWhileNz needs measure + invariant; apply compile_red_while_nz manually with explicit M, lt, inv"
-  | |- rhoare _ _ (REdByteStore _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdByteStore _ _ _) _ =>
       eapply compile_red_byte_store
-  | |- rhoare _ _ (REdByteLoad _ _ _) _ =>
+  | |- rhoare _ _ _ _ (REdByteLoad _ _ _) _ =>
       eapply compile_red_byte_load
   (* After [eapply compile_red_seq], the second subgoal has shape
      [forall rs_mid, pred0 rs_mid -> rhoare ... c1 pred1].  Strip
      the binders so the inner [rhoare] becomes the next dispatch
      target. *)
-  | |- forall _, _ -> rhoare _ _ _ _ =>
+  | |- forall _, _ -> rhoare _ _ _ _ _ _ =>
       intros
   | |- _ =>
       fail "compile_step: not a rhoare goal or unrecognized head constructor"
@@ -183,17 +183,20 @@ Definition demo_sha512_rs (input_loc buf_loc : located_ed) : rust_cmd_ed :=
   REdSeq (REdCall "sha512_64" buf_loc [input_loc]) REdSkip.
 
 Theorem demo_sha512_correct :
-  forall (rs : rust_state_ed) (input_var buf_var : var) (n : nat)
+  forall (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                          rust_state_ed -> rust_state_ed -> Prop)
+         (function_table : function_table_ed)
+         (rs : rust_state_ed) (input_var buf_var : var) (n : nat)
          (input_bs : list Byte.byte),
     slot_holds rs input_var input_bs ->
     Datatypes.length input_bs = n ->
-    rhoare strong_callee_post rs
+    rhoare strong_callee_post callee_post_n function_table rs
       (demo_sha512_rs
          {| loc_var := input_var; loc_type := TBytes n |}
          {| loc_var := buf_var;   loc_type := TBytes 64 |})
       (fun rs' => slot_holds rs' buf_var (sha512_full_spec input_bs)).
 Proof.
-  intros rs input_var buf_var n input_bs Hin _Hin_len.
+  intros callee_post_n function_table rs input_var buf_var n input_bs Hin _Hin_len.
   unfold demo_sha512_rs.
   (* Drive the constructor structure with the dispatcher.  After
      [compile], we have two subgoals (sharing an evar [?pred0] from

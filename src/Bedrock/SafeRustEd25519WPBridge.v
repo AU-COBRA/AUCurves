@@ -335,13 +335,14 @@ Definition wp_bridge_for
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (bc : bedrock_cmd_ed) : Prop :=
   forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
          (R : mem -> Prop)
          (post : trace -> mem -> locals -> Prop),
     state_refine_ed rs1 l m R ->
     (forall rs2 l' m',
-       bedrock_exec_ed callee_post callee_post_n bc rs1 rs2 ->
+       bedrock_exec_ed callee_post callee_post_n function_table bc rs1 rs2 ->
        state_refine_ed rs2 l' m' R ->
        post t m' l') ->
     WeakestPrecondition.cmd functions
@@ -352,10 +353,10 @@ Definition wp_bridge_for
 (* ================================================================ *)
 
 Lemma wp_bridge_skip :
-  forall functions callee_post callee_post_n,
-    wp_bridge_for functions callee_post callee_post_n BEdSkip.
+  forall functions callee_post callee_post_n function_table,
+    wp_bridge_for functions callee_post callee_post_n function_table BEdSkip.
 Proof.
-  intros functions callee_post callee_post_n rs1 t m l R post Hrefine Hpost.
+  intros functions callee_post callee_post_n function_table rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
   unfold WeakestPrecondition.cmd, WeakestPrecondition.cmd_body.
   specialize (Hpost rs1 l m).
@@ -364,12 +365,12 @@ Qed.
 
 (** Sequencing composes the two sub-bridges. *)
 Lemma wp_bridge_seq :
-  forall functions callee_post callee_post_n c1 c2,
-    wp_bridge_for functions callee_post callee_post_n c1 ->
-    wp_bridge_for functions callee_post callee_post_n c2 ->
-    wp_bridge_for functions callee_post callee_post_n (BEdSeq c1 c2).
+  forall functions callee_post callee_post_n function_table c1 c2,
+    wp_bridge_for functions callee_post callee_post_n function_table c1 ->
+    wp_bridge_for functions callee_post callee_post_n function_table c2 ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdSeq c1 c2).
 Proof.
-  intros functions callee_post callee_post_n c1 c2 H1 H2 rs1 t m l R post Hrefine Hpost.
+  intros functions callee_post callee_post_n function_table c1 c2 H1 H2 rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
   unfold WeakestPrecondition.cmd at 1, WeakestPrecondition.cmd_body at 1.
   fold WeakestPrecondition.cmd_body.
@@ -642,7 +643,7 @@ Qed.
     Pending the full per-leaf bridge set, the call case is:
 
       Lemma wp_bridge_call :
-        forall functions callee_post callee_post_n fname dst args,
+        forall functions callee_post callee_post_n function_table fname dst args,
           (* assume per-leaf bridge exists for fname *)
           forall t m l rs1 R post,
             state_refine_ed rs1 l m R ->
@@ -734,11 +735,11 @@ Definition callee_post_wp_compatible
              post t' m' l').
 
 Lemma wp_bridge_call :
-  forall functions callee_post callee_post_n fname dst args,
+  forall functions callee_post callee_post_n function_table fname dst args,
     callee_post_wp_compatible functions callee_post ->
-    wp_bridge_for functions callee_post callee_post_n (BEdCall fname dst args).
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdCall fname dst args).
 Proof.
-  intros functions callee_post callee_post_n fname dst args Hcompat.
+  intros functions callee_post callee_post_n function_table fname dst args Hcompat.
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
   unfold WeakestPrecondition.cmd, WeakestPrecondition.cmd_body.
@@ -812,10 +813,10 @@ Qed.
             zero):
             [| bexec_let_zero : forall x n c bs rs1 rs2,
                  length bs = n ->
-                 bedrock_exec_ed callee_post callee_post_n c
+                 bedrock_exec_ed callee_post callee_post_n function_table c
                    (rs_set_tower_ed rs1 x
                       (exist_tval_ed (TBytes n) (VBytes n bs))) rs2 ->
-                 bedrock_exec_ed callee_post callee_post_n (BEdLetZero x (TBytes n) c) rs1 rs2].
+                 bedrock_exec_ed callee_post callee_post_n function_table (BEdLetZero x (TBytes n) c) rs1 rs2].
             Sound for protocols that don't read the slot before
             initialization (every Ed25519 [BEdLetZero] satisfies
             this; checked by the borrow checker).  Restricts to
@@ -888,6 +889,7 @@ Definition bedrock_let_zero_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (x : var) (t : tower_type_ed) (body : bedrock_cmd_ed) : Prop :=
   (* Alignment for stackalloc.  At width=64, bytes_per_word=8. *)
   Z.of_nat (tt_bytes_ed t) mod 8 = 0 /\
@@ -916,7 +918,7 @@ Definition bedrock_let_zero_obligations
      (* Hpost: outer-WP post discharged by any refinement-preserving
         rs2'.  This is the bridge's continuation. *)
      (forall (rs2 : rust_state_ed) (l' : locals) (m' : mem),
-        bedrock_exec_ed callee_post callee_post_n body
+        bedrock_exec_ed callee_post callee_post_n function_table body
           (rs_set_tower_ed rs1 x
              (exist_tval_ed t
                 match t as tt return rust_val_ed tt with
@@ -939,12 +941,12 @@ Definition bedrock_let_zero_obligations
             post t' m' l')).
 
 Lemma wp_bridge_let_zero :
-  forall functions callee_post callee_post_n x t body,
-    bedrock_let_zero_obligations functions callee_post callee_post_n x t body ->
-    wp_bridge_for functions callee_post callee_post_n body ->
-    wp_bridge_for functions callee_post callee_post_n (BEdLetZero x t body).
+  forall functions callee_post callee_post_n function_table x t body,
+    bedrock_let_zero_obligations functions callee_post callee_post_n function_table x t body ->
+    wp_bridge_for functions callee_post callee_post_n function_table body ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdLetZero x t body).
 Proof.
-  intros functions callee_post callee_post_n x t body Hobl _Hbody.
+  intros functions callee_post callee_post_n function_table x t body Hobl _Hbody.
   destruct Hobl as [Halign [_Hfresh Hletz]].
   intros rs1 t0 m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
@@ -988,7 +990,7 @@ Proof.
     + exact Hsplit.
     + intros rs2 l' m' Hbexec Href2.
       eapply (Hpost rs2 l' m'); [|exact Href2].
-      apply (bexec_let_zero callee_post callee_post_n x TFp25519 vfp25519_zero body rs1 rs2).
+      apply (bexec_let_zero callee_post callee_post_n function_table x TFp25519 vfp25519_zero body rs1 rs2).
       * apply (tt_zero_ed_well_formed TFp25519).
       * exact Hbexec.
   - (* TFp25519_64 — slot initialized to [vfp25519_64_zero]. *)
@@ -997,7 +999,7 @@ Proof.
     + exact Hsplit.
     + intros rs2 l' m' Hbexec Href2.
       eapply (Hpost rs2 l' m'); [|exact Href2].
-      apply (bexec_let_zero callee_post callee_post_n x TFp25519_64 vfp25519_64_zero body
+      apply (bexec_let_zero callee_post callee_post_n function_table x TFp25519_64 vfp25519_64_zero body
                             rs1 rs2).
       * apply (tt_zero_ed_well_formed TFp25519_64).
       * exact Hbexec.
@@ -1007,7 +1009,7 @@ Proof.
     + exact Hsplit.
     + intros rs2 l' m' Hbexec Href2.
       eapply (Hpost rs2 l' m'); [|exact Href2].
-      apply (bexec_let_zero callee_post callee_post_n x TFpL25519 vfpL25519_zero body
+      apply (bexec_let_zero callee_post callee_post_n function_table x TFpL25519 vfpL25519_zero body
                             rs1 rs2).
       * apply (tt_zero_ed_well_formed TFpL25519).
       * exact Hbexec.
@@ -1018,7 +1020,7 @@ Proof.
     + exact Hsplit.
     + intros rs2 l' m' Hbexec Href2.
       eapply (Hpost rs2 l' m'); [|exact Href2].
-      apply (bexec_let_zero callee_post callee_post_n x (TBytes n) (VBytes n bs) body
+      apply (bexec_let_zero callee_post callee_post_n function_table x (TBytes n) (VBytes n bs) body
                             rs1 rs2).
       * cbn. exact Hbs_len_typed.
       * exact Hbexec.
@@ -1028,7 +1030,7 @@ Proof.
     + exact Hsplit.
     + intros rs2 l' m' Hbexec Href2.
       eapply (Hpost rs2 l' m'); [|exact Href2].
-      apply (bexec_let_zero callee_post callee_post_n x TU64 vu64_zero body rs1 rs2).
+      apply (bexec_let_zero callee_post callee_post_n function_table x TU64 vu64_zero body rs1 rs2).
       * apply (tt_zero_ed_well_formed TU64).
       * exact Hbexec.
 Qed.
@@ -1045,6 +1047,7 @@ Definition bedrock_let_u64_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (x : var) (e : sexpr_ed) : Prop :=
   sexpr_well_formed e /\
   (forall (rs1 : rust_state_ed) (l : locals) (m : mem) (R : mem -> Prop),
@@ -1064,12 +1067,12 @@ Definition bedrock_let_u64_obligations
     Status (2026-05-09): closed (Qed) under
     [bedrock_let_u64_obligations]. *)
 Lemma wp_bridge_let_u64 :
-  forall functions callee_post callee_post_n x e body,
-    bedrock_let_u64_obligations functions callee_post callee_post_n x e ->
-    wp_bridge_for functions callee_post callee_post_n body ->
-    wp_bridge_for functions callee_post callee_post_n (BEdLetU64 x e body).
+  forall functions callee_post callee_post_n function_table x e body,
+    bedrock_let_u64_obligations functions callee_post callee_post_n function_table x e ->
+    wp_bridge_for functions callee_post callee_post_n function_table body ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdLetU64 x e body).
 Proof.
-  intros functions callee_post callee_post_n x e body Hobl Hbody.
+  intros functions callee_post callee_post_n function_table x e body Hobl Hbody.
   destruct Hobl as [Hwf [Hfresh Heval_total]].
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
@@ -1124,6 +1127,7 @@ Definition bedrock_scalar_set_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (x : var) (e : sexpr_ed) : Prop :=
   sexpr_well_formed e /\
   (forall (rs1 : rust_state_ed) (l : locals) (m : mem) (R : mem -> Prop),
@@ -1143,11 +1147,11 @@ Definition bedrock_scalar_set_obligations
     [bedrock_scalar_set_obligations] (well-formedness +
     fresh-name + eval-totality). *)
 Lemma wp_bridge_scalar_set :
-  forall functions callee_post callee_post_n x e,
-    bedrock_scalar_set_obligations functions callee_post callee_post_n x e ->
-    wp_bridge_for functions callee_post callee_post_n (BEdScalarSet x e).
+  forall functions callee_post callee_post_n function_table x e,
+    bedrock_scalar_set_obligations functions callee_post callee_post_n function_table x e ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdScalarSet x e).
 Proof.
-  intros functions callee_post callee_post_n x e Hobl.
+  intros functions callee_post callee_post_n function_table x e Hobl.
   destruct Hobl as [Hwf [Hfresh Heval_total]].
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
@@ -1196,15 +1200,15 @@ Qed.
     constructor ([bexec_if_zero] / [bexec_if_nonzero]) to feed
     [Hpost]. *)
 Lemma wp_bridge_if_nz :
-  forall functions callee_post callee_post_n e c1 c2,
+  forall functions callee_post callee_post_n function_table e c1 c2,
     sexpr_well_formed e ->
     (forall rs1 l m R, state_refine_ed rs1 l m R ->
                        exists v, eval_sexpr_ed rs1 e = Some v) ->
-    wp_bridge_for functions callee_post callee_post_n c1 ->
-    wp_bridge_for functions callee_post callee_post_n c2 ->
-    wp_bridge_for functions callee_post callee_post_n (BEdIfNz e c1 c2).
+    wp_bridge_for functions callee_post callee_post_n function_table c1 ->
+    wp_bridge_for functions callee_post callee_post_n function_table c2 ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdIfNz e c1 c2).
 Proof.
-  intros functions callee_post callee_post_n e c1 c2 Hwf Heval_total H1 H2.
+  intros functions callee_post callee_post_n function_table e c1 c2 Hwf Heval_total H1 H2.
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
   unfold WeakestPrecondition.cmd at 1, WeakestPrecondition.cmd_body at 1.
@@ -1288,6 +1292,7 @@ Definition bedrock_while_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (e : sexpr_ed) (body : bedrock_cmd_ed) : Prop :=
   exists (M : Type) (lt : M -> M -> Prop)
          (inv : M -> rust_state_ed -> Prop),
@@ -1307,7 +1312,7 @@ Definition bedrock_while_obligations
     (forall v rs1, inv v rs1 ->
        forall vc, eval_sexpr_ed rs1 e = Some vc ->
        vc <> 0 ->
-       forall rs2, bedrock_exec_ed callee_post callee_post_n body rs1 rs2 ->
+       forall rs2, bedrock_exec_ed callee_post callee_post_n function_table body rs1 rs2 ->
        exists v', inv v' rs2 /\ lt v' v).
 
 (** [BEdWhileNz e body] translates to [cmd.while e body].  Closed
@@ -1327,12 +1332,12 @@ Definition bedrock_while_obligations
     via the obligation's per-iteration clause; on [vc = 0] we use
     [bexec_while_zero] to reach the same state and feed [Hpost]. *)
 Lemma wp_bridge_while_nz :
-  forall functions callee_post callee_post_n e body,
-    bedrock_while_obligations functions callee_post callee_post_n e body ->
-    wp_bridge_for functions callee_post callee_post_n body ->
-    wp_bridge_for functions callee_post callee_post_n (BEdWhileNz e body).
+  forall functions callee_post callee_post_n function_table e body,
+    bedrock_while_obligations functions callee_post callee_post_n function_table e body ->
+    wp_bridge_for functions callee_post callee_post_n function_table body ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdWhileNz e body).
 Proof.
-  intros functions callee_post callee_post_n e body Hobl Hbody.
+  intros functions callee_post callee_post_n function_table e body Hobl Hbody.
   destruct Hobl as [M [lt [inv [Hwf [Hwfe [Heval_total
                                   [Hinv_init Hinv_step]]]]]]].
   intros rs1 t m l R post Hrefine Hpost.
@@ -1362,7 +1367,7 @@ Proof.
     + exact Heval_w.
     + apply Properties.word.unsigned_of_Z_0.
     + eapply (Hpost rs1 l m); [|exact Hrefine].
-      apply (bexec_while_zero callee_post callee_post_n e body rs1 Hvc_eval).
+      apply (bexec_while_zero callee_post callee_post_n function_table e body rs1 Hvc_eval).
   - (* vc <> 0: while_true.  Run the body via [sound_cmd + Hbody],
        passing a [mid] continuation that packs the new invariant
        state + the body's [bedrock_exec_ed] derivation; the latter
@@ -1394,7 +1399,7 @@ Proof.
       instantiate (1 := fun t' m'' l'' =>
                           exists v' rs', lt v' v0 /\ inv v' rs' /\
                                          state_refine_ed rs' l'' m'' R /\
-                                         bedrock_exec_ed callee_post callee_post_n body
+                                         bedrock_exec_ed callee_post callee_post_n function_table body
                                            rs1 rs' /\
                                          t' = t).
       destruct (Hinv_step v0 rs1 Hv0 vc Hvc_eval Hvc_nz rs2 Hexec_body)
@@ -1440,6 +1445,7 @@ Definition bedrock_byte_store_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (loc : located_ed) (idx_e val_e : sexpr_ed) : Prop :=
   sexpr_well_formed idx_e /\
   sexpr_well_formed val_e /\
@@ -1454,7 +1460,7 @@ Definition bedrock_byte_store_obligations
           (post : trace -> mem -> locals -> Prop),
      state_refine_ed rs1 l m R ->
      (forall rs2 l' m',
-        bedrock_exec_ed callee_post callee_post_n (BEdByteStore loc idx_e val_e) rs1 rs2 ->
+        bedrock_exec_ed callee_post callee_post_n function_table (BEdByteStore loc idx_e val_e) rs1 rs2 ->
         state_refine_ed rs2 l' m' R ->
         post t m' l') ->
      WeakestPrecondition.cmd functions
@@ -1471,11 +1477,11 @@ Definition bedrock_byte_store_obligations
     to the supplied transition, which the protocol callsite discharges
     via per-slot sep-logic. *)
 Lemma wp_bridge_byte_store :
-  forall functions callee_post callee_post_n loc idx_e val_e,
-    bedrock_byte_store_obligations functions callee_post callee_post_n loc idx_e val_e ->
-    wp_bridge_for functions callee_post callee_post_n (BEdByteStore loc idx_e val_e).
+  forall functions callee_post callee_post_n function_table loc idx_e val_e,
+    bedrock_byte_store_obligations functions callee_post callee_post_n function_table loc idx_e val_e ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdByteStore loc idx_e val_e).
 Proof.
-  intros functions callee_post callee_post_n loc idx_e val_e Hobl.
+  intros functions callee_post callee_post_n function_table loc idx_e val_e Hobl.
   destruct Hobl as [_Hwfi [_Hwfv [_Heval Hstore]]].
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
@@ -1494,6 +1500,7 @@ Definition bedrock_byte_load_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (x : var) (loc : located_ed) (idx_e : sexpr_ed) : Prop :=
   sexpr_well_formed idx_e /\
   (forall (rs1 : rust_state_ed),
@@ -1509,7 +1516,7 @@ Definition bedrock_byte_load_obligations
           (post : trace -> mem -> locals -> Prop),
      state_refine_ed rs1 l m R ->
      (forall rs2 l' m',
-        bedrock_exec_ed callee_post callee_post_n (BEdByteLoad x loc idx_e) rs1 rs2 ->
+        bedrock_exec_ed callee_post callee_post_n function_table (BEdByteLoad x loc idx_e) rs1 rs2 ->
         state_refine_ed rs2 l' m' R ->
         post t m' l') ->
      WeakestPrecondition.cmd functions
@@ -1525,11 +1532,11 @@ Definition bedrock_byte_load_obligations
     HOF obligation [bedrock_byte_load_obligations]; same dispatch
     structure as [wp_bridge_byte_store]. *)
 Lemma wp_bridge_byte_load :
-  forall functions callee_post callee_post_n x loc idx_e,
-    bedrock_byte_load_obligations functions callee_post callee_post_n x loc idx_e ->
-    wp_bridge_for functions callee_post callee_post_n (BEdByteLoad x loc idx_e).
+  forall functions callee_post callee_post_n function_table x loc idx_e,
+    bedrock_byte_load_obligations functions callee_post callee_post_n function_table x loc idx_e ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdByteLoad x loc idx_e).
 Proof.
-  intros functions callee_post callee_post_n x loc idx_e Hobl.
+  intros functions callee_post callee_post_n function_table x loc idx_e Hobl.
   destruct Hobl as [_Hwf [_Heval [_Hfresh Hload]]].
   intros rs1 t m l R post Hrefine Hpost.
   cbn [bedrock_cmd_ed_to_syntax].
@@ -1552,24 +1559,25 @@ Definition bedrock_for_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (x : var) (n : nat) (body : bedrock_cmd_ed) : Prop :=
   forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
          (R : mem -> Prop)
          (post : trace -> mem -> locals -> Prop),
     state_refine_ed rs1 l m R ->
     (forall rs2 l' m',
-       bedrock_exec_ed callee_post callee_post_n (BEdFor x n body) rs1 rs2 ->
+       bedrock_exec_ed callee_post callee_post_n function_table (BEdFor x n body) rs1 rs2 ->
        state_refine_ed rs2 l' m' R ->
        post t m' l') ->
     WeakestPrecondition.cmd functions
       (bedrock_cmd_ed_to_syntax (BEdFor x n body)) t m l post.
 
 Lemma wp_bridge_for_red :
-  forall functions callee_post callee_post_n x n body,
-    bedrock_for_obligations functions callee_post callee_post_n x n body ->
-    wp_bridge_for functions callee_post callee_post_n (BEdFor x n body).
+  forall functions callee_post callee_post_n function_table x n body,
+    bedrock_for_obligations functions callee_post callee_post_n function_table x n body ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdFor x n body).
 Proof.
-  intros functions callee_post callee_post_n x n body Hobl.
+  intros functions callee_post callee_post_n function_table x n body Hobl.
   intros rs1 t m l R post Hrefine Hpost.
   eapply Hobl; eassumption.
 Qed.
@@ -1588,24 +1596,25 @@ Definition bedrock_select_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (cond : sexpr_ed) (if_t if_f dest : located_ed) : Prop :=
   forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
          (R : mem -> Prop)
          (post : trace -> mem -> locals -> Prop),
     state_refine_ed rs1 l m R ->
     (forall rs2 l' m',
-       bedrock_exec_ed callee_post callee_post_n (BEdSelect cond if_t if_f dest) rs1 rs2 ->
+       bedrock_exec_ed callee_post callee_post_n function_table (BEdSelect cond if_t if_f dest) rs1 rs2 ->
        state_refine_ed rs2 l' m' R ->
        post t m' l') ->
     WeakestPrecondition.cmd functions
       (bedrock_cmd_ed_to_syntax (BEdSelect cond if_t if_f dest)) t m l post.
 
 Lemma wp_bridge_select_red :
-  forall functions callee_post callee_post_n cond if_t if_f dest,
-    bedrock_select_obligations functions callee_post callee_post_n cond if_t if_f dest ->
-    wp_bridge_for functions callee_post callee_post_n (BEdSelect cond if_t if_f dest).
+  forall functions callee_post callee_post_n function_table cond if_t if_f dest,
+    bedrock_select_obligations functions callee_post callee_post_n function_table cond if_t if_f dest ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdSelect cond if_t if_f dest).
 Proof.
-  intros functions callee_post callee_post_n cond if_t if_f dest Hobl.
+  intros functions callee_post callee_post_n function_table cond if_t if_f dest Hobl.
   intros rs1 t m l R post Hrefine Hpost.
   eapply Hobl; eassumption.
 Qed.
@@ -1621,26 +1630,80 @@ Definition bedrock_calln_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (fname : String.string) (dests args : list located_ed) : Prop :=
   forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
          (R : mem -> Prop)
          (post : trace -> mem -> locals -> Prop),
     state_refine_ed rs1 l m R ->
     (forall rs2 l' m',
-       bedrock_exec_ed callee_post callee_post_n (BEdCallN fname dests args) rs1 rs2 ->
+       bedrock_exec_ed callee_post callee_post_n function_table (BEdCallN fname dests args) rs1 rs2 ->
        state_refine_ed rs2 l' m' R ->
        post t m' l') ->
     WeakestPrecondition.cmd functions
       (bedrock_cmd_ed_to_syntax (BEdCallN fname dests args)) t m l post.
 
 Lemma wp_bridge_calln_red :
-  forall functions callee_post callee_post_n fname dests args,
-    bedrock_calln_obligations functions callee_post callee_post_n fname dests args ->
-    wp_bridge_for functions callee_post callee_post_n (BEdCallN fname dests args).
+  forall functions callee_post callee_post_n function_table fname dests args,
+    bedrock_calln_obligations functions callee_post callee_post_n function_table fname dests args ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdCallN fname dests args).
 Proof.
-  intros functions callee_post callee_post_n fname dests args Hobl.
+  intros functions callee_post callee_post_n function_table fname dests args Hobl.
   intros rs1 t m l R post Hrefine Hpost.
   eapply Hobl; eassumption.
+Qed.
+
+(** [BEdCallFn fname dest args] translates to a [cmd.call] (see
+    [bedrock_cmd_ed_to_syntax] in [RustCmdToC.v]).  Mirrors
+    [bedrock_calln_obligations] but for single-dest verified helpers
+    backed by the function_table.  The protocol-level callsite supplies
+    the per-invocation refinement via the obligation HOF. *)
+Definition bedrock_callfn_obligations
+    (functions : env)
+    (callee_post : String.string -> list located_ed -> located_ed ->
+                   rust_state_ed -> rust_state_ed -> Prop)
+    (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                     rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
+    (fname : String.string) (dest : located_ed) (args : list located_ed) : Prop :=
+  forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
+         (R : mem -> Prop)
+         (post : trace -> mem -> locals -> Prop),
+    state_refine_ed rs1 l m R ->
+    (forall rs2 l' m',
+       bedrock_exec_ed callee_post callee_post_n function_table (BEdCallFn fname dest args) rs1 rs2 ->
+       state_refine_ed rs2 l' m' R ->
+       post t m' l') ->
+    WeakestPrecondition.cmd functions
+      (bedrock_cmd_ed_to_syntax (BEdCallFn fname dest args)) t m l post.
+
+Lemma wp_bridge_callfn_red :
+  forall functions callee_post callee_post_n function_table fname dest args,
+    bedrock_callfn_obligations functions callee_post callee_post_n function_table fname dest args ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdCallFn fname dest args).
+Proof.
+  intros functions callee_post callee_post_n function_table fname dest args Hobl.
+  intros rs1 t m l R post Hrefine Hpost.
+  eapply Hobl; eassumption.
+Qed.
+
+(** [BEdBlock body] is transparent at the bedrock2-syntax level: it
+    emits exactly the body's syntax (see [bedrock_cmd_ed_to_syntax]
+    in [RustCmdToC.v]).  So the bridge for [BEdBlock body] reduces
+    to the bridge for [body], wrapping the [bexec_block] step around
+    the IH's [bedrock_exec_ed body] derivation. *)
+Lemma wp_bridge_block_red :
+  forall functions callee_post callee_post_n function_table body,
+    wp_bridge_for functions callee_post callee_post_n function_table body ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdBlock body).
+Proof.
+  intros functions callee_post callee_post_n function_table body IH.
+  intros rs1 t m l R post Hrefine Hpost.
+  cbn [bedrock_cmd_ed_to_syntax].
+  eapply IH; [exact Hrefine|].
+  intros rs2 l' m' Hexec_body Hrefine'.
+  eapply Hpost; [|exact Hrefine'].
+  apply bexec_block; exact Hexec_body.
 Qed.
 
 (* ================================================================ *)
@@ -1659,52 +1722,59 @@ Fixpoint all_let_zero_obligations
                    rust_state_ed -> rust_state_ed -> Prop)
     (callee_post_n : String.string -> list located_ed -> list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (bc : bedrock_cmd_ed) : Prop :=
   match bc with
   | BEdSkip => True
   | BEdSeq c1 c2 =>
-      all_let_zero_obligations functions callee_post callee_post_n c1 /\
-      all_let_zero_obligations functions callee_post callee_post_n c2
+      all_let_zero_obligations functions callee_post callee_post_n function_table c1 /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table c2
   | BEdLetZero x t body =>
-      bedrock_let_zero_obligations functions callee_post callee_post_n x t body /\
-      all_let_zero_obligations functions callee_post callee_post_n body
+      bedrock_let_zero_obligations functions callee_post callee_post_n function_table x t body /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table body
   | BEdLetU64 x e body =>
-      bedrock_let_u64_obligations functions callee_post callee_post_n x e /\
-      all_let_zero_obligations functions callee_post callee_post_n body
+      bedrock_let_u64_obligations functions callee_post callee_post_n function_table x e /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table body
   | BEdScalarSet x e =>
-      bedrock_scalar_set_obligations functions callee_post callee_post_n x e
+      bedrock_scalar_set_obligations functions callee_post callee_post_n function_table x e
   | BEdCall _ _ _ => True
   | BEdIfNz e c1 c2 =>
       sexpr_well_formed e /\
       (forall rs1 l m R, state_refine_ed rs1 l m R ->
                          exists v, eval_sexpr_ed rs1 e = Some v) /\
-      all_let_zero_obligations functions callee_post callee_post_n c1 /\
-      all_let_zero_obligations functions callee_post callee_post_n c2
+      all_let_zero_obligations functions callee_post callee_post_n function_table c1 /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table c2
   | BEdWhileNz e body =>
-      bedrock_while_obligations functions callee_post callee_post_n e body /\
-      all_let_zero_obligations functions callee_post callee_post_n body
+      bedrock_while_obligations functions callee_post callee_post_n function_table e body /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table body
   | BEdByteStore loc idx_e val_e =>
-      bedrock_byte_store_obligations functions callee_post callee_post_n loc idx_e val_e
+      bedrock_byte_store_obligations functions callee_post callee_post_n function_table loc idx_e val_e
   | BEdByteLoad x loc idx_e =>
-      bedrock_byte_load_obligations functions callee_post callee_post_n x loc idx_e
+      bedrock_byte_load_obligations functions callee_post callee_post_n function_table x loc idx_e
   | BEdFor x n body =>
-      bedrock_for_obligations functions callee_post callee_post_n x n body /\
-      all_let_zero_obligations functions callee_post callee_post_n body
+      bedrock_for_obligations functions callee_post callee_post_n function_table x n body /\
+      all_let_zero_obligations functions callee_post callee_post_n function_table body
   | BEdSelect cond if_t if_f dest =>
-      bedrock_select_obligations functions callee_post callee_post_n cond if_t if_f dest
+      bedrock_select_obligations functions callee_post callee_post_n function_table cond if_t if_f dest
   | BEdCallN fname dests args =>
-      bedrock_calln_obligations functions callee_post callee_post_n fname dests args
+      bedrock_calln_obligations functions callee_post callee_post_n function_table fname dests args
+  | BEdCallFn fname dest args =>
+      bedrock_callfn_obligations functions callee_post callee_post_n function_table fname dest args
+  | BEdBlock body =>
+      (* Block is semantically transparent — its obligations are exactly
+         the body's. *)
+      all_let_zero_obligations functions callee_post callee_post_n function_table body
   end.
 
 (** Composing the per-constructor bridges gives the bridge for any
     [bedrock_cmd_ed]. *)
 Theorem bridge_complete :
-  forall functions callee_post callee_post_n bc,
+  forall functions callee_post callee_post_n function_table bc,
     callee_post_wp_compatible functions callee_post ->
-    all_let_zero_obligations functions callee_post callee_post_n bc ->
-    wp_bridge_for functions callee_post callee_post_n bc.
+    all_let_zero_obligations functions callee_post callee_post_n function_table bc ->
+    wp_bridge_for functions callee_post callee_post_n function_table bc.
 Proof.
-  intros functions callee_post callee_post_n bc Hcompat Hletz.
+  intros functions callee_post callee_post_n function_table bc Hcompat Hletz.
   induction bc; cbn in Hletz.
   - apply wp_bridge_skip.
   - destruct Hletz as [Hletz1 Hletz2].
@@ -1725,6 +1795,8 @@ Proof.
     apply wp_bridge_for_red; exact Hfor_obl.
   - apply wp_bridge_select_red; exact Hletz.
   - apply wp_bridge_calln_red; exact Hletz.
+  - apply wp_bridge_callfn_red; exact Hletz.
+  - apply wp_bridge_block_red; auto.
 Qed.
 
 (** Status (2026-05-09): [bridge_complete] is Qed; cases closed and

@@ -179,10 +179,10 @@ Definition state_refine_ed (rs : rust_state_ed) (l : locals) (m : mem)
     bridge work. *)
 Definition bedrock_call_simulates_rust_exec
     (functions : env) (fname : String.string) (rc : rust_cmd_ed) : Prop :=
-  forall callee_post callee_post_n t m l rs1 args post R,
+  forall callee_post callee_post_n function_table t m l rs1 args post R,
     state_refine_ed rs1 l m R ->
     (forall rs2 m' l',
-       rust_exec_ed callee_post callee_post_n rc rs1 rs2 ->
+       rust_exec_ed callee_post callee_post_n function_table rc rs1 rs2 ->
        state_refine_ed rs2 l' m' R ->
        post t m' nil) ->
     WeakestPrecondition.call functions fname t m args post.

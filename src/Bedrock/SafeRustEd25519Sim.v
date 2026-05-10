@@ -73,7 +73,7 @@ Inductive rust_cmd_ed :=
                                [loc_type].  In real Rust output this becomes a
                                [subtle::ConditionallySelectable]-style mask-merge — the
                                two source values are ALWAYS read, no branch on cond. *)
-  | REdCallN  : String.string -> list located_ed -> list located_ed -> rust_cmd_ed.
+  | REdCallN  : String.string -> list located_ed -> list located_ed -> rust_cmd_ed
                             (* Multi-output FFI call:
                                REdCallN fname dests args
                                Generalises [REdCall] to multiple destinations written
@@ -81,6 +81,27 @@ Inductive rust_cmd_ed :=
                                writing both X and Y).  The borrow check
                                ([call_aliases_n_ed]) requires dests pairwise distinct
                                AND no dest name appearing in args. *)
+  | REdCallFn : String.string -> located_ed -> list located_ed -> rust_cmd_ed
+                            (* Verified-helper-function call:
+                               REdCallFn fname dest args
+                               Same surface as [REdCall], but the body is looked
+                               up in a [function_table] (third Section parameter
+                               of [rust_exec_ed]) and executed by inlining the
+                               body's [rust_cmd_ed].  Lets us discharge a
+                               leaf's correctness mechanically (rhoare of the
+                               body) instead of axiomatically (callee_post).
+                               Roadmap Tier 6 (2). *)
+  | REdBlock  : rust_cmd_ed -> rust_cmd_ed.
+                            (* Scoped-allocation block: REdBlock body
+                               executes [body] in a fresh lexical scope.
+                               Semantically transparent — same big-step
+                               behaviour as [body] alone — but the Rust /
+                               C emitters wrap [body] in a [{ ... }]
+                               block so that any [REdLetZero] declared
+                               inside has its lifetime end at the closing
+                               brace.  This matches Rust's block-scoped
+                               variables and CatCrypt's [RBlock].
+                               Roadmap Tier 6 (3). *)
 
 (* ================================================================ *)
 (* §2. Rust state                                                    *)
@@ -290,6 +311,22 @@ Definition Z_to_byte (z : Z) : Byte.byte :=
   end.
 
 (* ================================================================ *)
+(* §3.6. Verified-function bodies (used by REdCallFn)                 *)
+(* ================================================================ *)
+
+(** A verified function body is parameterized over its destination
+    slot and the (positional) argument slots; the body returns a
+    [rust_cmd_ed] that, when executed, realizes the function. *)
+Definition function_body_ed : Type :=
+  located_ed -> list located_ed -> rust_cmd_ed.
+
+(** A function table maps a function name to its body.  Used by
+    [rexec_callfn] to look up and inline the body of a verified
+    helper. *)
+Definition function_table_ed : Type :=
+  list (String.string * function_body_ed).
+
+(* ================================================================ *)
 (* §4. Big-step semantics                                            *)
 (* ================================================================ *)
 
@@ -298,7 +335,10 @@ Definition Z_to_byte (z : Z) : Byte.byte :=
     parameterized over a per-callee post relation.  Multi-output
     calls (REdCallN) use a parallel oracle [callee_post_n] taking
     a LIST of destinations (additive — keeps the existing
-    [callee_post] untouched so all REdCall proofs remain Qed). *)
+    [callee_post] untouched so all REdCall proofs remain Qed).
+    Verified-helper calls (REdCallFn) look up a body in
+    [function_table] (third Section parameter) and execute it
+    inline (additive — REdCall and REdCallN remain unchanged). *)
 Inductive rust_exec_ed
   (callee_post :
     String.string ->
@@ -314,47 +354,48 @@ Inductive rust_exec_ed
     rust_state_ed ->
     rust_state_ed ->
     Prop)
+  (function_table : function_table_ed)
   : rust_cmd_ed -> rust_state_ed -> rust_state_ed -> Prop :=
   | rexec_skip : forall rs,
-      rust_exec_ed callee_post callee_post_n REdSkip rs rs
+      rust_exec_ed callee_post callee_post_n function_table REdSkip rs rs
   | rexec_seq : forall c1 c2 rs1 rs2 rs3,
-      rust_exec_ed callee_post callee_post_n c1 rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n c2 rs2 rs3 ->
-      rust_exec_ed callee_post callee_post_n (REdSeq c1 c2) rs1 rs3
+      rust_exec_ed callee_post callee_post_n function_table c1 rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table c2 rs2 rs3 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdSeq c1 c2) rs1 rs3
   | rexec_let_zero : forall x t v c rs1 rs2,
       well_formed_ed v ->
-      rust_exec_ed callee_post callee_post_n c
+      rust_exec_ed callee_post callee_post_n function_table c
         (rs_set_tower_ed rs1 x (exist_tval_ed t v))
         rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdLetZero x t c) rs1 rs2
+      rust_exec_ed callee_post callee_post_n function_table (REdLetZero x t c) rs1 rs2
   | rexec_let_u64 : forall x e c rs1 rs2 v,
       eval_sexpr_ed rs1 e = Some v ->
-      rust_exec_ed callee_post callee_post_n c (rs_set_scalar_ed rs1 x v) rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdLetU64 x e c) rs1 rs2
+      rust_exec_ed callee_post callee_post_n function_table c (rs_set_scalar_ed rs1 x v) rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdLetU64 x e c) rs1 rs2
   | rexec_scalar_set : forall x e rs v,
       eval_sexpr_ed rs e = Some v ->
-      rust_exec_ed callee_post callee_post_n (REdScalarSet x e) rs (rs_set_scalar_ed rs x v)
+      rust_exec_ed callee_post callee_post_n function_table (REdScalarSet x e) rs (rs_set_scalar_ed rs x v)
   | rexec_call : forall fname dst args rs1 rs2,
       callee_post fname args dst rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdCall fname dst args) rs1 rs2
+      rust_exec_ed callee_post callee_post_n function_table (REdCall fname dst args) rs1 rs2
   | rexec_if_zero : forall e c1 c2 rs1 rs2,
       eval_sexpr_ed rs1 e = Some 0 ->
-      rust_exec_ed callee_post callee_post_n c2 rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdIfNz e c1 c2) rs1 rs2
+      rust_exec_ed callee_post callee_post_n function_table c2 rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdIfNz e c1 c2) rs1 rs2
   | rexec_if_nonzero : forall e c1 c2 rs1 rs2 v,
       eval_sexpr_ed rs1 e = Some v ->
       v <> 0 ->
-      rust_exec_ed callee_post callee_post_n c1 rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdIfNz e c1 c2) rs1 rs2
+      rust_exec_ed callee_post callee_post_n function_table c1 rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdIfNz e c1 c2) rs1 rs2
   | rexec_while_zero : forall e c rs,
       eval_sexpr_ed rs e = Some 0 ->
-      rust_exec_ed callee_post callee_post_n (REdWhileNz e c) rs rs
+      rust_exec_ed callee_post callee_post_n function_table (REdWhileNz e c) rs rs
   | rexec_while_nonzero : forall e c rs1 rs2 rs3 v,
       eval_sexpr_ed rs1 e = Some v ->
       v <> 0 ->
-      rust_exec_ed callee_post callee_post_n c rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdWhileNz e c) rs2 rs3 ->
-      rust_exec_ed callee_post callee_post_n (REdWhileNz e c) rs1 rs3
+      rust_exec_ed callee_post callee_post_n function_table c rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdWhileNz e c) rs2 rs3 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdWhileNz e c) rs1 rs3
   | rexec_byte_store : forall loc idx_e val_e rs idx_v val_v bs_old bs_new n,
       eval_sexpr_ed rs idx_e = Some idx_v ->
       eval_sexpr_ed rs val_e = Some val_v ->
@@ -362,7 +403,7 @@ Inductive rust_exec_ed
       rs_get_tower_ed rs loc.(loc_var) =
         Some (exist_tval_ed (TBytes n) (VBytes n bs_old)) ->
       bs_new = list_set_byte (Z.to_nat idx_v) (Z_to_byte val_v) bs_old ->
-      rust_exec_ed callee_post callee_post_n (REdByteStore loc idx_e val_e) rs
+      rust_exec_ed callee_post callee_post_n function_table (REdByteStore loc idx_e val_e) rs
         (rs_set_tower_ed rs loc.(loc_var)
            (exist_tval_ed (TBytes n) (VBytes n bs_new)))
   | rexec_byte_load : forall x loc idx_e rs idx_v bs n b,
@@ -371,17 +412,17 @@ Inductive rust_exec_ed
       rs_get_tower_ed rs loc.(loc_var) =
         Some (exist_tval_ed (TBytes n) (VBytes n bs)) ->
       List.nth_error bs (Z.to_nat idx_v) = Some b ->
-      rust_exec_ed callee_post callee_post_n (REdByteLoad x loc idx_e) rs
+      rust_exec_ed callee_post callee_post_n function_table (REdByteLoad x loc idx_e) rs
         (rs_set_scalar_ed rs x (Z.of_N (Byte.to_N b)))
   | rexec_for_zero : forall x body rs,
-      rust_exec_ed callee_post callee_post_n (REdFor x 0%nat body) rs rs
+      rust_exec_ed callee_post callee_post_n function_table (REdFor x 0%nat body) rs rs
   | rexec_for_succ : forall x n body rs1 rs2 rs3,
       (* In [REdFor x (S n) body], body runs first with x := n,
          then [REdFor x n body] runs (so x sees n, n-1, ..., 0 in order). *)
-      rust_exec_ed callee_post callee_post_n body
+      rust_exec_ed callee_post callee_post_n function_table body
         (rs_set_scalar_ed rs1 x (Z.of_nat n)) rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdFor x n body) rs2 rs3 ->
-      rust_exec_ed callee_post callee_post_n (REdFor x (S n) body) rs1 rs3
+      rust_exec_ed callee_post callee_post_n function_table (REdFor x n body) rs2 rs3 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdFor x (S n) body) rs1 rs3
   | rexec_select : forall cond if_t if_f dest rs cond_v src tv,
       (* CT conditional move: pick if_t when cond ≠ 0, else if_f, copy
          the chosen source's value into dest's slot.  Both branches
@@ -395,13 +436,29 @@ Inductive rust_exec_ed
       if_t.(loc_type) = dest.(loc_type) ->
       if_f.(loc_type) = dest.(loc_type) ->
       rs_get_tower_ed rs src.(loc_var) = Some tv ->
-      rust_exec_ed callee_post callee_post_n (REdSelect cond if_t if_f dest) rs
+      rust_exec_ed callee_post callee_post_n function_table (REdSelect cond if_t if_f dest) rs
         (rs_set_tower_ed rs dest.(loc_var) tv)
   | rexec_calln : forall fname dests args rs1 rs2,
       (* Multi-output call: defers to the [callee_post_n] oracle.
          Mirrors [rexec_call] but with a list of destinations. *)
       callee_post_n fname dests args rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n (REdCallN fname dests args) rs1 rs2.
+      rust_exec_ed callee_post callee_post_n function_table (REdCallN fname dests args) rs1 rs2
+  | rexec_callfn : forall fname (dest : located_ed) (args : list located_ed)
+                          (body : function_body_ed) rs1 rs2,
+      (* Verified-helper call: look up [body] in [function_table] by
+         name, then execute [body dest args] inline. *)
+      List.find (fun p => String.eqb (fst p) fname) function_table = Some (fname, body) ->
+      rust_exec_ed callee_post callee_post_n function_table (body dest args) rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table
+                   (REdCallFn fname dest args) rs1 rs2
+  | rexec_block : forall body rs1 rs2,
+      (* Scoped-allocation block: semantically transparent — the body
+         runs in the same state and produces the same final state.
+         The Rust / C emitters wrap [body] in a [{ ... }] block so any
+         [REdLetZero] inside has its lifetime end at the brace, but
+         the simulation level does not need to model that. *)
+      rust_exec_ed callee_post callee_post_n function_table body rs1 rs2 ->
+      rust_exec_ed callee_post callee_post_n function_table (REdBlock body) rs1 rs2.
 
 (* ================================================================ *)
 (* §5. bedrock2 bridge — Part B (Week 1 Day 5-6, IN PROGRESS)        *)
@@ -436,8 +493,14 @@ Inductive bedrock_cmd_ed :=
   | BEdByteLoad : var -> located_ed -> sexpr_ed -> bedrock_cmd_ed
   | BEdFor : var -> nat -> bedrock_cmd_ed -> bedrock_cmd_ed
   | BEdSelect : sexpr_ed -> located_ed -> located_ed -> located_ed -> bedrock_cmd_ed
-  | BEdCallN : String.string -> list located_ed -> list located_ed -> bedrock_cmd_ed.
+  | BEdCallN : String.string -> list located_ed -> list located_ed -> bedrock_cmd_ed
                             (* Multi-output FFI mirror of REdCallN. *)
+  | BEdCallFn : String.string -> located_ed -> list located_ed -> bedrock_cmd_ed
+                            (* Verified-helper mirror of REdCallFn. *)
+  | BEdBlock  : bedrock_cmd_ed -> bedrock_cmd_ed.
+                            (* Scoped-allocation block (mirror of REdBlock).
+                               Transparent at semantics level; emitters
+                               wrap [body] in [{ ... }]. *)
 
 (** Direct translation: bedrock_cmd_ed → rust_cmd_ed. *)
 Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
@@ -455,6 +518,8 @@ Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
   | BEdFor x n c' => REdFor x n (btranslate_ed c')
   | BEdSelect cond if_t if_f dest => REdSelect cond if_t if_f dest
   | BEdCallN fname dests args => REdCallN fname dests args
+  | BEdCallFn fname dest args => REdCallFn fname dest args
+  | BEdBlock body => REdBlock (btranslate_ed body)
   end.
 
 (** Bedrock-level execution.  Same shape as [rust_exec_ed], shares
@@ -477,47 +542,48 @@ Inductive bedrock_exec_ed
     rust_state_ed ->
     rust_state_ed ->
     Prop)
+  (function_table : function_table_ed)
   : bedrock_cmd_ed -> rust_state_ed -> rust_state_ed -> Prop :=
   | bexec_skip : forall rs,
-      bedrock_exec_ed callee_post callee_post_n BEdSkip rs rs
+      bedrock_exec_ed callee_post callee_post_n function_table BEdSkip rs rs
   | bexec_seq : forall c1 c2 rs1 rs2 rs3,
-      bedrock_exec_ed callee_post callee_post_n c1 rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n c2 rs2 rs3 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdSeq c1 c2) rs1 rs3
+      bedrock_exec_ed callee_post callee_post_n function_table c1 rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table c2 rs2 rs3 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdSeq c1 c2) rs1 rs3
   | bexec_let_zero : forall x t v c rs1 rs2,
       well_formed_ed v ->
-      bedrock_exec_ed callee_post callee_post_n c
+      bedrock_exec_ed callee_post callee_post_n function_table c
         (rs_set_tower_ed rs1 x (exist_tval_ed t v))
         rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdLetZero x t c) rs1 rs2
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdLetZero x t c) rs1 rs2
   | bexec_let_u64 : forall x e c rs1 rs2 v,
       eval_sexpr_ed rs1 e = Some v ->
-      bedrock_exec_ed callee_post callee_post_n c (rs_set_scalar_ed rs1 x v) rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdLetU64 x e c) rs1 rs2
+      bedrock_exec_ed callee_post callee_post_n function_table c (rs_set_scalar_ed rs1 x v) rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdLetU64 x e c) rs1 rs2
   | bexec_scalar_set : forall x e rs v,
       eval_sexpr_ed rs e = Some v ->
-      bedrock_exec_ed callee_post callee_post_n (BEdScalarSet x e) rs (rs_set_scalar_ed rs x v)
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdScalarSet x e) rs (rs_set_scalar_ed rs x v)
   | bexec_call : forall fname dst args rs1 rs2,
       callee_post fname args dst rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdCall fname dst args) rs1 rs2
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdCall fname dst args) rs1 rs2
   | bexec_if_zero : forall e c1 c2 rs1 rs2,
       eval_sexpr_ed rs1 e = Some 0 ->
-      bedrock_exec_ed callee_post callee_post_n c2 rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdIfNz e c1 c2) rs1 rs2
+      bedrock_exec_ed callee_post callee_post_n function_table c2 rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdIfNz e c1 c2) rs1 rs2
   | bexec_if_nonzero : forall e c1 c2 rs1 rs2 v,
       eval_sexpr_ed rs1 e = Some v ->
       v <> 0 ->
-      bedrock_exec_ed callee_post callee_post_n c1 rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdIfNz e c1 c2) rs1 rs2
+      bedrock_exec_ed callee_post callee_post_n function_table c1 rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdIfNz e c1 c2) rs1 rs2
   | bexec_while_zero : forall e c rs,
       eval_sexpr_ed rs e = Some 0 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdWhileNz e c) rs rs
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdWhileNz e c) rs rs
   | bexec_while_nonzero : forall e c rs1 rs2 rs3 v,
       eval_sexpr_ed rs1 e = Some v ->
       v <> 0 ->
-      bedrock_exec_ed callee_post callee_post_n c rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdWhileNz e c) rs2 rs3 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdWhileNz e c) rs1 rs3
+      bedrock_exec_ed callee_post callee_post_n function_table c rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdWhileNz e c) rs2 rs3 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdWhileNz e c) rs1 rs3
   | bexec_byte_store : forall loc idx_e val_e rs idx_v val_v bs_old bs_new n,
       eval_sexpr_ed rs idx_e = Some idx_v ->
       eval_sexpr_ed rs val_e = Some val_v ->
@@ -525,7 +591,7 @@ Inductive bedrock_exec_ed
       rs_get_tower_ed rs loc.(loc_var) =
         Some (exist_tval_ed (TBytes n) (VBytes n bs_old)) ->
       bs_new = list_set_byte (Z.to_nat idx_v) (Z_to_byte val_v) bs_old ->
-      bedrock_exec_ed callee_post callee_post_n (BEdByteStore loc idx_e val_e) rs
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdByteStore loc idx_e val_e) rs
         (rs_set_tower_ed rs loc.(loc_var)
            (exist_tval_ed (TBytes n) (VBytes n bs_new)))
   | bexec_byte_load : forall x loc idx_e rs idx_v bs n b,
@@ -534,26 +600,41 @@ Inductive bedrock_exec_ed
       rs_get_tower_ed rs loc.(loc_var) =
         Some (exist_tval_ed (TBytes n) (VBytes n bs)) ->
       List.nth_error bs (Z.to_nat idx_v) = Some b ->
-      bedrock_exec_ed callee_post callee_post_n (BEdByteLoad x loc idx_e) rs
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdByteLoad x loc idx_e) rs
         (rs_set_scalar_ed rs x (Z.of_N (Byte.to_N b)))
   | bexec_for_zero : forall x body rs,
-      bedrock_exec_ed callee_post callee_post_n (BEdFor x 0%nat body) rs rs
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdFor x 0%nat body) rs rs
   | bexec_for_succ : forall x n body rs1 rs2 rs3,
-      bedrock_exec_ed callee_post callee_post_n body
+      bedrock_exec_ed callee_post callee_post_n function_table body
         (rs_set_scalar_ed rs1 x (Z.of_nat n)) rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdFor x n body) rs2 rs3 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdFor x (S n) body) rs1 rs3
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdFor x n body) rs2 rs3 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdFor x (S n) body) rs1 rs3
   | bexec_select : forall cond if_t if_f dest rs cond_v src tv,
       eval_sexpr_ed rs cond = Some cond_v ->
       src = (if Z.eqb cond_v 0 then if_f else if_t) ->
       if_t.(loc_type) = dest.(loc_type) ->
       if_f.(loc_type) = dest.(loc_type) ->
       rs_get_tower_ed rs src.(loc_var) = Some tv ->
-      bedrock_exec_ed callee_post callee_post_n (BEdSelect cond if_t if_f dest) rs
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdSelect cond if_t if_f dest) rs
         (rs_set_tower_ed rs dest.(loc_var) tv)
   | bexec_calln : forall fname dests args rs1 rs2,
       callee_post_n fname dests args rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n (BEdCallN fname dests args) rs1 rs2.
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdCallN fname dests args) rs1 rs2
+  | bexec_callfn : forall fname (dest : located_ed) (args : list located_ed)
+                          (body : function_body_ed) rs1 rs2,
+      (* Verified-helper call: look up [body] in [function_table] and
+         execute (the rust-side projection of) [body dest args] via
+         [rust_exec_ed].  We defer to [rust_exec_ed] since
+         [function_body_ed] is the rust-side type; [safe_cmd_correct_ed]
+         then connects the two sides at the top level. *)
+      List.find (fun p => String.eqb (fst p) fname) function_table = Some (fname, body) ->
+      rust_exec_ed callee_post callee_post_n function_table (body dest args) rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table
+                      (BEdCallFn fname dest args) rs1 rs2
+  | bexec_block : forall body rs1 rs2,
+      (* Scoped-allocation block (transparent). *)
+      bedrock_exec_ed callee_post callee_post_n function_table body rs1 rs2 ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdBlock body) rs1 rs2.
 
 (** Simulation theorem.  Mirrors [SafeRustSimulation.v:1241]'s
     [safe_cmd_correct].  Proof: induction on [bedrock_exec_ed], 10
@@ -566,9 +647,10 @@ Theorem safe_cmd_correct_ed
     (callee_post_n :
       String.string -> list located_ed -> list located_ed ->
       rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
     (c : bedrock_cmd_ed) (rs1 rs2 : rust_state_ed) :
-  bedrock_exec_ed callee_post callee_post_n c rs1 rs2 ->
-  rust_exec_ed callee_post callee_post_n (btranslate_ed c) rs1 rs2.
+  bedrock_exec_ed callee_post callee_post_n function_table c rs1 rs2 ->
+  rust_exec_ed callee_post callee_post_n function_table (btranslate_ed c) rs1 rs2.
 Proof.
   intros H.
   induction H; cbn [btranslate_ed].
@@ -588,6 +670,8 @@ Proof.
   - eapply rexec_for_succ; eauto.
   - eapply rexec_select; eauto.
   - eapply rexec_calln; eauto.
+  - eapply rexec_callfn; eauto.
+  - eapply rexec_block; eauto.
 Qed.
 
 (* ================================================================ *)
@@ -733,14 +817,14 @@ Definition callee_post_n_well_formed
     rs_well_formed rs2.
 
 Theorem rust_exec_ed_preserves_wf :
-  forall callee_post callee_post_n c rs1 rs2,
+  forall callee_post callee_post_n function_table c rs1 rs2,
     callee_post_well_formed callee_post ->
     callee_post_n_well_formed callee_post_n ->
-    rust_exec_ed callee_post callee_post_n c rs1 rs2 ->
+    rust_exec_ed callee_post callee_post_n function_table c rs1 rs2 ->
     rs_well_formed rs1 ->
     rs_well_formed rs2.
 Proof.
-  intros callee_post callee_post_n c rs1 rs2 Hcp Hcpn Hexec.
+  intros callee_post callee_post_n function_table c rs1 rs2 Hcp Hcpn Hexec.
   induction Hexec; intros Hwf.
   - (* rexec_skip *) exact Hwf.
   - (* rexec_seq *) apply IHHexec2. apply IHHexec1. exact Hwf.
@@ -784,4 +868,8 @@ Proof.
     exact (Hwf src.(loc_var) t' v' Hget).
   - (* rexec_calln *)
     eapply Hcpn; eauto.
+  - (* rexec_callfn *)
+    apply IHHexec; exact Hwf.
+  - (* rexec_block *)
+    apply IHHexec; exact Hwf.
 Qed.

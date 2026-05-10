@@ -166,6 +166,21 @@ Fixpoint c_emit (indent : string) (c : rust_cmd_ed) : string :=
         join ", " (List.map c_located_arg dests ++
                    List.map c_located_arg args) ++
       ");"
+  | REdCallFn fname dest args =>
+      (* Verified helper: same C emit as REdCall — the C target has no
+         distinction between externally-axiomatized and Rocq-verified
+         helpers; both look like ordinary calls.  Inlining/specialization
+         can happen at the AST level before c_emit. *)
+      indent ++ fname ++ "(" ++
+        join ", " (c_located_arg dest :: List.map c_located_arg args) ++
+      ");"
+  | REdBlock body =>
+      (* Scoped C block: actual C scope delimited by braces.  Any
+         [REdLetZero] decls inside have their lifetime end at the
+         closing brace. *)
+      indent ++ "{" ++ LF ++
+      c_emit ("  " ++ indent) body ++ LF ++
+      indent ++ "}"
   end.
 
 (* ================================================================ *)
@@ -392,6 +407,16 @@ Fixpoint to_bedrock_cmd (c : rust_cmd_ed) : Syntax.cmd :=
         fname
         (List.map (fun l => Syntax.expr.var l.(loc_var)) dests ++
          List.map (fun l => Syntax.expr.var l.(loc_var)) args)
+  | REdCallFn fname dst args =>
+      (* Verified helper: same bedrock2 emission as REdCall. *)
+      Syntax.cmd.call []
+        fname
+        (Syntax.expr.var dst.(loc_var) ::
+         List.map (fun l => Syntax.expr.var l.(loc_var)) args)
+  | REdBlock body =>
+      (* bedrock2 has no scope concept — scopes are purely a Rust/C
+         lifetime hint.  Emit the body's bedrock2 syntax directly. *)
+      to_bedrock_cmd body
   end.
 
 (** Emit C via bedrock2's mature ToCString pipeline. *)
@@ -471,6 +496,14 @@ Fixpoint bedrock_cmd_ed_to_syntax (c : bedrock_cmd_ed) : Syntax.cmd :=
         fname
         (List.map (fun l => Syntax.expr.var l.(loc_var)) dests ++
          List.map (fun l => Syntax.expr.var l.(loc_var)) args)
+  | BEdCallFn fname dst args =>
+      Syntax.cmd.call []
+        fname
+        (Syntax.expr.var dst.(loc_var) ::
+         List.map (fun l => Syntax.expr.var l.(loc_var)) args)
+  | BEdBlock body =>
+      (* bedrock2 has no scope concept; emit body directly. *)
+      bedrock_cmd_ed_to_syntax body
   end.
 
 (** Inverse-style: any [rust_cmd_ed] with no byte-level memory ops
@@ -517,6 +550,13 @@ Fixpoint rust_to_bedrock_cmd_ed (c : rust_cmd_ed) : option bedrock_cmd_ed :=
       Some (BEdSelect cond if_t if_f dest)
   | REdCallN fname dests args =>
       Some (BEdCallN fname dests args)
+  | REdCallFn fname dst args =>
+      Some (BEdCallFn fname dst args)
+  | REdBlock body =>
+      match rust_to_bedrock_cmd_ed body with
+      | Some b => Some (BEdBlock b)
+      | None => None
+      end
   end.
 
 (** **Correctness theorem 1**: roundtrip via btranslate_ed.
@@ -551,6 +591,9 @@ Proof.
     inversion Hr; subst; cbn. erewrite IHc; reflexivity.
   - inversion Hr; subst; reflexivity.
   - inversion Hr; subst; reflexivity.
+  - inversion Hr; subst; reflexivity.
+  - destruct (rust_to_bedrock_cmd_ed c) as [b|]; try discriminate.
+    inversion Hr; subst; cbn. erewrite IHc; reflexivity.
 Qed.
 
 (** **Correctness theorem 2**: the two bedrock2-Syntax targets agree.
@@ -590,6 +633,10 @@ Proof.
     rewrite (IHc _ eq_refl); reflexivity.
   - inversion Hr; subst; cbn; reflexivity.
   - inversion Hr; subst; cbn; reflexivity.
+  - inversion Hr; subst; cbn; reflexivity.
+  - destruct (rust_to_bedrock_cmd_ed c) as [b|] eqn:Hb; try discriminate.
+    inversion Hr; subst; cbn.
+    rewrite (IHc _ eq_refl); reflexivity.
 Qed.
 
 (** **Correctness theorem 3** (semantic preservation): given that
@@ -601,12 +648,12 @@ Qed.
     [bedrock_exec_ed]) to rust_cmd_ed semantics, going through the
     already-Qed [safe_cmd_correct_ed] simulation. *)
 Theorem to_bedrock_cmd_semantic_correct :
-  forall callee_post callee_post_n c bc rs1 rs2,
+  forall callee_post callee_post_n function_table c bc rs1 rs2,
     rust_to_bedrock_cmd_ed c = Some bc ->
-    bedrock_exec_ed callee_post callee_post_n bc rs1 rs2 ->
-    rust_exec_ed callee_post callee_post_n c rs1 rs2.
+    bedrock_exec_ed callee_post callee_post_n function_table bc rs1 rs2 ->
+    rust_exec_ed callee_post callee_post_n function_table c rs1 rs2.
 Proof.
-  intros callee_post callee_post_n c bc rs1 rs2 Hr Hb.
+  intros callee_post callee_post_n function_table c bc rs1 rs2 Hr Hb.
   apply safe_cmd_correct_ed in Hb.
   rewrite (rust_to_bedrock_cmd_ed_roundtrip _ _ Hr) in Hb.
   exact Hb.

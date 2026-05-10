@@ -57,13 +57,14 @@ Section RustTriple.
                          rust_state_ed -> rust_state_ed -> Prop).
   Context (callee_post_n : String.string -> list located_ed -> list located_ed ->
                            rust_state_ed -> rust_state_ed -> Prop).
+  Context (function_table : function_table_ed).
 
   Definition rpred := rust_state_ed -> Prop.
 
   (** Hoare-style triple: starting from [rs], executing [c] yields
       a state satisfying [pred]. *)
   Definition rhoare (rs : rust_state_ed) (c : rust_cmd_ed) (pred : rpred) : Prop :=
-    forall rs', rust_exec_ed callee_post callee_post_n c rs rs' -> pred rs'.
+    forall rs', rust_exec_ed callee_post callee_post_n function_table c rs rs' -> pred rs'.
 
   (* ================================================================ *)
   (* §2. Core compile lemmas                                            *)
@@ -177,7 +178,7 @@ Section RustTriple.
       (forall m rs_i,
          inv m rs_i ->
          (forall vc, eval_sexpr_ed rs_i e = Some vc -> vc <> 0 ->
-            forall rs_after, rust_exec_ed callee_post callee_post_n body rs_i rs_after ->
+            forall rs_after, rust_exec_ed callee_post callee_post_n function_table body rs_i rs_after ->
                              exists m', inv m' rs_after /\ lt m' m) /\
          (eval_sexpr_ed rs_i e = Some 0 -> pred rs_i)) ->
       rhoare rs (REdWhileNz e body) pred.
@@ -309,7 +310,7 @@ Section RustTriple.
          acc_inv acc i rs_i ->
          rs_get_scalar_ed rs_i i_var = Some (Z.of_nat i) ->
          forall rs_after,
-           rust_exec_ed callee_post callee_post_n body rs_i rs_after ->
+           rust_exec_ed callee_post callee_post_n function_table body rs_i rs_after ->
            (* Frame condition: body preserves the loop counter slot.
               Without this, the trailing [REdScalarSet i_var (SSub
               (SVar i_var) (SLit 1))] could compute from a
@@ -429,7 +430,7 @@ Section RustTriple.
          acc_inv acc i rs_i ->
          rs_get_scalar_ed rs_i i_var = Some (Z.of_nat i) ->
          forall rs_after,
-           rust_exec_ed callee_post callee_post_n body rs_i rs_after ->
+           rust_exec_ed callee_post callee_post_n function_table body rs_i rs_after ->
            (* Frame condition: body preserves the loop counter slot.
               Without this, the trailing [REdScalarSet i_var (SAdd
               (SVar i_var) (SLit 1))] could compute from a
@@ -557,7 +558,7 @@ Section RustTriple.
          (i < n)%nat ->
          acc_inv acc (S i) rs_i ->
          forall rs_after,
-           rust_exec_ed callee_post callee_post_n body
+           rust_exec_ed callee_post callee_post_n function_table body
              (rs_set_scalar_ed rs_i x (Z.of_nat i)) rs_after ->
            exists acc', acc_inv acc' i rs_after) ->
       (forall acc rs_final, acc_inv acc 0%nat rs_final -> pred rs_final) ->
@@ -574,7 +575,7 @@ Section RustTriple.
     - (* n = S n' : body runs once with x := n', then REdFor x n' body *)
       inversion Hexec as
         [ | | | | | | | | | | | | | ? n_inv body_inv rs_pre rs_mid rs_post
-                                       Hbody Hloop | | ];
+                                       Hbody Hloop | | | | ];
         subst.
       pose proof (Hstep n acc0 rs ltac:(lia) Hinv0 _ Hbody) as Hacc'_ex.
       destruct Hacc'_ex as [acc' Hacc'].
@@ -640,7 +641,167 @@ Section RustTriple.
     inversion Hexec; subst. apply Hcpn. assumption.
   Qed.
 
+  (** [compile_red_callfn]: verified-helper-function call.  Given that
+      [fname] resolves to [body] in the function_table AND that the
+      body's rhoare triple holds for [pred], the [REdCallFn] compiles
+      via inversion on [rexec_callfn].  This is the bridge from a
+      verifiable function body to a callsite — replacing the
+      axiomatic [callee_post]-style discharge with one mechanized in
+      this framework. *)
+  Lemma compile_red_callfn :
+    forall (rs : rust_state_ed) (fname : String.string)
+           (dest : located_ed) (args : list located_ed)
+           (body : function_body_ed) (pred : rpred),
+      List.find (fun p => String.eqb (fst p) fname) function_table = Some (fname, body) ->
+      rhoare rs (body dest args) pred ->
+      rhoare rs (REdCallFn fname dest args) pred.
+  Proof.
+    intros rs fname dest args body pred Hfind Hbody rs' Hexec.
+    inversion Hexec; subst.
+    (* Inversion gives a witness body0 with [List.find ... = Some (fname, body0)].
+       Combined with our [Hfind] hypothesis (same lookup, body), the pair
+       Some-constructor injectivity forces body0 = body. *)
+    match goal with
+    | Hfind' : List.find _ _ = Some (_, ?body0) |- _ =>
+        rewrite Hfind in Hfind';
+        injection Hfind' as Hbeq;
+        subst body0
+    end.
+    apply Hbody. assumption.
+  Qed.
+
+  (** [compile_red_block]: scoped-allocation block.  [REdBlock body]
+      is semantically transparent — running it from [rs] is the same
+      as running [body] from [rs] — so its [rhoare] triple reduces
+      to the body's.  The Rust / C emitters wrap [body] in [{ ... }]
+      so that any [REdLetZero] decls inside have their lifetime end
+      at the closing brace. *)
+  Lemma compile_red_block :
+    forall (rs : rust_state_ed) (body : rust_cmd_ed) (pred : rpred),
+      rhoare rs body pred ->
+      rhoare rs (REdBlock body) pred.
+  Proof.
+    intros rs body pred Hbody rs' Hexec.
+    inversion Hexec; subst.
+    apply Hbody. assumption.
+  Qed.
+
 End RustTriple.
+
+(* ================================================================ *)
+(* §3.5. Scalar-env helper (used by §4 demo)                          *)
+(* ================================================================ *)
+
+(** Lookup at the just-updated key. *)
+Lemma lookup_s_ed_update_at : forall env x v,
+  lookup_s_ed (update_in_place_s_ed env x v) x = Some v.
+Proof.
+  induction env as [| [y w] rest IH]; intros x v.
+  - cbn. rewrite String.eqb_refl. reflexivity.
+  - cbn. destruct (String.eqb y x) eqn:Hyx.
+    + cbn. rewrite String.eqb_refl. reflexivity.
+    + cbn. destruct (String.eqb x y) eqn:Hxy.
+      * apply String.eqb_eq in Hxy; subst.
+        rewrite String.eqb_refl in Hyx; discriminate.
+      * apply IH.
+Qed.
+
+(* ================================================================ *)
+(* §4. Demo: verified helper-function dispatch                       *)
+(* ================================================================ *)
+
+(** A 2-instruction verified helper that doubles a u64-typed slot
+    by writing [x + x] into the dest's scalar binding.  Body shape:
+
+      REdLetU64 "tmp" (SAdd (SVar x_var) (SVar x_var))
+        (REdScalarSet "dest_var" (SVar "tmp"))
+
+    The slot read uses [SVar (loc_var of args.(0))].  Since the
+    [function_body_ed] type takes [dest] / [args] positionally, the
+    body decodes the slot names from those. *)
+Definition double_u64_body_ed : function_body_ed :=
+  fun (dest : located_ed) (args : list located_ed) =>
+    match args with
+    | x :: _ =>
+        REdLetU64 "double_tmp"
+          (SAdd (SVar x.(loc_var)) (SVar x.(loc_var)))
+          (REdScalarSet dest.(loc_var) (SVar "double_tmp"))
+    | [] => REdSkip
+    end.
+
+(** Sample function table containing the double helper. *)
+Definition demo_function_table : function_table_ed :=
+  [("double_u64"%string, double_u64_body_ed)].
+
+(** Demonstration: a [compile_red_callfn] application discharges
+    [rhoare] for a [REdCallFn "double_u64"] callsite by inlining
+    the body and applying the existing [compile_red_*] lemmas.
+
+    The post-condition asserts that after the call, the destination
+    slot holds [mask64 (v+v)] where [v] is the original input value. *)
+Lemma compile_red_callfn_demo :
+  forall (callee_post :
+            String.string -> list located_ed -> located_ed ->
+            rust_state_ed -> rust_state_ed -> Prop)
+         (callee_post_n :
+            String.string -> list located_ed -> list located_ed ->
+            rust_state_ed -> rust_state_ed -> Prop)
+         (rs : rust_state_ed) (x_var : String.string) (v : Z),
+    rs_get_scalar_ed rs x_var = Some v ->
+    rhoare callee_post callee_post_n demo_function_table rs
+      (REdCallFn "double_u64"%string {| loc_var := "dest_var"%string; loc_type := TU64 |}
+                 [{| loc_var := x_var; loc_type := TU64 |}])
+      (fun rs' => rs_get_scalar_ed rs' "dest_var"%string = Some (mask64 (v + v))).
+Proof.
+  intros callee_post callee_post_n rs x_var v Hget.
+  eapply (compile_red_callfn _ _ demo_function_table rs "double_u64"%string
+            {| loc_var := "dest_var"; loc_type := TU64 |}
+            [{| loc_var := x_var; loc_type := TU64 |}] double_u64_body_ed);
+    [reflexivity|].
+  cbn [double_u64_body_ed].
+  eapply compile_red_let_u64.
+  { cbn. rewrite Hget. reflexivity. }
+  intros rs' Hexec.
+  inversion Hexec as [| | | | ? ? ? ? Heval | | | | | | | | | | | | |]; subst.
+  (* Heval: eval_sexpr_ed of (SVar "double_tmp") in post-let_u64 state = Some v0.
+     Reduce via [lookup_s_ed_update_at] to force v0 = mask64 (v+v). *)
+  cbn in Heval.
+  unfold rs_get_scalar_ed, rs_set_scalar_ed in Heval. cbn in Heval.
+  rewrite lookup_s_ed_update_at in Heval. inversion Heval; subst.
+  unfold rs_get_scalar_ed, rs_set_scalar_ed; cbn.
+  rewrite lookup_s_ed_update_at. reflexivity.
+Qed.
+
+(* ================================================================ *)
+(* §5. Demo: scoped-allocation block (REdBlock)                       *)
+(* ================================================================ *)
+
+(** Demonstration of [compile_red_block]: a scoped block containing a
+    fresh [REdLetZero] tower slot.  Inside the block, the body
+    declares a [TBytes 32] slot named ["tmp"] and runs [REdSkip].
+    On block exit, the tmp slot's lifetime formally ends.  The post
+    asserts only that the block ran (any [rs_well_formed]-respecting
+    state is acceptable here). *)
+Lemma compile_red_block_demo :
+  forall (callee_post :
+            String.string -> list located_ed -> located_ed ->
+            rust_state_ed -> rust_state_ed -> Prop)
+         (callee_post_n :
+            String.string -> list located_ed -> list located_ed ->
+            rust_state_ed -> rust_state_ed -> Prop)
+         (function_table : function_table_ed)
+         (rs : rust_state_ed),
+    rhoare callee_post callee_post_n function_table rs
+      (REdBlock (REdLetZero "tmp"%string (TBytes 32) REdSkip))
+      (fun _ => True).
+Proof.
+  intros callee_post callee_post_n function_table rs.
+  apply compile_red_block.
+  apply compile_red_let_zero.
+  intros v Hwf.
+  apply compile_red_skip.
+  exact I.
+Qed.
 
 (** ** Roadmap / status
 

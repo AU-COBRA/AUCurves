@@ -46,6 +46,11 @@ Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
+Section Ed25519Tier4.
+  Context (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                           rust_state_ed -> rust_state_ed -> Prop).
+  Context (function_table : function_table_ed).
+
 (* ================================================================ *)
 (* §1. Tier-4 compile lemma: clamp + scalarmult_base                  *)
 (* ================================================================ *)
@@ -81,7 +86,7 @@ Lemma compile_red_clamp_then_scalarmult_base :
           (ed25519_scalarmult_base_spec
              (clamp_64_spec (memmove_a_from_h_spec h_full))) ->
         pred rs3) ->
-    rhoare strong_callee_post rs
+    rhoare strong_callee_post callee_post_n function_table rs
       (REdSeq (REdCall "memmove_a_from_h"
                  {| loc_var := a_var; loc_type := TBytes 32 |}
                  [{| loc_var := h_full_var; loc_type := TBytes 64 |}])
@@ -156,7 +161,7 @@ Lemma compile_red_sha512_then_reduce :
         slot_holds rs2 reduced_var
           (scalar_reduce_spec (sha512_full_spec input_bs)) ->
         pred rs2) ->
-    rhoare strong_callee_post rs
+    rhoare strong_callee_post callee_post_n function_table rs
       (REdSeq (REdCall "sha512_64"
                  {| loc_var := full_var; loc_type := TBytes 64 |}
                  [{| loc_var := input_var; loc_type := TBytes n |}])
@@ -216,7 +221,7 @@ Lemma compile_red_concat_chal_R_M :
         slot_holds rs2 dst_var
           (firstn 64 (bs1 ++ skipn (Datatypes.length bs1) dst_init) ++ bs2)%list ->
         pred rs2) ->
-    rhoare strong_callee_post rs
+    rhoare strong_callee_post callee_post_n function_table rs
       (REdSeq (REdCall "memmove_chal_R"
                  {| loc_var := dst_var; loc_type := TBytes n |}
                  [{| loc_var := src1_var; loc_type := TBytes (Datatypes.length bs1) |}])
@@ -273,7 +278,7 @@ Lemma compile_red_concat_nonce_R_msg :
         slot_holds rs2 dst_var
           (firstn 32 (bs1 ++ skipn (Datatypes.length bs1) dst_init) ++ bs2)%list ->
         pred rs2) ->
-    rhoare strong_callee_post rs
+    rhoare strong_callee_post callee_post_n function_table rs
       (REdSeq (REdCall "memmove_chal_R"
                  {| loc_var := dst_var; loc_type := TBytes n |}
                  [{| loc_var := src1_var; loc_type := TBytes (Datatypes.length bs1) |}])
@@ -303,6 +308,8 @@ Proof.
   apply Hpred.
   exact Htgt2.
 Qed.
+
+End Ed25519Tier4.
 
 (** ** Roadmap
 

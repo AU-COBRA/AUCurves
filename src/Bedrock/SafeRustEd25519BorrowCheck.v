@@ -79,6 +79,12 @@ Fixpoint borrow_ok_ed (c : rust_cmd_ed) : bool :=
          stored to dest, so even if a source aliases dest the reads
          complete before the write.  Always borrow-ok. *)
   | REdCallN _ dests args         => negb (call_aliases_n_ed dests args)
+  | REdCallFn _ dest args         => negb (call_aliases_ed dest args)
+      (* Verified-helper call: same alias check as REdCall (single
+         dest, list of args).  The body's own borrow_ok is checked
+         compositionally at call-table-registration time. *)
+  | REdBlock body                 => borrow_ok_ed body
+      (* Scoped block: structurally transparent to borrow checking. *)
   end.
 
 (* ================================================================ *)
@@ -125,21 +131,21 @@ Definition callee_frame_respecting
     — provided the callee_post oracle is frame-respecting.
     Mirrors [borrow_ok_call_frame] in BLS12. *)
 Theorem borrow_ok_ed_call_frame :
-  forall callee_post callee_post_n,
+  forall callee_post callee_post_n function_table,
     callee_frame_respecting callee_post ->
     forall f (dest : located_ed) (args : list located_ed) rs rs',
       borrow_ok_ed (REdCall f dest args) = true ->
-      rust_exec_ed callee_post callee_post_n (REdCall f dest args) rs rs' ->
+      rust_exec_ed callee_post callee_post_n function_table (REdCall f dest args) rs rs' ->
       forall (arg : located_ed),
         List.In arg args ->
         lookup_t_ed (rs_tower_ed rs') arg.(loc_var) =
         lookup_t_ed (rs_tower_ed rs) arg.(loc_var).
 Proof.
-  intros callee_post callee_post_n Hframe f dest args rs rs' Hbok Hexec arg Hin.
+  intros callee_post callee_post_n function_table Hframe f dest args rs rs' Hbok Hexec arg Hin.
   cbn in Hbok. apply Bool.negb_true_iff in Hbok.
   assert (Hne : dest.(loc_var) <> arg.(loc_var))
     by (apply call_aliases_ed_false_ne with (args := args); assumption).
-  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | |]; subst.
+  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | |]; subst.
   apply (Hframe f args dest rs rs' Hcp arg.(loc_var)).
   congruence.
 Qed.
@@ -156,15 +162,15 @@ Proof. intros c1 c2 H; cbn in H; apply Bool.andb_true_iff in H; tauto. Qed.
 (** General frame: any tower variable with a different name from
     dest is unchanged by a [REdCall], regardless of args. *)
 Theorem call_frame_non_dest_ed :
-  forall callee_post callee_post_n,
+  forall callee_post callee_post_n function_table,
     callee_frame_respecting callee_post ->
     forall f (dest : located_ed) (args : list located_ed) rs rs' (x : String.string),
-      rust_exec_ed callee_post callee_post_n (REdCall f dest args) rs rs' ->
+      rust_exec_ed callee_post callee_post_n function_table (REdCall f dest args) rs rs' ->
       x <> dest.(loc_var) ->
       lookup_t_ed (rs_tower_ed rs') x = lookup_t_ed (rs_tower_ed rs) x.
 Proof.
-  intros callee_post callee_post_n Hframe f dest args rs rs' x Hexec Hne.
-  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | |]; subst.
+  intros callee_post callee_post_n function_table Hframe f dest args rs rs' x Hexec Hne.
+  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | |]; subst.
   exact (Hframe f args dest rs rs' Hcp x Hne).
 Qed.
 
@@ -187,6 +193,9 @@ Fixpoint dests_of_ed (c : rust_cmd_ed) : list String.string :=
   | REdFor _ _ body               => dests_of_ed body
   | REdSelect _ _ _ dest          => [dest.(loc_var)]
   | REdCallN _ dests _            => List.map loc_var dests
+  | REdCallFn _ dest _            => [dest.(loc_var)]
+  | REdBlock body                 => dests_of_ed body
+      (* Scoped block: write-set is the body's write-set. *)
   end.
 
 (* ================================================================ *)
@@ -236,19 +245,19 @@ Qed.
     — provided the callee_post_n oracle is frame-respecting w.r.t.
     its dest list. *)
 Theorem borrow_ok_ed_calln_frame :
-  forall callee_post callee_post_n,
+  forall callee_post callee_post_n function_table,
     callee_n_frame_respecting callee_post_n ->
     forall f (dests args : list located_ed) rs rs',
       borrow_ok_ed (REdCallN f dests args) = true ->
-      rust_exec_ed callee_post callee_post_n (REdCallN f dests args) rs rs' ->
+      rust_exec_ed callee_post callee_post_n function_table (REdCallN f dests args) rs rs' ->
       forall (arg : located_ed),
         List.In arg args ->
         lookup_t_ed (rs_tower_ed rs') arg.(loc_var) =
         lookup_t_ed (rs_tower_ed rs) arg.(loc_var).
 Proof.
-  intros callee_post callee_post_n Hframe f dests args rs rs' Hbok Hexec arg Hin.
+  intros callee_post callee_post_n function_table Hframe f dests args rs rs' Hbok Hexec arg Hin.
   cbn in Hbok. apply Bool.negb_true_iff in Hbok.
-  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn]; subst.
+  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | |]; subst.
   apply (Hframe f dests args rs rs' Hcpn arg.(loc_var)).
   intros d Hd Heq.
   pose proof (call_aliases_n_ed_false_dest_ne_arg dests args d arg Hbok Hd Hin) as Hne.
@@ -258,14 +267,14 @@ Qed.
 (** Non-dest tower frame: any tower variable with name distinct from
     every dest in the list is unchanged by an [REdCallN]. *)
 Theorem calln_frame_non_dest_ed :
-  forall callee_post callee_post_n,
+  forall callee_post callee_post_n function_table,
     callee_n_frame_respecting callee_post_n ->
     forall f (dests args : list located_ed) rs rs' (x : String.string),
-      rust_exec_ed callee_post callee_post_n (REdCallN f dests args) rs rs' ->
+      rust_exec_ed callee_post callee_post_n function_table (REdCallN f dests args) rs rs' ->
       (forall d, List.In d dests -> x <> d.(loc_var)) ->
       lookup_t_ed (rs_tower_ed rs') x = lookup_t_ed (rs_tower_ed rs) x.
 Proof.
-  intros callee_post callee_post_n Hframe f dests args rs rs' x Hexec Hne.
-  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn]; subst.
+  intros callee_post callee_post_n function_table Hframe f dests args rs rs' x Hexec Hne.
+  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | |]; subst.
   exact (Hframe f dests args rs rs' Hcpn x Hne).
 Qed.

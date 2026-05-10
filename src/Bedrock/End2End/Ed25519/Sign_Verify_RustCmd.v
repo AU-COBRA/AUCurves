@@ -130,14 +130,14 @@ Proof. vm_compute. reflexivity. Qed.
     statement (output is RFC 8032 sign result) is a separate target:
     requires hash-call specs + scalar-arithmetic specs for r/k. *)
 Theorem ed25519_sign_rs_correct :
-  forall callee_post callee_post_n rs1 rs2,
+  forall callee_post callee_post_n function_table rs1 rs2,
     callee_post_well_formed callee_post ->
     callee_post_n_well_formed callee_post_n ->
     rs_well_formed rs1 ->
-    rust_exec_ed callee_post callee_post_n ed25519_sign_rs rs1 rs2 ->
+    rust_exec_ed callee_post callee_post_n function_table ed25519_sign_rs rs1 rs2 ->
     rs_well_formed rs2.
 Proof.
-  intros callee_post callee_post_n rs1 rs2 Hcp Hcpn Hwf Hexec.
+  intros callee_post callee_post_n function_table rs1 rs2 Hcp Hcpn Hwf Hexec.
   eapply rust_exec_ed_preserves_wf; eassumption.
 Qed.
 
@@ -200,14 +200,14 @@ Lemma borrow_ok_ed_verify : borrow_ok_ed ed25519_verify_rs = true.
 Proof. vm_compute. reflexivity. Qed.
 
 Theorem ed25519_verify_rs_correct :
-  forall callee_post callee_post_n rs1 rs2,
+  forall callee_post callee_post_n function_table rs1 rs2,
     callee_post_well_formed callee_post ->
     callee_post_n_well_formed callee_post_n ->
     rs_well_formed rs1 ->
-    rust_exec_ed callee_post callee_post_n ed25519_verify_rs rs1 rs2 ->
+    rust_exec_ed callee_post callee_post_n function_table ed25519_verify_rs rs1 rs2 ->
     rs_well_formed rs2.
 Proof.
-  intros callee_post callee_post_n rs1 rs2 Hcp Hcpn Hwf Hexec.
+  intros callee_post callee_post_n function_table rs1 rs2 Hcp Hcpn Hwf Hexec.
   eapply rust_exec_ed_preserves_wf; eassumption.
 Qed.
 

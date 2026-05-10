@@ -390,8 +390,8 @@ Ltac peel_call_seq H Hframe Hres :=
   let Hrest := fresh "Hrest" in
   inversion H; subst; clear H;
   match goal with
-  | Hc : rust_exec_ed _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ |- _ =>
+  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
+    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
       rename Hc into Hcall; rename Hr into Hrest
   end;
   let Hcp := fresh "Hcp" in
@@ -426,31 +426,32 @@ Theorem ed25519_sign_strong_correct :
   forall (callee_post_n :
             String.string -> list located_ed -> list located_ed ->
             rust_state_ed -> rust_state_ed -> Prop)
+         (function_table : function_table_ed)
          (rs1 rs2 : rust_state_ed) (seed msg sig_init : list Byte.byte),
     length seed = 32%nat ->
     length msg = 4096%nat ->
     slot_holds rs1 v_seed seed ->
     slot_holds rs1 v_msg  msg ->
     slot_holds rs1 v_sig_out sig_init ->
-    rust_exec_ed strong_callee_post callee_post_n ed25519_sign_rs rs1 rs2 ->
+    rust_exec_ed strong_callee_post callee_post_n function_table ed25519_sign_rs rs1 rs2 ->
     exists nonce_init chal_init,
       slot_holds rs2 v_sig_out
         (ed25519_sign_gallina_lifted seed msg nonce_init chal_init sig_init).
 Proof.
-  intros callee_post_n rs1 rs2 seed msg sig_init Hseed_len Hmsg_len
+  intros callee_post_n function_table rs1 rs2 seed msg sig_init Hseed_len Hmsg_len
          Hseed Hmsg Hsig_init Hexec.
   unfold ed25519_sign_rs in Hexec.
 
   (* Stage A: peel 13 REdLetZero allocations. *)
   repeat (match goal with
-          | H : rust_exec_ed _ _ (REdLetZero _ _ _) _ _ |- _ =>
+          | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
               inversion H; subst; clear H
           end).
 
   (* Propagate seed/msg/sig_init across the 13 fresh slot allocations
      into the post-allocation state via [slot_holds_let_zero_other]. *)
   match goal with
-  | H : rust_exec_ed _ _ _ ?rs_alloc _ |- _ =>
+  | H : rust_exec_ed _ _ _ _ ?rs_alloc _ |- _ =>
       assert (Hseed_alloc : slot_holds rs_alloc v_seed seed) by
         (repeat (apply slot_holds_set_tower_other; [discriminate|]); exact Hseed);
       assert (Hmsg_alloc : slot_holds rs_alloc v_msg msg) by

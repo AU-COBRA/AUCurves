@@ -113,15 +113,30 @@ Definition rs_input_arg (l : located_ed) : string :=
     that the rust_cmd_ed AST does not carry explicitly.  Inject
     the buffer length (statically known from the [TBytes n] type
     of the input arg) as a [u64] literal at the call site.
-    Currently only [sha512_64] needs this — args.(0) is its
-    message buffer. *)
+
+    Bug-A fix: if the call site already passes a [TU64]-typed
+    [located_ed] (dynamic length), it is emitted as a normal argument
+    via [rs_input_arg]; we then suppress the literal injection so the
+    callee receives the dynamic length, not the static buffer width.
+    Only when no explicit [TU64] length is present do we fall back to
+    the buffer-width literal. *)
+Definition has_tu64_arg (args : list located_ed) : bool :=
+  List.existsb (fun a => match a.(loc_type) with
+                         | TU64 => true
+                         | _    => false
+                         end) args.
+
 Definition rs_call_inject_lens (fname : String.string)
                                (args : list located_ed) : list string :=
   if String.eqb fname "sha512_64"
-  then match args with
-       | hd :: _ => [nat_str (tt_bytes_ed hd.(loc_type)) ++ "u64"]
-       | nil => nil
-       end
+  then
+    if has_tu64_arg args
+    then []  (* dynamic length: emitted via [rs_input_arg] from the TU64 arg *)
+    else
+      match args with
+      | hd :: _ => [nat_str (tt_bytes_ed hd.(loc_type)) ++ "u64"]
+      | nil => nil
+      end
   else nil.
 
 (* ================================================================ *)

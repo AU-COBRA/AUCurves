@@ -71,8 +71,10 @@ Definition ed25519_sign_rs_with_callfn_clamp : rust_cmd_ed :=
                                            [LE_TBytes v_prefix 32])
   (REdSeq (REdCall "memmove_nonce_msg" (LE_TBytes v_nonce_buf 4128)
                                         [LE_TBytes v_msg 4096])
+  (REdLetU64 "nonce_hash_len" (SAdd (SLit 32) (SVar v_msg_len))
   (REdSeq (REdCall "sha512_64" (LE_TBytes v_r_full 64)
-                                [LE_TBytes v_nonce_buf 4128])
+                                [LE_TBytes v_nonce_buf 4128;
+                                 LE_TU64 "nonce_hash_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_r_slot 32)
                                     [LE_TBytes v_r_full 64])
   (REdSeq (REdCall "ed25519_scalarmult_base" (LE_TBytes v_R_xyzt 200)
@@ -85,8 +87,10 @@ Definition ed25519_sign_rs_with_callfn_clamp : rust_cmd_ed :=
                                      [LE_TBytes v_A_bytes 32])
   (REdSeq (REdCall "memmove_chal_M" (LE_TBytes v_chal_buf 4160)
                                      [LE_TBytes v_msg 4096])
+  (REdLetU64 "chal_hash_len" (SAdd (SLit 64) (SVar v_msg_len))
   (REdSeq (REdCall "sha512_64" (LE_TBytes v_k_full 64)
-                                [LE_TBytes v_chal_buf 4160])
+                                [LE_TBytes v_chal_buf 4160;
+                                 LE_TU64 "chal_hash_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_k_slot 32)
                                     [LE_TBytes v_k_full 64])
   (REdSeq (REdCall "scalar_muladd" (LE_TBytes v_sig_out 64)
@@ -95,7 +99,7 @@ Definition ed25519_sign_rs_with_callfn_clamp : rust_cmd_ed :=
                                      LE_TBytes v_a_slot 32])
   (REdCall "memmove_sig_R" (LE_TBytes v_sig_out 64)
                             [LE_TBytes v_R_bytes 32]
-  ))))))))))))))))))))))))))))))).
+  ))))))))))))))))))))))))))))))))).
 
 (** Function table installing [clamp_64_body] as the verified
     implementation of "clamp_64". *)
@@ -114,11 +118,19 @@ Definition strong_callee_post_no_clamp
            (dst : located_ed)
            (rs1 rs2 : rust_state_ed) : Prop :=
   frames_except rs1 rs2 dst.(loc_var) /\
+  (rs_get_scalar_ed rs1 v_msg_len = rs_get_scalar_ed rs2 v_msg_len) /\
   match fname, args with
   | "sha512_64", [src] =>
       exists src_bs,
         slot_holds rs1 src.(loc_var) src_bs /\
         slot_holds rs2 dst.(loc_var) (sha512_full_spec src_bs)
+  | "sha512_64", [src; len_arg] =>
+      (* Bug-A fix: dynamic-length sha512_64. *)
+      exists src_bs len,
+        slot_holds rs1 src.(loc_var) src_bs /\
+        rs_get_scalar_ed rs1 len_arg.(loc_var) = Some len /\
+        slot_holds rs2 dst.(loc_var)
+          (sha512_full_spec (firstn (Z.to_nat len) src_bs))
   | "scalar_reduce", [src] =>
       exists src_bs,
         slot_holds rs1 src.(loc_var) src_bs /\
@@ -198,6 +210,7 @@ Qed.
 Ltac peel_call_seq_nc H Hframe Hres :=
   let Hcall := fresh "Hcall" in
   let Hrest := fresh "Hrest" in
+  let Hsc := fresh "Hsc_msg" in
   inversion H; subst; clear H;
   match goal with
   | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
@@ -210,14 +223,19 @@ Ltac peel_call_seq_nc H Hframe Hres :=
   | Hc : strong_callee_post_no_clamp _ _ _ _ _ |- _ =>
       rename Hc into Hcp
   end;
-  destruct Hcp as [Hframe Hres];
+  destruct Hcp as [Hframe [Hsc Hres]];
+  match goal with
+  | Hh : rs_get_scalar_ed _ v_msg_len = Some _ |- _ =>
+      rewrite Hsc in Hh; clear Hsc
+  end;
   rename Hrest into H.
 
 Ltac peel_last_call_nc H Hframe Hres :=
+  let Hsc := fresh "Hsc_msg" in
   inversion H; subst; clear H;
   match goal with
   | Hc : strong_callee_post_no_clamp _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe Hres]
+      destruct Hc as [Hframe [Hsc Hres]]; clear Hsc
   end.
 
 (* ================================================================ *)
@@ -225,9 +243,12 @@ Ltac peel_last_call_nc H Hframe Hres :=
 (* ================================================================ *)
 
 (** Same as [ed25519_sign_gallina_lifted] but with [clamp_64_gallina]
-    instead of the axiomatic [clamp_64_spec]. *)
+    instead of the axiomatic [clamp_64_spec].  Bug-A fix: the sha512_64
+    calls on [nonce_buf] / [chal_buf] take dynamic [nonce_hash_len] /
+    [chal_hash_len] arguments. *)
 Definition ed25519_sign_gallina_lifted_verified_clamp
     (seed msg : list Byte.byte)
+    (nonce_hash_len chal_hash_len : nat)
     (nonce_init chal_init sig_init : list Byte.byte)
   : list Byte.byte :=
   let h_full   := sha512_full_spec seed in
@@ -237,7 +258,7 @@ Definition ed25519_sign_gallina_lifted_verified_clamp
   let A_bytes  := ed25519_compress_spec A_xyzt in
   let nonce_C7 := (prefix ++ skipn (length prefix) nonce_init)%list in
   let nonce_C8 := (firstn 32 nonce_C7 ++ msg)%list in
-  let r_full   := sha512_full_spec nonce_C8 in
+  let r_full   := sha512_full_spec (firstn nonce_hash_len nonce_C8) in
   let r        := scalar_reduce_spec r_full in
   let R_xyzt   := ed25519_scalarmult_base_spec r in
   let R_bytes  := ed25519_compress_spec R_xyzt in
@@ -245,7 +266,7 @@ Definition ed25519_sign_gallina_lifted_verified_clamp
   let chal_C14 := (firstn 32 chal_C13 ++ A_bytes ++
                    skipn (32 + length A_bytes) chal_C13)%list in
   let chal_C15 := (firstn 64 chal_C14 ++ msg)%list in
-  let k_full   := sha512_full_spec chal_C15 in
+  let k_full   := sha512_full_spec (firstn chal_hash_len chal_C15) in
   let k        := scalar_reduce_spec k_full in
   let sig_C18  := (scalar_muladd_spec r k a ++ skipn 32 sig_init)%list in
   (firstn 32 sig_C18 ++ R_bytes)%list.
@@ -296,6 +317,37 @@ Lemma clamp_64_body_frames_except :
 Proof.
   intros * Hexec y Hne.
   exact (clamp_64_body_frames _ _ _ _ _ _ Hexec y Hne).
+Qed.
+
+(** [clamp_64_body] preserves the [v_msg_len] scalar slot.  The body
+    uses byte_load to introduce local scalars "b0_tmp" / "b31_tmp"
+    and byte_store to write back to the dest tower slot; neither
+    touches [v_msg_len]. *)
+Lemma clamp_64_body_scalar_v_msg_len :
+  forall callee_post callee_post_n function_table
+         (dst : located_ed)
+         (rs1 rs2 : rust_state_ed),
+    rust_exec_ed callee_post callee_post_n function_table
+                 (clamp_64_body dst []) rs1 rs2 ->
+    rs_get_scalar_ed rs1 v_msg_len = rs_get_scalar_ed rs2 v_msg_len.
+Proof.
+  intros * Hexec.
+  cbv [clamp_64_body] in Hexec.
+  inversion Hexec; clear Hexec; subst.
+  inversion H1; clear H1; subst.
+  inversion H4; clear H4; subst.
+  inversion H1; clear H1; subst.
+  inversion H7; clear H7; subst.
+  inversion H1; clear H1; subst.
+  inversion H11; clear H11; subst.
+  cbv [rs_get_scalar_ed rs_set_scalar_ed rs_set_tower_ed]; cbn.
+  assert (H_b0 : v_msg_len <> "b0_tmp")
+    by (cbv [v_msg_len]; intro Hc; discriminate Hc).
+  assert (H_b31 : v_msg_len <> "b31_tmp")
+    by (cbv [v_msg_len]; intro Hc; discriminate Hc).
+  rewrite lookup_update_in_place_s_ed_other by exact H_b31.
+  rewrite lookup_update_in_place_s_ed_other by exact H_b0.
+  reflexivity.
 Qed.
 
 (** **Wrapper lemma.**  Combines [clamp_64_body_correct] +
@@ -369,21 +421,27 @@ Theorem ed25519_sign_strong_correct_verified_clamp :
   forall (callee_post_n :
             String.string -> list located_ed -> list located_ed ->
             rust_state_ed -> rust_state_ed -> Prop)
-         (rs1 rs2 : rust_state_ed) (seed msg sig_init : list Byte.byte),
+         (rs1 rs2 : rust_state_ed)
+         (seed msg sig_init : list Byte.byte)
+         (msg_len : Z),
     length seed = 32%nat ->
     length msg = 4096%nat ->
+    (0 <= msg_len <= 4096)%Z ->
     slot_holds rs1 v_seed seed ->
     slot_holds rs1 v_msg  msg ->
     slot_holds rs1 v_sig_out sig_init ->
+    rs_get_scalar_ed rs1 v_msg_len = Some msg_len ->
     rust_exec_ed strong_callee_post_no_clamp callee_post_n clamp_function_table
                  ed25519_sign_rs_with_callfn_clamp rs1 rs2 ->
-    exists nonce_init chal_init,
+    exists nonce_hash_len chal_hash_len nonce_init chal_init,
       slot_holds rs2 v_sig_out
         (ed25519_sign_gallina_lifted_verified_clamp
-           seed msg nonce_init chal_init sig_init).
+           seed msg nonce_hash_len chal_hash_len
+           nonce_init chal_init sig_init).
 Proof.
-  intros callee_post_n rs1 rs2 seed msg sig_init Hseed_len Hmsg_len
-         Hseed Hmsg Hsig_init Hexec.
+  intros callee_post_n rs1 rs2 seed msg sig_init msg_len
+         Hseed_len Hmsg_len Hmsg_len_bound
+         Hseed Hmsg Hsig_init Hmsg_len_get Hexec.
   unfold ed25519_sign_rs_with_callfn_clamp in Hexec.
 
   (* Stage A: peel 13 REdLetZero allocations. *)
@@ -400,9 +458,11 @@ Proof.
         (repeat (apply slot_holds_set_tower_other; [discriminate|]); exact Hmsg);
       assert (Hsig_alloc : slot_holds rs_alloc v_sig_out sig_init) by
         (repeat (apply slot_holds_set_tower_other; [discriminate|]); exact Hsig_init);
+      assert (Hmsg_len_alloc : rs_get_scalar_ed rs_alloc v_msg_len = Some msg_len) by
+        (repeat rewrite scalar_get_set_tower; exact Hmsg_len_get);
       rename H into Hexec
   end.
-  clear Hseed Hmsg Hsig_init.
+  clear Hseed Hmsg Hsig_init Hmsg_len_get.
 
   (* === Stage B: 19 call inversions === *)
 
@@ -461,6 +521,9 @@ Proof.
   cbn [LE_TBytes loc_var] in Htgt2, Hbody.
   pose proof (clamp_64_body_slot_holds _ _ _ _ _ _ _
                 Hlen_in Htgt2 Hbody) as [Htgt3 Hframe].
+  (* Bug-A fix: thread Hmsg_len_alloc through the verified clamp body. *)
+  pose proof (clamp_64_body_scalar_v_msg_len _ _ _ _ _ _ Hbody) as Hsc_clamp.
+  rewrite Hsc_clamp in Hmsg_len_alloc; clear Hsc_clamp.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hseed_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var].
@@ -535,10 +598,34 @@ Proof.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt6; [|neq_var].
   clear Hframe Hsrc Hdst Htgt7.
 
-  (* C9: sha512_64 (r_full ← nonce_buf) *)
+  (* Bug-A fix: peel the [REdLetU64 "nonce_hash_len" ...] step. *)
+  inversion Hexec; subst; clear Hexec.
+  match goal with
+  | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
+      rename Hev into Heval_nl
+  end.
+  match goal with
+  | Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
+      rename Hr into Hexec
+  end.
+  cbn [eval_sexpr_ed] in Heval_nl.
+  rewrite Hmsg_len_alloc in Heval_nl.
+  inversion Heval_nl as [Hv_nl].
+  assert (Hmsg_len_set : v_msg_len <> "nonce_hash_len")
+    by (cbv [v_msg_len]; intro Hcontra; discriminate Hcontra).
+  match goal with
+  | _ : context [rs_set_scalar_ed ?rs0 "nonce_hash_len" ?v0] |- _ =>
+      pose proof (slot_holds_scalar_set_other rs0 "nonce_hash_len" v0 _ _
+                    Hmsg_len_set Hmsg_len_alloc) as Hmsg_len_alloc';
+      clear Hmsg_len_alloc Hmsg_len_set;
+      rename Hmsg_len_alloc' into Hmsg_len_alloc
+  end.
+
+  (* C9: sha512_64 (r_full ← nonce_buf, nonce_hash_len) *)
   peel_call_seq_nc Hexec Hframe Hres.
-  destruct Hres as [src_bs [Hsrc Htgt9]].
+  destruct Hres as [src_bs [len9 [Hsrc [Hlen9 Htgt9]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt8) as Heq; subst src_bs.
+  cbn [LE_TU64 loc_var] in Hlen9.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hseed_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var].
@@ -627,10 +714,34 @@ Proof.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt12; [|neq_var].
   clear Hframe Hsrc Hdst Htgt5 Htgt6 Htgt14.
 
-  (* C16: sha512_64 (k_full ← chal_buf) *)
+  (* Bug-A fix: peel the [REdLetU64 "chal_hash_len" ...] step. *)
+  inversion Hexec; subst; clear Hexec.
+  match goal with
+  | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
+      rename Hev into Heval_cl
+  end.
+  match goal with
+  | Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
+      rename Hr into Hexec
+  end.
+  cbn [eval_sexpr_ed] in Heval_cl.
+  rewrite Hmsg_len_alloc in Heval_cl.
+  inversion Heval_cl as [Hv_cl].
+  assert (Hmsg_len_set_cl : v_msg_len <> "chal_hash_len")
+    by (cbv [v_msg_len]; intro Hcontra; discriminate Hcontra).
+  match goal with
+  | _ : context [rs_set_scalar_ed ?rs0 "chal_hash_len" ?v0] |- _ =>
+      pose proof (slot_holds_scalar_set_other rs0 "chal_hash_len" v0 _ _
+                    Hmsg_len_set_cl Hmsg_len_alloc) as Hmsg_len_alloc';
+      clear Hmsg_len_alloc Hmsg_len_set_cl;
+      rename Hmsg_len_alloc' into Hmsg_len_alloc
+  end.
+
+  (* C16: sha512_64 (k_full ← chal_buf, chal_hash_len) *)
   peel_call_seq_nc Hexec Hframe Hres.
-  destruct Hres as [src_bs [Hsrc Htgt16]].
+  destruct Hres as [src_bs [len16 [Hsrc [Hlen16 Htgt16]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt15) as Heq; subst src_bs.
+  cbn [LE_TU64 loc_var] in Hlen16.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hseed_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var].
@@ -671,7 +782,7 @@ Proof.
 
   (* === Stage C: assembly. === *)
   cbn [LE_TBytes loc_var] in Htgt19.
-  exists dst_bs7, dst_bs13.
+  exists (Z.to_nat len9), (Z.to_nat len16), dst_bs7, dst_bs13.
   unfold ed25519_sign_gallina_lifted_verified_clamp.
   exact Htgt19.
 Qed.

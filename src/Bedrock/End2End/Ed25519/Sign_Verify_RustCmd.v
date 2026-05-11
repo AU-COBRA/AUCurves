@@ -60,6 +60,12 @@ Definition v_pub     := "pub".
 Definition LE_TBytes (v : String.string) (n : nat) : located_ed :=
   {| loc_var := v; loc_type := TBytes n |}.
 
+(** TU64-typed located_ed helper.  Used for passing dynamic length
+    arguments to leaves whose ABI takes [(buf, msg_len)] — most
+    notably [sha512_64]'s message-length parameter. *)
+Definition LE_TU64 (v : String.string) : located_ed :=
+  {| loc_var := v; loc_type := TU64 |}.
+
 Definition ed25519_sign_rs : rust_cmd_ed :=
   REdLetZero v_h_full (TBytes 64) (
   REdLetZero v_a_slot (TBytes 32) (
@@ -88,13 +94,15 @@ Definition ed25519_sign_rs : rust_cmd_ed :=
                                               [LE_TBytes v_a_slot 32])
   (REdSeq (REdCall "ed25519_compress" (LE_TBytes v_A_bytes 32)
                                        [LE_TBytes v_A_xyzt 200])
-  (* Step 5: r = SHA-512(prefix || M) mod L *)
+  (* Step 5: r = SHA-512(prefix || M[..msg_len]) mod L *)
   (REdSeq (REdCall "memmove_nonce_prefix" (LE_TBytes v_nonce_buf 4128)
                                            [LE_TBytes v_prefix 32])
   (REdSeq (REdCall "memmove_nonce_msg" (LE_TBytes v_nonce_buf 4128)
                                         [LE_TBytes v_msg 4096])
+  (REdLetU64 "nonce_hash_len" (SAdd (SLit 32) (SVar v_msg_len))
   (REdSeq (REdCall "sha512_64" (LE_TBytes v_r_full 64)
-                                [LE_TBytes v_nonce_buf 4128])
+                                [LE_TBytes v_nonce_buf 4128;
+                                 LE_TU64 "nonce_hash_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_r_slot 32)
                                     [LE_TBytes v_r_full 64])
   (* Step 6: R = r · B *)
@@ -102,15 +110,17 @@ Definition ed25519_sign_rs : rust_cmd_ed :=
                                               [LE_TBytes v_r_slot 32])
   (REdSeq (REdCall "ed25519_compress" (LE_TBytes v_R_bytes 32)
                                        [LE_TBytes v_R_xyzt 200])
-  (* Step 7: k = SHA-512(R || A || M) mod L *)
+  (* Step 7: k = SHA-512(R || A || M[..msg_len]) mod L *)
   (REdSeq (REdCall "memmove_chal_R" (LE_TBytes v_chal_buf 4160)
                                      [LE_TBytes v_R_bytes 32])
   (REdSeq (REdCall "memmove_chal_A" (LE_TBytes v_chal_buf 4160)
                                      [LE_TBytes v_A_bytes 32])
   (REdSeq (REdCall "memmove_chal_M" (LE_TBytes v_chal_buf 4160)
                                      [LE_TBytes v_msg 4096])
+  (REdLetU64 "chal_hash_len" (SAdd (SLit 64) (SVar v_msg_len))
   (REdSeq (REdCall "sha512_64" (LE_TBytes v_k_full 64)
-                                [LE_TBytes v_chal_buf 4160])
+                                [LE_TBytes v_chal_buf 4160;
+                                 LE_TU64 "chal_hash_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_k_slot 32)
                                     [LE_TBytes v_k_full 64])
   (* Step 8: s = (r + k · a) mod L; written to sig_out+32 *)
@@ -121,7 +131,7 @@ Definition ed25519_sign_rs : rust_cmd_ed :=
   (* Step 9: sig_out[0..32] = R *)
   (REdCall "memmove_sig_R" (LE_TBytes v_sig_out 64)
                             [LE_TBytes v_R_bytes 32]
-  ))))))))))))))))))))))))))))))).
+  ))))))))))))))))))))))))))))))))).
 
 Lemma borrow_ok_ed_sign : borrow_ok_ed ed25519_sign_rs = true.
 Proof. vm_compute. reflexivity. Qed.

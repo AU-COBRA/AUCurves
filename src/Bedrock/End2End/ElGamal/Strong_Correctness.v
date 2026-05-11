@@ -40,8 +40,10 @@ From Stdlib Require Import micromega.Lia.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.RemainingBridges.
+Require Import Bedrock.End2End.Ed25519.CompressVerified.
 Require Import Bedrock.End2End.Ed25519.XyztAddVerified.
 Require Import Bedrock.End2End.Ed25519.ScalarmultVerified.
+Require coqutil.Word.LittleEndianList.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
 Require Import Bedrock.End2End.Ed25519.Verify_Strong_Correctness.
@@ -85,24 +87,56 @@ Proof.
 Qed.
 
 (** [ed25519_xyzt_negate_spec]: 200B Edwards (xyzt) point → 200B
-    negated Edwards point.  TODO (Tier-2): faithful Edwards-coordinate
-    negation (~50 LoC: negate X, T fields, leave Y, Z).  Placeholder
-    returning 200 zero bytes; suffices for the strong-correctness
-    pipeline since only the type signature and length lemma are
-    consumed. *)
-Definition ed25519_xyzt_negate_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 200.
-Global Opaque ed25519_xyzt_negate_spec.
+    negated Edwards point.
 
+    Edwards point negation: given the affine point (x, y), the inverse
+    is (-x, y).  In extended-twisted-Edwards coordinates
+    (X, Y, Z, Ta, Tb) where T = X*Y/Z = Ta*Tb/Z, negating gives
+    (-X, Y, Z, -T).  To preserve the invariant Ta*Tb = T*Z with only
+    one coefficient changing sign, we negate Ta and leave Tb alone:
+    (-Ta) * Tb = -(Ta * Tb).  The base-field negation is computed
+    modulo p = 2^255 - 19.
+
+    For non-200B inputs we fall back to 200 zero bytes, matching the
+    length-lemma contract. *)
+Definition ed25519_xyzt_negate_spec (xyzt : list Byte.byte) : list Byte.byte :=
+  if Nat.eqb (length xyzt) 200 then
+    let X  := parse_felem (firstn 40 xyzt) in
+    let Ta := parse_felem (firstn 40 (skipn 120 xyzt)) in
+    let neg_X  := ((ed25519_p - X) mod ed25519_p)%Z in
+    let neg_Ta := ((ed25519_p - Ta) mod ed25519_p)%Z in
+    LittleEndianList.le_split 40 neg_X
+      ++ firstn 40 (skipn 40 xyzt)        (* Y  unchanged *)
+      ++ firstn 40 (skipn 80 xyzt)        (* Z  unchanged *)
+      ++ LittleEndianList.le_split 40 neg_Ta
+      ++ skipn 160 xyzt                   (* Tb unchanged *)
+  else
+    List.repeat Byte.x00 200.
+
+Lemma ed25519_xyzt_negate_spec_length :
+  forall xyzt, length (ed25519_xyzt_negate_spec xyzt) = 200%nat.
+Proof.
+  intros xyzt.
+  unfold ed25519_xyzt_negate_spec.
+  destruct (Nat.eqb (length xyzt) 200) eqn:Hlen.
+  - apply PeanoNat.Nat.eqb_eq in Hlen.
+    repeat rewrite List.length_app.
+    rewrite !LittleEndianList.length_le_split.
+    rewrite !List.length_firstn, !List.length_skipn, Hlen.
+    reflexivity.
+  - rewrite List.repeat_length. reflexivity.
+Qed.
+
+(** Convenience corollary with the input-length hypothesis explicit,
+    matching the shape used elsewhere in this file. *)
 Lemma ed25519_xyzt_negate_spec_len :
   forall input, length input = 200%nat ->
     length (ed25519_xyzt_negate_spec input) = 200%nat.
 Proof.
   intros input _.
-  Transparent ed25519_xyzt_negate_spec.
-  unfold ed25519_xyzt_negate_spec.
-  rewrite List.repeat_length. reflexivity.
+  apply ed25519_xyzt_negate_spec_length.
 Qed.
+
 Global Opaque ed25519_xyzt_negate_spec.
 
 (* ================================================================ *)

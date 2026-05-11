@@ -49,6 +49,9 @@ Require Import Bedrock.End2End.Ed25519.RemainingBridges.
 Require Import Bedrock.End2End.Ed25519.SHA512Bridge.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
+Require Import Bedrock.End2End.Ed25519.XyztAddVerified.
+Require Import Bedrock.End2End.Ed25519.ScalarmultVerified.
+Require Import Bedrock.End2End.Ed25519.DecompressVerified.
 Import ListNotations.
 Local Open Scope string_scope.
 
@@ -60,25 +63,12 @@ Local Open Scope string_scope.
     of the decompressed R-point parsed from the first 32 bytes of [sig_in].
     Output is always 200 bytes; an invalid R is modeled as a designated
     "bad" point in the xyzt encoding (the protocol does not branch). *)
-Parameter ed25519_decompress_R_spec : list Byte.byte -> list Byte.byte.
-Parameter ed25519_decompress_R_spec_len :
-  forall sig_in, length (ed25519_decompress_R_spec sig_in) = 200%nat.
-
-(** [ed25519_decompress_A_spec pub] : 200-byte xyzt of the decompressed
-    public key. *)
-Parameter ed25519_decompress_A_spec : list Byte.byte -> list Byte.byte.
-Parameter ed25519_decompress_A_spec_len :
-  forall pub, length (ed25519_decompress_A_spec pub) = 200%nat.
-
-(** [ed25519_scalarmult_spec h A_xyzt] : scalar multiplication h·A in xyzt. *)
-Parameter ed25519_scalarmult_spec : list Byte.byte -> list Byte.byte -> list Byte.byte.
-Parameter ed25519_scalarmult_spec_len :
-  forall h A, length (ed25519_scalarmult_spec h A) = 200%nat.
-
-(** [ed25519_xyzt_add_spec P Q] : Edwards addition in xyzt. *)
-Parameter ed25519_xyzt_add_spec : list Byte.byte -> list Byte.byte -> list Byte.byte.
-Parameter ed25519_xyzt_add_spec_len :
-  forall P Q, length (ed25519_xyzt_add_spec P Q) = 200%nat.
+(** [ed25519_decompress_R_spec], [ed25519_decompress_A_spec],
+    [ed25519_scalarmult_spec], [ed25519_xyzt_add_spec] are now
+    Definitions (no longer Parameters), imported from
+    [DecompressVerified.v], [ScalarmultVerified.v], and
+    [XyztAddVerified.v].  Length lemmas are imported under the same
+    names from those files. *)
 
 (** [scalar_lt_L_spec sig_in] : 1-byte canonical-S check (1 = ok, 0 = bad).
     The protocol writes this to v_result, then *overwrites* it with the

@@ -31,6 +31,7 @@ Require Import Bedrock.End2End.Ed25519.RemainingBridges.
 Require Import Bedrock.End2End.Ed25519.SHA512Bridge.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
+Require Import Bedrock.End2End.Ed25519.CalculateKeyPairVerified.
 Require Import Bedrock.End2End.XEdDSA.Sign_RustCmd.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -53,17 +54,10 @@ Local Open Scope string_scope.
     Body: compute Edwards public A = clamp(k) · B, derive sign bit; if
     sign is 1, return -clamp(k) mod L, else return clamp(k).  Treated
     as opaque here. *)
-Parameter calculate_key_pair_a_spec : list Byte.byte -> list Byte.byte.
-Parameter calculate_key_pair_a_spec_len :
-  forall k, length k = 32%nat ->
-    length (calculate_key_pair_a_spec k) = 32%nat.
-
-(** [calculate_key_pair_A_spec]: compressed Edwards public key whose
-    sign bit has been forced to 0 (matched against the a-fixup). *)
-Parameter calculate_key_pair_A_spec : list Byte.byte -> list Byte.byte.
-Parameter calculate_key_pair_A_spec_len :
-  forall k, length k = 32%nat ->
-    length (calculate_key_pair_A_spec k) = 32%nat.
+(** [calculate_key_pair_a_spec] / [calculate_key_pair_A_spec] are
+    now Definitions (no longer Parameters), imported from
+    [Bedrock.End2End.Ed25519.CalculateKeyPairVerified].  Length
+    lemmas with the same names are also imported. *)
 
 (** [xed_hash_1_spec]: SHA-512 with internal domain-separation prefix
     [0xFE || 0xFF^31].  The leaf prepends these 32 bytes before hashing

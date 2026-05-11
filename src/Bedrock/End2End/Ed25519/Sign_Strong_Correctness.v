@@ -80,10 +80,16 @@ Lemma clamp_64_spec_len :
   forall bs, length bs = 32%nat -> length (clamp_64_spec bs) = 32%nat.
 Proof. exact clamp_64_gallina_length. Qed.
 
-Parameter ed25519_scalarmult_base_spec : list Byte.byte -> list Byte.byte.
-Parameter ed25519_scalarmult_base_spec_len :
+(** [ed25519_scalarmult_base_spec] is now a Definition redirecting to
+    [ed25519_scalarmult_base_gallina] (verified in
+    [ScalarmultBaseVerified.v], re-exported via [RemainingBridges.v]).
+    Length lemma Qed. *)
+Lemma ed25519_scalarmult_base_spec_len :
   forall scalar, length scalar = 32%nat ->
     length (ed25519_scalarmult_base_spec scalar) = 200%nat.
+Proof.
+  exact ScalarmultBaseVerified.ed25519_scalarmult_base_spec_len.
+Qed.
 
 (* ed25519_compress_spec and ed25519_compress_spec_len are now imported
    (no longer Parameters) from RemainingBridges -> CompressVerified.

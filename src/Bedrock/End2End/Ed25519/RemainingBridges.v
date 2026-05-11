@@ -35,6 +35,7 @@ Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.SafeRustEd25519BedrockBridge.
 Require Export Bedrock.End2End.Ed25519.CompressVerified.
+Require Export Bedrock.End2End.Ed25519.ScalarmultBaseVerified.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
@@ -310,10 +311,10 @@ Qed.
 (* §4. ed25519_scalarmult_base — 32 byte scalar → 200 byte XYZT      *)
 (* ================================================================ *)
 
-Parameter ed25519_scalarmult_base_spec :
-  list Byte.byte -> list Byte.byte.
-Parameter ed25519_scalarmult_base_output_200 :
-  forall scalar, length (ed25519_scalarmult_base_spec scalar) = 200%nat.
+(** [ed25519_scalarmult_base_spec] and
+    [ed25519_scalarmult_base_output_200] are now re-exported (no
+    longer axioms) from
+    [Bedrock.End2End.Ed25519.ScalarmultBaseVerified]. *)
 
 Definition spec_of_ed25519_scalarmult_base_bridge (functions : env) : Prop :=
   forall (t : trace) (m : mem) (l : locals)

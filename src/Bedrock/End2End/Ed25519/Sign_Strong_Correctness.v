@@ -11,9 +11,10 @@
  *   §3 [ed25519_sign_gallina]: top-level reference (composition).
  *   §4 [strong_callee_post]  : per-call obligation (spec + frame).
  *   §5 frame lemma           : Qed.
- *   §6 strong correctness    : statement (proof Admitted with plan).
+ *   §6 strong correctness    : Qed.
+ *   §7 clean-collapse corollary : Qed.
  *
- * Status (2026-05-09, post-finishing-pass):
+ * Status (2026-05-11):
  *   §1-§5 closed (Qed/Defined).
  *   §6 [ed25519_sign_strong_correct] — **Qed**, depends only on the
  *   6 leaf Gallina specs as Parameters.  Theorem returns
@@ -21,10 +22,9 @@
  *      (ed25519_sign_gallina_lifted seed msg nonce_init chal_init sig_init)],
  *   where the lifted gallina precisely captures the protocol's
  *   intermediate firstn/skipn structure.
- *   §7 [ed25519_sign_gallina_lifted_clean] — corollary asserting
- *   the lifted gallina equals the clean [ed25519_sign_gallina] under
- *   conventional buffer lengths.  [Admitted] — ~100 LoC of length-
- *   based [firstn]/[skipn] rewrites, mechanical.
+ *   §7 [ed25519_sign_gallina_lifted_clean] — **Qed**.  Length-based
+ *   collapse from the dynamic-hash-length lifted form to the clean
+ *   [ed25519_sign_gallina]; firstn/skipn chase, ~90 LoC.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -935,15 +935,15 @@ Qed.
 (** **Corollary** (length-based collapse to clean gallina) — adapted
     for the bug-A fix.  When the hash lengths exactly match the
     prefix+message extents, the lifted form reduces to the clean
-    [ed25519_sign_gallina] applied to [firstn msg_len msg].
+    [ed25519_sign_gallina].
 
-    Note: with the dynamic-length sha512_64 calls, the "clean"
-    reduction now also depends on [msg_len] (the original collapsed
-    to [ed25519_sign_gallina seed msg] for full-message hashing).
-    Stated [Admitted] because the proof body of the previous
-    fixed-length variant no longer applies verbatim — the firstn /
-    skipn algebra needs reworking with [msg_len] as a parameter.
-    The Qed core [ed25519_sign_strong_correct] above is unaffected. *)
+    With the dynamic-length sha512_64 calls, [nonce_hash_len = 32 +
+    msg_len] and [chal_hash_len = 64 + msg_len], so each of the two
+    hash inputs collapses to exactly [prefix ++ msg] resp.
+    [R_bytes ++ A_bytes ++ msg].  The proof chases [firstn]/[skipn]
+    across the C7/C8/C13/C14/C15/C18 stages using the length facts
+    for [memmove_prefix_from_h_spec], [ed25519_compress_spec], and
+    [scalar_muladd_spec]. *)
 Theorem ed25519_sign_gallina_lifted_clean :
   forall seed msg msg_len nonce_init chal_init sig_init,
     length seed = 32%nat ->
@@ -956,4 +956,91 @@ Theorem ed25519_sign_gallina_lifted_clean :
       nonce_init chal_init sig_init
     = ed25519_sign_gallina seed msg.
 Proof.
-Admitted.
+  intros seed msg msg_len nonce_init chal_init sig_init
+         Hseed Hmsg Hnonce Hchal Hsig.
+  unfold ed25519_sign_gallina_lifted, ed25519_sign_gallina.
+  (* === Length facts for each spec output === *)
+  assert (Hsha_len : forall x, length (sha512_full_spec x) = 64%nat)
+    by (intro; apply sha512_full_spec_len).
+  assert (Hprefix_len :
+    length (memmove_prefix_from_h_spec (sha512_full_spec seed)) = 32%nat).
+  { unfold memmove_prefix_from_h_spec.
+    rewrite length_firstn, length_skipn, Hsha_len. lia. }
+  assert (Ha_len :
+    length (clamp_64_spec (memmove_a_from_h_spec (sha512_full_spec seed)))
+    = 32%nat).
+  { apply clamp_64_spec_len. unfold memmove_a_from_h_spec.
+    rewrite length_firstn, Hsha_len. lia. }
+  assert (HA_len :
+    length (ed25519_compress_spec
+              (ed25519_scalarmult_base_spec
+                 (clamp_64_spec
+                    (memmove_a_from_h_spec (sha512_full_spec seed)))))
+    = 32%nat).
+  { apply ed25519_compress_spec_len.
+    apply ed25519_scalarmult_base_spec_len. exact Ha_len. }
+  (* === Collapse nonce stage: firstn (32+msg_len) nonce_C8 = prefix ++ msg === *)
+  set (prefix := memmove_prefix_from_h_spec (sha512_full_spec seed)) in *.
+  set (A_bytes :=
+    ed25519_compress_spec
+      (ed25519_scalarmult_base_spec
+         (clamp_64_spec (memmove_a_from_h_spec (sha512_full_spec seed))))) in *.
+  assert (Hnonce_C8 :
+    firstn (32 + msg_len)
+      (firstn 32 (prefix ++ skipn (length prefix) nonce_init) ++ msg)
+    = prefix ++ msg).
+  { rewrite Hprefix_len.
+    rewrite (firstn_app_skipn_self _ prefix nonce_init Hprefix_len).
+    rewrite firstn_app. rewrite Hprefix_len.
+    replace (32 + msg_len - 32) with msg_len by lia.
+    replace (firstn (32 + msg_len) prefix) with prefix
+      by (symmetry; apply firstn_all2; lia).
+    f_equal. rewrite <- Hmsg. apply firstn_all. }
+  rewrite Hnonce_C8.
+  (* === Collapse chal stage: firstn (64+msg_len) chal_C15 = R_bytes ++ A_bytes ++ msg === *)
+  set (R_bytes :=
+    ed25519_compress_spec
+      (ed25519_scalarmult_base_spec
+         (scalar_reduce_spec
+            (sha512_full_spec (prefix ++ msg))))) in *.
+  assert (HR_len : length R_bytes = 32%nat).
+  { unfold R_bytes. apply ed25519_compress_spec_len.
+    apply ed25519_scalarmult_base_spec_len.
+    apply scalar_reduce_output_32. }
+  (* Step (a): firstn 32 chal_C13 = R_bytes. *)
+  assert (Hchal_C13_first32 :
+    firstn 32 (R_bytes ++ skipn (length R_bytes) chal_init) = R_bytes).
+  { rewrite <- HR_len. apply firstn_app_skipn_self. reflexivity. }
+  (* Step (b): chal_C14 = R_bytes ++ A_bytes ++ skipn 64 chal_C13. *)
+  rewrite Hchal_C13_first32, HA_len.
+  (* Step (c): firstn 64 chal_C14 = R_bytes ++ A_bytes. *)
+  assert (Hchal_C14_first64 :
+    forall tail,
+    firstn 64 (R_bytes ++ A_bytes ++ tail) = R_bytes ++ A_bytes).
+  { intro tail.
+    change 64%nat with (32 + 32)%nat.
+    apply firstn_app_app_self; assumption. }
+  rewrite Hchal_C14_first64.
+  (* Step (d): firstn (64+msg_len) ((R_bytes ++ A_bytes) ++ msg) = R_bytes ++ A_bytes ++ msg. *)
+  assert (Hchal_C15 :
+    firstn (64 + msg_len) ((R_bytes ++ A_bytes) ++ msg)
+    = R_bytes ++ A_bytes ++ msg).
+  { rewrite firstn_app, length_app, HR_len, HA_len.
+    replace (64 + msg_len - (32 + 32)) with msg_len by lia.
+    replace (firstn (64 + msg_len) (R_bytes ++ A_bytes))
+      with (R_bytes ++ A_bytes).
+    - rewrite <- app_assoc. f_equal. f_equal. rewrite <- Hmsg. apply firstn_all.
+    - symmetry. apply firstn_all2.
+      rewrite length_app, HR_len, HA_len. lia. }
+  rewrite Hchal_C15.
+  (* === Collapse sig stage: firstn 32 sig_C18 = scalar_muladd_spec r k a === *)
+  rewrite (firstn_app_skipn_self _
+             (scalar_muladd_spec
+                (scalar_reduce_spec (sha512_full_spec (prefix ++ msg)))
+                (scalar_reduce_spec
+                   (sha512_full_spec (R_bytes ++ A_bytes ++ msg)))
+                (clamp_64_spec
+                   (memmove_a_from_h_spec (sha512_full_spec seed))))
+             sig_init (scalar_muladd_spec_len _ _ _)).
+  reflexivity.
+Qed.

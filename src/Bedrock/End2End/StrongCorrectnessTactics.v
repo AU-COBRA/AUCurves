@@ -93,6 +93,112 @@ Ltac frame_through_call_with Hframe neq_tac :=
     end.
 
 (* ================================================================ *)
+(* §A.2b. Frame propagation through a [rs_set_scalar_ed]-shifted LHS  *)
+(* ================================================================ *)
+
+(** **Convertibility gap (flagged in commit 5620503).**  After an
+    [REdLetU64] step (e.g. Ed25519 sign's [v_msg_len], Schnorr sign's
+    [sn_chal_hash_len], Schnorr verify's [sn_verify_chal_len], XEdDSA
+    sign's [xs_chal_hash_len]) the running execution hypothesis is
+    over a state of shape [rs_set_scalar_ed rs0 k v].  When the next
+    callee_post is peeled, the [Hframe] hypothesis is
+    [frames_except (rs_set_scalar_ed rs0 k v) rs1 dst] — its LHS does
+    NOT syntactically equal [rs0] even though [slot_holds] reads only
+    the tower env and is therefore definitionally equal under that
+    shift.
+
+    [slot_holds_rs_set_scalar_ed] is the matching rewrite lemma.  Its
+    statement is essentially [slot_holds (rs_set_scalar_ed rs k v) y bs
+    = slot_holds rs y bs] (provable by [reflexivity], since
+    [rs_tower_ed] of a [rs_set_scalar_ed] record reduces to the
+    underlying [rs_tower_ed]).
+
+    With this lemma in hand, [frame_through_call_conv_with] handles
+    the convertibility gap by first normalising the [Hframe] hypothesis
+    so its LHS matches whichever shape the existing [slot_holds]
+    hypotheses are in, and then dispatching to the standard
+    [frame_through_call_with] loop.
+
+    Two-direction tactic: tries Hframe in shape
+       [frames_except rs0                 rs1 dst]  (already normal), AND
+       [frames_except (rs_set_scalar_ed rs0 k v) rs1 dst]
+    by [change]-folding the latter to the former on each slot_holds
+    that matches the underlying [rs0]. *)
+Lemma slot_holds_rs_set_scalar_ed :
+  forall rs x v y bs,
+    slot_holds (rs_set_scalar_ed rs x v) y bs <-> slot_holds rs y bs.
+Proof. intros; reflexivity. Qed.
+
+(** [frame_through_call_conv_with Hframe neq_tac]: identical to
+    [frame_through_call_with], but uses convertibility-aware unification
+    so that [slot_holds rs0 y bs] hypotheses can be framed by an
+    [Hframe : frames_except (rs_set_scalar_ed rs0 k v) rs1 dst] (and
+    vice-versa).
+
+    Implementation note: we use the standard apply-with-conversion
+    pattern — the [apply (slot_holds_frame _ _ _ _ _ Hframe) in H]
+    unifier sees [slot_holds_frame]'s first state argument as the
+    [rs1] of [frames_except rs1 rs2 dst], which is the [Hframe] LHS;
+    and it sees the third (slot-holds input) state argument as that
+    same [rs1].  Coq's [apply] uses higher-order pattern unification
+    here that goes via convertibility, so it succeeds whenever the
+    two state expressions are convertible (which is exactly our case
+    after a [rs_set_scalar_ed] update).
+
+    The trick is that the outer [match] needs to fire on a
+    [slot_holds] hypothesis whose state expression is the underlying
+    [rs0] — bare [match type of Hframe with frames_except rs _ _ end]
+    fails when the LHS is [rs_set_scalar_ed rs0 k v] and the hypothesis
+    is [slot_holds rs0 y bs] (different syntactic shapes).  We solve
+    that by using [tryif] to try the original match, and otherwise
+    falling back to the [rs_set_scalar_ed]-specific shape. *)
+Ltac frame_through_call_conv_with Hframe neq_tac :=
+  (* Phase 1: greedy syntactic frame (handles all "normal" calls).
+     Identical to [frame_through_call_with]. *)
+  frame_through_call_with Hframe neq_tac;
+  (* Phase 2: lift any remaining [slot_holds rs0 x bs] hypothesis
+     whose [rs0] is the underlying tower-state of an
+     [rs_set_scalar_ed rs0 k v] Hframe LHS.
+
+     We pre-normalise H with [change] to the Hframe-LHS shape; the
+     [change] succeeds by record-projection iota whenever rs0 is the
+     base of an [rs_set_scalar_ed] sitting in Hframe's LHS.  After
+     [change], Phase-1 style syntactic framing succeeds. *)
+  let rec lift_one :=
+    match type of Hframe with
+    | frames_except ?rs_lhs _ _ =>
+        match goal with
+        | H : slot_holds ?rs ?x ?bs |- _ =>
+            (* Try to lift: succeeds only when [change] succeeds, i.e.,
+               when rs0 (= rs here) is the base of rs_lhs's
+               [rs_set_scalar_ed]. *)
+            change (slot_holds rs_lhs x bs) in H;
+            apply (slot_holds_frame _ _ _ _ _ Hframe) in H; [|neq_tac]
+        end
+    end in
+  repeat (lift_one;
+          (* Run Phase 1 again to sweep up any newly-converted hyps
+             alongside the rest. *)
+          frame_through_call_with Hframe neq_tac).
+
+(** Alias: [frame_through_call_conv Hframe] = the conv-aware version
+    with [discriminate] as the side tactic. *)
+Ltac frame_through_call_conv Hframe :=
+  frame_through_call_conv_with Hframe discriminate.
+
+(** [frame_after_let_u64 Hframe neq_tac]: explicit handler for the
+    post-[REdLetU64] situation.  This is just an alias for
+    [frame_through_call_conv_with] but named to match the call site
+    where it's typically deployed (right after the LetU64 step's
+    [Hframe] has been peeled).
+
+    Use this name in proofs where the convertibility shift makes the
+    intent clearer; mechanically it's identical to
+    [frame_through_call_conv_with]. *)
+Ltac frame_after_let_u64 Hframe neq_tac :=
+  frame_through_call_conv_with Hframe neq_tac.
+
+(* ================================================================ *)
 (* §A.3. Helper lemma: chained [REdLetZero] propagation               *)
 (* ================================================================ *)
 

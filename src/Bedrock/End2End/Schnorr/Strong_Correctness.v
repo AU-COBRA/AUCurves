@@ -430,30 +430,20 @@ Proof.
   end.
 
   (* C8: sha512_64 (chal_full ← chal_buf, chal_hash_len)
-     Post-LetU64: Hframe's LHS is [rs_set_scalar_ed rs ...] which doesn't
-     syntactically unify with the tower-slot states [rs9].  We fall back to
-     manual [apply slot_holds_frame _ _ _ _ _ Hframe in H], which uses
-     [apply]'s built-in conversion to bridge the eta-reduction gap. *)
+     Post-LetU64: upgraded [frame_through_call_conv_with] handles the
+     [rs_set_scalar_ed] vs [rs9] convertibility gap. *)
   peel_call_seq_sn Hexec Hframe Hres.
   destruct Hres as [src_bs [len8 [Hsrc [Hlen8 Htgt8]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt7) as Heq; subst src_bs.
   cbn [LE_TU64 loc_var] in Hlen8.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsk_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hr_rand_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_sn].
+  frame_through_call_conv_with Hframe neq_var_sn.
   clear Hframe Hsrc Htgt7.
 
   (* C9: scalar_reduce (c ← chal_full) *)
   peel_call_seq_sn Hexec Hframe Hres.
   destruct Hres as [src_bs [Hsrc Htgt9]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt8) as Heq; subst src_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsk_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hr_rand_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_sn].
+  frame_through_call_with Hframe neq_var_sn.
   clear Hframe Hsrc Htgt8.
 
   (* C10: scalar_muladd (sig_out ← r_rand, c, sk) *)
@@ -463,7 +453,7 @@ Proof.
   pose proof (slot_holds_inj _ _ _ _ Hsk_get Htgt9) as Heq; subst k_bs.
   pose proof (slot_holds_inj _ _ _ _ Hsa Hsk_alloc) as Heq; subst a_bs.
   pose proof (slot_holds_inj _ _ _ _ Hsd Hsig_alloc) as Heq; subst dst_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_sn].
+  frame_through_call_with Hframe neq_var_sn.
   clear Hframe Hsr Hsk_get Hsa Hsd Hsk_alloc Hr_rand_alloc Hsig_alloc Htgt9.
 
   (* C11: memmove_sig_R (sig_out ← R_bytes) — last call *)
@@ -653,42 +643,27 @@ Proof.
   end.
 
   (* C8: sha512_64 (chal_full_v ← chal_buf_v, verify_chal_len)
-     Post-LetU64: use manual [apply slot_holds_frame] to bridge the
-     [rs_set_scalar_ed] vs [rs9] convertibility gap (same as sign's C8). *)
+     Post-LetU64: upgraded [frame_through_call_conv_with] bridges the
+     [rs_set_scalar_ed] vs [rs9] convertibility gap. *)
   peel_call_seq_sn_v Hexec Hframe Hres.
   destruct Hres as [src_bs [len8 [Hsrc [Hlen8 Htgt8]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt7) as Heq; subst src_bs.
   cbn [LE_TU64 loc_var] in Hlen8.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt3; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_sn_v].
+  frame_through_call_conv_with Hframe neq_var_sn_v.
   clear Hframe Hsrc Htgt7.
 
   (* C9: scalar_reduce (c_v ← chal_full_v) *)
   peel_call_seq_sn_v Hexec Hframe Hres.
   destruct Hres as [src_bs [Hsrc Htgt9]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt8) as Heq; subst src_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt3; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_sn_v].
+  frame_through_call_with Hframe neq_var_sn_v.
   clear Hframe Hsrc Htgt8.
 
   (* C10: ed25519_scalarmult_base (sB ← S_bytes_v) *)
   peel_call_seq_sn_v Hexec Hframe Hres.
   destruct Hres as [src_bs [Hsrc Htgt10]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt2) as Heq; subst src_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt3; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt9; [|neq_var_sn_v].
+  frame_through_call_with Hframe neq_var_sn_v.
   clear Hframe Hsrc Htgt2.
 
   (* C11: ed25519_scalarmult (cPK ← c_v, PK_xyzt_v) *)
@@ -696,11 +671,7 @@ Proof.
   destruct Hres as [sc_bs [pt_bs [Hsc [Hpt Htgt11]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsc Htgt9) as Heq; subst sc_bs.
   pose proof (slot_holds_inj _ _ _ _ Hpt Htgt4) as Heq; subst pt_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt3; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt10; [|neq_var_sn_v].
+  frame_through_call_with Hframe neq_var_sn_v.
   clear Hframe Hsc Hpt Htgt9 Htgt4.
 
   (* C12: ed25519_xyzt_add (R_check ← R_xyzt_v, cPK) *)
@@ -708,20 +679,14 @@ Proof.
   destruct Hres as [p_bs [q_bs [Hp [Hq Htgt12]]]].
   pose proof (slot_holds_inj _ _ _ _ Hp Htgt3) as Heq; subst p_bs.
   pose proof (slot_holds_inj _ _ _ _ Hq Htgt11) as Heq; subst q_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt10; [|neq_var_sn_v].
+  frame_through_call_with Hframe neq_var_sn_v.
   clear Hframe Hp Hq Htgt3 Htgt11.
 
   (* C13: ed25519_compress (check_bytes ← R_check) *)
   peel_call_seq_sn_v Hexec Hframe Hres.
   destruct Hres as [src_bs [Hsrc Htgt13]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt12) as Heq; subst src_bs.
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpk_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_sn_v].
-  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt10; [|neq_var_sn_v].
+  frame_through_call_with Hframe neq_var_sn_v.
   clear Hframe Hsrc Htgt12.
 
   (* C14: bytes_equal_32 (result ← sig, check_bytes) — last call *)

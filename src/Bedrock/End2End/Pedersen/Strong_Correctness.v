@@ -20,11 +20,13 @@
  *   - [bytes_equal_32_spec] — Definition imported via
  *     Verify_Strong_Correctness.
  *
- * Only one new local Definition: [ristretto_h_scalarmult_spec] —
- * defined via [ed25519_scalarmult_spec r base_point_xyzt] (so H := B,
- * the Ed25519 base point — a Tier-2 simplification that makes the
- * resulting Pedersen commitment cryptographically trivial but
- * preserves deterministic input-dependence and length).  No axioms;
+ * Only one new local Definition: [ristretto_h_scalarmult_spec] — see
+ * the per-spec doc-comment below.  It currently sets H := B (the
+ * Ed25519 base point), which is a CRYPTOGRAPHIC PLACEHOLDER and not
+ * the Ristretto255 H generator; it makes the resulting Pedersen
+ * commitment cryptographically TRIVIAL (binding is broken because mG
+ * and rH lie on the same generator).  See the doc-comment for the
+ * precise gap and the work needed to land a faithful H.  No axioms;
  * the pipeline is closed under the global context.
  *
  * Fourth framework user after Ed25519 (sign / verify) and Lizard
@@ -62,20 +64,57 @@ Local Open Scope string_scope.
 (* ================================================================ *)
 
 (** [ristretto_h_scalarmult_spec]: 32B scalar r → 200B Edwards point,
-    interpreted as scalar multiplication of the public H generator.
+    interpreted as scalar multiplication of the second Pedersen
+    generator H.
 
-    Concrete implementation: scalar-multiply [base_point_xyzt] (the
-    fixed Ed25519 base point B, exported from
-    [ScalarmultBaseVerified.v]) by the input scalar via
-    [ed25519_scalarmult_spec].  In other words we take H := B; this
-    is a simplification that makes the resulting Pedersen commitment
-    cryptographically TRIVIAL (mG and rH lie on the same generator,
-    so binding is broken), but it is deterministic, input-dependent,
-    and the strong-correctness pipeline never inspects the value.
+    -------------------------------------------------------------------
+    CRYPTOGRAPHIC GAP — PLACEHOLDER GENERATOR, BINDING IS BROKEN.
+    -------------------------------------------------------------------
+    A Pedersen commitment Com(m, r) := m*G + r*H is computationally
+    BINDING iff log_G(H) is unknown to the committer — i.e. iff H is
+    an independent generator of the prime-order subgroup.  The Ed25519
+    base point B is the natural choice for G; H must be derived in a
+    way that makes log_B(H) infeasible.
 
-    Tier-2 follow-up: replace [base_point_xyzt] with a fixed
-    independent H derived via [Elligator2 (SHA-512 "RistrettoH"))]
-    or a hard-coded H_xyzt literal from the Ristretto spec. *)
+    The standard derivation (BIP-340-style, or the convention used by
+    Signal's zkgroup) is:
+
+        H := Elligator2(SHA-512("Ristretto255H_basis" || domain_sep))
+
+    i.e. hash a fixed nothing-up-my-sleeve string to a uniformly
+    distributed Curve25519 / Edwards point and clear the cofactor.
+    Because SHA-512 is modelled as a random oracle, the discrete log
+    of the resulting H w.r.t. G is uniform in the prime-order
+    subgroup and unknown.
+
+    The current implementation does NONE of the above.  It returns
+    [ed25519_scalarmult_spec r base_point_xyzt], i.e. it sets H := B
+    (the Ed25519 base point).  Then log_B(H) = 1 is publicly known,
+    and an adversary can trivially open any commitment to any message
+    by adjusting the randomness:
+        Com(m, r) = m*B + r*B = (m + r)*B = Com(m', m + r - m')
+    for arbitrary m'.  This BREAKS the binding property of Pedersen.
+
+    The HIDING property is unaffected (rH is still uniform in the
+    subgroup since r is uniform), but Pedersen without binding is
+    not a commitment scheme.
+
+    SAFETY OF DOWNSTREAM PROOFS: the strong-correctness theorems
+    [pedersen_commit_strong_correct] / [pedersen_open_strong_correct]
+    establish a STRUCTURAL property ("the Rust program threads each
+    leaf's output into the next leaf's input correctly"), NOT a
+    cryptographic binding/hiding claim.  They hold verbatim with any
+    Definition of [ristretto_h_scalarmult_spec] of the correct
+    (input,output) shape, because the leaf is [Global Opaque].
+    Replacing this placeholder with the real Elligator2-of-SHA-512
+    derivation upgrades the same Qed proof into a faithful Pedersen
+    statement (modulo the Ristretto encoding placeholders, see
+    [Bedrock.End2End.Lizard.Strong_Correctness]).
+
+    Reference: §A.4 of draft-irtf-cfrg-ristretto255-decaf448-03 for
+    Elligator2 on Curve25519; §4 of [Pedersen, "Non-interactive and
+    information-theoretic secure verifiable secret sharing", CRYPTO 1991]
+    for the binding/hiding requirements on the H generator. *)
 Definition ristretto_h_scalarmult_spec (r : list Byte.byte) : list Byte.byte :=
   ed25519_scalarmult_spec r base_point_xyzt.
 Global Opaque ristretto_h_scalarmult_spec.

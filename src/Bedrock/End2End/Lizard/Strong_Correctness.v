@@ -22,31 +22,46 @@
  *   §6  [lizard_extract_strong_correct]        : main theorem (Qed).
  *
  * Status (2026-05-11):
- *   §1-§6 closed.  All 6 leaf Gallina specs are now concrete
- *   Definitions (no Parameters):
- *     - [lizard_pack_spec] / [lizard_unpack_spec] are fully accurate
- *       (zero-padding + middle-slice).
- *     - [elligator2_to_edwards_spec] / [edwards_to_elligator2_spec]
- *       are DETERMINISTIC + input-dependent but NOT cryptographically
- *       faithful: the forward direction parses the 32-byte input as
- *       a felem and packs it as (X, Y=1, Z=1, Ta=0, Tb=0); the reverse
- *       takes the first 32 bytes of the X felem.  These are sound on
- *       length and stable on the [Opaque] interface, but a full
- *       Elligator2 + Mont↔Edwards iso (~600 LoC of Z arithmetic)
- *       is Tier-2 follow-up work.
- *     - [ristretto_encode_spec] delegates to [ed25519_compress_gallina]
- *       (canonical Edwards point compression — NOT the Ristretto
- *       cofactor-4 coset canonicalisation).
- *     - [ristretto_decode_or_fail_spec] delegates to
- *       [ed25519_decompress_gallina] (canonical Edwards point
- *       decompression — does NOT check the Ristretto canonical-image
- *       constraint).
- *   All marked [Global Opaque] so the body is hidden in downstream
- *   proofs but executable when [Transparent].
+ *   §1-§6 closed.  All 6 leaf Gallina specs are concrete Definitions
+ *   (no Parameters / Axioms).  HOWEVER, four of the six are
+ *   CRYPTOGRAPHICALLY UNDERSPECIFIED placeholders — they are honest
+ *   total functions of the correct (input length, output length)
+ *   shape, but they do NOT implement the Ristretto255 / Elligator2
+ *   maps from draft-irtf-cfrg-ristretto255-decaf448-03.  See the
+ *   per-spec doc-comments below for the precise gap.
  *
- *   Print Assumptions now reports both [lizard_inject_strong_correct]
- *   and [lizard_extract_strong_correct] as "Closed under the global
- *   context" (0 axioms, 0 Admitteds).
+ *   Faithful (no gap):
+ *     - [lizard_pack_spec]  (16B → 32B, middle-slice + zero-pad).
+ *     - [lizard_unpack_spec] (32B → 16B, inverse).
+ *
+ *   Placeholder (cryptographic gap; see per-spec docs):
+ *     - [elligator2_to_edwards_spec]    (real: §A.4 of the IETF draft).
+ *     - [edwards_to_elligator2_spec]    (real: inverse map; non-injective,
+ *                                       so the inverse is a partial multi-
+ *                                       valued relation in general).
+ *     - [ristretto_encode_spec]         (real: §4.3.2 of the IETF draft).
+ *     - [ristretto_decode_or_fail_spec] (real: §4.3.1 of the IETF draft).
+ *
+ *   All six are marked [Global Opaque], so the body is hidden in
+ *   downstream proofs but executable when [Transparent].
+ *
+ *   The two strong-correctness theorems
+ *   [lizard_inject_strong_correct] / [lizard_extract_strong_correct]
+ *   are reported as "Closed under the global context" by [Print
+ *   Assumptions] (0 axioms, 0 Admitteds).  This is a structural /
+ *   data-flow guarantee — it says the Rust program threads each leaf's
+ *   output into the next leaf's input correctly — and does NOT make
+ *   any cryptographic claim about the placeholder leaves.  Replacing
+ *   the four placeholders with faithful Gallina implementations
+ *   upgrades the same Qed proof to a full cryptographic correctness
+ *   theorem (the proof script does not depend on the leaf bodies).
+ *
+ *   Reference for the real specs:
+ *     - https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-ristretto255-decaf448-03
+ *     - https://ristretto.group/details/encode.html (encoding subroutine)
+ *     - https://ristretto.group/details/decode.html (decoding subroutine)
+ *     - Bernstein, Hamburg, Krasnova, Lange. "Elligator: Elliptic-curve
+ *       points indistinguishable from uniform random strings." ACM CCS 2013.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -104,22 +119,50 @@ Proof.
 Qed.
 
 (** [elligator2_to_edwards_spec]: 32-byte field element → 200-byte
-    Edwards (xyzt) point.  Composes Elligator2 (field → Montgomery)
-    with the Montgomery → Edwards isomorphism.
+    Edwards (xyzt) point.
 
-    Concrete implementation (deterministic but NOT a faithful
-    Elligator2 map): parse the 32-byte input as a field element u
-    (via [parse_felem] on a zero-padded 40-byte buffer), then build
-    an xyzt slot with X = u, Y = 1, Z = 1, Ta = 0, Tb = 0.  This is
-    the projective representation of the affine point (u, 1) — not
-    a curve point in general, but the strong-correctness pipeline
-    only requires the type signature and length lemma, and never
-    inspects the value.
+    -------------------------------------------------------------------
+    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL ELLIGATOR2 MAP.
+    -------------------------------------------------------------------
+    The real map (Bernstein, Hamburg, Krasnova, Lange 2013, applied
+    to Curve25519 with Montgomery coefficient A = 486662) computes:
 
-    TODO (Tier-2): replace with a faithful Gallina implementation
-    of Elligator2 (Bernstein et al., "Elligator: Elliptic-curve
-    points indistinguishable from uniform random strings") composed
-    with the Mont→Edwards isomorphism. *)
+        r := parse_felem(input)
+        r := -r^2                              mod p   (Lizard variant)
+        d := 1 + r                             mod p
+        if d = 0 : return the identity (encoded carefully)
+        u  := -A * d^{-1}                      mod p   (candidate x_M)
+        e  := u * (u^2 + A*u + 1)              mod p   (= y_M^2)
+        if e is a QR mod p :
+          x_M := u
+          y_M := sqrt(e)                       (canonical sign)
+        else
+          x_M := -u - A
+          y_M := sqrt(-e * non_square_witness) (canonical sign)
+        (x_E, y_E) := mont_to_edwards(x_M, y_M)
+                                              (birational map,
+                                               sqrt(-486664) constant)
+        return serialize_xyzt(x_E, y_E, 1, x_E*y_E)
+
+    The current implementation does NONE of the above. It parses the
+    32-byte input as a field element u and writes back a 200-byte slot
+    with (X := u, Y := 1, Z := 1, Ta := 0, Tb := 0).  This is NOT a
+    point on the Edwards curve in general (it fails the curve equation
+    -X^2 + Y^2 = Z^2 + d*X^2*Y^2 / Z^2 except when u = 0), and it is
+    NOT indistinguishable from a uniform Edwards point.  It is merely
+    a total deterministic function of the right (input,output) length.
+
+    SAFETY OF DOWNSTREAM PROOFS: the strong-correctness theorem
+    [lizard_inject_strong_correct] is proved with this leaf [Global
+    Opaque], so the proof script never inspects the body and therefore
+    holds verbatim once a faithful implementation lands here.  The
+    theorem currently asserts only "the Rust program threads each
+    leaf's output into the next leaf's input correctly" — it makes NO
+    cryptographic claim about the Lizard encoding.
+
+    Reference for the real spec: §A.4 (`map_to_curve_elligator2_curve25519`)
+    of draft-irtf-cfrg-ristretto255-decaf448-03, plus the birational
+    Montgomery↔Edwards isomorphism in RFC 7748 §4.1. *)
 Definition elligator2_to_edwards_spec (input : list Byte.byte) : list Byte.byte :=
   if Nat.eqb (length input) 32 then
     let padded := (input ++ List.repeat Byte.x00 8)%list in
@@ -147,16 +190,39 @@ Proof.
 Qed.
 Global Opaque elligator2_to_edwards_spec.
 
-(** [edwards_to_elligator2_spec]: inverse — 200-byte Edwards point →
-    32-byte field element.
+(** [edwards_to_elligator2_spec]: 200-byte Edwards point → 32-byte
+    field element (inverse of [elligator2_to_edwards_spec]).
 
-    Concrete implementation: extract the X-felem from the xyzt slot
-    (first 40 bytes) and return its first 32 bytes — i.e., the low
-    32 bytes of the little-endian field-element encoding.  This is
-    deterministic and inverts [elligator2_to_edwards_spec] modulo
-    the field-element parse / repack roundtrip.
+    -------------------------------------------------------------------
+    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL ELLIGATOR2 INVERSE.
+    -------------------------------------------------------------------
+    The real inverse is a PARTIAL operation: only ~50% of Edwards
+    points have an Elligator2 preimage; for those that do, two
+    preimages exist (differing by the sign chosen in the forward
+    map's sqrt step).  A faithful Gallina implementation would
+    therefore have signature
+        (xyzt : list byte) -> option (list byte)
+    and would, on success, choose a canonical preimage (e.g. the
+    lexicographically smaller of the two encodings of {r, -r}).  In
+    the Lizard protocol, the inverse is only invoked on points that
+    were just produced by the forward map, so the "no preimage" case
+    is unreachable and the option could be erased at the protocol
+    boundary.
 
-    TODO (Tier-2): faithful Elligator2 inverse. *)
+    The current implementation does NONE of the above. It returns
+    [firstn 32 xyzt] — the first 32 bytes of the X-felem little-endian
+    encoding.  This is total and deterministic, but it is NOT the
+    Elligator2 inverse: in particular it does not satisfy
+        edwards_to_elligator2_spec (elligator2_to_edwards_spec r) = r
+    for arbitrary r (only for r that happen to round-trip through the
+    placeholder forward map's identity-shaped output).
+
+    SAFETY OF DOWNSTREAM PROOFS: as for the forward map, the strong-
+    correctness theorem [lizard_extract_strong_correct] holds with
+    this leaf [Global Opaque] and is therefore stable under any
+    replacement of the body.
+
+    Reference: §A.4 inverse of draft-irtf-cfrg-ristretto255-decaf448-03. *)
 Definition edwards_to_elligator2_spec (xyzt : list Byte.byte) : list Byte.byte :=
   if Nat.eqb (length xyzt) 200 then
     List.firstn 32 xyzt
@@ -177,17 +243,54 @@ Qed.
 Global Opaque edwards_to_elligator2_spec.
 
 (** [ristretto_encode_spec]: 200-byte Edwards (xyzt) point → 32-byte
-    Ristretto encoding.
+    Ristretto255 encoding.
 
-    Concrete implementation: delegate to [ed25519_compress_gallina]
-    — i.e., emit the canonical Edwards point compression.  This is
-    NOT the true Ristretto canonicalisation (which picks a canonical
-    representative of a cofactor-4 coset via two sign-bit flips on
-    sqrt(uv) and inv_sqrt(uv)), but it is a deterministic 32-byte
-    encoding of the input that depends on every input bit.
+    -------------------------------------------------------------------
+    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL RISTRETTO ENCODING.
+    -------------------------------------------------------------------
+    The real encoding (Hamburg, "Decaf"/"Ristretto", and §4.3.2 of
+    draft-irtf-cfrg-ristretto255-decaf448-03) picks a canonical
+    representative of the input point's cofactor-4 coset on the
+    Edwards curve, so that any two of the four Edwards representatives
+    of the same Ristretto group element encode to the SAME 32 bytes.
+    The algorithm (sketch):
 
-    TODO (Tier-2): faithful Ristretto canonical serialisation
-    (Hamburg, "Decaf"/"Ristretto"). *)
+        // input (X, Y, Z, T) with T = X*Y/Z
+        u1 := (Z + Y) * (Z - Y)
+        u2 := X * Y
+        (_, invsqrt) := inv_sqrt_ratio_m1(1, u1 * u2^2)
+        D1 := invsqrt * u1
+        D2 := invsqrt * u2
+        Zinv := D1 * D2 * T
+        x_pos := X ;  y_pos := Y
+        if (T * Zinv) is negative :    // negative := low bit of |.|
+            x_pos := Y * sqrt(-1)
+            y_pos := X * sqrt(-1)
+            D1    := D2 * INVSQRT_A_MINUS_D
+        if (x_pos * Zinv) is negative : y_pos := -y_pos
+        s := |D1 * (Z - y_pos)|        // absolute value, low-bit-zero
+        return serialize_felem(s)
+
+    The "inv_sqrt_ratio_m1" subroutine computes a canonical square
+    root of (u/v), returning a flag indicating whether the input was
+    a quadratic residue. See §4.3 of the IETF draft.
+
+    The current implementation does NONE of the above. It delegates
+    to [ed25519_compress_gallina], i.e. plain Ed25519 point
+    compression (encode Y, set the high bit of the last byte to the
+    sign of X).  This means two Edwards representatives of the same
+    Ristretto element encode to DIFFERENT 32-byte strings, so the
+    placeholder DOES NOT provide the Ristretto canonicalisation
+    property.  It is, however, deterministic, total, and depends on
+    every bit of the input.
+
+    SAFETY OF DOWNSTREAM PROOFS: the strong-correctness theorems
+    [lizard_inject_strong_correct] / [pedersen_commit_strong_correct]
+    are proved with this leaf [Global Opaque] and remain Qed-stable
+    under replacement.
+
+    Reference: §4.3.2 of draft-irtf-cfrg-ristretto255-decaf448-03 and
+    https://ristretto.group/details/encode.html. *)
 Definition ristretto_encode_spec : list Byte.byte -> list Byte.byte :=
   ed25519_compress_gallina.
 Global Opaque ristretto_encode_spec.
@@ -203,17 +306,59 @@ Proof.
 Qed.
 Global Opaque ristretto_encode_spec.
 
-(** [ristretto_decode_or_fail_spec]: 32-byte Ristretto encoding →
+(** [ristretto_decode_or_fail_spec]: 32-byte Ristretto255 encoding →
     200-byte Edwards point.
 
-    Concrete implementation: delegate to [ed25519_decompress_gallina]
-    — i.e., decompress as a canonical Edwards point.  This is NOT
-    the true Ristretto decode (which checks the encoding is in the
-    canonical-coset image, returning failure otherwise), but it is
-    a deterministic 200-byte decoding that depends on the input.
+    -------------------------------------------------------------------
+    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL RISTRETTO DECODING.
+    -------------------------------------------------------------------
+    The real decoding (§4.3.1 of draft-irtf-cfrg-ristretto255-decaf448-03)
+    is a PARTIAL function — it rejects encodings that are out of the
+    canonical-coset image — with rough shape:
 
-    TODO (Tier-2): faithful Ristretto decode (including the
-    failure-as-sentinel convention). *)
+        s := parse_felem(input)
+        if s is not in canonical form (s >= p) : FAIL
+        if s is negative                       : FAIL
+        ss := s * s
+        u1 := 1 - ss
+        u2 := 1 + ss
+        u2_sq := u2 * u2
+        v := -d * u1 * u1 - u2_sq
+        (was_square, invsqrt) := inv_sqrt_ratio_m1(1, v * u2_sq)
+        Dx := invsqrt * u2
+        Dy := invsqrt * Dx * v
+        x := |2 * s * Dx|            // absolute value
+        y := u1 * Dy
+        t := x * y
+        if (not was_square) or (t is negative) or (y = 0) : FAIL
+        return some (x, y, 1, t)
+
+    A faithful Gallina implementation should therefore have signature
+        (input : list byte) -> option (list byte)
+    The "or_fail" suffix in this spec's name anticipates this.
+
+    The current implementation does NONE of the above. It delegates
+    to [ed25519_decompress_gallina], i.e. plain Ed25519 point
+    decompression (parse Y, recover X via the curve equation and the
+    high-bit sign).  This means:
+      - Non-canonical Ristretto encodings (s >= p, or s with bad sign
+        bit, or s with v non-square) are silently accepted instead of
+        rejected.
+      - The output is the Ed25519 (Y, sign(X)) point, NOT the Ristretto
+        canonical representative of any group element.
+    It is, however, deterministic, total (always returns 200 bytes —
+    no option), and depends on every bit of the input.
+
+    SAFETY OF DOWNSTREAM PROOFS: as for the encoder, the strong-
+    correctness theorems are stable under replacement of the body.
+    Replacing this with a faithful Option-returning decoder would
+    additionally require adjusting the [strong_callee_post_lizard] /
+    [strong_callee_post_pedersen] obligations to track the [option]
+    type and the failure case — but the proof shape (peel calls,
+    chain slot_holds) is unchanged.
+
+    Reference: §4.3.1 of draft-irtf-cfrg-ristretto255-decaf448-03 and
+    https://ristretto.group/details/decode.html. *)
 Definition ristretto_decode_or_fail_spec : list Byte.byte -> list Byte.byte :=
   ed25519_decompress_gallina.
 Global Opaque ristretto_decode_or_fail_spec.

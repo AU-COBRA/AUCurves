@@ -160,16 +160,24 @@ Qed.
     branches whose `false` cases are [REdCall "verify_fail"] (a sink
     that updates the result slot to 0).  The success path mirrors
     [Verify.v]'s body. *)
-Definition v_sig_lt_L  := "sig_lt_L".
-Definition v_R_xyzt_v  := "R_xyzt_v".
-Definition v_A_xyzt_v  := "A_xyzt_v".
-Definition v_h_v       := "h_v".
-Definition v_h_red     := "h_red".
-Definition v_sB        := "sB".
-Definition v_hA        := "hA".
-Definition v_RcheckA   := "RcheckA".
+Definition v_sig_lt_L    := "sig_lt_L".
+Definition v_R_xyzt_v    := "R_xyzt_v".
+Definition v_A_xyzt_v    := "A_xyzt_v".
+Definition v_h_v         := "h_v".
+Definition v_h_red       := "h_red".
+Definition v_sB          := "sB".
+Definition v_hA          := "hA".
+Definition v_RcheckA     := "RcheckA".
 Definition v_check_bytes := "check_bytes".
-Definition v_result    := "result".
+Definition v_result      := "result".
+(** Slots introduced by the Bug-B fix:
+    - v_R_bytes_v : 32-byte R extracted from sig_in[0..32], used as a
+      source for [memmove_chal_R].
+    - v_chal_buf_v : 4160-byte challenge buffer holding the canonical
+      RFC 8032 hash input [R || A || msg].  Hashed with dynamic length
+      [64 + msg_len]. *)
+Definition v_R_bytes_v   := "R_bytes_v".
+Definition v_chal_buf_v  := "chal_buf_v".
 
 Definition ed25519_verify_rs : rust_cmd_ed :=
   REdLetZero v_result (TBytes 1) (
@@ -181,16 +189,40 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   REdLetZero v_hA (TBytes 200) (
   REdLetZero v_RcheckA (TBytes 200) (
   REdLetZero v_check_bytes (TBytes 32) (
+  (* Bug-B: dedicated slots for R extraction + canonical chal_buf. *)
+  REdLetZero v_R_bytes_v (TBytes 32) (
+  REdLetZero v_chal_buf_v (TBytes 4160) (
   REdSeq (REdCall "scalar_lt_L" (LE_TBytes v_result 1)
                                   [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_decompress_R" (LE_TBytes v_R_xyzt_v 200)
                                             [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_decompress_A" (LE_TBytes v_A_xyzt_v 200)
                                             [LE_TBytes v_pub 32])
+  (* Bug-B fix step 1: extract R bytes from sig_in for chal_buf. *)
+  (REdSeq (REdCall "memmove_R_from_sig" (LE_TBytes v_R_bytes_v 32)
+                                          [LE_TBytes v_sig_in 64])
+  (* Bug-B fix step 2: build chal_buf = R || A || msg via the existing
+     sign-side memmove_chal_* leaves. *)
+  (REdSeq (REdCall "memmove_chal_R" (LE_TBytes v_chal_buf_v 4160)
+                                     [LE_TBytes v_R_bytes_v 32])
+  (REdSeq (REdCall "memmove_chal_A" (LE_TBytes v_chal_buf_v 4160)
+                                     [LE_TBytes v_pub 32])
+  (REdSeq (REdCall "memmove_chal_M" (LE_TBytes v_chal_buf_v 4160)
+                                     [LE_TBytes v_msg 4096])
+  (* Bug-B fix step 3: compute dynamic chal hash length 64 + msg_len. *)
+  (REdLetU64 "verify_chal_len" (SAdd (SLit 64) (SVar v_msg_len))
+  (* Bug-B fix step 4: hash chal_buf with dynamic length (RFC 8032). *)
   (REdSeq (REdCall "sha512_64" (LE_TBytes v_h_v 64)
-                                [LE_TBytes v_sig_in 64])
+                                [LE_TBytes v_chal_buf_v 4160;
+                                 LE_TU64 "verify_chal_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_h_red 32)
                                     [LE_TBytes v_h_v 64])
+  (* TODO (separate gap, pre-existing): ed25519_scalarmult_base reads
+     [LE_TBytes v_sig_in 64], but the scalar input is 32 bytes
+     (sig_in[32..64]).  Body-level type mismatch; the callee currently
+     handles it by treating only the first 32 bytes.  Tracked
+     separately from Bug B; would require a [memmove_S_from_sig]
+     extraction call.  Left as-is to keep this commit scoped. *)
   (REdSeq (REdCall "ed25519_scalarmult_base" (LE_TBytes v_sB 200)
                                               [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_scalarmult" (LE_TBytes v_hA 200)
@@ -204,7 +236,7 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   (REdCall "bytes_equal_32" (LE_TBytes v_result 1)
                               [LE_TBytes v_sig_in 64;
                                LE_TBytes v_check_bytes 32]
-  )))))))))))))))))).
+  ))))))))))))))))))))))))).
 
 Lemma borrow_ok_ed_verify : borrow_ok_ed ed25519_verify_rs = true.
 Proof. vm_compute. reflexivity. Qed.

@@ -67,10 +67,17 @@ Parameter calculate_key_pair_A_spec_len :
 
 (** [xed_hash_1_spec]: SHA-512 with internal domain-separation prefix
     [0xFE || 0xFF^31].  The leaf prepends these 32 bytes before hashing
-    its argument, so callers pass only the protocol payload. *)
-Parameter xed_hash_1_spec : list Byte.byte -> list Byte.byte.
-Parameter xed_hash_1_spec_len :
+    its argument, so callers pass only the protocol payload.
+
+    Defined (not axiomatised) as a thin wrapper over [sha512_full_spec]
+    so it does not appear in [Print Assumptions] for downstream theorems. *)
+Definition xed_hash_1_spec (input : list Byte.byte) : list Byte.byte :=
+  sha512_full_spec
+    (Byte.xfe :: List.repeat Byte.xff 31 ++ input)%list.
+
+Lemma xed_hash_1_spec_len :
   forall input, length (xed_hash_1_spec input) = 64%nat.
+Proof. intros input; apply sha512_full_spec_len. Qed.
 
 (* ================================================================ *)
 (* §2. Memmove spec helpers — XEdDSA buffer layouts                   *)

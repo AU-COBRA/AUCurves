@@ -93,7 +93,8 @@ Memmove offsets (sign path):
 - `memmove_chal_R`: `chal_buf[0..32] := R[0..32]`
 - `memmove_chal_A`: `chal_buf[32..64] := A[0..32]`
 - `memmove_chal_M`: `chal_buf[64..64+4096] := M[0..4096]`
-- `memmove_sig_R`: `sig_out[32..64] := R[0..32]`
+- `memmove_sig_R`: `sig_out[0..32] := R[0..32]` (S half written by
+  `scalar_muladd` into `sig_out[32..64]`)
 
 (verify path):
 - `memmove_R_from_sig`: `R[0..32] := sig[0..32]`
@@ -106,22 +107,30 @@ JASMINC=$(which jasminc) cargo test --features ed25519_rustcmd \
                                     --test ed25519_rustcmd_kat
 ```
 
-KAT results (RFC 8032 §7.1):
-- **9 passed**: public-key derivation for all 3 vectors,
-  verification of all 3 valid signatures, rejection of corrupted
-  signatures / wrong messages, smoke test that extracted sign runs
-  end-to-end and produces a canonical R-point.
-- **3 ignored** (strict byte-equality on signature output):
-  the extracted `sha512_64` calls use FIXED `len` arguments
-  (4128 / 4160), so for messages shorter than 4096 bytes the
-  emitted code hashes trailing zero padding that RFC 8032 does
-  not.  This is the "length arg dropped" emitter gap noted
-  above; once the emitter threads `msg_len` into `sha512_64`,
-  these tests will pass without modification.
+KAT results (RFC 8032 §7.1) — **12/12 pass** (2026-05-11):
+- Public-key derivation for all 3 vectors.
+- Strict byte-equality on the extracted `sign(seed, msg)` output for
+  all 3 vectors (TEST 1 = empty message, TEST 2 = `0x72`, TEST 3 =
+  `0xaf 0x82`).
+- `verify(sig, pk, msg) = true` for all 3 valid signatures.
+- `verify` rejects a single-bit flip in R, and a one-byte-shifted
+  message.
+- Smoke test that extracted `sign` produces a canonical R point.
 
-The verified `sign.rs` body remains unmodified.  Returning the
-verification result currently goes through a small reimplementation
-in `src/ed25519_rustcmd/mod.rs::verify` (calling the same FFI
-leaves), because the extracted `verify.rs` stores its result in a
-non-caller-visible local; that is another emitter gap, parallel to
-the `msg_len` one.
+The signature-byte-equality tests previously failed because the
+emitted `rust_cmd_ed` source passed a FIXED `len` (4128 / 4160) to
+`sha512_64`, so trailing zero padding got hashed into the nonce / chal
+inputs.  Bug A (sign path) was fixed by emitting two fresh `let mut`
+locals `nonce_hash_len = 32 + msg_len` and `chal_hash_len = 64 +
+msg_len` and threading them through; Bug B (verify path) was the same
+fix for `verify_chal_len = 64 + msg_len`; Bug C (verify path) was
+adding the `memmove_R_from_sig` / `memmove_S_from_sig` slice copies
+that pull the R-half and S-half out of `sig_in` before feeding them to
+`ed25519_decompress_R` / `ed25519_scalarmult_base`.  All three landed
+upstream in `Sign_Verify_RustCmd.v`.
+
+Returning the verification result still goes through a small wrapper
+in `src/ed25519_rustcmd/mod.rs::verify`: the extracted `verify.rs`
+stores its result in a non-caller-visible local, so we recompute the
+check using the same FFI leaves to expose the result byte.  That is a
+return-channel emitter gap, orthogonal to the bugs fixed above.

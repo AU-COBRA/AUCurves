@@ -15,14 +15,17 @@
  *   - [ed25519_xyzt_add_spec] — Definition imported via
  *     Verify_Strong_Correctness.
  *   - [ristretto_encode_spec] — Definition imported via Lizard's
- *     Strong_Correctness (Tier-2 placeholder Definition, OK).
+ *     Strong_Correctness; delegates to [ed25519_compress_gallina]
+ *     (not the true Ristretto canonicalisation; Tier-2).
  *   - [bytes_equal_32_spec] — Definition imported via
  *     Verify_Strong_Correctness.
  *
- * Only one new axiom: [ristretto_h_scalarmult_spec] — defined as a
- * Definition that delegates to [ed25519_scalarmult_base_spec] applied
- * to a fixed H-generator placeholder buffer.  No actual axioms; the
- * pipeline is closed under the global context.
+ * Only one new local Definition: [ristretto_h_scalarmult_spec] —
+ * defined via [ed25519_scalarmult_spec r base_point_xyzt] (so H := B,
+ * the Ed25519 base point — a Tier-2 simplification that makes the
+ * resulting Pedersen commitment cryptographically trivial but
+ * preserves deterministic input-dependence and length).  No axioms;
+ * the pipeline is closed under the global context.
  *
  * Fourth framework user after Ed25519 (sign / verify) and Lizard
  * (inject / extract).  Demonstrates protocol-level reuse: ~250 LoC for
@@ -41,6 +44,8 @@ From Stdlib Require Import micromega.Lia.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.RemainingBridges.
+Require Import Bedrock.End2End.Ed25519.ScalarmultVerified.
+Require Import Bedrock.End2End.Ed25519.ScalarmultBaseVerified.
 Require Import Bedrock.End2End.Ed25519.XyztAddVerified.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
@@ -56,18 +61,23 @@ Local Open Scope string_scope.
 (* §1. Per-callee Gallina specs                                       *)
 (* ================================================================ *)
 
-(** [ristretto_h_scalarmult_spec]: 32B scalar → 200B Edwards point,
+(** [ristretto_h_scalarmult_spec]: 32B scalar r → 200B Edwards point,
     interpreted as scalar multiplication of the public H generator.
-    Concrete Definition: returns 200 zero bytes (placeholder — the
-    strong-correctness pipeline depends only on the type signature
-    and length lemma, never on the actual value).  This is the only
-    new leaf needed for Pedersen on top of Ed25519 + Lizard.
 
-    Tier-2 follow-up: replace with [ed25519_scalarmult_gallina r H_xyzt]
-    once a concrete [H_xyzt] (independent generator) is fixed in the
-    pipeline. *)
-Definition ristretto_h_scalarmult_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 200.
+    Concrete implementation: scalar-multiply [base_point_xyzt] (the
+    fixed Ed25519 base point B, exported from
+    [ScalarmultBaseVerified.v]) by the input scalar via
+    [ed25519_scalarmult_spec].  In other words we take H := B; this
+    is a simplification that makes the resulting Pedersen commitment
+    cryptographically TRIVIAL (mG and rH lie on the same generator,
+    so binding is broken), but it is deterministic, input-dependent,
+    and the strong-correctness pipeline never inspects the value.
+
+    Tier-2 follow-up: replace [base_point_xyzt] with a fixed
+    independent H derived via [Elligator2 (SHA-512 "RistrettoH"))]
+    or a hard-coded H_xyzt literal from the Ristretto spec. *)
+Definition ristretto_h_scalarmult_spec (r : list Byte.byte) : list Byte.byte :=
+  ed25519_scalarmult_spec r base_point_xyzt.
 Global Opaque ristretto_h_scalarmult_spec.
 
 Lemma ristretto_h_scalarmult_spec_len :
@@ -77,7 +87,7 @@ Proof.
   intros input _.
   Transparent ristretto_h_scalarmult_spec.
   unfold ristretto_h_scalarmult_spec.
-  rewrite List.repeat_length. reflexivity.
+  apply ed25519_scalarmult_spec_len.
 Qed.
 Global Opaque ristretto_h_scalarmult_spec.
 

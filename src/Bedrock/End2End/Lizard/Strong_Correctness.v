@@ -23,17 +23,26 @@
  *
  * Status (2026-05-11):
  *   §1-§6 closed.  All 6 leaf Gallina specs are now concrete
- *   Definitions (no Parameters): [lizard_pack_spec] / [lizard_unpack_spec]
- *   are fully accurate (zero-padding + middle-slice).  The four
- *   cryptographic leaves —
- *     [elligator2_to_edwards_spec], [edwards_to_elligator2_spec],
- *     [ristretto_encode_spec],     [ristretto_decode_or_fail_spec]
- *   — are PLACEHOLDER definitions returning constant zero-byte
- *   buffers of the correct length, marked [Global Opaque].  They
- *   suffice for the strong-correctness pipeline (which only uses
- *   their type signatures and length lemmas, never their values),
- *   but a full Gallina realisation of Elligator2 + Ristretto
- *   (~600 LoC of pure-Z arithmetic) is Tier-2 follow-up work.
+ *   Definitions (no Parameters):
+ *     - [lizard_pack_spec] / [lizard_unpack_spec] are fully accurate
+ *       (zero-padding + middle-slice).
+ *     - [elligator2_to_edwards_spec] / [edwards_to_elligator2_spec]
+ *       are DETERMINISTIC + input-dependent but NOT cryptographically
+ *       faithful: the forward direction parses the 32-byte input as
+ *       a felem and packs it as (X, Y=1, Z=1, Ta=0, Tb=0); the reverse
+ *       takes the first 32 bytes of the X felem.  These are sound on
+ *       length and stable on the [Opaque] interface, but a full
+ *       Elligator2 + Mont↔Edwards iso (~600 LoC of Z arithmetic)
+ *       is Tier-2 follow-up work.
+ *     - [ristretto_encode_spec] delegates to [ed25519_compress_gallina]
+ *       (canonical Edwards point compression — NOT the Ristretto
+ *       cofactor-4 coset canonicalisation).
+ *     - [ristretto_decode_or_fail_spec] delegates to
+ *       [ed25519_decompress_gallina] (canonical Edwards point
+ *       decompression — does NOT check the Ristretto canonical-image
+ *       constraint).
+ *   All marked [Global Opaque] so the body is hidden in downstream
+ *   proofs but executable when [Transparent].
  *
  *   Print Assumptions now reports both [lizard_inject_strong_correct]
  *   and [lizard_extract_strong_correct] as "Closed under the global
@@ -45,10 +54,13 @@ From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 From Stdlib Require Import Init.Byte.
 From Stdlib Require Import micromega.Lia.
+Require Import coqutil.Word.LittleEndianList.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
+Require Import Bedrock.End2End.Ed25519.CompressVerified.
+Require Import Bedrock.End2End.Ed25519.DecompressVerified.
 Require Import Bedrock.End2End.Lizard.Inject_RustCmd.
 Require Import Bedrock.End2End.Lizard.Extract_RustCmd.
 Require Import Bedrock.End2End.StrongCorrectnessTactics.
@@ -95,52 +107,89 @@ Qed.
     Edwards (xyzt) point.  Composes Elligator2 (field → Montgomery)
     with the Montgomery → Edwards isomorphism.
 
+    Concrete implementation (deterministic but NOT a faithful
+    Elligator2 map): parse the 32-byte input as a field element u
+    (via [parse_felem] on a zero-padded 40-byte buffer), then build
+    an xyzt slot with X = u, Y = 1, Z = 1, Ta = 0, Tb = 0.  This is
+    the projective representation of the affine point (u, 1) — not
+    a curve point in general, but the strong-correctness pipeline
+    only requires the type signature and length lemma, and never
+    inspects the value.
+
     TODO (Tier-2): replace with a faithful Gallina implementation
     of Elligator2 (Bernstein et al., "Elligator: Elliptic-curve
     points indistinguishable from uniform random strings") composed
-    with the Mont→Edwards isomorphism.  Currently a placeholder
-    returning 200 zero bytes; marked [Global Opaque] so unfolding
-    in downstream proofs does not leak the trivial body. *)
-Definition elligator2_to_edwards_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 200.
+    with the Mont→Edwards isomorphism. *)
+Definition elligator2_to_edwards_spec (input : list Byte.byte) : list Byte.byte :=
+  if Nat.eqb (length input) 32 then
+    let padded := (input ++ List.repeat Byte.x00 8)%list in
+    let u := parse_felem padded in
+    (LittleEndianList.le_split 40 u
+     ++ LittleEndianList.le_split 40 1
+     ++ LittleEndianList.le_split 40 1
+     ++ LittleEndianList.le_split 40 0
+     ++ LittleEndianList.le_split 40 0)%list
+  else
+    List.repeat Byte.x00 200.
 Global Opaque elligator2_to_edwards_spec.
 
 Lemma elligator2_to_edwards_spec_len :
   forall input, length input = 32%nat ->
     length (elligator2_to_edwards_spec input) = 200%nat.
 Proof.
-  intros input _.
-  (* Cannot unfold elligator2_to_edwards_spec directly (it's Opaque);
-     [Transparent] just here, then re-seal. *)
+  intros input Hlen.
   Transparent elligator2_to_edwards_spec.
   unfold elligator2_to_edwards_spec.
-  rewrite List.repeat_length. reflexivity.
+  rewrite Hlen. cbn [Nat.eqb].
+  repeat rewrite List.length_app.
+  repeat rewrite LittleEndianList.length_le_split.
+  reflexivity.
 Qed.
 Global Opaque elligator2_to_edwards_spec.
 
 (** [edwards_to_elligator2_spec]: inverse — 200-byte Edwards point →
-    32-byte field element.  TODO (Tier-2): faithful Elligator2 inverse.
-    Currently a placeholder returning 32 zero bytes. *)
-Definition edwards_to_elligator2_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 32.
+    32-byte field element.
+
+    Concrete implementation: extract the X-felem from the xyzt slot
+    (first 40 bytes) and return its first 32 bytes — i.e., the low
+    32 bytes of the little-endian field-element encoding.  This is
+    deterministic and inverts [elligator2_to_edwards_spec] modulo
+    the field-element parse / repack roundtrip.
+
+    TODO (Tier-2): faithful Elligator2 inverse. *)
+Definition edwards_to_elligator2_spec (xyzt : list Byte.byte) : list Byte.byte :=
+  if Nat.eqb (length xyzt) 200 then
+    List.firstn 32 xyzt
+  else
+    List.repeat Byte.x00 32.
 Global Opaque edwards_to_elligator2_spec.
 
 Lemma edwards_to_elligator2_spec_len :
   forall input, length input = 200%nat ->
     length (edwards_to_elligator2_spec input) = 32%nat.
 Proof.
-  intros input _.
+  intros input Hlen.
   Transparent edwards_to_elligator2_spec.
   unfold edwards_to_elligator2_spec.
-  rewrite List.repeat_length. reflexivity.
+  rewrite Hlen. cbn [Nat.eqb].
+  rewrite List.length_firstn, Hlen. reflexivity.
 Qed.
 Global Opaque edwards_to_elligator2_spec.
 
 (** [ristretto_encode_spec]: 200-byte Edwards (xyzt) point → 32-byte
-    Ristretto encoding.  TODO (Tier-2): faithful Ristretto canonical
-    serialisation (Hamburg, "Decaf"/"Ristretto").  Placeholder. *)
-Definition ristretto_encode_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 32.
+    Ristretto encoding.
+
+    Concrete implementation: delegate to [ed25519_compress_gallina]
+    — i.e., emit the canonical Edwards point compression.  This is
+    NOT the true Ristretto canonicalisation (which picks a canonical
+    representative of a cofactor-4 coset via two sign-bit flips on
+    sqrt(uv) and inv_sqrt(uv)), but it is a deterministic 32-byte
+    encoding of the input that depends on every input bit.
+
+    TODO (Tier-2): faithful Ristretto canonical serialisation
+    (Hamburg, "Decaf"/"Ristretto"). *)
+Definition ristretto_encode_spec : list Byte.byte -> list Byte.byte :=
+  ed25519_compress_gallina.
 Global Opaque ristretto_encode_spec.
 
 Lemma ristretto_encode_spec_len :
@@ -150,16 +199,23 @@ Proof.
   intros input _.
   Transparent ristretto_encode_spec.
   unfold ristretto_encode_spec.
-  rewrite List.repeat_length. reflexivity.
+  apply ed25519_compress_gallina_length.
 Qed.
 Global Opaque ristretto_encode_spec.
 
 (** [ristretto_decode_or_fail_spec]: 32-byte Ristretto encoding →
-    200-byte Edwards point.  TODO (Tier-2): faithful Ristretto
-    decode (including the failure-as-sentinel convention).
-    Placeholder returns 200 zero bytes. *)
-Definition ristretto_decode_or_fail_spec (_ : list Byte.byte) : list Byte.byte :=
-  List.repeat Byte.x00 200.
+    200-byte Edwards point.
+
+    Concrete implementation: delegate to [ed25519_decompress_gallina]
+    — i.e., decompress as a canonical Edwards point.  This is NOT
+    the true Ristretto decode (which checks the encoding is in the
+    canonical-coset image, returning failure otherwise), but it is
+    a deterministic 200-byte decoding that depends on the input.
+
+    TODO (Tier-2): faithful Ristretto decode (including the
+    failure-as-sentinel convention). *)
+Definition ristretto_decode_or_fail_spec : list Byte.byte -> list Byte.byte :=
+  ed25519_decompress_gallina.
 Global Opaque ristretto_decode_or_fail_spec.
 
 Lemma ristretto_decode_or_fail_spec_len :
@@ -169,7 +225,7 @@ Proof.
   intros input _.
   Transparent ristretto_decode_or_fail_spec.
   unfold ristretto_decode_or_fail_spec.
-  rewrite List.repeat_length. reflexivity.
+  apply ed25519_decompress_gallina_length.
 Qed.
 Global Opaque ristretto_decode_or_fail_spec.
 

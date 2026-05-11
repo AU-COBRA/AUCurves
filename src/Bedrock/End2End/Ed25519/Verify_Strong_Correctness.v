@@ -101,6 +101,14 @@ Parameter bytes_equal_32_spec_len :
 Definition memmove_R_from_sig_spec (sig_in : list Byte.byte) : list Byte.byte :=
   firstn 32 sig_in.
 
+(** [memmove_S_from_sig_spec sig_in] : extracts bytes 32..64 of a
+    64-byte signature (the S scalar component) into a fresh 32-byte slot.
+    Models the Rust leaf [memmove_S_from_sig(S: *mut u8, sig: *const u8)]
+    declared in [RustCmdToRust.rs_prelude].  Bug-C fix: passed as the
+    32-byte scalar argument to [ed25519_scalarmult_base]. *)
+Definition memmove_S_from_sig_spec (sig_in : list Byte.byte) : list Byte.byte :=
+  skipn 32 sig_in.
+
 (* ================================================================ *)
 (* §3. Gallina reference                                              *)
 (* ================================================================ *)
@@ -137,7 +145,7 @@ Definition ed25519_verify_gallina_lifted
   let chal_C7   := (firstn 64 chal_C6 ++ msg)%list in
   let h_full    := sha512_full_spec (firstn chal_hash_len chal_C7) in
   let h         := scalar_reduce_spec h_full in
-  let sB        := ed25519_scalarmult_base_spec sig_in in
+  let sB        := ed25519_scalarmult_base_spec (memmove_S_from_sig_spec sig_in) in
   let hA        := ed25519_scalarmult_spec h A_xyzt in
   let RcheckA   := ed25519_xyzt_add_spec R_xyzt hA in
   let check_b   := ed25519_compress_spec RcheckA in
@@ -157,16 +165,16 @@ Definition ed25519_verify_gallina
   let chal      := (R_bytes ++ pub ++ msg)%list in
   let h_full    := sha512_full_spec chal in
   let h         := scalar_reduce_spec h_full in
-  let sB        := ed25519_scalarmult_base_spec sig_in in
+  let sB        := ed25519_scalarmult_base_spec (memmove_S_from_sig_spec sig_in) in
   let hA        := ed25519_scalarmult_spec h A_xyzt in
   let RcheckA   := ed25519_xyzt_add_spec R_xyzt hA in
   let check_b   := ed25519_compress_spec RcheckA in
   bytes_equal_32_spec sig_in check_b.
 
-(* The protocol passes [v_sig_in] (64 bytes) to ed25519_scalarmult_base.
-   The scalar input is 32 bytes (sig_in[32..64]); the body-level type
-   mismatch is buried in the leaf's Gallina spec.  Tracked as a
-   separate pre-existing gap from Bug B. *)
+(* Bug-C fix (2026-05-11): the protocol now extracts the 32-byte scalar
+   S = sig_in[32..64] via [memmove_S_from_sig] before passing it to
+   [ed25519_scalarmult_base].  The Gallina reference threads
+   [memmove_S_from_sig_spec sig_in] into [ed25519_scalarmult_base_spec]. *)
 
 (* ================================================================ *)
 (* §4. Strong callee_post predicate for verify                       *)
@@ -247,6 +255,10 @@ Definition strong_callee_post_verify
       exists src_bs,
         slot_holds rs1 src.(loc_var) src_bs /\
         slot_holds rs2 dst.(loc_var) (memmove_R_from_sig_spec src_bs)
+  | "memmove_S_from_sig", [src] =>
+      exists src_bs,
+        slot_holds rs1 src.(loc_var) src_bs /\
+        slot_holds rs2 dst.(loc_var) (memmove_S_from_sig_spec src_bs)
   | "memmove_chal_R", [src] =>
       exists src_bs dst_bs,
         slot_holds rs1 src.(loc_var) src_bs /\
@@ -297,7 +309,7 @@ Ltac neq_var_v :=
   cbv [v_sig_in v_pub v_msg v_sig_out
        v_result v_R_xyzt_v v_A_xyzt_v v_h_v v_h_red
        v_sB v_hA v_RcheckA v_check_bytes
-       v_R_bytes_v v_chal_buf_v
+       v_R_bytes_v v_chal_buf_v v_S_bytes
        (* sign-side too, harmless *)
        v_h_full v_a_slot v_prefix v_A_xyzt v_A_bytes v_nonce_buf
        v_r_full v_r_slot v_R_xyzt v_R_bytes v_chal_buf
@@ -551,9 +563,9 @@ Proof.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_v].
   clear Hframe Hsrc Htgt8.
 
-  (* V10: ed25519_scalarmult_base (sB ← sig_in) *)
+  (* V10 (Bug-C): memmove_S_from_sig (S_bytes ← sig_in[32..64]) *)
   peel_call_seq_v Hexec Hframe Hres.
-  destruct Hres as [src_bs [Hsrc Htgt10]].
+  destruct Hres as [src_bs [Hsrc Htgt10a]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc Hsig_in_alloc) as Heq; subst src_bs.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_in_alloc; [|neq_var_v].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpub_alloc; [|neq_var_v].
@@ -565,6 +577,21 @@ Proof.
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_v].
   apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt9; [|neq_var_v].
   clear Hframe Hsrc.
+
+  (* V10 (Bug-C): ed25519_scalarmult_base (sB ← S_bytes) *)
+  peel_call_seq_v Hexec Hframe Hres.
+  destruct Hres as [src_bs [Hsrc Htgt10]].
+  pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt10a) as Heq; subst src_bs.
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_in_alloc; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hpub_alloc; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hmsg_alloc; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Hsig_out_alloc; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt1; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt2; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt3; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt4; [|neq_var_v].
+  apply (slot_holds_frame _ _ _ _ _ Hframe) in Htgt9; [|neq_var_v].
+  clear Hframe Hsrc Htgt10a.
 
   (* V11: ed25519_scalarmult (hA ← h_red, A_xyzt_v) *)
   peel_call_seq_v Hexec Hframe Hres.

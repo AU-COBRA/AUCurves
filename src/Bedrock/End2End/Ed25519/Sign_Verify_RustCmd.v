@@ -178,6 +178,9 @@ Definition v_result      := "result".
       [64 + msg_len]. *)
 Definition v_R_bytes_v   := "R_bytes_v".
 Definition v_chal_buf_v  := "chal_buf_v".
+(** Bug-C fix slot: 32-byte S extracted from sig_in[32..64].  Passed to
+    [ed25519_scalarmult_base] in place of the 64-byte [v_sig_in]. *)
+Definition v_S_bytes     := "S_bytes".
 
 Definition ed25519_verify_rs : rust_cmd_ed :=
   REdLetZero v_result (TBytes 1) (
@@ -192,6 +195,7 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   (* Bug-B: dedicated slots for R extraction + canonical chal_buf. *)
   REdLetZero v_R_bytes_v (TBytes 32) (
   REdLetZero v_chal_buf_v (TBytes 4160) (
+  REdLetZero v_S_bytes (TBytes 32) (
   REdSeq (REdCall "scalar_lt_L" (LE_TBytes v_result 1)
                                   [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_decompress_R" (LE_TBytes v_R_xyzt_v 200)
@@ -217,14 +221,13 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
                                  LE_TU64 "verify_chal_len"])
   (REdSeq (REdCall "scalar_reduce" (LE_TBytes v_h_red 32)
                                     [LE_TBytes v_h_v 64])
-  (* TODO (separate gap, pre-existing): ed25519_scalarmult_base reads
-     [LE_TBytes v_sig_in 64], but the scalar input is 32 bytes
-     (sig_in[32..64]).  Body-level type mismatch; the callee currently
-     handles it by treating only the first 32 bytes.  Tracked
-     separately from Bug B; would require a [memmove_S_from_sig]
-     extraction call.  Left as-is to keep this commit scoped. *)
+  (* Bug-C fix: extract the 32-byte scalar S = sig_in[32..64] before
+     passing it to ed25519_scalarmult_base, whose ABI expects a
+     32-byte scalar (not the 64-byte signature). *)
+  (REdSeq (REdCall "memmove_S_from_sig" (LE_TBytes v_S_bytes 32)
+                                         [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_scalarmult_base" (LE_TBytes v_sB 200)
-                                              [LE_TBytes v_sig_in 64])
+                                              [LE_TBytes v_S_bytes 32])
   (REdSeq (REdCall "ed25519_scalarmult" (LE_TBytes v_hA 200)
                                          [LE_TBytes v_h_red 32;
                                           LE_TBytes v_A_xyzt_v 200])
@@ -236,7 +239,7 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   (REdCall "bytes_equal_32" (LE_TBytes v_result 1)
                               [LE_TBytes v_sig_in 64;
                                LE_TBytes v_check_bytes 32]
-  ))))))))))))))))))))))))).
+  ))))))))))))))))))))))))))).
 
 Lemma borrow_ok_ed_verify : borrow_ok_ed ed25519_verify_rs = true.
 Proof. vm_compute. reflexivity. Qed.

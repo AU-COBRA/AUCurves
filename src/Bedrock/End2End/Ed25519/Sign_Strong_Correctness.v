@@ -37,6 +37,7 @@ Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.RemainingBridges.
 Require Import Bedrock.End2End.Ed25519.SHA512Bridge.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
+Require Import Bedrock.End2End.Ed25519.Clamp64Verified.
 Import ListNotations.
 Local Open Scope string_scope.
 
@@ -70,9 +71,14 @@ Parameter sha512_full_spec : list Byte.byte -> list Byte.byte.
 Parameter sha512_full_spec_len :
   forall input, length (sha512_full_spec input) = 64%nat.
 
-Parameter clamp_64_spec : list Byte.byte -> list Byte.byte.
-Parameter clamp_64_spec_len :
+(** [clamp_64_spec] is now a Definition redirecting to the verified
+    [clamp_64_gallina] in [Clamp64Verified.v] (RFC 8032 byte clamping
+    with bit masks 0xF8 / 0x3F / +0x40). Length lemma Qed. *)
+Definition clamp_64_spec : list Byte.byte -> list Byte.byte :=
+  clamp_64_gallina.
+Lemma clamp_64_spec_len :
   forall bs, length bs = 32%nat -> length (clamp_64_spec bs) = 32%nat.
+Proof. exact clamp_64_gallina_length. Qed.
 
 Parameter ed25519_scalarmult_base_spec : list Byte.byte -> list Byte.byte.
 Parameter ed25519_scalarmult_base_spec_len :

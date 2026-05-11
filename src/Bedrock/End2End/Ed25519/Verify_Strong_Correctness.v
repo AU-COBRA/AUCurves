@@ -41,6 +41,7 @@ From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 From Stdlib Require Import Init.Byte.
+From Stdlib Require Import Strings.Byte.
 From Stdlib Require Import micromega.Lia.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
@@ -82,17 +83,37 @@ Parameter ed25519_xyzt_add_spec_len :
 (** [scalar_lt_L_spec sig_in] : 1-byte canonical-S check (1 = ok, 0 = bad).
     The protocol writes this to v_result, then *overwrites* it with the
     bytes_equal_32 result.  Hence this spec function is never observed in
-    the final postcondition — declared only for completeness. *)
-Parameter scalar_lt_L_spec : list Byte.byte -> list Byte.byte.
-Parameter scalar_lt_L_spec_len :
-  forall sig_in, length (scalar_lt_L_spec sig_in) = 1%nat.
+    the final postcondition — declared only for completeness.
 
-(** [bytes_equal_32_spec sig_in check_bytes] : 1-byte equality result.
-    Models constant-time comparison of [firstn 32 sig_in] against
-    [check_bytes]. *)
-Parameter bytes_equal_32_spec : list Byte.byte -> list Byte.byte -> list Byte.byte.
-Parameter bytes_equal_32_spec_len :
+    Concrete Definition (NOT an axiom): tests whether the little-endian
+    decoding of the byte list is strictly less than [L_curve_order].
+    Reduces by [vm_compute] on any concrete input. *)
+Definition scalar_lt_L_spec (bs : list Byte.byte) : list Byte.byte :=
+  if (LittleEndianList.le_combine bs <? L_curve_order)%Z
+  then [Byte.x01] else [Byte.x00].
+
+Lemma scalar_lt_L_spec_len :
+  forall sig_in, length (scalar_lt_L_spec sig_in) = 1%nat.
+Proof.
+  intros sig_in. cbv [scalar_lt_L_spec].
+  destruct (LittleEndianList.le_combine sig_in <? L_curve_order)%Z; reflexivity.
+Qed.
+
+(** [bytes_equal_32_spec a b] : 1-byte equality result.
+    Models comparison of two byte lists (1 = equal, 0 = unequal).
+    Concrete Definition (NOT an axiom) via [list_eq_dec byte_eq_dec].
+    The Gallina spec is not required to be constant-time; only the
+    eventual rust_cmd_ed body emitted to Rust needs CT. *)
+Definition bytes_equal_32_spec (a b : list Byte.byte) : list Byte.byte :=
+  if List.list_eq_dec byte_eq_dec a b
+  then [Byte.x01] else [Byte.x00].
+
+Lemma bytes_equal_32_spec_len :
   forall a b, length (bytes_equal_32_spec a b) = 1%nat.
+Proof.
+  intros a b. cbv [bytes_equal_32_spec].
+  destruct (List.list_eq_dec byte_eq_dec a b); reflexivity.
+Qed.
 
 (** [memmove_R_from_sig_spec sig_in] : extracts the first 32 bytes of
     a 64-byte signature (the R component) into a fresh 32-byte slot.

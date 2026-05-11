@@ -79,10 +79,10 @@ Parameter ed25519_scalarmult_base_spec_len :
   forall scalar, length scalar = 32%nat ->
     length (ed25519_scalarmult_base_spec scalar) = 200%nat.
 
-Parameter ed25519_compress_spec : list Byte.byte -> list Byte.byte.
-Parameter ed25519_compress_spec_len :
-  forall xyzt, length xyzt = 200%nat ->
-    length (ed25519_compress_spec xyzt) = 32%nat.
+(* ed25519_compress_spec and ed25519_compress_spec_len are now imported
+   (no longer Parameters) from RemainingBridges -> CompressVerified.
+   The length lemma keeps the same [length xyzt = 200] precondition
+   shape used by the proofs below. *)
 
 (* scalar_reduce_spec, scalar_muladd_spec are imported as Parameters
    from RemainingBridges.v. *)
@@ -358,10 +358,14 @@ Lemma slot_holds_inj :
     slot_holds rs x bs1 -> slot_holds rs x bs2 -> bs1 = bs2.
 Proof. unfold slot_holds; intros rs x bs1 bs2 H1 H2; congruence. Qed.
 
-(** Length axiom for scalar_muladd_spec — needed so [firstn 32] of
-    its output equals itself (used in the final memmove_sig_R step). *)
-Parameter scalar_muladd_spec_len :
+(** Length lemma for scalar_muladd_spec — needed so [firstn 32] of
+    its output equals itself (used in the final memmove_sig_R step).
+    Previously an axiom; now a thin alias of
+    [RemainingBridges.scalar_muladd_output_32], itself a Qed lemma
+    over the concrete [scalar_muladd_spec] Definition. *)
+Lemma scalar_muladd_spec_len :
   forall r k a, length (scalar_muladd_spec r k a) = 32%nat.
+Proof. exact scalar_muladd_output_32. Qed.
 
 (* ================================================================ *)
 (* §5. Frame lemma — Qed                                              *)

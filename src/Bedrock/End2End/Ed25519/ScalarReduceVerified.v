@@ -40,29 +40,19 @@ Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
 (* ================================================================ *)
-(* §1.  Concrete Gallina reference                                    *)
+(* §1.  Concrete Gallina reference (re-exported from RemainingBridges)*)
 (* ================================================================ *)
 
-(** Ed25519 curve order:
-      L = 2^252 + 27742317777372353535851937790883648493.  *)
-Definition L_curve_order : Z :=
-  2 ^ 252 + 27742317777372353535851937790883648493.
+(** Ed25519 curve order [L_curve_order] and the Gallina reduction
+    [scalar_reduce_gallina] are now defined in [RemainingBridges.v]
+    so that the previously axiomatic [scalar_reduce_spec] can be
+    discharged to that same Definition.  We keep the long-form names
+    here for backward compatibility — they are aliases. *)
+Notation L_curve_order := RemainingBridges.L_curve_order.
+Notation scalar_reduce_gallina := RemainingBridges.scalar_reduce_spec.
 
 Lemma L_curve_order_pos : 0 < L_curve_order.
-Proof. cbv [L_curve_order]. lia. Qed.
-
-(** Reduce a 64-byte little-endian integer mod L and re-encode as a
-    32-byte little-endian buffer.  This is the standard mathematical
-    definition of [sc_reduce] from RFC 8032 (independent of how an
-    optimized implementation computes it — Barrett, Montgomery, or
-    schoolbook all converge on this Z-level spec).
-
-    NOT an axiom: this is a concrete Rocq Definition that reduces by
-    [vm_compute] on any concrete input. *)
-Definition scalar_reduce_gallina (bs64 : list Byte.byte) : list Byte.byte :=
-  let n : Z := le_combine bs64 in
-  let r : Z := Z.modulo n L_curve_order in
-  le_split 32 r.
+Proof. exact RemainingBridges.L_curve_order_pos. Qed.
 
 (* ================================================================ *)
 (* §2.  Length and boundedness                                       *)
@@ -70,10 +60,7 @@ Definition scalar_reduce_gallina (bs64 : list Byte.byte) : list Byte.byte :=
 
 Lemma scalar_reduce_gallina_length :
   forall bs64, length (scalar_reduce_gallina bs64) = 32%nat.
-Proof.
-  intros bs64. cbv [scalar_reduce_gallina].
-  apply length_le_split.
-Qed.
+Proof. exact RemainingBridges.scalar_reduce_output_32. Qed.
 
 (** The Z-decoding of the reduced 32-byte output is strictly less
     than L. *)

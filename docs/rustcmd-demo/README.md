@@ -70,3 +70,58 @@ verified Jasmin / fiat-crypto implementations.
   progress: replace them one at a time with verified `function_body_ed`
   implementations dispatched via `REdCallFn` (see
   `src/Bedrock/End2End/Ed25519/Clamp64Verified.v` once landed).
+
+## End-to-end runnable wiring
+
+The extracted `sign.rs` and `verify.rs` are now wired against real
+leaves in the sibling `curve25519-jasmin-rs` crate at
+`src/ed25519_rustcmd/`:
+
+| Leaf | Backend |
+|---|---|
+| `sha512_64` | `sha2` crate |
+| `scalar_reduce`, `scalar_muladd`, `scalar_lt_L`, `bytes_equal_32`, `verify_fail` | hand-written byte ops in `leaves.rs` |
+| `ed25519_scalarmult{,_base}`, `ed25519_compress`, `ed25519_decompress_{R,A}`, `ed25519_xyzt_add` | `curve25519-dalek` (stub, pending verified Jasmin leaves) |
+| `clamp_64` | existing `asm/clamp_64.s` (bedrock2 → jasminc extraction) |
+| `memmove_*` (10 helpers) | `slice::copy_from_slice` in `memmove_helpers.rs` |
+
+Memmove offsets (sign path):
+- `memmove_a_from_h`: `a[0..32] := h[0..32]`
+- `memmove_prefix_from_h`: `prefix[0..32] := h[32..64]`
+- `memmove_nonce_prefix`: `nonce_buf[0..32] := prefix[0..32]`
+- `memmove_nonce_msg`: `nonce_buf[32..32+4096] := msg[0..4096]`
+- `memmove_chal_R`: `chal_buf[0..32] := R[0..32]`
+- `memmove_chal_A`: `chal_buf[32..64] := A[0..32]`
+- `memmove_chal_M`: `chal_buf[64..64+4096] := M[0..4096]`
+- `memmove_sig_R`: `sig_out[32..64] := R[0..32]`
+
+(verify path):
+- `memmove_R_from_sig`: `R[0..32] := sig[0..32]`
+- `memmove_S_from_sig`: `S[0..32] := sig[32..64]`
+
+Build + test:
+```bash
+cd curve25519-jasmin-rs
+JASMINC=$(which jasminc) cargo test --features ed25519_rustcmd \
+                                    --test ed25519_rustcmd_kat
+```
+
+KAT results (RFC 8032 §7.1):
+- **9 passed**: public-key derivation for all 3 vectors,
+  verification of all 3 valid signatures, rejection of corrupted
+  signatures / wrong messages, smoke test that extracted sign runs
+  end-to-end and produces a canonical R-point.
+- **3 ignored** (strict byte-equality on signature output):
+  the extracted `sha512_64` calls use FIXED `len` arguments
+  (4128 / 4160), so for messages shorter than 4096 bytes the
+  emitted code hashes trailing zero padding that RFC 8032 does
+  not.  This is the "length arg dropped" emitter gap noted
+  above; once the emitter threads `msg_len` into `sha512_64`,
+  these tests will pass without modification.
+
+The verified `sign.rs` body remains unmodified.  Returning the
+verification result currently goes through a small reimplementation
+in `src/ed25519_rustcmd/mod.rs::verify` (calling the same FFI
+leaves), because the extracted `verify.rs` stores its result in a
+non-caller-visible local; that is another emitter gap, parallel to
+the `msg_len` one.

@@ -228,11 +228,23 @@ Definition wnaf_scalarmult_body : function_body_ed :=
               (REdLetU64 "abs_idx"
                          (SShr (SVar "magnitude") (SLit 1))
               (REdLetU64 "is_nonzero" (SVar "magnitude")
+              (REdLetU64 "sign"
+                         (SShr (SVar "digit_byte") (SLit 7))
               (* CT table lookup: lookup_buf := T[abs_idx]. *)
               (REdSeq
                 (ct_table_lookup_body "abs_idx" (LE200 "lookup_buf")
                    (LE200 "T0") (LE200 "T1") (LE200 "T2") (LE200 "T3")
                    (LE200 "T4") (LE200 "T5") (LE200 "T6") (LE200 "T7"))
+              (* Phase 1a: CT-cond-negate the lookup if sign bit is set.
+                 xyzt_cond_negate(out, src, sign): if sign != 0, negate
+                 src's X and Ta coords into out; else copy src to out.
+                 The body of this leaf is provided in Rust at the
+                 framework boundary (no rust_cmd_ed body needed yet —
+                 it's a 2-field-negate op, smaller than a full xyzt op). *)
+              (REdSeq
+                (REdCall "xyzt_cond_negate" (LE200 "lookup_buf")
+                         [LE200 "lookup_buf";
+                          {| loc_var := "sign"; loc_type := TU64 |}])
               (REdSeq
                 (* Q_plus := Q + lookup_buf. *)
                 (REdCallFn "xyzt_add_decomposed"
@@ -241,7 +253,7 @@ Definition wnaf_scalarmult_body : function_body_ed :=
                 (* Q := is_nonzero ? Q_plus : Q. *)
                 (REdSelect (SVar "is_nonzero")
                            (LE200 "Q_plus") (LE200 "Q") (LE200 "Q"))
-              ))))))))))))
+              ))))))))))))))
             )
             (REdCallFn "xyzt_copy" dest [LE200 "Q"])
           ))

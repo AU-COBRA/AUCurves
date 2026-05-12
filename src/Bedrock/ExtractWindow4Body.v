@@ -18,6 +18,7 @@ Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.RustCmdToRust.
 Require Import Bedrock.End2End.Ed25519.Window4ScalarmultBody.
 Require Import Bedrock.End2End.Ed25519.Straus2MSMBody.
+Require Import Bedrock.End2End.Ed25519.WnafScalarmultBody.
 Import ListNotations.
 Local Open Scope string_scope.
 
@@ -29,7 +30,12 @@ Definition window4_body_extract_sigs : list body_extract_sig :=
     {| bes_name      := "straus_2msm";
        bes_dest_type := TBytes 200;
        bes_arg_types := [TBytes 32; TBytes 32; TBytes 200; TBytes 200];
-       bes_body      := straus_2msm_body |} ].
+       bes_body      := straus_2msm_body |} ;
+    (* Phase 1a: wnaf body now with xyzt_cond_negate sign-bit fix. *)
+    {| bes_name      := "wnaf_scalarmult_signed";
+       bes_dest_type := TBytes 200;
+       bes_arg_types := [TBytes 64; TBytes 200];
+       bes_body      := wnaf_scalarmult_body |} ].
 
 Definition window4_body_rs_string : string :=
   rs_table_extract window4_body_extract_sigs.

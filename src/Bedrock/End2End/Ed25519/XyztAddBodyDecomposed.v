@@ -73,8 +73,20 @@ Import ListNotations.
 Local Open Scope string_scope.
 
 (* ================================================================ *)
-(* §0.  Local LE_TBytes helpers                                      *)
+(* §0.  Local located_ed helpers                                     *)
 (* ================================================================ *)
+
+(** Each field-element intermediate is a [TFp25519] tight-limb slot
+    (5 × u64, 40 bytes laid out as 5 LE u64 limbs).  Originally
+    [TBytes 40] (canonical bytes + pad); retyped 2026-05-12 per
+    `curve25519-jasmin-rs/docs/tfp25519-plumbing-plan.md` to enable
+    the `tfp25519_limbs` extraction path.
+
+    The previous helper [LE40] retained as an alias for any callers
+    that still need the byte-slot view (e.g. when bridging into the
+    200-byte point ABI via unpack/pack). *)
+Local Definition LE_TFp25519 (v : String.string) : located_ed :=
+  {| loc_var := v; loc_type := TFp25519 |}.
 
 Local Definition LE40 (v : String.string) : located_ed :=
   {| loc_var := v; loc_type := TBytes 40 |}.
@@ -101,74 +113,74 @@ Definition xyzt_add_body_decomposed : function_body_ed :=
     match args with
     | [P1; P2] =>
         (* 5 unpacked input felems for P1. *)
-        REdLetZero "X1"  (TBytes 40) (
-        REdLetZero "Y1"  (TBytes 40) (
-        REdLetZero "Z1"  (TBytes 40) (
-        REdLetZero "Ta1" (TBytes 40) (
-        REdLetZero "Tb1" (TBytes 40) (
+        REdLetZero "X1"  TFp25519 (
+        REdLetZero "Y1"  TFp25519 (
+        REdLetZero "Z1"  TFp25519 (
+        REdLetZero "Ta1" TFp25519 (
+        REdLetZero "Tb1" TFp25519 (
         (* 5 unpacked input felems for P2. *)
-        REdLetZero "X2"  (TBytes 40) (
-        REdLetZero "Y2"  (TBytes 40) (
-        REdLetZero "Z2"  (TBytes 40) (
-        REdLetZero "Ta2" (TBytes 40) (
-        REdLetZero "Tb2" (TBytes 40) (
+        REdLetZero "X2"  TFp25519 (
+        REdLetZero "Y2"  TFp25519 (
+        REdLetZero "Z2"  TFp25519 (
+        REdLetZero "Ta2" TFp25519 (
+        REdLetZero "Tb2" TFp25519 (
         (* 2 cached T values. *)
-        REdLetZero "T1" (TBytes 40) (
-        REdLetZero "T2" (TBytes 40) (
+        REdLetZero "T1" TFp25519 (
+        REdLetZero "T2" TFp25519 (
         (* 11 intermediate slots (A..H, X3, Y3, Z3). *)
-        REdLetZero "A"  (TBytes 40) (
-        REdLetZero "B"  (TBytes 40) (
-        REdLetZero "C"  (TBytes 40) (
-        REdLetZero "D"  (TBytes 40) (
-        REdLetZero "E"  (TBytes 40) (
-        REdLetZero "F"  (TBytes 40) (
-        REdLetZero "G"  (TBytes 40) (
-        REdLetZero "H"  (TBytes 40) (
-        REdLetZero "X3" (TBytes 40) (
-        REdLetZero "Y3" (TBytes 40) (
-        REdLetZero "Z3" (TBytes 40) (
+        REdLetZero "A"  TFp25519 (
+        REdLetZero "B"  TFp25519 (
+        REdLetZero "C"  TFp25519 (
+        REdLetZero "D"  TFp25519 (
+        REdLetZero "E"  TFp25519 (
+        REdLetZero "F"  TFp25519 (
+        REdLetZero "G"  TFp25519 (
+        REdLetZero "H"  TFp25519 (
+        REdLetZero "X3" TFp25519 (
+        REdLetZero "Y3" TFp25519 (
+        REdLetZero "Z3" TFp25519 (
         (* Unpack P1 and P2 into the 10 input felems. *)
         REdSeq
           (REdCallN "fe25519_unpack_xyzt5"
-             [LE40 "X1"; LE40 "Y1"; LE40 "Z1"; LE40 "Ta1"; LE40 "Tb1"]
+             [LE_TFp25519 "X1"; LE_TFp25519 "Y1"; LE_TFp25519 "Z1"; LE_TFp25519 "Ta1"; LE_TFp25519 "Tb1"]
              [P1])
         (REdSeq
           (REdCallN "fe25519_unpack_xyzt5"
-             [LE40 "X2"; LE40 "Y2"; LE40 "Z2"; LE40 "Ta2"; LE40 "Tb2"]
+             [LE_TFp25519 "X2"; LE_TFp25519 "Y2"; LE_TFp25519 "Z2"; LE_TFp25519 "Ta2"; LE_TFp25519 "Tb2"]
              [P2])
         (* Cache T1 = Ta1·Tb1 and T2 = Ta2·Tb2. *)
-        (REdSeq (REdCall "fe25519_mul" (LE40 "T1") [LE40 "Ta1"; LE40 "Tb1"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "T2") [LE40 "Ta2"; LE40 "Tb2"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "T1") [LE_TFp25519 "Ta1"; LE_TFp25519 "Tb1"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "T2") [LE_TFp25519 "Ta2"; LE_TFp25519 "Tb2"])
         (* A = (Y1 - X1) · (Y2 - X2)
            We re-use "Y3" and "Z3" as scratch for the two sub
            intermediates (they will be overwritten before pack). *)
-        (REdSeq (REdCall "fe25519_sub" (LE40 "Y3") [LE40 "Y1"; LE40 "X1"])
-        (REdSeq (REdCall "fe25519_sub" (LE40 "Z3") [LE40 "Y2"; LE40 "X2"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "A")  [LE40 "Y3"; LE40 "Z3"])
+        (REdSeq (REdCall "fe25519_sub" (LE_TFp25519 "Y3") [LE_TFp25519 "Y1"; LE_TFp25519 "X1"])
+        (REdSeq (REdCall "fe25519_sub" (LE_TFp25519 "Z3") [LE_TFp25519 "Y2"; LE_TFp25519 "X2"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "A")  [LE_TFp25519 "Y3"; LE_TFp25519 "Z3"])
         (* B = (Y1 + X1) · (Y2 + X2) — reuse Y3 / Z3 as scratch. *)
-        (REdSeq (REdCall "fe25519_add" (LE40 "Y3") [LE40 "Y1"; LE40 "X1"])
-        (REdSeq (REdCall "fe25519_add" (LE40 "Z3") [LE40 "Y2"; LE40 "X2"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "B")  [LE40 "Y3"; LE40 "Z3"])
+        (REdSeq (REdCall "fe25519_add" (LE_TFp25519 "Y3") [LE_TFp25519 "Y1"; LE_TFp25519 "X1"])
+        (REdSeq (REdCall "fe25519_add" (LE_TFp25519 "Z3") [LE_TFp25519 "Y2"; LE_TFp25519 "X2"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "B")  [LE_TFp25519 "Y3"; LE_TFp25519 "Z3"])
         (* C = T1 · (2·d) · T2.  fe25519_mul_d2 takes T1, returns 2d·T1;
            then a final mul against T2. *)
-        (REdSeq (REdCall "fe25519_mul_d2" (LE40 "Y3") [LE40 "T1"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "C")  [LE40 "Y3"; LE40 "T2"])
+        (REdSeq (REdCall "fe25519_mul_d2" (LE_TFp25519 "Y3") [LE_TFp25519 "T1"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "C")  [LE_TFp25519 "Y3"; LE_TFp25519 "T2"])
         (* D = 2 · Z1 · Z2.  fe25519_mul_2 does the by-2 scale. *)
-        (REdSeq (REdCall "fe25519_mul" (LE40 "Y3") [LE40 "Z1"; LE40 "Z2"])
-        (REdSeq (REdCall "fe25519_mul_2" (LE40 "D") [LE40 "Y3"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "Y3") [LE_TFp25519 "Z1"; LE_TFp25519 "Z2"])
+        (REdSeq (REdCall "fe25519_mul_2" (LE_TFp25519 "D") [LE_TFp25519 "Y3"])
         (* E = B - A,   F = D - C,   G = D + C,   H = B + A. *)
-        (REdSeq (REdCall "fe25519_sub" (LE40 "E") [LE40 "B"; LE40 "A"])
-        (REdSeq (REdCall "fe25519_sub" (LE40 "F") [LE40 "D"; LE40 "C"])
-        (REdSeq (REdCall "fe25519_add" (LE40 "G") [LE40 "D"; LE40 "C"])
-        (REdSeq (REdCall "fe25519_add" (LE40 "H") [LE40 "B"; LE40 "A"])
+        (REdSeq (REdCall "fe25519_sub" (LE_TFp25519 "E") [LE_TFp25519 "B"; LE_TFp25519 "A"])
+        (REdSeq (REdCall "fe25519_sub" (LE_TFp25519 "F") [LE_TFp25519 "D"; LE_TFp25519 "C"])
+        (REdSeq (REdCall "fe25519_add" (LE_TFp25519 "G") [LE_TFp25519 "D"; LE_TFp25519 "C"])
+        (REdSeq (REdCall "fe25519_add" (LE_TFp25519 "H") [LE_TFp25519 "B"; LE_TFp25519 "A"])
         (* X3 = E · F,   Y3 = G · H,   Z3 = F · G. *)
-        (REdSeq (REdCall "fe25519_mul" (LE40 "X3") [LE40 "E"; LE40 "F"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "Y3") [LE40 "G"; LE40 "H"])
-        (REdSeq (REdCall "fe25519_mul" (LE40 "Z3") [LE40 "F"; LE40 "G"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "X3") [LE_TFp25519 "E"; LE_TFp25519 "F"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "Y3") [LE_TFp25519 "G"; LE_TFp25519 "H"])
+        (REdSeq (REdCall "fe25519_mul" (LE_TFp25519 "Z3") [LE_TFp25519 "F"; LE_TFp25519 "G"])
         (* Pack: Ta3 = E, Tb3 = H (so T3 = E·H per Hisil). *)
         (REdCallN "fe25519_pack_xyzt5"
            [dest]
-           [LE40 "X3"; LE40 "Y3"; LE40 "Z3"; LE40 "E"; LE40 "H"])
+           [LE_TFp25519 "X3"; LE_TFp25519 "Y3"; LE_TFp25519 "Z3"; LE_TFp25519 "E"; LE_TFp25519 "H"])
         ))))))))))))))))))))   (* close 20 REdSeq second-arg parens *)
         )))))))))))))))))))))))   (* close 23 REdLetZero body parens *)
     | _ => REdSkip
@@ -193,23 +205,23 @@ Definition fe25519_callees_honoured_add
     (callee_post_n : String.string -> list located_ed ->
                      list located_ed ->
                      rust_state_ed -> rust_state_ed -> Prop) : Prop :=
-  (* unpack: 200B → 5 × 40B felems. *)
+  (* unpack: 200B → 5 × TFp25519 limb tuples. *)
   (forall dests args rs1 rs2,
      callee_post_n "fe25519_unpack_xyzt5" dests args rs1 rs2 ->
      length dests = 5%nat /\
-     (forall d, In d dests -> d.(loc_type) = TBytes 40))
+     (forall d, In d dests -> d.(loc_type) = TFp25519))
   /\
-  (* pack: 5 × 40B felems → 200B xyzt. *)
+  (* pack: 5 × TFp25519 limb tuples → 200B xyzt. *)
   (forall dests args rs1 rs2,
      callee_post_n "fe25519_pack_xyzt5" dests args rs1 rs2 ->
      length dests = 1%nat)
   /\
-  (* Every field op: outputs a 40-byte felem. *)
+  (* Every field op: outputs a TFp25519 limb tuple. *)
   (forall fname dst args rs1 rs2,
      In fname ["fe25519_mul"; "fe25519_sub"; "fe25519_add";
                "fe25519_mul_d2"; "fe25519_mul_2"] ->
      callee_post fname args dst rs1 rs2 ->
-     dst.(loc_type) = TBytes 40).
+     dst.(loc_type) = TFp25519).
 
 (* ================================================================ *)
 (* §3.  Correctness theorem                                          *)

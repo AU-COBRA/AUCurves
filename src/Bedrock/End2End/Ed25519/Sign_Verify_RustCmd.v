@@ -171,8 +171,9 @@ Definition v_RcheckA     := "RcheckA".
 Definition v_check_bytes := "check_bytes".
 (** 2026-05-12: result is now the caller-supplied [result_out] parameter
     rather than an internally-allocated slot.  Eliminates the
-    "non-caller-visible local" emitter gap; halves the cargo
-    [verify] wrapper cost (no more recompute through dalek). *)
+    "non-caller-visible local" emitter gap.  Combined with the Bug-D fix
+    (the final [bytes_equal_32] now compares two 32-byte compressed
+    points), the cargo [verify] wrapper drops its dalek recompute. *)
 Definition v_result      := "result_out".
 (** Slots introduced by the Bug-B fix:
     - v_R_bytes_v : 32-byte R extracted from sig_in[0..32], used as a
@@ -185,6 +186,12 @@ Definition v_chal_buf_v  := "chal_buf_v".
 (** Bug-C fix slot: 32-byte S extracted from sig_in[32..64].  Passed to
     [ed25519_scalarmult_base] in place of the 64-byte [v_sig_in]. *)
 Definition v_S_bytes     := "S_bytes".
+(** Bug-D fix slot: 32-byte compressed form of sB.  Compared against
+    [v_check_bytes] (= compress(R + h·A)) by the final [bytes_equal_32].
+    Previously the protocol fed the raw 64-byte [v_sig_in] as the first
+    bytes_equal_32 argument, which was a shape mismatch (and the wrong
+    semantic check). *)
+Definition v_check_sB_bytes := "check_sB_bytes".
 
 (** Note: the [v_result] (= "result_out") slot is supplied by the
     caller via [ed25519_verify_rs_sig]'s first parameter — NOT
@@ -203,6 +210,9 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   REdLetZero v_R_bytes_v (TBytes 32) (
   REdLetZero v_chal_buf_v (TBytes 4160) (
   REdLetZero v_S_bytes (TBytes 32) (
+  (* Bug-D fix: 32-byte slot for compress(sB), compared against
+     v_check_bytes by the final bytes_equal_32. *)
+  REdLetZero v_check_sB_bytes (TBytes 32) (
   REdSeq (REdCall "scalar_lt_L" (LE_TBytes v_result 1)
                                   [LE_TBytes v_sig_in 64])
   (REdSeq (REdCall "ed25519_decompress_R" (LE_TBytes v_R_xyzt_v 200)
@@ -243,10 +253,14 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
                                         LE_TBytes v_hA 200])
   (REdSeq (REdCall "ed25519_compress" (LE_TBytes v_check_bytes 32)
                                        [LE_TBytes v_RcheckA 200])
+  (* Bug-D fix: compress sB into a 32-byte slot so the final byte-by-byte
+     comparison takes two equally-shaped 32B inputs. *)
+  (REdSeq (REdCall "ed25519_compress" (LE_TBytes v_check_sB_bytes 32)
+                                       [LE_TBytes v_sB 200])
   (REdCall "bytes_equal_32" (LE_TBytes v_result 1)
-                              [LE_TBytes v_sig_in 64;
+                              [LE_TBytes v_check_sB_bytes 32;
                                LE_TBytes v_check_bytes 32]
-  )))))))))))))))))))))))))).
+  )))))))))))))))))))))))))))).
 
 Lemma borrow_ok_ed_verify : borrow_ok_ed ed25519_verify_rs = true.
 Proof. vm_compute. reflexivity. Qed.

@@ -160,7 +160,8 @@ Definition ed25519_verify_gallina_lifted
   let hA        := ed25519_scalarmult_spec h A_xyzt in
   let RcheckA   := ed25519_xyzt_add_spec R_xyzt hA in
   let check_b   := ed25519_compress_spec RcheckA in
-  bytes_equal_32_spec sig_in check_b.
+  let check_sB  := ed25519_compress_spec sB in
+  bytes_equal_32_spec check_sB check_b.
 
 (** Clean reference: under conventional buffer lengths
     (chal_init: 4160 bytes, chal_hash_len = 64 + msg_len), the lifted
@@ -180,7 +181,8 @@ Definition ed25519_verify_gallina
   let hA        := ed25519_scalarmult_spec h A_xyzt in
   let RcheckA   := ed25519_xyzt_add_spec R_xyzt hA in
   let check_b   := ed25519_compress_spec RcheckA in
-  bytes_equal_32_spec sig_in check_b.
+  let check_sB  := ed25519_compress_spec sB in
+  bytes_equal_32_spec check_sB check_b.
 
 (* Bug-C fix (2026-05-11): the protocol now extracts the 32-byte scalar
    S = sig_in[32..64] via [memmove_S_from_sig] before passing it to
@@ -320,7 +322,7 @@ Ltac neq_var_v :=
   cbv [v_sig_in v_pub v_msg v_sig_out
        v_result v_R_xyzt_v v_A_xyzt_v v_h_v v_h_red
        v_sB v_hA v_RcheckA v_check_bytes
-       v_R_bytes_v v_chal_buf_v v_S_bytes
+       v_R_bytes_v v_chal_buf_v v_S_bytes v_check_sB_bytes
        (* sign-side too, harmless *)
        v_h_full v_a_slot v_prefix v_A_xyzt v_A_bytes v_nonce_buf
        v_r_full v_r_slot v_R_xyzt v_R_bytes v_chal_buf
@@ -403,13 +405,13 @@ Proof.
          Hsig_in Hpub Hmsg Hsig_out Hmsg_len_get Hexec.
   unfold ed25519_verify_rs in Hexec.
 
-  (* Stage A: peel 11 REdLetZero allocations. *)
+  (* Stage A: peel 12 REdLetZero allocations (Bug-D adds v_check_sB_bytes). *)
   repeat (match goal with
           | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
               inversion H; subst; clear H
           end).
 
-  (* Propagate sig_in/pub/msg/sig_out/msg_len across the 11 fresh slot
+  (* Propagate sig_in/pub/msg/sig_out/msg_len across the 12 fresh slot
      allocations.  Tower lookups via [slot_holds_set_tower_other];
      scalar lookup via [scalar_get_set_tower] (which holds
      unconditionally — tower and scalar envs are stored separately). *)
@@ -537,13 +539,16 @@ Proof.
   frame_through_call_with Hframe neq_var_v.
   clear Hframe Hsrc Htgt10a.
 
-  (* V11: ed25519_scalarmult (hA ← h_red, A_xyzt_v) *)
+  (* V11: ed25519_scalarmult (hA ← h_red, A_xyzt_v)
+     Note (Bug-D): we keep Htgt10 (v_sB) alive — it's reused by V14
+     to feed compress(sB).  frame_through_call_with lifts it across
+     V11/V12/V13 since none of those write v_sB. *)
   peel_call_seq_v Hexec Hframe Hres.
   destruct Hres as [h_bs [A_bs [Hsh [HsA Htgt11]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsh Htgt9) as Heq; subst h_bs.
   pose proof (slot_holds_inj _ _ _ _ HsA Htgt3) as Heq; subst A_bs.
   frame_through_call_with Hframe neq_var_v.
-  clear Hframe Hsh HsA Htgt10.
+  clear Hframe Hsh HsA.
 
   (* V12: ed25519_xyzt_add (RcheckA ← R_xyzt_v, hA) *)
   peel_call_seq_v Hexec Hframe Hres.
@@ -562,20 +567,29 @@ Proof.
         Htgt9 Htgt12.
   clear Hframe Hsrc.
 
-  (* V14: bytes_equal_32 (v_result ← sig_in, check_bytes) — last call *)
+  (* V14 (Bug-D): ed25519_compress (check_sB_bytes ← sB) *)
+  peel_call_seq_v Hexec Hframe Hres.
+  destruct Hres as [src_bs [Hsrc Htgt14a]].
+  (* Source is v_sB whose latest contents are Htgt10's
+     ed25519_scalarmult_base_spec output (sB). *)
+  pose proof (slot_holds_inj _ _ _ _ Hsrc Htgt10) as Heq; subst src_bs.
+  frame_through_call_with Hframe neq_var_v.
+  clear Hframe Hsrc Htgt10.
+
+  (* V15: bytes_equal_32 (v_result ← check_sB_bytes, check_bytes) — last call *)
   peel_last_call_v Hexec Hframe Hres.
-  destruct Hres as [a_bs [b_bs [Hsa [Hsb Htgt14]]]].
-  pose proof (slot_holds_inj _ _ _ _ Hsa Hsig_in_alloc) as Heq; subst a_bs.
+  destruct Hres as [a_bs [b_bs [Hsa [Hsb Htgt15]]]].
+  pose proof (slot_holds_inj _ _ _ _ Hsa Htgt14a) as Heq; subst a_bs.
   pose proof (slot_holds_inj _ _ _ _ Hsb Htgt13) as Heq; subst b_bs.
   clear Hframe Hsa Hsb.
 
   (* === Stage C: assembly. ===
-     Htgt14's body matches [ed25519_verify_gallina_lifted] with
+     Htgt15's body matches [ed25519_verify_gallina_lifted] with
      [chal_hash_len := Z.to_nat len8] and [chal_init := dst_bs5]. *)
-  cbn [LE_TBytes loc_var] in Htgt14.
+  cbn [LE_TBytes loc_var] in Htgt15.
   exists (Z.to_nat len8), dst_bs5.
   unfold ed25519_verify_gallina_lifted.
-  exact Htgt14.
+  exact Htgt15.
 Qed.
 
 (** **Sanity print.**  [Print Assumptions ed25519_verify_strong_correct]

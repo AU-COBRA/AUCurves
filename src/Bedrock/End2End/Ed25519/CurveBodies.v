@@ -25,7 +25,9 @@ Require Import Bedrock.End2End.Ed25519.XyztAddBody.
 Require Import Bedrock.End2End.Ed25519.XyztDoubleBody.
 Require Import Bedrock.End2End.Ed25519.XyztAddBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.XyztDoubleBodyDecomposed.
+Require Import Bedrock.End2End.Ed25519.XyztCopyBody.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBody.
+Require Import Bedrock.End2End.Ed25519.ScalarmultBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBody.
 Require Import Bedrock.End2End.Ed25519.DecompressBody.
 Require Import Bedrock.End2End.Ed25519.CalculateKeyPairBody.
@@ -46,18 +48,20 @@ Definition curve_function_table : function_table_ed :=
    ("xyzt_add_decomposed",   xyzt_add_body_decomposed);
    ("xyzt_double",           xyzt_double_body);
    ("xyzt_double_decomposed", xyzt_double_body_decomposed);
+   ("xyzt_copy",             xyzt_copy_body);
    ("scalarmult",            scalarmult_body);
+   ("scalarmult_decomposed", scalarmult_body_decomposed);
    ("scalarmult_base",       scalarmult_base_body);
    ("decompress_R",          decompress_R_body);
    ("decompress_A",          decompress_A_body);
    ("calculate_key_pair_a",  calculate_key_pair_a_body);
    ("calculate_key_pair_A",  calculate_key_pair_A_body)].
 
-(** Sanity check: the table has the expected 10 entries (7 distinct
-    pass-through bodies — decompress contributes two — plus the 2
-    Phase-A decomposed variants for xyzt_add / xyzt_double). *)
+(** Sanity check: the table now has 12 entries (after Phase B added
+    the [xyzt_copy] helper and the [scalarmult_decomposed] entry on
+    top of the original 10). *)
 Lemma curve_function_table_size :
-  length curve_function_table = 10%nat.
+  length curve_function_table = 12%nat.
 Proof. reflexivity. Qed.
 
 (* Print Assumptions curve_function_table. *)

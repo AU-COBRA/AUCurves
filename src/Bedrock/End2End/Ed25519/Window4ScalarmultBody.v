@@ -57,7 +57,7 @@ Local Definition LE32 (v : String.string) : located_ed :=
 (* ================================================================ *)
 
 (** Each line: REdSeq (one xyzt-add) (rest).  All 15 nested. *)
-Local Definition build_window4_table_body
+Definition build_window4_table_body
     (P_in T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15 : located_ed)
     (cont : rust_cmd_ed) : rust_cmd_ed :=
   let step (a b : located_ed) (k : rust_cmd_ed) : rust_cmd_ed :=
@@ -82,7 +82,7 @@ Local Definition build_window4_table_body
 (* §2.  CT table lookup over 16 entries                              *)
 (* ================================================================ *)
 
-Local Definition ct_table_lookup_16
+Definition ct_table_lookup_16
     (digit_var : var) (dest : located_ed)
     (T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12 T13 T14 T15 : located_ed)
     : rust_cmd_ed :=

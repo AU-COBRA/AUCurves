@@ -47,11 +47,18 @@ Local Open Scope Z_scope.
     needs a quadratic-non-residue correction.
 
     Concrete value:
-      sqrtm1 = 19681161376707505956807079304928817602391330965217846977967260307988654100245.
+      sqrtm1 = 19681161376707505956807079304988542015446066515923890162744021073123829784752.
     We hard-code it; this is a 254-bit constant directly computable
-    by [pow_mod 2 ((ed25519_p - 1)/4) ed25519_p]. *)
+    by [pow_mod 2 ((ed25519_p - 1)/4) ed25519_p].
+    Bug-fix 2026-05-12: the previous value (...0492881760...) had
+    incorrect digits 34..; squaring it mod p yielded 27733169..., not
+    p-1. Replaced with the IETF/canonical value (...0498854201...);
+    sqrtm1² mod p = p-1 verified by vm_compute (see sanity lemma below). *)
 Definition ed25519_sqrtm1 : Z :=
-  19681161376707505956807079304928817602391330965217846977967260307988654100245.
+  19681161376707505956807079304988542015446066515923890162744021073123829784752.
+
+Lemma ed25519_sqrtm1_sq : (ed25519_sqrtm1 * ed25519_sqrtm1) mod ed25519_p = ed25519_p - 1.
+Proof. vm_compute. reflexivity. Qed.
 
 (** ** Try to recover x from y given the sign-bit hint.
     Returns the value [x] (mod p); validity is not checked. *)

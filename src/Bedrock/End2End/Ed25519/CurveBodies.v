@@ -32,6 +32,8 @@ Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBody.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.DecompressBody.
 Require Import Bedrock.End2End.Ed25519.CalculateKeyPairBody.
+Require Import Bedrock.End2End.Ed25519.WnafScalarmultBody.
+Require Import Bedrock.End2End.Ed25519.CombScalarmultBody.
 Import ListNotations.
 Local Open Scope string_scope.
 
@@ -57,14 +59,18 @@ Definition curve_function_table : function_table_ed :=
    ("decompress_R",          decompress_R_body);
    ("decompress_A",          decompress_A_body);
    ("calculate_key_pair_a",  calculate_key_pair_a_body);
-   ("calculate_key_pair_A",  calculate_key_pair_A_body)].
+   ("calculate_key_pair_A",  calculate_key_pair_A_body);
+   ("wnaf_scalarmult",       wnaf_scalarmult_body);
+   ("comb_scalarmult_base",  comb_scalarmult_base_body)].
 
-(** Sanity check: the table now has 13 entries (Phase A added the
-    [xyzt_*_decomposed] pair, Phase B added [xyzt_copy] and
-    [scalarmult_decomposed], Phase C added
-    [scalarmult_base_decomposed] on top of the original 10). *)
+(** Sanity check: the table now has 15 entries (the latest addition is
+    [comb_scalarmult_base], a comb-table-optimized fixed-base scalar
+    multiplication body slotted in for the Ed25519 sign hot path — 64
+    conditional twisted-Edwards adds, no runtime doublings; the comb
+    table is precomputed off-line and resolved by the leaf-call
+    [comb_table_lookup]). *)
 Lemma curve_function_table_size :
-  length curve_function_table = 13%nat.
+  length curve_function_table = 15%nat.
 Proof. reflexivity. Qed.
 
 (* Print Assumptions curve_function_table. *)

@@ -35,6 +35,7 @@ Require Import bedrock2.Syntax.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.RustCmdToC.       (* for [to_bedrock_cmd]              *)
+Require Import Bedrock.NormalizeSelect.  (* for [normalize_select]            *)
 Require Import Bedrock.Jasmin.Core.      (* for [jasmin_cmd], [tr_cmd]        *)
 Import ListNotations.
 
@@ -42,8 +43,23 @@ Import ListNotations.
 (* §1. Composition                                                   *)
 (* ================================================================ *)
 
-(** The composition path: rust_cmd_ed -> bedrock2.cmd -> jasmin_cmd. *)
+(** The composition path: rust_cmd_ed -> bedrock2.cmd -> jasmin_cmd.
+
+    Pre-pass: [normalize_select] lowers each [REdSelect] to a
+    branch-free byte-mask-merge sequence using only [REdLetU64] /
+    [REdByteLoad] / [REdByteStore] — all of which [to_bedrock_cmd]
+    translates correctly.  Without this pre-pass, [to_bedrock_cmd]
+    stubs [REdSelect] to [cmd.cond skip skip], destroying CT.
+
+    Bodies that don't contain [REdSelect] are unchanged by
+    [normalize_select] (only the [REdSelect] arm of the recursion
+    fires).  So existing PoC bodies (e.g. [xyzt_copy_body]) produce
+    identical output before and after this change. *)
 Definition rust_cmd_ed_to_jasmin (c : rust_cmd_ed) : jasmin_cmd :=
+  tr_cmd (to_bedrock_cmd (normalize_select c)).
+
+(** Unwrapped path — kept for differential testing only. *)
+Definition rust_cmd_ed_to_jasmin_unwrapped (c : rust_cmd_ed) : jasmin_cmd :=
   tr_cmd (to_bedrock_cmd c).
 
 (* ================================================================ *)
@@ -68,7 +84,7 @@ Lemma rust_cmd_ed_to_jasmin_call : forall fname dst args,
         (JEvar dst.(loc_var)
          :: List.map (fun l => JEvar l.(loc_var)) args).
 Proof.
-  intros. cbv [rust_cmd_ed_to_jasmin to_bedrock_cmd tr_cmd].
+  intros. cbv [rust_cmd_ed_to_jasmin normalize_select to_bedrock_cmd tr_cmd].
   cbn [List.map tr_expr]. f_equal. f_equal.
   rewrite List.map_map. reflexivity.
 Qed.

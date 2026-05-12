@@ -29,6 +29,7 @@ Require Import Bedrock.End2End.Ed25519.XyztCopyBody.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBody.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBody.
+Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.DecompressBody.
 Require Import Bedrock.End2End.Ed25519.CalculateKeyPairBody.
 Import ListNotations.
@@ -52,16 +53,18 @@ Definition curve_function_table : function_table_ed :=
    ("scalarmult",            scalarmult_body);
    ("scalarmult_decomposed", scalarmult_body_decomposed);
    ("scalarmult_base",       scalarmult_base_body);
+   ("scalarmult_base_decomposed", scalarmult_base_body_decomposed);
    ("decompress_R",          decompress_R_body);
    ("decompress_A",          decompress_A_body);
    ("calculate_key_pair_a",  calculate_key_pair_a_body);
    ("calculate_key_pair_A",  calculate_key_pair_A_body)].
 
-(** Sanity check: the table now has 12 entries (after Phase B added
-    the [xyzt_copy] helper and the [scalarmult_decomposed] entry on
-    top of the original 10). *)
+(** Sanity check: the table now has 13 entries (Phase A added the
+    [xyzt_*_decomposed] pair, Phase B added [xyzt_copy] and
+    [scalarmult_decomposed], Phase C added
+    [scalarmult_base_decomposed] on top of the original 10). *)
 Lemma curve_function_table_size :
-  length curve_function_table = 12%nat.
+  length curve_function_table = 13%nat.
 Proof. reflexivity. Qed.
 
 (* Print Assumptions curve_function_table. *)

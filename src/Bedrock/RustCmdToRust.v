@@ -367,6 +367,158 @@ Fixpoint string_concat (sep : String.string) (xs : list String.string) : String.
 Definition rs_table_extract (table : list body_extract_sig) : string :=
   string_concat (LF ++ LF) (List.map rs_body_extract_extern_c table).
 
+(* ================================================================ *)
+(* §5c. Inline body extraction — Path (2) of the gap inventory.       *)
+(*                                                                    *)
+(* The extern-C variant above emits raw-pointer FFI signatures        *)
+(* that LLVM's alias analyzer treats as fully opaque [u8] regions     *)
+(* of unknown size, defeating cross-body inlining + DCE.              *)
+(*                                                                    *)
+(* This [rs_body_extract_inline] variant instead emits each body as   *)
+(*                                                                    *)
+(*   #[inline(always)]                                                 *)
+(*   pub fn xyzt_add_decomposed(                                      *)
+(*       out:  &mut [u8; 200],                                        *)
+(*       arg0: &mut [u8; 200],                                        *)
+(*       arg1: &mut [u8; 200],                                        *)
+(*   ) { ...body... }                                                 *)
+(*                                                                    *)
+(* Differences from the extern-C variant:                              *)
+(*   • No [#[unsafe(no_mangle)]] (now Rust-callable directly).        *)
+(*   • No [unsafe extern "C"] — plain [pub fn].                       *)
+(*   • Parameters are [&mut [u8; N]] directly (no raw-ptr cast        *)
+(*     prelude).                                                      *)
+(*   • [#[inline(always)]] forces inlining at call sites for LLVM.    *)
+(*                                                                    *)
+(* Cross-body call (REdCallFn): keep the standard                     *)
+(*   unsafe { fname(out.as_mut_ptr(), arg.as_ptr()) }                  *)
+(* form via raw pointers, but the callee's parameters are now         *)
+(* [&mut [u8; N]].  Calling a [pub fn(&mut [u8;N], &mut [u8;N])]      *)
+(* with raw pointers DOESN'T work in Rust — the call site needs to    *)
+(* pass typed references.                                             *)
+(*                                                                    *)
+(* The borrow-checker complication: cross-body call sites may alias   *)
+(* (e.g. [xyzt_double_decomposed(accum, accum)] in the scalarmult     *)
+(* ladder).  We work around this by emitting an [unsafe { &mut *(p as *)
+(* *mut [u8; N]) }] cast for each typed argument at the call site,    *)
+(* bypassing the borrow checker via raw-pointer indirection while     *)
+(* keeping the typed signature for LLVM alias analysis.               *)
+(*                                                                    *)
+(* The borrow-rule safety predicate [borrow_ok_ed] (vm_compute over   *)
+(* the rust_cmd_ed AST) still gates which programs we emit;           *)
+(* unsoundness is bounded by the same predicate as the extern-C path. *)
+(* ================================================================ *)
+
+(** Typed reference cast for a cross-body call argument: given a
+    [located_ed], emit [unsafe { &mut *(name.as_mut_ptr() as *mut [u8; N]) }]
+    using the slot's known [loc_type].  Bypasses the borrow checker
+    by going through a raw pointer; safety rests on [borrow_ok_ed]. *)
+Definition rs_inline_call_arg (l : located_ed) : string :=
+  match l.(loc_type) with
+  | TU64 => rs_sanitize l.(loc_var)
+  | _    =>
+      let arrty := rs_array_type l.(loc_type) in
+      "unsafe { &mut *(" ++ rs_sanitize l.(loc_var) ++
+      ".as_mut_ptr() as *mut " ++ arrty ++ ") }"
+  end.
+
+(** Emit one statement of an inline body.  For cross-body calls
+    (REdCallFn) we use typed references; for leaf calls (REdCall),
+    callN, and copies we keep the existing raw-pointer FFI form. *)
+Fixpoint rs_emit_inline (indent : string) (c : rust_cmd_ed) : string :=
+  match c with
+  | REdSkip => indent ++ "()"
+  | REdSeq c1 c2 =>
+      rs_emit_inline indent c1 ++ ";" ++ LF ++ rs_emit_inline indent c2
+  | REdLetZero v t body =>
+      rs_decl_slot v t ++ LF ++
+      rs_emit_inline indent body
+  | REdLetU64 v e body =>
+      indent ++ "let mut " ++ rs_sanitize v ++ ": u64 = " ++ rs_sexpr e ++ ";" ++ LF ++
+      rs_emit_inline indent body
+  | REdScalarSet v e =>
+      indent ++ rs_sanitize v ++ " = " ++ rs_sexpr e
+  | REdCall fname dest args =>
+      (* Leaf call — extern "C" raw-pointer FFI, unchanged. *)
+      indent ++ "unsafe { " ++ fname ++ "(" ++
+        join ", " (rs_dest_arg dest ::
+                   List.map rs_input_arg args ++
+                   rs_call_inject_lens fname args) ++
+      ") }"
+  | REdIfNz e ct cf =>
+      indent ++ "if (" ++ rs_sexpr e ++ ") != 0 {" ++ LF ++
+      rs_emit_inline ("    " ++ indent) ct ++ LF ++
+      indent ++ "} else {" ++ LF ++
+      rs_emit_inline ("    " ++ indent) cf ++ LF ++
+      indent ++ "}"
+  | REdWhileNz e body =>
+      indent ++ "while (" ++ rs_sexpr e ++ ") != 0 {" ++ LF ++
+      rs_emit_inline ("    " ++ indent) body ++ LF ++
+      indent ++ "}"
+  | REdByteStore loc idx val =>
+      indent ++ rs_sanitize loc.(loc_var) ++ "[(" ++ rs_sexpr idx ++
+        ") as usize] = (" ++ rs_sexpr val ++ ") as u8"
+  | REdByteLoad v loc idx =>
+      indent ++ "let " ++ rs_sanitize v ++ ": u64 = " ++
+        rs_sanitize loc.(loc_var) ++ "[(" ++ rs_sexpr idx ++ ") as usize] as u64"
+  | REdFor v n body =>
+      indent ++ "for " ++ rs_sanitize v ++ " in 0u64.." ++ nat_str n ++ "u64 {" ++ LF ++
+      rs_emit_inline ("    " ++ indent) body ++ LF ++
+      indent ++ "}"
+  | REdSelect cond if_t if_f dest =>
+      indent ++ "{ let _mask: u8 = (if (" ++ rs_sexpr cond ++
+        ") != 0 { 0xffu8 } else { 0x00u8 });" ++ LF ++
+      indent ++ "  for _i in 0..(" ++ rs_sanitize dest.(loc_var) ++
+        ".len() as usize) {" ++ LF ++
+      indent ++ "    " ++ rs_sanitize dest.(loc_var) ++
+        "[_i] = (" ++ rs_sanitize if_t.(loc_var) ++
+        "[_i] & _mask) | (" ++ rs_sanitize if_f.(loc_var) ++
+        "[_i] & !_mask);" ++ LF ++
+      indent ++ "  } }"
+  | REdCallN fname dests args =>
+      (* Multi-output leaf — still extern "C" raw-pointer FFI. *)
+      indent ++ "unsafe { " ++ fname ++ "(" ++
+        join ", " (List.map rs_dest_arg dests ++
+                   List.map rs_input_arg args) ++
+      ") }"
+  | REdCallFn fname dest args =>
+      (* Verified-helper call to another inline body.  Pass typed
+         references; the callee's signature is [&mut [u8; N]] for
+         arrays.  Borrow-checker conflicts (aliased buffers) are
+         bypassed via raw-pointer round-trip inside [unsafe]. *)
+      indent ++ fname ++ "(" ++
+        join ", " (rs_inline_call_arg dest ::
+                   List.map rs_inline_call_arg args) ++
+      ")"
+  | REdBlock body =>
+      indent ++ "{" ++ LF ++
+      rs_emit_inline ("    " ++ indent) body ++ LF ++
+      indent ++ "}"
+  end.
+
+(** Emit one body as an inline-callable Rust function. *)
+Definition rs_body_extract_inline (sig : body_extract_sig) : string :=
+  let dest_loc :=
+    {| loc_var := "out"; loc_type := sig.(bes_dest_type) |} in
+  let arg_locs :=
+    mapi (fun i t => {| loc_var := rs_arg_name i; loc_type := t |})
+         sig.(bes_arg_types) in
+  let body := sig.(bes_body) dest_loc arg_locs in
+  let dest_param := ("out", sig.(bes_dest_type)) in
+  let arg_params := mapi (fun i t => (rs_arg_name i, t)) sig.(bes_arg_types) in
+  let all_params := dest_param :: arg_params in
+  "#[inline(always)]" ++ LF ++
+  "pub fn " ++ sig.(bes_name) ++ "(" ++
+    join ", " (List.map rs_param_decl all_params) ++
+  ") {" ++ LF ++
+  rs_emit_inline "    " body ++ ";" ++ LF ++
+  "}".
+
+(** Emit a whole table of inline bodies, separated by blank lines.
+    Mirrors [rs_table_extract] for the extern-C variant. *)
+Definition rs_table_extract_inline (table : list body_extract_sig) : string :=
+  string_concat (LF ++ LF) (List.map rs_body_extract_inline table).
+
 (** FFI prelude: unsafe extern "C" block declaring all leaf callees that
     REdCall sites name.  Mirrors [c_prelude] but in Rust syntax. *)
 Definition rs_prelude : string :=

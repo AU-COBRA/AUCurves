@@ -169,7 +169,11 @@ Definition v_sB          := "sB".
 Definition v_hA          := "hA".
 Definition v_RcheckA     := "RcheckA".
 Definition v_check_bytes := "check_bytes".
-Definition v_result      := "result".
+(** 2026-05-12: result is now the caller-supplied [result_out] parameter
+    rather than an internally-allocated slot.  Eliminates the
+    "non-caller-visible local" emitter gap; halves the cargo
+    [verify] wrapper cost (no more recompute through dalek). *)
+Definition v_result      := "result_out".
 (** Slots introduced by the Bug-B fix:
     - v_R_bytes_v : 32-byte R extracted from sig_in[0..32], used as a
       source for [memmove_chal_R].
@@ -182,8 +186,11 @@ Definition v_chal_buf_v  := "chal_buf_v".
     [ed25519_scalarmult_base] in place of the 64-byte [v_sig_in]. *)
 Definition v_S_bytes     := "S_bytes".
 
+(** Note: the [v_result] (= "result_out") slot is supplied by the
+    caller via [ed25519_verify_rs_sig]'s first parameter — NOT
+    allocated by [REdLetZero] here.  The protocol writes the
+    accept/reject byte into it directly. *)
 Definition ed25519_verify_rs : rust_cmd_ed :=
-  REdLetZero v_result (TBytes 1) (
   REdLetZero v_R_xyzt_v (TBytes 200) (
   REdLetZero v_A_xyzt_v (TBytes 200) (
   REdLetZero v_h_v (TBytes 64) (
@@ -239,7 +246,7 @@ Definition ed25519_verify_rs : rust_cmd_ed :=
   (REdCall "bytes_equal_32" (LE_TBytes v_result 1)
                               [LE_TBytes v_sig_in 64;
                                LE_TBytes v_check_bytes 32]
-  ))))))))))))))))))))))))))).
+  )))))))))))))))))))))))))).
 
 Lemma borrow_ok_ed_verify : borrow_ok_ed ed25519_verify_rs = true.
 Proof. vm_compute. reflexivity. Qed.

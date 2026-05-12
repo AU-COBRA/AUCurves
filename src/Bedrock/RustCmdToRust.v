@@ -297,8 +297,13 @@ Definition ed25519_verify_rs_sig : rs_func_sig :=
   {| rfs_name := "ed25519_verify";
      (* Parameter names must match the var names used inside
         ed25519_verify_rs (REdCall args) so the emitted Rust resolves;
-        rs_sanitize handles the [pub] keyword via [r#pub]. *)
-     rfs_params := [("sig_in", TBytes 64);
+        rs_sanitize handles the [pub] keyword via [r#pub].
+
+        2026-05-12: the accept/reject byte is now exposed via a caller-
+        supplied [result_out] slot rather than an internal local — halves
+        the cost of [verify] in the cargo wrapper (no more recompute). *)
+     rfs_params := [("result_out", TBytes 1);
+                    ("sig_in", TBytes 64);
                     ("pub",    TBytes 32);
                     ("msg",    TBytes 4096);
                     ("msg_len", TU64)] |}.

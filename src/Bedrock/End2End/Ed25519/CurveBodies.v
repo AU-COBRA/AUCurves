@@ -23,6 +23,8 @@ From Stdlib Require Import Lists.List.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.XyztAddBody.
 Require Import Bedrock.End2End.Ed25519.XyztDoubleBody.
+Require Import Bedrock.End2End.Ed25519.XyztAddBodyDecomposed.
+Require Import Bedrock.End2End.Ed25519.XyztDoubleBodyDecomposed.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBody.
 Require Import Bedrock.End2End.Ed25519.ScalarmultBaseBody.
 Require Import Bedrock.End2End.Ed25519.DecompressBody.
@@ -32,21 +34,30 @@ Local Open Scope string_scope.
 
 (** Function-table entry-point names used by [REdCallFn] lookups.
     These match the strings passed in [REdCallFn fname dest args]
-    inside any future verified-helper bodies. *)
-Definition curve_function_table : function_table_ed :=
-  [("xyzt_add",             xyzt_add_body);
-   ("xyzt_double",          xyzt_double_body);
-   ("scalarmult",           scalarmult_body);
-   ("scalarmult_base",      scalarmult_base_body);
-   ("decompress_R",         decompress_R_body);
-   ("decompress_A",         decompress_A_body);
-   ("calculate_key_pair_a", calculate_key_pair_a_body);
-   ("calculate_key_pair_A", calculate_key_pair_A_body)].
+    inside any future verified-helper bodies.
 
-(** Sanity check: the table has the expected 8 entries (7 distinct
-    bodies — decompress contributes two). *)
+    The "*_decomposed" entries (Phase A of
+    [docs/scalarmult-verification-plan.md]) sit alongside the trivial
+    pass-throughs.  Sites can pick either name when emitting their
+    [REdCallFn] — the pass-through stays the live default while the
+    decomposed variants' [body_correct] proofs are completed. *)
+Definition curve_function_table : function_table_ed :=
+  [("xyzt_add",              xyzt_add_body);
+   ("xyzt_add_decomposed",   xyzt_add_body_decomposed);
+   ("xyzt_double",           xyzt_double_body);
+   ("xyzt_double_decomposed", xyzt_double_body_decomposed);
+   ("scalarmult",            scalarmult_body);
+   ("scalarmult_base",       scalarmult_base_body);
+   ("decompress_R",          decompress_R_body);
+   ("decompress_A",          decompress_A_body);
+   ("calculate_key_pair_a",  calculate_key_pair_a_body);
+   ("calculate_key_pair_A",  calculate_key_pair_A_body)].
+
+(** Sanity check: the table has the expected 10 entries (7 distinct
+    pass-through bodies — decompress contributes two — plus the 2
+    Phase-A decomposed variants for xyzt_add / xyzt_double). *)
 Lemma curve_function_table_size :
-  length curve_function_table = 8%nat.
+  length curve_function_table = 10%nat.
 Proof. reflexivity. Qed.
 
 (* Print Assumptions curve_function_table. *)

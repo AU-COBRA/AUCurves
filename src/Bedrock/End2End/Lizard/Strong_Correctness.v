@@ -21,26 +21,25 @@
  *   §5  [lizard_inject_strong_correct]         : main theorem (Qed).
  *   §6  [lizard_extract_strong_correct]        : main theorem (Qed).
  *
- * Status (2026-05-11):
+ * Status (2026-05-12):
  *   §1-§6 closed.  All 6 leaf Gallina specs are concrete Definitions
- *   (no Parameters / Axioms).  HOWEVER, four of the six are
- *   CRYPTOGRAPHICALLY UNDERSPECIFIED placeholders — they are honest
- *   total functions of the correct (input length, output length)
- *   shape, but they do NOT implement the Ristretto255 / Elligator2
- *   maps from draft-irtf-cfrg-ristretto255-decaf448-03.  See the
- *   per-spec doc-comments below for the precise gap.
+ *   (no Parameters / Axioms).  TWO of the six remain CRYPTOGRAPHICALLY
+ *   UNDERSPECIFIED placeholders (Elligator2 forward + inverse); the
+ *   two Ristretto encode/decode leaves are now faithful implementations
+ *   of §3.2.1 / §3.2.2 of draft-irtf-cfrg-ristretto255-decaf448-03.
  *
  *   Faithful (no gap):
  *     - [lizard_pack_spec]  (16B → 32B, middle-slice + zero-pad).
  *     - [lizard_unpack_spec] (32B → 16B, inverse).
+ *     - [ristretto_encode_spec]         (§3.2.2 of the IETF draft;
+ *                                        body in RistrettoEncode.v).
+ *     - [ristretto_decode_or_fail_spec] (§3.2.1; body in RistrettoDecode.v).
  *
  *   Placeholder (cryptographic gap; see per-spec docs):
  *     - [elligator2_to_edwards_spec]    (real: §A.4 of the IETF draft).
  *     - [edwards_to_elligator2_spec]    (real: inverse map; non-injective,
  *                                       so the inverse is a partial multi-
  *                                       valued relation in general).
- *     - [ristretto_encode_spec]         (real: §4.3.2 of the IETF draft).
- *     - [ristretto_decode_or_fail_spec] (real: §4.3.1 of the IETF draft).
  *
  *   All six are marked [Global Opaque], so the body is hidden in
  *   downstream proofs but executable when [Transparent].
@@ -78,6 +77,8 @@ Require Import Bedrock.End2End.Ed25519.CompressVerified.
 Require Import Bedrock.End2End.Ed25519.DecompressVerified.
 Require Import Bedrock.End2End.Lizard.Inject_RustCmd.
 Require Import Bedrock.End2End.Lizard.Extract_RustCmd.
+Require Import Bedrock.End2End.Lizard.RistrettoEncode.
+Require Import Bedrock.End2End.Lizard.RistrettoDecode.
 Require Import Bedrock.End2End.StrongCorrectnessTactics.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -245,54 +246,28 @@ Global Opaque edwards_to_elligator2_spec.
 (** [ristretto_encode_spec]: 200-byte Edwards (xyzt) point → 32-byte
     Ristretto255 encoding.
 
-    -------------------------------------------------------------------
-    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL RISTRETTO ENCODING.
-    -------------------------------------------------------------------
-    The real encoding (Hamburg, "Decaf"/"Ristretto", and §4.3.2 of
-    draft-irtf-cfrg-ristretto255-decaf448-03) picks a canonical
-    representative of the input point's cofactor-4 coset on the
-    Edwards curve, so that any two of the four Edwards representatives
-    of the same Ristretto group element encode to the SAME 32 bytes.
-    The algorithm (sketch):
+    Faithful implementation of §3.2.2 of
+    draft-irtf-cfrg-ristretto255-decaf448-03.  See
+    [Bedrock.End2End.Lizard.RistrettoEncode.ristretto_encode_gallina]
+    for the step-by-step body; this file just rebinds the canonical
+    name used by the strong-correctness obligation.
 
-        // input (X, Y, Z, T) with T = X*Y/Z
-        u1 := (Z + Y) * (Z - Y)
-        u2 := X * Y
-        (_, invsqrt) := inv_sqrt_ratio_m1(1, u1 * u2^2)
-        D1 := invsqrt * u1
-        D2 := invsqrt * u2
-        Zinv := D1 * D2 * T
-        x_pos := X ;  y_pos := Y
-        if (T * Zinv) is negative :    // negative := low bit of |.|
-            x_pos := Y * sqrt(-1)
-            y_pos := X * sqrt(-1)
-            D1    := D2 * INVSQRT_A_MINUS_D
-        if (x_pos * Zinv) is negative : y_pos := -y_pos
-        s := |D1 * (Z - y_pos)|        // absolute value, low-bit-zero
-        return serialize_felem(s)
+    The encoder picks a canonical representative of the input point's
+    cofactor-4 coset on the Edwards curve, so that any two of the four
+    Edwards representatives of the same Ristretto group element encode
+    to the SAME 32 bytes.
 
-    The "inv_sqrt_ratio_m1" subroutine computes a canonical square
-    root of (u/v), returning a flag indicating whether the input was
-    a quadratic residue. See §4.3 of the IETF draft.
+    Constants used (see [RistrettoConsts.v]):
+      - [SQRT_M1] = sqrt(-1) mod p
+      - [INVSQRT_A_MINUS_D] = 1/sqrt(a-d) with a = -1
+      - [d] = -121665/121666 mod p
 
-    The current implementation does NONE of the above. It delegates
-    to [ed25519_compress_gallina], i.e. plain Ed25519 point
-    compression (encode Y, set the high bit of the last byte to the
-    sign of X).  This means two Edwards representatives of the same
-    Ristretto element encode to DIFFERENT 32-byte strings, so the
-    placeholder DOES NOT provide the Ristretto canonicalisation
-    property.  It is, however, deterministic, total, and depends on
-    every bit of the input.
+    All sqrt operations use the [p ≡ 5 (mod 8)] shortcut via
+    [ristretto_sqrt_ratio_m1] in [RistrettoHelpers.v].
 
-    SAFETY OF DOWNSTREAM PROOFS: the strong-correctness theorems
-    [lizard_inject_strong_correct] / [pedersen_commit_strong_correct]
-    are proved with this leaf [Global Opaque] and remain Qed-stable
-    under replacement.
-
-    Reference: §4.3.2 of draft-irtf-cfrg-ristretto255-decaf448-03 and
-    https://ristretto.group/details/encode.html. *)
+    Reference: §3.2.2 of the IETF draft and https://ristretto.group/details/encode.html. *)
 Definition ristretto_encode_spec : list Byte.byte -> list Byte.byte :=
-  ed25519_compress_gallina.
+  ristretto_encode_gallina.
 Global Opaque ristretto_encode_spec.
 
 Lemma ristretto_encode_spec_len :
@@ -302,65 +277,32 @@ Proof.
   intros input _.
   Transparent ristretto_encode_spec.
   unfold ristretto_encode_spec.
-  apply ed25519_compress_gallina_length.
+  apply ristretto_encode_gallina_length.
 Qed.
 Global Opaque ristretto_encode_spec.
 
 (** [ristretto_decode_or_fail_spec]: 32-byte Ristretto255 encoding →
     200-byte Edwards point.
 
-    -------------------------------------------------------------------
-    CRYPTOGRAPHIC GAP — PLACEHOLDER, NOT THE REAL RISTRETTO DECODING.
-    -------------------------------------------------------------------
-    The real decoding (§4.3.1 of draft-irtf-cfrg-ristretto255-decaf448-03)
-    is a PARTIAL function — it rejects encodings that are out of the
-    canonical-coset image — with rough shape:
+    Faithful implementation of §3.2.1 of
+    draft-irtf-cfrg-ristretto255-decaf448-03.  See
+    [Bedrock.End2End.Lizard.RistrettoDecode.ristretto_decode_gallina]
+    for the step-by-step body.
 
-        s := parse_felem(input)
-        if s is not in canonical form (s >= p) : FAIL
-        if s is negative                       : FAIL
-        ss := s * s
-        u1 := 1 - ss
-        u2 := 1 + ss
-        u2_sq := u2 * u2
-        v := -d * u1 * u1 - u2_sq
-        (was_square, invsqrt) := inv_sqrt_ratio_m1(1, v * u2_sq)
-        Dx := invsqrt * u2
-        Dy := invsqrt * Dx * v
-        x := |2 * s * Dx|            // absolute value
-        y := u1 * Dy
-        t := x * y
-        if (not was_square) or (t is negative) or (y = 0) : FAIL
-        return some (x, y, 1, t)
+    Totality note.  The IETF spec is PARTIAL — it rejects four classes
+    of inputs (non-canonical bytes, [s] negative, [v * u2^2] non-square,
+    [y = 0], [t] negative).  Rather than thread an [option] through the
+    [strong_callee_post_lizard] obligation, we model rejection as
+    "return the designated 200-byte BAD point [List.repeat x00 200]"
+    (see [ristretto_bad_point] in [RistrettoDecode.v]).  Downstream
+    consumers can recognise the BAD point and propagate failure
+    explicitly; the strong-correctness theorem is concerned only with
+    the data flow between leaves, not with the semantic validity of
+    the decoded point.
 
-    A faithful Gallina implementation should therefore have signature
-        (input : list byte) -> option (list byte)
-    The "or_fail" suffix in this spec's name anticipates this.
-
-    The current implementation does NONE of the above. It delegates
-    to [ed25519_decompress_gallina], i.e. plain Ed25519 point
-    decompression (parse Y, recover X via the curve equation and the
-    high-bit sign).  This means:
-      - Non-canonical Ristretto encodings (s >= p, or s with bad sign
-        bit, or s with v non-square) are silently accepted instead of
-        rejected.
-      - The output is the Ed25519 (Y, sign(X)) point, NOT the Ristretto
-        canonical representative of any group element.
-    It is, however, deterministic, total (always returns 200 bytes —
-    no option), and depends on every bit of the input.
-
-    SAFETY OF DOWNSTREAM PROOFS: as for the encoder, the strong-
-    correctness theorems are stable under replacement of the body.
-    Replacing this with a faithful Option-returning decoder would
-    additionally require adjusting the [strong_callee_post_lizard] /
-    [strong_callee_post_pedersen] obligations to track the [option]
-    type and the failure case — but the proof shape (peel calls,
-    chain slot_holds) is unchanged.
-
-    Reference: §4.3.1 of draft-irtf-cfrg-ristretto255-decaf448-03 and
-    https://ristretto.group/details/decode.html. *)
+    Reference: §3.2.1 of the IETF draft and https://ristretto.group/details/decode.html. *)
 Definition ristretto_decode_or_fail_spec : list Byte.byte -> list Byte.byte :=
-  ed25519_decompress_gallina.
+  ristretto_decode_gallina.
 Global Opaque ristretto_decode_or_fail_spec.
 
 Lemma ristretto_decode_or_fail_spec_len :
@@ -370,7 +312,7 @@ Proof.
   intros input _.
   Transparent ristretto_decode_or_fail_spec.
   unfold ristretto_decode_or_fail_spec.
-  apply ed25519_decompress_gallina_length.
+  apply ristretto_decode_gallina_length.
 Qed.
 Global Opaque ristretto_decode_or_fail_spec.
 

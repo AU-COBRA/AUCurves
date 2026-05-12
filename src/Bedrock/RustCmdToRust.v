@@ -25,6 +25,16 @@ Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
+(** Local: indexed map (Stdlib's List has no [mapi]). *)
+Fixpoint mapi_from {A B : Type} (f : nat -> A -> B) (n : nat) (xs : list A) : list B :=
+  match xs with
+  | nil => nil
+  | x :: xs' => f n x :: mapi_from f (S n) xs'
+  end.
+
+Definition mapi {A B : Type} (f : nat -> A -> B) (xs : list A) : list B :=
+  mapi_from f 0%nat xs.
+
 (* ================================================================ *)
 (* §0. Identifier sanitization (Rust keyword avoidance)               *)
 (* ================================================================ *)
@@ -246,6 +256,116 @@ Definition rs_func_emit (sig : rs_func_sig) (body : rust_cmd_ed) : string :=
   ") {" ++ LF ++
   rs_emit "    " body ++ ";" ++ LF ++
   "}".
+
+(* ================================================================ *)
+(* §5b. Body extraction: function_body_ed → Rust function string     *)
+(* ================================================================ *)
+
+(** A [function_body_ed] is a metafunction [located_ed → list located_ed
+    → rust_cmd_ed].  To extract a concrete Rust function we need to
+    fix the destination and argument signatures and feed the body with
+    sentinel locator names ("out", "arg0", "arg1", ...).  *)
+Record body_extract_sig := {
+  bes_name      : String.string;
+  bes_dest_type : tower_type_ed;
+  bes_arg_types : list tower_type_ed;
+  bes_body      : function_body_ed
+}.
+
+Definition rs_arg_name (i : nat) : String.string :=
+  "arg" ++ nat_str i.
+
+Definition rs_body_extract (sig : body_extract_sig) : string :=
+  let dest_loc :=
+    {| loc_var := "out"; loc_type := sig.(bes_dest_type) |} in
+  let arg_locs :=
+    mapi (fun i t => {| loc_var := rs_arg_name i; loc_type := t |})
+         sig.(bes_arg_types) in
+  let body := sig.(bes_body) dest_loc arg_locs in
+  let rfs :=
+    {| rfs_name := sig.(bes_name);
+       rfs_params :=
+         ("out", sig.(bes_dest_type))
+         :: mapi (fun i t => (rs_arg_name i, t)) sig.(bes_arg_types) |} in
+  rs_func_emit rfs body.
+
+(** Emit a body function as an [extern "C"] function taking raw
+    pointers.  This is the calling convention used by both:
+      - other extracted bodies (which dispatch via [REdCallFn] sites
+        that emit [unsafe { fname(out.as_mut_ptr(), arg.as_ptr()) }]);
+      - the [decomposed_curve_leaves] panic-replacement wrappers in
+        [leaves.rs] (which dispatch via raw pointers from the FFI
+        prelude).
+
+    Inside the body we rebind each pointer parameter to a mutable
+    reference on a fixed-size array, using the SAME variable name as
+    the AST.  The body's [out.as_mut_ptr()] / [arg.as_ptr()] then
+    typechecks against [&mut [u8; N]] / [&[u8; N]] in the usual way. *)
+Definition rs_raw_ptr_param (p : String.string * tower_type_ed) (is_dest : bool) : string :=
+  let '(name, t) := p in
+  match t with
+  | TU64 => rs_sanitize name ++ ": u64"
+  | _    => rs_sanitize name ++ "_raw: " ++
+            (if is_dest then "*mut u8" else "*const u8")
+  end.
+
+(** Cast prelude line: "let var: &mut [u8; N] = unsafe { &mut *(var_raw as *mut [u8; N]) };".
+    Pointer cast is via the array type; for [*const u8] we coerce
+    through a [*mut] cast to get a mutable reference, since the body
+    treats every slot as locally writable inside its scope.  Safety
+    rests on the caller honouring the rust_cmd_ed borrow predicate
+    [borrow_ok_ed], which the framework already discharges. *)
+Definition rs_param_cast (p : String.string * tower_type_ed) (is_dest : bool) : string :=
+  let '(name, t) := p in
+  match t with
+  | TU64 => ""
+  | _ =>
+      let arrty := rs_array_type t in
+      "    let " ++ rs_sanitize name ++ ": &mut " ++ arrty ++
+      " = unsafe { &mut *(" ++ rs_sanitize name ++ "_raw as *mut " ++
+      arrty ++ ") };" ++ LF
+  end.
+
+Fixpoint rs_param_casts (ps : list (String.string * tower_type_ed)) (heads_done : bool) : string :=
+  match ps with
+  | nil => ""
+  | p :: rest =>
+      (if heads_done then rs_param_cast p false
+       else rs_param_cast p true)
+      ++ rs_param_casts rest true
+  end.
+
+Definition rs_body_extract_extern_c (sig : body_extract_sig) : string :=
+  let dest_loc :=
+    {| loc_var := "out"; loc_type := sig.(bes_dest_type) |} in
+  let arg_locs :=
+    mapi (fun i t => {| loc_var := rs_arg_name i; loc_type := t |})
+         sig.(bes_arg_types) in
+  let body := sig.(bes_body) dest_loc arg_locs in
+  let dest_param := ("out", sig.(bes_dest_type)) in
+  let arg_params := mapi (fun i t => (rs_arg_name i, t)) sig.(bes_arg_types) in
+  let all_params := dest_param :: arg_params in
+  let param_strs :=
+    rs_raw_ptr_param dest_param true
+    :: List.map (fun p => rs_raw_ptr_param p false) arg_params in
+  let cast_prelude := rs_param_casts all_params false in
+  "#[unsafe(no_mangle)]" ++ LF ++
+  "pub unsafe extern ""C"" fn " ++ sig.(bes_name) ++ "(" ++
+    join ", " param_strs ++
+  ") {" ++ LF ++
+  cast_prelude ++
+  rs_emit "    " body ++ ";" ++ LF ++
+  "}".
+
+Fixpoint string_concat (sep : String.string) (xs : list String.string) : String.string :=
+  match xs with
+  | nil => ""
+  | [x] => x
+  | x :: xs' => x ++ sep ++ string_concat sep xs'
+  end.
+
+Definition rs_table_extract (table : list body_extract_sig) : string :=
+  string_concat (LF ++ LF) (List.map rs_body_extract_extern_c table).
 
 (** FFI prelude: unsafe extern "C" block declaring all leaf callees that
     REdCall sites name.  Mirrors [c_prelude] but in Rust syntax. *)

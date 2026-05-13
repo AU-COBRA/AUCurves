@@ -105,7 +105,7 @@ Proof.
     eapply compile_red_call.
     intros rs1 [Hframe1 Hbranch1].
     cbn in Hbranch1.
-    destruct Hbranch1 as [src_bs [Hsrc Htgt]].
+    destruct Hbranch1 as [Hmsg_len1 [src_bs [Hsrc Htgt]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc Hh_full) as Heq; subst src_bs.
     exact (conj Hframe1 Htgt). }
   intros rs1 [Hframe1 Htgt1].
@@ -114,7 +114,7 @@ Proof.
     eapply compile_red_call.
     intros rs2 [Hframe2 Hbranch2].
     cbn in Hbranch2.
-    destruct Hbranch2 as [in_bs [Hsrc2 Htgt2]].
+    destruct Hbranch2 as [Hmsg_len2 [in_bs [Hsrc2 Htgt2]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc2 Htgt1) as Heq; subst in_bs.
     exact (conj Hframe2 Htgt2). }
   intros rs2 [Hframe2 Htgt2].
@@ -122,7 +122,7 @@ Proof.
   eapply compile_red_call.
   intros rs3 [Hframe3 Hbranch3].
   cbn in Hbranch3.
-  destruct Hbranch3 as [src_bs3 [Hsrc3 Htgt3]].
+  destruct Hbranch3 as [Hmsg_len3 [src_bs3 [Hsrc3 Htgt3]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc3 Htgt2) as Heq; subst src_bs3.
   apply Hpred.
   - apply (slot_holds_frame _ _ _ _ _ Hframe3 Hne_aA Htgt2).
@@ -177,7 +177,7 @@ Proof.
     eapply compile_red_call.
     intros rs1 [Hframe1 Hbranch1].
     cbn in Hbranch1.
-    destruct Hbranch1 as [src_bs [Hsrc Htgt]].
+    destruct Hbranch1 as [Hmsg_len1 [src_bs [Hsrc Htgt]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc Hin) as Heq; subst src_bs.
     exact (conj Hframe1 Htgt). }
   intros rs1 [Hframe1 Htgt1].
@@ -185,7 +185,7 @@ Proof.
   eapply compile_red_call.
   intros rs2 [Hframe2 Hbranch2].
   cbn in Hbranch2.
-  destruct Hbranch2 as [src_bs2 [Hsrc2 Htgt2]].
+  destruct Hbranch2 as [Hmsg_len2 [src_bs2 [Hsrc2 Htgt2]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc2 Htgt1) as Heq; subst src_bs2.
   apply Hpred.
   - apply (slot_holds_frame _ _ _ _ _ Hframe2 Hne_fr Htgt1).
@@ -237,7 +237,7 @@ Proof.
     eapply compile_red_call.
     intros rs1 [Hframe1 Hbranch1].
     cbn in Hbranch1.
-    destruct Hbranch1 as [src_bs [dst_bs [Hsrc_h [Hdst_h Htgt]]]].
+    destruct Hbranch1 as [Hmsg_len1 [src_bs [dst_bs [Hsrc_h [Hdst_h Htgt]]]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc_h Hsrc1) as Heq1; subst src_bs.
     pose proof (slot_holds_inj _ _ _ _ Hdst_h Hdst) as Heq2; subst dst_bs.
     exact (conj Hframe1 Htgt). }
@@ -249,7 +249,7 @@ Proof.
   eapply compile_red_call.
   intros rs2 [Hframe2 Hbranch2].
   cbn in Hbranch2.
-  destruct Hbranch2 as [src_bs2 [dst_bs2 [Hsrc2_h [Hdst2_h Htgt2]]]].
+  destruct Hbranch2 as [Hmsg_len2 [src_bs2 [dst_bs2 [Hsrc2_h [Hdst2_h Htgt2]]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc2_h Hsrc2_1) as Heq3; subst src_bs2.
   pose proof (slot_holds_inj _ _ _ _ Hdst2_h Htgt1) as Heq4; subst dst_bs2.
   apply Hpred.
@@ -293,7 +293,7 @@ Proof.
   { eapply compile_red_call.
     intros rs1 [Hframe1 Hbranch1].
     cbn in Hbranch1.
-    destruct Hbranch1 as [src_bs [dst_bs [Hsrc_h [Hdst_h Htgt]]]].
+    destruct Hbranch1 as [Hmsg_len1 [src_bs [dst_bs [Hsrc_h [Hdst_h Htgt]]]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc_h Hsrc1) as Heq1; subst src_bs.
     pose proof (slot_holds_inj _ _ _ _ Hdst_h Hdst) as Heq2; subst dst_bs.
     exact (conj Hframe1 Htgt). }
@@ -302,7 +302,7 @@ Proof.
   eapply compile_red_call.
   intros rs2 [Hframe2 Hbranch2].
   cbn in Hbranch2.
-  destruct Hbranch2 as [src_bs2 [dst_bs2 [Hsrc2_h [Hdst2_h Htgt2]]]].
+  destruct Hbranch2 as [Hmsg_len2 [src_bs2 [dst_bs2 [Hsrc2_h [Hdst2_h Htgt2]]]]].
   pose proof (slot_holds_inj _ _ _ _ Hsrc2_h Hsrc2_1) as Heq3; subst src_bs2.
   pose proof (slot_holds_inj _ _ _ _ Hdst2_h Htgt1) as Heq4; subst dst_bs2.
   apply Hpred.

@@ -212,7 +212,10 @@ Proof.
        [?pred0 := fun rs' => slot_holds rs' buf_var
                   (sha512_full_spec input_bs)] implicitly via Htgt. *)
     compile_callee.
-    destruct Hbranch as [src_bs [Hsrc Htgt]].
+    (* strong_callee_post now wraps the per-leaf body with an
+       rs_get_scalar_ed v_msg_len conservation equation; peel it off
+       before reaching the existential. *)
+    destruct Hbranch as [Hmsg_len [src_bs [Hsrc Htgt]]].
     pose proof (slot_holds_inj _ _ _ _ Hsrc Hin) as Heq; subst src_bs.
     exact Htgt.
   - (* SG2: [Hpred0 : slot_holds rs_mid buf_var

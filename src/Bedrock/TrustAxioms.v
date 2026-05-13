@@ -163,13 +163,24 @@ Check @jade_mlkem768_dec_correct.
              Both backends are kept feature-flagged so users can
              fall back; the libcrux path is the verified-by-default
              target for the Signal stack.
-         (b) **libjade Jasmin AES-GCM** (queued): build GHASH on top
-             of libjade AES-CTR (libjade has CTR proofs at
-             libjade/proof/crypto_aead/aes256ctr).  EasyCrypt-grade
-             end-to-end (compiler chain is EC-verified).  EFFORT: 1-2
-             sessions for GHASH + composition.  Brings the AES-GCM
-             primitive into the SAME EasyCrypt trust regime as
-             SHA-256/SHA-512/X25519/ML-KEM-768.
+         (b) **libjade Jasmin AES-GCM** (queued, multi-week):
+             CORRECTION 2026-05-13 — the prior estimate "1-2 sessions
+             for GHASH on top of libjade AES-CTR" was INCORRECT.  An
+             audit of [BLS/libjade] (HEAD 9426b32) found NO AES, NO
+             AES-CTR, NO GCM, NO GHASH in the libjade proof tree.  The
+             Jasmin compiler ships AESENC / AESENCLAST / wclmulq /
+             wVPCLMULDQD instruction semantics
+             ([BLS/jasmin/proofs/lang/waes.v:197-226] and
+             [BLS/jasmin/proofs/compiler/x86_instr_decl.v:2077-2081]),
+             but no AES-128 / AES-256 / AES-CTR functional-correctness
+             proof.  An AES-128 compiler-test fixture exists at
+             [BLS/jasmin/compiler/tests/success/x86-64/aes.jazz] (no
+             EC proof, single-block only).  Plan + revised effort
+             estimate (15-19 sessions, biggest piece is GHASH via
+             Gueron-Kounavis reduction) in
+             [AUCurves/docs/aes-gcm-libjade-plan.md].  Brings the
+             AES-GCM primitive into the SAME EasyCrypt trust regime
+             as SHA-256/SHA-512/X25519/ML-KEM-768.
        INTERIM (default): trust aes-gcm crate (published, audited,
        AES-NI-using).
        UC-CHAIN STATUS for path (a): the Lean theorem

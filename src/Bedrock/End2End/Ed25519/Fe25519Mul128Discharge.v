@@ -826,15 +826,73 @@ Section FiatCryptoBridge.
       feval_fiat (mul_school_list la lb)
       = F.mul (feval_fiat la) (feval_fiat lb).
   Proof.
-  Admitted. (* Phase 0e E4 sharpened follow-up:
-              ~50-100 LoC.  Identify [mul_school_list la lb] with
-              [Positional.mulmod (ModOps.weight 51 1) 5 (2^255) [(1,19)] la lb]
-              (carry-free; the radix-2^51 carry chain is the separate
-              Phase 0c [fe25519_carry] body).  Then
-              [Crypto.Arithmetic.Core.Positional.eval_mulmod] gives the
-              [mod (2^255 - 19)] equality on the Z side, and
-              [F.of_Z_mod] + [F.of_Z_mul] close.  See the breadcrumb
-              comment above this Admitted for the precise lemma sequence. *)
+    (* Phase 0e E4 follow-up: closed Qed via direct Z-mod recognition.
+       The proof manifests the Solinas identity 2^255 ≡ 19 (mod 2^255-19)
+       as an explicit polynomial witness [Hwit], then closes via the
+       standard [Z_mod_plus_full] rewrite.
+
+       Note: an alternative path is via [Positional.eval_mulmod] (Core.v
+       L926).  That route requires identifying [mul_school_list la lb]
+       with [Positional.mulmod (weight 51 1) 5 (2^255) [(1,19)] la lb]
+       — a structural-collapse argument through [to_associational],
+       [Associational.mul], [Associational.repeat_reduce], and
+       [from_associational] on length-5 inputs.  Empirically that
+       reduction is heavier than the direct expansion below: by
+       destructing both lists into five concrete limbs we obtain a
+       pure-Z polynomial identity modulo (2^255 - 19), and the witness
+       is closed by [ring] in a single step.  The Solinas identity is
+       used in the same place as [eval_mulmod] would use it — namely,
+       to fold the high-side terms [a_i*b_j*2^(51(i+j))] for i+j ≥ 5
+       back into low positions scaled by 19. *)
+    intros la lb Hba Hbb Hla Hlb.
+    unfold feval_fiat.
+    rewrite <- F.of_Z_mul.
+    apply F.eq_of_Z_iff.
+    (* Destruct both length-5 lists into five concrete limbs each. *)
+    destruct la as [|a0 [|a1 [|a2 [|a3 [|a4 [|]]]]]]; try discriminate Hla.
+    destruct lb as [|b0 [|b1 [|b2 [|b3 [|b4 [|]]]]]]; try discriminate Hlb.
+    (* Unfold the schoolbook coefficients and evaluate the radix-2^51
+       [Positional.eval] on a length-5 list. *)
+    unfold mul_school_list, mul_school_c0, mul_school_c1,
+                            mul_school_c2, mul_school_c3, mul_school_c4.
+    cbn [List.nth].
+    unfold Positional.eval, Positional.to_associational, Associational.eval.
+    cbn -[Z.mul Z.add Z.pow Z.modulo weight].
+    (* Replace the abstract [weight 51 1 i] by their concrete radix-2^51
+       values w_i = 2^(51 i) for i ∈ {0..4}.  Each is a [reflexivity]
+       computation. *)
+    set (w0 := weight 51 1 0).
+    set (w1 := weight 51 1 1).
+    set (w2 := weight 51 1 2).
+    set (w3 := weight 51 1 3).
+    set (w4 := weight 51 1 4).
+    assert (Hw0 : w0 = 1) by reflexivity.
+    assert (Hw1 : w1 = 2^51) by reflexivity.
+    assert (Hw2 : w2 = 2^102) by reflexivity.
+    assert (Hw3 : w3 = 2^153) by reflexivity.
+    assert (Hw4 : w4 = 2^204) by reflexivity.
+    rewrite Hw0, Hw1, Hw2, Hw3, Hw4.
+    clear Hw0 Hw1 Hw2 Hw3 Hw4.
+    (* The Solinas witness: the unreduced product (RHS) exceeds the
+       reduced schoolbook (LHS) by exactly (2^255 - 19) times the
+       polynomial of high partial products, indexed by i+j ≥ 5 with
+       weight 2^(51(i+j-5)).  This is the algebraic content of the
+       [eval_mulmod] / [Associational.reduce] step at [s = 2^255],
+       [c = [(1,19)]], [n = 5]. *)
+    match goal with
+    | |- ?L mod _ = ?R mod _ =>
+        assert (Hwit :
+          R = L + (2^255 - 19) *
+                  (  (a1*b4 + a2*b3 + a3*b2 + a4*b1) * 1
+                   + (a2*b4 + a3*b3 + a4*b2)        * 2^51
+                   + (a3*b4 + a4*b3)                * 2^102
+                   +  a4*b4                         * 2^153)) by ring
+    end.
+    rewrite Hwit.
+    rewrite (Z.mul_comm (2^255 - 19) _).
+    rewrite Z_mod_plus_full.
+    reflexivity.
+  Qed.
 
   (** Headline composition: rewrite the u128-decorated body to the
       pure schoolbook via Step (A), then close via Step (B).  This is

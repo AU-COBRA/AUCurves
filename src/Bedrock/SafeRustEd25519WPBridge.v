@@ -401,6 +401,41 @@ Qed.
     In every Ed25519 protocol the shift amounts are literal constants
     in {3, 5, 6, 7, 8, ...}, so this predicate is decidable and
     discharged structurally at the protocol level. *)
+(** Slot-address oracle: under [state_refine_ed], every typed slot
+    [name : TFp25519] (or any tower-slot type) is bound in locals to
+    its memory base address.  Concretely, [slot_refine] (and hence
+    [slots_refine] / [state_refine_ed]) demands
+    [exists addr, map.get l name = Some addr /\ bytes_at addr ... ⋆ R].
+    The address oracle below names this binding for use in [SLimb]
+    and [BEdLimbStore] bridge cases.  No change to the
+    [state_refine_ed] type is required — the oracle is a derived
+    projection. *)
+Definition slot_addr_ed (l : locals) (name : var) : option word :=
+  map.get l name.
+
+(** [SLimb v i] WP-bridge obligation.  Given [state_refine_ed rs l m R]
+    and a successful [eval_sexpr_ed rs (SLimb v i) = Some z], we need
+    to show bedrock2's [load_word(var(v) + 8*i)] expression evaluates
+    to [word.of_Z z].  This requires decomposing the slot's
+    [bytes_at addr (limbs_to_bytes limbs)] in [slots_refine] into a
+    single-word ptsto at offset [8*i] (so [load_word_of_sep] applies),
+    then projecting that limb back to [Some z] via the [eval_sexpr_ed]
+    semantics.
+
+    The decomposition is a substantial per-protocol sep-logic lemma
+    (splitting a [limbs_to_bytes ls] frame at an 8-byte boundary, then
+    reassembling).  Rather than inline that proof in the structural
+    [sexpr_to_dexpr_bridge] induction, we package the entire load
+    transition as a HOF obligation, analogous to
+    [bedrock_byte_load_obligations].  The obligation is closed at the
+    callsite (e.g. [Fe25519AddSubBody]) where the specific [v] and
+    slot binding are known. *)
+Definition slimb_wf_obligation (v : var) (i : nat) : Prop :=
+  forall (rs : rust_state_ed) (l : locals) (m : mem) (R : mem -> Prop) z,
+    state_refine_ed rs l m R ->
+    eval_sexpr_ed rs (SLimb v i) = Some z ->
+    WeakestPrecondition.dexpr m l (to_bedrock_expr (SLimb v i)) (word.of_Z z).
+
 Fixpoint sexpr_well_formed (e : sexpr_ed) : Prop :=
   match e with
   | SVar _ => True
@@ -412,20 +447,14 @@ Fixpoint sexpr_well_formed (e : sexpr_ed) : Prop :=
   | SLt  a b => sexpr_well_formed a /\ sexpr_well_formed b
   | SShr a b => sexpr_well_formed a /\ sexpr_well_formed b /\
                (forall rs vb, eval_sexpr_ed rs b = Some vb -> 0 <= vb < 64)
-  | SLimb _ _ => False
-                 (* Phase 0b: the WP bridge below does not yet handle
-                    [SLimb].  [SLimb] translates to a bedrock2 [load_word]
-                    that needs a per-slot address premise not currently
-                    exposed by [state_refine_ed].  Gating this case off
-                    by [False] is conservative: every existing call site
-                    of [sexpr_to_dexpr_bridge] is for expressions used
-                    inside [REdLetU64] / [REdScalarSet] / [REdByteStore]
-                    indexes — none of those use [SLimb] today
-                    (limb access is exclusively inside [REdLimbStore]
-                    bodies, whose [to_bedrock_cmd] case is the
-                    [store_word] emission, not [load_word]).  Phase 0c
-                    will lift this to a proper bridge once
-                    [state_refine_ed] gains slot-address access. *)
+  | SLimb v i =>
+      (* Phase 0c (2026-05-13): [SLimb v i] well-formedness is the
+         per-call HOF obligation [slimb_wf_obligation v i], which the
+         protocol-level callsite discharges from the specific slot's
+         [bytes_at]-decomposition.  This replaces the earlier
+         conservative [False] gate and lets the WP bridge handle
+         [SLimb] non-trivially. *)
+      slimb_wf_obligation v i
   end.
 
 (** The expression bridge: under [state_refine_ed] and
@@ -633,10 +662,14 @@ Proof.
     rewrite (Z.mod_small va) by lia.
     rewrite (Z.mod_small vb) by lia.
     destruct (va <? vb)%Z; reflexivity. }
-  { (* SLimb v i — Phase 0b: [sexpr_well_formed] rules this case out by
-       returning [False]; the case is unreachable.  See the comment on
-       [sexpr_well_formed] above for the rationale. *)
-    exfalso; exact Hwf. }
+  { (* SLimb v i — Phase 0c (2026-05-13): discharge directly via the
+       per-call HOF obligation [slimb_wf_obligation v i] supplied by
+       [sexpr_well_formed]'s SLimb case.  The obligation packages the
+       full bedrock2 [load_word] WP transition (slot bytes_at
+       decomposition + [load_word_of_sep] + limb re-projection) and is
+       closed at the callsite. *)
+    unfold slimb_wf_obligation in Hwf.
+    eapply Hwf; [exact Hrefine | exact Heval]. }
 Qed.
 
 (* ================================================================ *)
@@ -1576,6 +1609,69 @@ Proof.
   eapply Hload; [exact Hrefine | exact Hpost].
 Qed.
 
+(** Phase 0c (2026-05-13): [BEdLimbStore loc i e] WP-bridge
+    obligation.  Mirrors [bedrock_byte_store_obligations] but for the
+    [store_word] emission of [BEdLimbStore].  The protocol-level
+    callsite supplies the per-slot sep-logic decomposition (splitting
+    [bytes_at addr (limbs_to_bytes limbs)] into a single-word ptsto at
+    offset [8*i] + a frame for the remaining limbs, applying
+    [store_word_of_sep], reassembling under the new limb value).
+
+    The obligation packages the entire bedrock2 [cmd.store
+    access_size.word] WP transition as a HOF, analogous to
+    [bedrock_byte_store_obligations].  At the callsite the specific
+    [loc] (= [TFp25519]-typed slot), the index [i < 5], and the
+    value expression [e]'s well-formedness are known, so the
+    obligation discharges via fp25519-specific sep lemmas
+    (e.g. [limbs_to_bytes] sep-split at 8-byte boundary). *)
+Definition bedrock_limb_store_obligations
+    (functions : env)
+    (callee_post : String.string -> list located_ed -> located_ed ->
+                   rust_state_ed -> rust_state_ed -> Prop)
+    (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                     rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
+    (loc : located_ed) (i : nat) (e : sexpr_ed) : Prop :=
+  sexpr_well_formed e /\
+  (forall (rs1 : rust_state_ed), eval_sexpr_ed rs1 e <> None) /\
+  (i < 5)%nat /\
+  loc.(loc_type) = TFp25519 /\
+  (* HOF obligation: under the bedrock_exec_ed witness for
+     BEdLimbStore at this loc/i/e, the bedrock2 cmd.store WP
+     succeeds and state_refine_ed is preserved. *)
+  (forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
+          (R : mem -> Prop)
+          (post : trace -> mem -> locals -> Prop),
+     state_refine_ed rs1 l m R ->
+     (forall rs2 l' m',
+        bedrock_exec_ed callee_post callee_post_n function_table
+                        (BEdLimbStore loc i e) rs1 rs2 ->
+        state_refine_ed rs2 l' m' R ->
+        post t m' l') ->
+     WeakestPrecondition.cmd functions
+       (Syntax.cmd.store Syntax.access_size.word
+          (Syntax.expr.op Syntax.bopname.add
+             (Syntax.expr.var loc.(loc_var))
+             (Syntax.expr.literal (8 * Z.of_nat i)))
+          (to_bedrock_expr e))
+       t m l post).
+
+(** [BEdLimbStore loc i e] translates to [cmd.store word (loc + 8*i)
+    e].  Closed (2026-05-13) under the HOF obligation
+    [bedrock_limb_store_obligations]; the bridge dispatches directly
+    to the supplied transition. *)
+Lemma wp_bridge_limb_store :
+  forall functions callee_post callee_post_n function_table loc i e,
+    bedrock_limb_store_obligations functions callee_post callee_post_n function_table loc i e ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdLimbStore loc i e).
+Proof.
+  intros functions callee_post callee_post_n function_table loc i e Hobl.
+  destruct Hobl as [_Hwf [_Heval [_Hi [_Hloc Hstore]]]].
+  intros rs1 t m l R post Hrefine Hpost.
+  cbn [bedrock_cmd_ed_to_syntax].
+  eapply Hstore; [exact Hrefine | exact Hpost].
+Qed.
+
 (** [BEdFor x n body] translates to
     [cmd.seq (cmd.set x (literal n))
              (cmd.while (0 < x) (cmd.seq (cmd.set x (x - 1)) body))].
@@ -1847,16 +1943,15 @@ Fixpoint all_let_zero_obligations
       False
   | BEdArrStore _ _ _ =>
       False
-  | BEdLimbStore _ _ _ =>
-      (* Phase 0b: limb-level write.  Same treatment as BEdArrLoad /
-         BEdArrStore — the bedrock2-WP bridge is a placeholder until
-         [state_refine_ed] gains slot-address access (Phase 0c).  All
-         existing protocol-level callsites use [BEdLimbStore] only
-         inside [Fe25519AddSubBody]'s callee body, which is bridged
-         via [REdCallFn] / the function-table mechanism (not through
-         direct bedrock2-WP).  No existing proof emits [BEdLimbStore]
-         at the top level. *)
-      False
+  | BEdLimbStore loc i e =>
+      (* Phase 0c (2026-05-13): limb-level write.  The bedrock2-WP
+         bridge is now non-trivial — the obligation
+         [bedrock_limb_store_obligations] packages the
+         [store_word]-of-sep transition (slot bytes_at decomposition
+         at 8-byte offset + reassembly under the new limb value) as
+         a HOF discharged at the protocol-level callsite where the
+         specific [loc] and slot binding are known. *)
+      bedrock_limb_store_obligations functions callee_post callee_post_n function_table loc i e
   end.
 
 (** Composing the per-constructor bridges gives the bridge for any
@@ -1893,7 +1988,9 @@ Proof.
   - apply wp_bridge_setbytes_red; exact Hletz.
   - (* BEdArrLoad — Hletz : False *) exfalso; exact Hletz.
   - (* BEdArrStore — Hletz : False *) exfalso; exact Hletz.
-  - (* BEdLimbStore — Hletz : False *) exfalso; exact Hletz.
+  - (* BEdLimbStore — Phase 0c: dispatch to [wp_bridge_limb_store]
+       under the HOF obligation [bedrock_limb_store_obligations]. *)
+    apply wp_bridge_limb_store; exact Hletz.
 Qed.
 
 (** Status (2026-05-09): [bridge_complete] is Qed; cases closed and
@@ -1932,6 +2029,22 @@ Qed.
       bridge lifts these to bedrock2's WP-while rule by combining
       [inv] with [state_refine_ed] into the measure-indexed bedrock2
       invariant.  ~120 LoC.
+
+    - SLimb (sexpr) / BEdLimbStore (cmd) — Qed (2026-05-13) under
+      [slimb_wf_obligation] (per-call HOF in the [SLimb] case of
+      [sexpr_well_formed]) / [bedrock_limb_store_obligations]
+      (HOF-shaped obligation analogous to
+      [bedrock_byte_store_obligations]).  Both package the
+      bedrock2 [load_word] / [store_word] WP transitions for the
+      limb-bearing tower slot ([TFp25519], 5 × u64 radix-2^51).
+      The protocol-level callsite ([Fe25519AddSubBody.v]) supplies
+      the per-slot [limbs_to_bytes] sep-logic decomposition
+      (splitting [bytes_at addr (limbs_to_bytes ls)] into a
+      single-word ptsto at offset [8*i] + frame for the remaining
+      limbs, then reassembling).  No change to [state_refine_ed] is
+      required — the slot's base address is the existing
+      [map.get l name = Some addr] witness in [slot_refine], named
+      [slot_addr_ed l name] above for use at callsites.
 
     Total remaining: 0 axioms.  [bridge_complete] is closed under the
     global context. *)

@@ -237,6 +237,15 @@ type x86_stmt = (int, unit, X86_arch.extended_op Sopn.asm_op_t) gstmt
     Each MULX gets its own temp to keep RDX live ranges minimal. *)
 let mulx_rdx_counter = ref 0
 
+(** Callee-arity table consulted by [translate_cmd] to pad/truncate
+    callsite arguments to match the declared callee arity.  Populated
+    by [compile_funcs] for stub-leaf functions before [translate_cmd]
+    is invoked.  This is the empirical-gate workaround for the
+    [sha512_64] arity polymorphism in [ed25519_sign_rs] (roadmap §9
+    path (b)).  Should be empty for non-stub workflows so the
+    BLS12 / X25519 benchmark binaries are unaffected. *)
+let callee_arity_tbl : (string, int) Hashtbl.t = Hashtbl.create 17
+
 let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
   match c with
   | Bls12_jasmin_extracted.JCskip -> []
@@ -274,8 +283,34 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
                         Expr.AT_none, Bty (U U64), Pvar tmp_gvar))]
 
   | Bls12_jasmin_extracted.JCcall (f, args) ->
-    let fn = mk_funname (implode f) in
-    [mk_instr (Ccall ([], fn, Stdlib.List.map translate_expr args))]
+    let fname = implode f in
+    let fn = mk_funname fname in
+    let translated = Stdlib.List.map translate_expr args in
+    (* Roadmap §9 path (b) workaround: when a callee has a fixed
+       arity (recorded in [callee_arity_tbl] by the caller) but a
+       callsite passes fewer arguments, pad with [Pconst 0]; when
+       it passes more, truncate.  This is REQUIRED for the
+       [ed25519_sign_rs] body where [sha512_64] is called with 2
+       args (initial seed hash) and 3 args (nonce/challenge hashes),
+       but jasminc requires fixed-arity callees. *)
+    let adjusted =
+      match Hashtbl.find_opt callee_arity_tbl fname with
+      | None -> translated
+      | Some target_arity ->
+        let n = Stdlib.List.length translated in
+        if n = target_arity then translated
+        else if n > target_arity then
+          let rec take k xs = if k <= 0 then [] else
+            match xs with [] -> [] | x :: rest -> x :: take (k-1) rest
+          in take target_arity translated
+        else
+          let pad = Pconst (Z.zero) in
+          let rec pad_to k xs =
+            if k <= 0 then xs
+            else pad :: pad_to (k-1) xs
+          in translated @ pad_to (target_arity - n) []
+    in
+    [mk_instr (Ccall ([], fn, adjusted))]
 
   | Bls12_jasmin_extracted.JCif (e, ct, cf) ->
     [mk_instr (Cif (translate_expr e, translate_cmd ct, translate_cmd cf))]
@@ -751,22 +786,34 @@ let partition_for_regalloc ?(verbose=false) ?(threshold=200)
 (** Build a Prog.func from a translated function.
     All our bedrock2 functions take pointers via registers (System V ABI:
     rdi, rsi, rdx, rcx, r8, r9) and return nothing. We declare each
-    parameter as [reg u64]. *)
-let wrap_func (name : string) (param_names : string list)
+    parameter as [reg u64].
+
+    The optional [?cc] parameter overrides the default Export calling
+    convention.  Stub-leaf callees (used for the empirical pass-15+
+    Jasmin gate / roadmap §9 path (b)) must be [Subroutine] so jasminc's
+    MakeReferenceArguments pass accepts the callsite-to-callee linkage. *)
+let wrap_func ?(cc=FInfo.Export) (name : string) (param_names : string list)
     (body : x86_stmt) : (unit, X86_arch.extended_op Sopn.asm_op_t) func =
   let fn = mk_funname name in
   let args = Stdlib.List.map mk_var param_names in
   let tyin = Stdlib.List.map (fun _ -> Bty (U U64)) param_names in
   (* Export functions get [nospill] to protect from the CF.90 bug in jasminc
      that manifests when AutoSpill is applied to large functions. Inline chunk
-     functions are small enough to not trigger this bug. *)
-  let nospill_annot = { FInfo.f_annot_empty with
-    FInfo.f_user_annot =
-      [(Location.mk_loc Location._dummy "nospill", None)] } in
+     functions are small enough to not trigger this bug.
+     Subroutine functions don't need nospill since they're typically small
+     leaves (stubs / outlined chunks). *)
+  let annot =
+    if cc = FInfo.Export then
+      { FInfo.f_annot_empty with
+        FInfo.f_user_annot =
+          [(Location.mk_loc Location._dummy "nospill", None)] }
+    else
+      FInfo.f_annot_empty
+  in
   { f_loc = Location._dummy;
-    f_annot = nospill_annot;
+    f_annot = annot;
     f_info = ();
-    f_cc = FInfo.Export;
+    f_cc = cc;
     f_name = fn;
     f_tyin = tyin;
     f_args = args;
@@ -884,20 +931,46 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     ignore (mk_funname name)
   ) funcs_to_compile;
 
-  (* Step 4: Translate each function, applying register-pressure partitioning *)
+  (* Step 3b: Populate the callee-arity table for stub leaves.
+     For non-stub functions (real bedrock2-generated bodies) we don't
+     touch the table — the BLS12 / X25519 benchmark binaries continue
+     to pass args verbatim. *)
+  let is_stub_body (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
+    match b with
+    | Bls12_jasmin_extracted.JCskip -> true
+    | _ -> false
+  in
+  Hashtbl.clear callee_arity_tbl;
+  Stdlib.List.iter (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
+    if is_stub_body f.Bls12_jasmin_extracted.jf_body then begin
+      let name = implode f.Bls12_jasmin_extracted.jf_name in
+      let arity = Stdlib.List.length f.Bls12_jasmin_extracted.jf_params in
+      Hashtbl.replace callee_arity_tbl name arity;
+      if verbose then
+        Printf.eprintf "[compile_direct] callee_arity_tbl[%s] = %d\n" name arity
+    end
+  ) funcs_to_compile;
+
+  (* Step 4: Translate each function, applying register-pressure partitioning.
+     Functions with a JCskip body are treated as stub leaves (e.g. the FFI
+     symbols used by Ed25519 sign for the empirical Jasmin gate of roadmap
+     §9 path (b)).  Stubs are wrapped with [Subroutine] calling convention
+     so jasminc's MakeReferenceArguments pass accepts them as callees. *)
   let all_inline_funcs = ref [] in
   let prog_funcs =
     Stdlib.List.map (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
       let name = implode f.jf_name in
       let params = Stdlib.List.map (fun (n, _ty) -> implode n) f.jf_params in
       let body = translate_cmd f.jf_body in
+      let stub = is_stub_body f.Bls12_jasmin_extracted.jf_body in
       if verbose then
-        Printf.eprintf "  %-30s -> %d Prog instrs, %d params\n"
-          name (Stdlib.List.length body) (Stdlib.List.length params);
+        Printf.eprintf "  %-30s -> %d Prog instrs, %d params%s\n"
+          name (Stdlib.List.length body) (Stdlib.List.length params)
+          (if stub then " [stub leaf — Subroutine]" else "");
       (* Partition large functions into inline chunks *)
       let do_partition = true in (* set to false to skip partitioning *)
       let (inline_funcs, new_body) =
-        if do_partition then
+        if do_partition && not stub then
           (* Phase 2 outlining (partial, 2026-04-15):
              - Infrastructure: wrap_chunk_as_subroutine + partition_at_splits
                + liveness-driven find_split_points with gap-filling fallback.
@@ -915,7 +988,18 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
         else
           ([], body) in
       all_inline_funcs := inline_funcs @ !all_inline_funcs;
-      wrap_func name params new_body
+      (* For stub leaves the body is JCskip — [Subroutine] cc lets
+         jasminc accept the callsite-to-callee linkage at pass 16
+         (MakeReferenceArguments) but the register allocator (pass
+         26) still sees the calls as opaque and may fail to find a
+         compatible coloring across stub callsites with overlapping
+         variable lifetimes (e.g., R_bytes and A_bytes both being
+         consumed by ed25519_compress).  This is the residual cost
+         of having empty bodies: jasminc has no read/write info to
+         disambiguate.  The empirical gate accepts pass 26 as
+         significant progress over A6's pass 15. *)
+      let cc = if stub then FInfo.Subroutine else FInfo.Export in
+      wrap_func ~cc name params new_body
     ) funcs_to_compile
   in
   (* Inline functions must appear AFTER the export functions that call them,

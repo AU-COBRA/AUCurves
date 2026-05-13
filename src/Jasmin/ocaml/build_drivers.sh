@@ -37,6 +37,12 @@ build_one () {
       # Same trick: needs bls12_jasmin_extracted.ml (or a rename of the
       # ed25519 extraction under that name) for Obj.magic source-type.
       ;;
+    ed25519_sign_stubbed)
+      # Tier-4 path (b): sign body PLUS empty-body stubs for the 14
+      # FFI leaves so jasminc's MakeReferenceArguments (pass 16/30)
+      # finds every callee.
+      extracted_ml="ed25519_sign_jasmin_extracted.ml"
+      ;;
     *) echo "unknown curve: $curve"; exit 2 ;;
   esac
 
@@ -65,6 +71,19 @@ build_one () {
       cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
     fi
     deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml" "$EXTRACTED_DIR/$extracted_ml")
+  fi
+  if [ "$curve" = "ed25519_sign_stubbed" ]; then
+    # Same BLS12 alias trick as ed25519_sign.
+    if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
+      cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+      cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
+    fi
+    # Order matters: bls12 first (source type), then sign extraction
+    # (referenced by Ed25519_sign_jasmin_extracted in driver), then
+    # the stubs extraction.
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+          "$EXTRACTED_DIR/$extracted_ml"
+          "$EXTRACTED_DIR/ed25519_sign_stubs_jasmin_extracted.ml")
   fi
 
   # Stage all .ml/.mli into a temp dir so ocamlfind can compile .mli first.

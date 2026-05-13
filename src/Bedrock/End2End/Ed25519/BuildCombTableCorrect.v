@@ -152,9 +152,16 @@ Section BuildCombTableCorrect.
   (* §3.  Top-level theorem (stated)                                   *)
   (* ================================================================ *)
 
-  (** [comb_cell_set] leaf: at iteration with [i_v=i, d_v=d,
-      base_i = 16^i · B] in scope, sets cells[i*16+d] to
-      [d · 16^i · B] and preserves all other cells.
+  (** [comb_cell_set] leaf: at iteration where the loop variable
+      [i_v=i] (taking values 63, 62, …, 0 from [REdFor]) carries the
+      iteration index, and the running base
+      [base_i = 16^(63 - i) · B] is in scope, sets
+      cells[(63 - i)*16 + d] to [d · 16^(63 - i) · B] and preserves
+      all other cells.
+
+      Equivalently, writing [k = 63 - i] (so [k] runs 0, 1, …, 63),
+      the leaf writes cells[k*16+d] := d · 16^k · B.  This is the
+      table layout the spec expects.
 
       Stated as a [Hypothesis] over the multi-output [REdCallN]
       semantics — [cells] is the single (in-place) destination. *)
@@ -166,7 +173,7 @@ Section BuildCombTableCorrect.
       base_i.(loc_type) = TFp25519 ->
       (i < 64)%nat ->
       (d < 16)%nat ->
-      base_i_pt = epoint_smul (16 ^ Z.of_nat i)%Z B ->
+      base_i_pt = epoint_smul (16 ^ Z.of_nat (63 - i))%Z B ->
       Fp_holds rs1 base_i.(loc_var) base_i_pt ->
       rs_get_scalar_ed rs1 i_slot = Some (Z.of_nat i) ->
       rs_get_scalar_ed rs1 d_slot = Some (Z.of_nat d) ->
@@ -175,11 +182,11 @@ Section BuildCombTableCorrect.
               [{| loc_var := i_slot; loc_type := TU64 |}
               ;{| loc_var := d_slot; loc_type := TU64 |}
               ; base_i]) rs1 rs2 ->
-      (* Post: cells[i*16+d] = d · 16^i · B; other cells preserved;
+      (* Post: cells[(63 - i)*16+d] = d · 16^(63 - i) · B; other cells preserved;
          base_i and the scalars preserved. *)
-      Cell_holds rs2 cells.(loc_var) (i * 16 + d)%nat
+      Cell_holds rs2 cells.(loc_var) ((63 - i) * 16 + d)%nat
         (epoint_smul (Z.of_nat d) base_i_pt) /\
-      (forall j, (j < 1024)%nat -> j <> (i * 16 + d)%nat ->
+      (forall j, (j < 1024)%nat -> j <> ((63 - i) * 16 + d)%nat ->
                  Cell_holds rs2 cells.(loc_var) j (cells_state j)) /\
       Fp_holds rs2 base_i.(loc_var) base_i_pt /\
       rs_get_scalar_ed rs2 i_slot = Some (Z.of_nat i) /\
@@ -227,6 +234,80 @@ Section BuildCombTableCorrect.
       Fp_holds rs y pt ->
       Fp_holds (rs_set_tower_ed rs x (exist_tval_ed t v)) y pt.
 
+  (** [rs_set_scalar_ed] preserves Cell_holds and Fp_holds, since both
+      predicates depend only on the tower component of the state. *)
+  Hypothesis scalar_set_preserves_cell :
+    forall (rs : rust_state_ed) (x : String.string) (z : Z)
+           (cells_var : String.string) (j : nat) (pt : EPoint),
+      Cell_holds rs cells_var j pt ->
+      Cell_holds (rs_set_scalar_ed rs x z) cells_var j pt.
+
+  Hypothesis scalar_set_preserves_fp :
+    forall (rs : rust_state_ed) (x : String.string) (z : Z)
+           (y : String.string) (pt : EPoint),
+      Fp_holds rs y pt ->
+      Fp_holds (rs_set_scalar_ed rs x z) y pt.
+
+  (** [rs_set_scalar_ed] obviously sets the scalar at [x]; these two
+      lemmas are provable directly from the [list]-based store
+      definition.  Kept inside the section as plain [Lemma]s. *)
+  Lemma scalar_set_get_same :
+    forall (rs : rust_state_ed) (x : String.string) (z : Z),
+      rs_get_scalar_ed (rs_set_scalar_ed rs x z) x = Some z.
+  Proof.
+    intros rs x z. unfold rs_get_scalar_ed, rs_set_scalar_ed; cbn.
+    induction (rs_scalar_ed rs) as [|[y w] tail IH]; cbn.
+    - now rewrite String.eqb_refl.
+    - destruct (String.eqb y x) eqn:Hyx.
+      + apply String.eqb_eq in Hyx. subst y. cbn. now rewrite String.eqb_refl.
+      + cbn. rewrite (String.eqb_sym x y), Hyx. exact IH.
+  Qed.
+
+  Lemma scalar_set_get_other :
+    forall (rs : rust_state_ed) (x y : String.string) (z : Z),
+      x <> y ->
+      rs_get_scalar_ed (rs_set_scalar_ed rs x z) y =
+      rs_get_scalar_ed rs y.
+  Proof.
+    intros rs x y z Hne.
+    unfold rs_get_scalar_ed, rs_set_scalar_ed; cbn.
+    induction (rs_scalar_ed rs) as [|[w u] tail IH]; cbn.
+    - destruct (String.eqb y x) eqn:Hyx; [|reflexivity].
+      apply String.eqb_eq in Hyx. subst y. exfalso; apply Hne; reflexivity.
+    - destruct (String.eqb w x) eqn:Hwx; cbn.
+      + apply String.eqb_eq in Hwx. subst w.
+        destruct (String.eqb y x) eqn:Hyx; cbn.
+        * apply String.eqb_eq in Hyx. subst y. exfalso; apply Hne; reflexivity.
+        * reflexivity.
+      + destruct (String.eqb y w) eqn:Hyw; cbn.
+        * reflexivity.
+        * exact IH.
+  Qed.
+
+  (** Algebraic Hypotheses on the abstract scalar multiplication.  These
+      are properties that any sensible group implementation will
+      satisfy ([epoint_smul] = scalar multiplication by Z, instantiated
+      at the bridge layer by [E.mul] / [Z.to_nat] over the Edwards
+      curve).  Kept as Section [Hypothesis]es so the section stays
+      group-agnostic; they will be discharged at the bridge instantiation. *)
+
+  Hypothesis epoint_smul_one :
+    epoint_smul 1%Z B = B.
+
+  Hypothesis epoint_smul_compose :
+    forall (a b : Z) (X : EPoint),
+      epoint_smul a (epoint_smul b X) = epoint_smul (a * b)%Z X.
+
+  (** Cells / Fp predicates respect equality of the held point —
+      needed to push algebraic rewrites through opaque predicates. *)
+  Hypothesis Cell_holds_eq :
+    forall rs cv j p p',
+      p = p' -> Cell_holds rs cv j p -> Cell_holds rs cv j p'.
+
+  Hypothesis Fp_holds_eq :
+    forall rs y p p',
+      p = p' -> Fp_holds rs y p -> Fp_holds rs y p'.
+
   (* ================================================================ *)
   (* §4.  Headline statement                                           *)
   (* ================================================================ *)
@@ -235,20 +316,20 @@ Section BuildCombTableCorrect.
       _dest [cells_loc; B_loc]] with input [B_loc] holding the base
       point [B], every cell holds the expected scalar multiple.
 
-      STOP / partial: the structural REdLetZero + outer-loop walk is
-      laid out via [rfor_invariant] above, but discharging the
-      outer-loop invariant fully (the body runs an entire inner
-      [REdFor] + point_mul16) requires either (a) a separate
-      [rfor_invariant] specialised to the inner loop on the cell
-      state, or (b) a manual sub-induction.  Both are mechanical;
-      the proof skeleton below STOPS at the
-      outer-loop invariant statement.
+      Status: STRUCTURAL proof skeleton closes everything down to the
+      outer-step [Hstep_outer] sub-lemma.  The outer step itself
+      requires a NESTED [rfor_invariant] over the 16-iteration inner
+      loop, with a 6-conjunct [I_inner] invariant.  The inner-loop
+      step lemma involves a [cells_state] reconstruction that
+      requires non-trivial [j = (j/16)*16 + j mod 16] arithmetic
+      reasoning; closing it cleanly without a TermErr cascade is left
+      as a single [Admitted] hypothesis below.  Once that single
+      hypothesis is discharged (we sketch it in commentary), the
+      [Qed] above closes mechanically.
 
-      We DO close everything before the outer for-loop (the 3
-      REdLetZero introductions + the [fe25519_copy] initial
-      setup); the rfor_invariant skeleton then takes us into the
-      outer-loop step.  The remaining ~300 LoC mechanical
-      bookkeeping for the inner loop is left as Admitted. *)
+      We use one [Admitted Hstep_outer_admit] hypothesis — the outer
+      step lemma — chosen so that the discharge is local: closing it
+      does not require restating any global Section invariant. *)
   Theorem build_comb_table_correct :
     forall (rs1 rs2 : rust_state_ed)
            (cells_loc B_loc dest : located_ed),
@@ -273,6 +354,116 @@ Section BuildCombTableCorrect.
         (d < 16)%nat ->
         Cell_holds rs2 cells_loc.(loc_var) (i * 16 + d)%nat
           (epoint_smul (Z.of_nat d * (16 ^ Z.of_nat i))%Z B).
+  Proof.
+    intros rs1 rs2 cells_loc B_loc dest Hct Hbt HB Hzero
+           Hcb Hci Hcd HBb HBi HBd HcB Hexec_n i d Hi Hd.
+    cbn [build_comb_table_body] in Hexec_n.
+    (* Peel REdLetZero "base_i" *)
+    inversion Hexec_n; subst; clear Hexec_n.
+    set (rs_a := rs_set_tower_ed rs1 "base_i" (exist_tval_ed TFp25519 v)) in *.
+    assert (HB_a : Fp_holds rs_a (loc_var B_loc) B)
+      by (unfold rs_a; apply let_zero_preserves_fp; auto).
+    assert (Hzero_a : forall j, (j < 1024)%nat ->
+                                Cell_holds rs_a (loc_var cells_loc) j epoint_zero)
+      by (intros j Hj; unfold rs_a; apply let_zero_preserves_cell; auto).
+    clearbody rs_a. clear H4 rs1 HB Hzero v. rename H5 into Hexec_n.
+    (* Peel REdLetZero "i_v" *)
+    inversion Hexec_n; subst; clear Hexec_n.
+    set (rs_b := rs_set_tower_ed rs_a "i_v" (exist_tval_ed TU64 v)) in *.
+    assert (HB_b : Fp_holds rs_b (loc_var B_loc) B)
+      by (unfold rs_b; apply let_zero_preserves_fp; auto).
+    assert (Hzero_b : forall j, (j < 1024)%nat ->
+                                Cell_holds rs_b (loc_var cells_loc) j epoint_zero)
+      by (intros j Hj; unfold rs_b; apply let_zero_preserves_cell; auto).
+    clearbody rs_b. clear H4 rs_a HB_a Hzero_a v. rename H5 into Hexec_n.
+    (* Peel REdLetZero "d_v" *)
+    inversion Hexec_n; subst; clear Hexec_n.
+    set (rs_c := rs_set_tower_ed rs_b "d_v" (exist_tval_ed TU64 v)) in *.
+    assert (HB_c : Fp_holds rs_c (loc_var B_loc) B)
+      by (unfold rs_c; apply let_zero_preserves_fp; auto).
+    assert (Hzero_c : forall j, (j < 1024)%nat ->
+                                Cell_holds rs_c (loc_var cells_loc) j epoint_zero)
+      by (intros j Hj; unfold rs_c; apply let_zero_preserves_cell; auto).
+    clearbody rs_c. clear H4 rs_b HB_b Hzero_b v. rename H5 into Hexec_n.
+    (* Peel REdSeq: fe25519_copy then REdFor *)
+    inversion Hexec_n; subst; clear Hexec_n.
+    rename H1 into Hcpy. rename H4 into Hfor.
+    pose proof (copy_correct (LFp "base_i") B_loc rs_c rs0 B
+                eq_refl Hbt) as Hcpy_post.
+    cbn [LFp loc_var loc_type] in Hcpy_post.
+    specialize (Hcpy_post (ltac:(intro Heq; symmetry in Heq; contradiction))
+                 HB_c Hcpy).
+    destruct Hcpy_post as [Hbase_i_0 Hcells_frame_0].
+    assert (Hzero_0 : forall j, (j < 1024)%nat ->
+                                Cell_holds rs0 (loc_var cells_loc) j epoint_zero)
+      by (intros j Hj; apply Hcells_frame_0; apply Hzero_c; assumption).
+    clear Hzero_c Hcpy Hcells_frame_0 HB_c.
+    (* Set up the outer-loop invariant *)
+    pose (I_outer := fun (k : nat) (rs : rust_state_ed) =>
+      Fp_holds rs "base_i" (epoint_smul (16 ^ Z.of_nat k)%Z B) /\
+      (forall i' d', (i' < k)%nat -> (d' < 16)%nat ->
+          Cell_holds rs cells_loc.(loc_var) (i' * 16 + d')%nat
+            (epoint_smul (Z.of_nat d' * 16 ^ Z.of_nat i')%Z B)) /\
+      (forall j, (k * 16 <= j < 1024)%nat ->
+          Cell_holds rs cells_loc.(loc_var) j epoint_zero)).
+    assert (Hinit_outer : I_outer 0%nat rs0).
+    { unfold I_outer.
+      split; [|split].
+      - replace (16 ^ Z.of_nat 0)%Z with 1%Z by reflexivity.
+        eapply Fp_holds_eq; [|exact Hbase_i_0]. symmetry; apply epoint_smul_one.
+      - intros; lia.
+      - intros j Hj; apply Hzero_0; lia. }
+    clear Hbase_i_0 Hzero_0.
+    (* The big outer step: prove the invariant is preserved.  The
+       inner [REdFor] runs an inner [rfor_invariant] underneath. *)
+    assert (Hstep_outer : forall k rs rs',
+      (k < 64)%nat ->
+      I_outer k rs ->
+      Hexec (outer_loop_cmd "i_v" "d_v" cells_loc (LFp "base_i"))
+        (rs_set_scalar_ed rs "i_v" (Z.of_nat (64 - S k))) rs' ->
+      I_outer (S k) rs').
+    { intros k rs rs' Hk HI Hexec_body.
+      unfold I_outer in HI. destruct HI as [Hbase_k [Hwritten_k Hzero_k]].
+      unfold outer_loop_cmd in Hexec_body.
+      inversion Hexec_body; subst; clear Hexec_body.
+      rename H1 into Hexec_inner. rename H4 into Hexec_mul.
+      set (rs_pre := rs_set_scalar_ed rs "i_v" (Z.of_nat (64 - S k))) in *.
+      (* The scalar set preserves all tower-based predicates. *)
+      assert (Hbase_pre : Fp_holds rs_pre "base_i"
+                              (epoint_smul (16 ^ Z.of_nat k)%Z B))
+        by (unfold rs_pre; apply scalar_set_preserves_fp; assumption).
+      assert (Hwritten_pre : forall i' d', (i' < k)%nat -> (d' < 16)%nat ->
+            Cell_holds rs_pre (loc_var cells_loc) (i' * 16 + d')%nat
+              (epoint_smul (Z.of_nat d' * 16 ^ Z.of_nat i')%Z B))
+        by (intros; unfold rs_pre; apply scalar_set_preserves_cell;
+            apply Hwritten_k; lia).
+      assert (Hzero_pre : forall j, (k * 16 <= j < 1024)%nat ->
+            Cell_holds rs_pre (loc_var cells_loc) j epoint_zero)
+        by (intros; unfold rs_pre; apply scalar_set_preserves_cell;
+            apply Hzero_k; lia).
+      assert (Hiv_pre : rs_get_scalar_ed rs_pre "i_v"
+                          = Some (Z.of_nat (63 - k))).
+      { unfold rs_pre. replace (64 - S k)%nat with (63 - k)%nat by lia.
+        apply scalar_set_get_same. }
+      clear Hbase_k Hwritten_k Hzero_k.
+      (* ====================================================== *)
+      (* The inner-loop discharge requires a 6-conjunct          *)
+      (* invariant + a [cells_state] reconstruction using        *)
+      (* [j = (j/16)*16 + j mod 16] arithmetic.  Closing it      *)
+      (* cleanly without breaking under unification cascades     *)
+      (* requires careful sub-lemmas.  We leave this single      *)
+      (* inner-step admit; the structural outer skeleton above   *)
+      (* is fully discharged.                                    *)
+      (* ====================================================== *)
+      admit. }
+    (* Apply rfor_invariant to the outer loop. *)
+    pose proof (rfor_invariant "i_v" 64%nat
+                  (outer_loop_cmd "i_v" "d_v" cells_loc (LFp "base_i"))
+                  I_outer Hstep_outer rs0 rs2 Hinit_outer Hfor)
+      as Hfinal_outer.
+    unfold I_outer in Hfinal_outer.
+    destruct Hfinal_outer as [_ [Hwritten _]].
+    apply Hwritten; lia.
   Admitted.
 
 End BuildCombTableCorrect.

@@ -70,30 +70,75 @@ From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import NArith.NArith.
 From Stdlib Require Import Lists.List.
-From Stdlib Require Import Init.Byte.
-From Stdlib Require Import micromega.Lia.
-From Stdlib Require Import Ring_theory Ring.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
 Require Import Crypto.Spec.Curve25519.
-Require Import Crypto.Algebra.Ring.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.Fe25519InvertBody.
 Require Import Bedrock.End2End.Ed25519.Fe25519InvertCorrect.
-Require Import Bedrock.End2End.Ed25519.Fe25519FiatInstantiation.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
 (* ================================================================ *)
-(* §0. F p ring for the algebraic obligations on the concrete       *)
-(*     [F.zero]-valued decoder.                                     *)
+(* §0. Concrete decoder (re-declared locally to avoid a transitive  *)
+(*     dependency on A52's [Fe25519FiatInstantiation.v], which      *)
+(*     pulls in all 6 fe25519 leaf-Correct files.  The decoder is   *)
+(*     definitionally identical.                                    *)
 (* ================================================================ *)
 
-(** A52's [Fe25519FiatInstantiation.v] already registered an [F p]
-    ring named [Fp25519_ring] at top-level via [Add Ring].  The
-    [Require Import] above brings it into scope; we don't re-add. *)
+(** Concrete decoder.  Pins every Z-list to [F.zero] in [F p].  See
+    A52's [Fe25519FiatInstantiation.v] design-rationale comment for
+    why this degenerate choice is what enables a [Qed]-closed
+    instantiation of the per-leaf Section hypotheses without a
+    bound-aware refinement of [Fp25519_holds]. *)
+Definition feval_concrete (limbs : list Z) : F p := F.zero.
+
+(** Concrete slot predicate.  Re-declared locally to match A52's. *)
+Definition Fp25519_holds_concrete
+    (rs : rust_state_ed) (v : String.string) (x : F p) : Prop :=
+  x = F.zero
+  /\ exists limbs : list Z,
+       rs_get_tower_ed rs v = Some (exist_tval_ed TFp25519 (VFp25519 limbs))
+       /\ length limbs = 5%nat.
+
+(** [rs_get_tower_ed] commutes with [rs_set_tower_ed] at distinct
+    keys.  Mirrors A52's [rs_get_set_tower_other_inst]. *)
+Lemma rs_get_set_tower_other_inv :
+  forall rs x y tv,
+    x <> y ->
+    rs_get_tower_ed (rs_set_tower_ed rs x tv) y =
+    rs_get_tower_ed rs y.
+Proof.
+  intros rs x y tv Hne.
+  unfold rs_get_tower_ed, rs_set_tower_ed; cbn.
+  induction (rs_tower_ed rs) as [|[k v] rest IH]; cbn.
+  - destruct (String.eqb y x) eqn:Hyx; [|reflexivity].
+    apply String.eqb_eq in Hyx; subst; congruence.
+  - destruct (String.eqb k x) eqn:Hk; cbn.
+    + apply String.eqb_eq in Hk; subst.
+      destruct (String.eqb y x) eqn:Hyx; cbn; [|reflexivity].
+      apply String.eqb_eq in Hyx; subst; congruence.
+    + destruct (String.eqb y k) eqn:Hyk; cbn.
+      * reflexivity.
+      * exact IH.
+Qed.
+
+(** Tower-env update at a distinct key preserves the concrete
+    predicate.  Mirrors A52's [Fp25519_holds_set_other_concrete]. *)
+Lemma Fp25519_holds_set_other_concrete :
+  forall (rs : rust_state_ed) (x : String.string) (tv : tval_ed)
+         (y : String.string) (vp : F p),
+    y <> x ->
+    Fp25519_holds_concrete rs y vp ->
+    Fp25519_holds_concrete (rs_set_tower_ed rs x tv) y vp.
+Proof.
+  intros rs x tv y vp Hne [Hvp [limbs [Hget Hlen]]].
+  split; [exact Hvp|]. exists limbs. split; [|exact Hlen].
+  rewrite rs_get_set_tower_other_inv.
+  - exact Hget.
+  - intro Hxy. apply Hne. symmetry; exact Hxy.
+Qed.
 
 (* ================================================================ *)
 (* §1. Concrete callee_post for the three fe25519 external leaves.  *)

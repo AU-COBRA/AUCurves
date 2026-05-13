@@ -19,13 +19,12 @@
  *  introduced in this file as a Section helper.  The lemma is
  *  reusable across other [REdFor] proofs.
  *
- *  Status: STATED.  The rfor_invariant helper is proved (Qed).
- *  The headline theorem [build_comb_table_correct] is stated and
- *  PARTIALLY DISCHARGED via the rfor_invariant skeleton.  The
- *  remaining 2× nested-loop bookkeeping (running the invariant for
- *  the inner loop is a separate rfor_invariant call) is documented
- *  in commentary and ADMITTED at the depth of the inner-loop
- *  invariant proof.
+ *  Status: Qed.  The rfor_invariant helper and the headline theorem
+ *  [build_comb_table_correct] are both fully discharged via nested
+ *  [rfor_invariant] (outer over [i_v ∈ 0..63], inner over
+ *  [d_v ∈ 0..15]).  Print Assumptions reports "Closed under the
+ *  global context" — the only assumptions are the Section-level
+ *  [Hypothesis]es for the abstract leaves and predicates.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -316,20 +315,19 @@ Section BuildCombTableCorrect.
       _dest [cells_loc; B_loc]] with input [B_loc] holding the base
       point [B], every cell holds the expected scalar multiple.
 
-      Status: STRUCTURAL proof skeleton closes everything down to the
-      outer-step [Hstep_outer] sub-lemma.  The outer step itself
-      requires a NESTED [rfor_invariant] over the 16-iteration inner
-      loop, with a 6-conjunct [I_inner] invariant.  The inner-loop
-      step lemma involves a [cells_state] reconstruction that
-      requires non-trivial [j = (j/16)*16 + j mod 16] arithmetic
-      reasoning; closing it cleanly without a TermErr cascade is left
-      as a single [Admitted] hypothesis below.  Once that single
-      hypothesis is discharged (we sketch it in commentary), the
-      [Qed] above closes mechanically.
+      Proof structure: nested [rfor_invariant], outer over [i_v ∈
+      0..63] and inner over [d_v ∈ 0..15].  The inner-step lemma
+      builds a unified [cells_state] function by case analysis on
+      [j ∈ 0..1023]:
+        - if [j < k*16], use [j/16] and [j mod 16] to recover the
+          previously-written (i', d') pair (lemma
+          [Nat.div_mod_eq]);
+        - if [k*16 ≤ j < (k+1)*16], use the current-row split via
+          [d' := j - k*16];
+        - otherwise (future rows), the cell is zero.
 
-      We use one [Admitted Hstep_outer_admit] hypothesis — the outer
-      step lemma — chosen so that the discharge is local: closing it
-      does not require restating any global Section invariant. *)
+      Fully Qed; Print Assumptions reports "Closed under the global
+      context". *)
   Theorem build_comb_table_correct :
     forall (rs1 rs2 : rust_state_ed)
            (cells_loc B_loc dest : located_ed),
@@ -447,15 +445,174 @@ Section BuildCombTableCorrect.
         apply scalar_set_get_same. }
       clear Hbase_k Hwritten_k Hzero_k.
       (* ====================================================== *)
-      (* The inner-loop discharge requires a 6-conjunct          *)
-      (* invariant + a [cells_state] reconstruction using        *)
-      (* [j = (j/16)*16 + j mod 16] arithmetic.  Closing it      *)
-      (* cleanly without breaking under unification cascades     *)
-      (* requires careful sub-lemmas.  We leave this single      *)
-      (* inner-step admit; the structural outer skeleton above   *)
-      (* is fully discharged.                                    *)
+      (* Inner-loop discharge via nested rfor_invariant.         *)
       (* ====================================================== *)
-      admit. }
+      pose (I_inner := fun (kk : nat) (rs_inner : rust_state_ed) =>
+        Fp_holds rs_inner "base_i" (epoint_smul (16 ^ Z.of_nat k)%Z B) /\
+        rs_get_scalar_ed rs_inner "i_v" = Some (Z.of_nat (63 - k)) /\
+        (forall i' d', (i' < k)%nat -> (d' < 16)%nat ->
+            Cell_holds rs_inner cells_loc.(loc_var) (i' * 16 + d')%nat
+              (epoint_smul (Z.of_nat d' * 16 ^ Z.of_nat i')%Z B)) /\
+        (forall d', (16 - kk <= d' < 16)%nat ->
+            Cell_holds rs_inner cells_loc.(loc_var) (k * 16 + d')%nat
+              (epoint_smul (Z.of_nat d' * 16 ^ Z.of_nat k)%Z B)) /\
+        (forall d', (d' < 16 - kk)%nat ->
+            Cell_holds rs_inner cells_loc.(loc_var) (k * 16 + d')%nat epoint_zero) /\
+        (forall j, ((k + 1) * 16 <= j < 1024)%nat ->
+            Cell_holds rs_inner cells_loc.(loc_var) j epoint_zero)).
+      assert (Hinit_inner : I_inner 0%nat rs_pre).
+      { unfold I_inner. split; [|split; [|split; [|split; [|split]]]].
+        - exact Hbase_pre.
+        - exact Hiv_pre.
+        - exact Hwritten_pre.
+        - intros d' Hd'; lia.
+        - intros d' Hd'. rewrite Nat.sub_0_r in Hd'. apply Hzero_pre. lia.
+        - intros j Hj. apply Hzero_pre. lia. }
+      assert (Hstep_inner : forall kk rs_inner rs_inner',
+        (kk < 16)%nat ->
+        I_inner kk rs_inner ->
+        Hexec (REdCallN "comb_cell_set" [cells_loc]
+                 [{| loc_var := "i_v"; loc_type := TU64 |}
+                 ;{| loc_var := "d_v"; loc_type := TU64 |}
+                 ; LFp "base_i"])
+              (rs_set_scalar_ed rs_inner "d_v" (Z.of_nat (16 - S kk))) rs_inner' ->
+        I_inner (S kk) rs_inner').
+      { intros kk rs_inner rs_inner' Hkk HI_in Hexec_body.
+        unfold I_inner in HI_in.
+        destruct HI_in as [Hb_in [Hiv_in [Hwr_in [Hcur_w_in [Hcur_z_in Hfut_in]]]]].
+        (* Construct a unified cells_state covering all cells. *)
+        pose (cells_state := fun (j : nat) =>
+          if Nat.ltb j (k * 16)
+          then epoint_smul (Z.of_nat (j mod 16) * 16 ^ Z.of_nat (j / 16))%Z B
+          else if Nat.ltb j ((k + 1) * 16)
+               then (if Nat.leb (16 - kk) (j - k * 16)
+                     then epoint_smul (Z.of_nat (j - k * 16) * 16 ^ Z.of_nat k)%Z B
+                     else epoint_zero)
+               else epoint_zero).
+        set (rs_in_set := rs_set_scalar_ed rs_inner "d_v" (Z.of_nat (16 - S kk))) in *.
+        assert (Hcs : forall j, (j < 1024)%nat ->
+                    Cell_holds rs_in_set (loc_var cells_loc) j (cells_state j)).
+        { intros j Hj. unfold cells_state.
+          destruct (Nat.ltb_spec j (k * 16)) as [Hj1|Hj1].
+          - assert (Hjmod : j = ((j / 16) * 16 + j mod 16)%nat).
+            { pose proof (Nat.div_mod_eq j 16) as Heq. lia. }
+            assert (Hi'lt : (j / 16 < k)%nat) by (apply Nat.Div0.div_lt_upper_bound; lia).
+            assert (Hd'lt : (j mod 16 < 16)%nat) by (apply Nat.mod_upper_bound; lia).
+            unfold rs_in_set. apply scalar_set_preserves_cell.
+            rewrite Hjmod at 1. apply Hwr_in; lia.
+          - destruct (Nat.ltb_spec j ((k + 1) * 16)) as [Hj2|Hj2].
+            + set (d' := (j - k * 16)%nat) in *.
+              assert (Hd'lt : (d' < 16)%nat) by (unfold d'; lia).
+              assert (Hjeq : j = (k * 16 + d')%nat) by (unfold d'; lia).
+              destruct (Nat.leb_spec (16 - kk) d') as [Hd'split|Hd'split].
+              * unfold rs_in_set. apply scalar_set_preserves_cell.
+                rewrite Hjeq. apply Hcur_w_in. lia.
+              * unfold rs_in_set. apply scalar_set_preserves_cell.
+                rewrite Hjeq. apply Hcur_z_in. lia.
+            + unfold rs_in_set. apply scalar_set_preserves_cell.
+              apply Hfut_in. lia. }
+        assert (Hi63k : (63 - k < 64)%nat) by lia.
+        assert (Hd15k : (15 - kk < 16)%nat) by lia.
+        assert (Hsub : (63 - (63 - k) = k)%nat) by lia.
+        assert (Hbase_in_set : Fp_holds rs_in_set "base_i"
+                                  (epoint_smul (16 ^ Z.of_nat k)%Z B))
+          by (unfold rs_in_set; apply scalar_set_preserves_fp; assumption).
+        assert (Hiv_in_set : rs_get_scalar_ed rs_in_set "i_v"
+                                = Some (Z.of_nat (63 - k))).
+        { unfold rs_in_set. rewrite scalar_set_get_other by discriminate.
+          exact Hiv_in. }
+        assert (Hdv_in_set : rs_get_scalar_ed rs_in_set "d_v"
+                                = Some (Z.of_nat (15 - kk))).
+        { unfold rs_in_set. replace (16 - S kk)%nat with (15 - kk)%nat by lia.
+          apply scalar_set_get_same. }
+        pose proof (comb_cell_set_correct cells_loc (LFp "base_i") "i_v" "d_v"
+                      rs_in_set rs_inner' (63 - k)%nat (15 - kk)%nat
+                      cells_state (epoint_smul (16 ^ Z.of_nat k)%Z B)
+                      Hct eq_refl Hi63k Hd15k) as Hcc.
+        rewrite Hsub in Hcc.
+        specialize (Hcc eq_refl Hbase_in_set Hiv_in_set Hdv_in_set Hcs Hexec_body).
+        destruct Hcc as [Hwr_new [Hpres_new [Hbase_new [Hiv_new Hdv_new]]]].
+        unfold I_inner.
+        split; [|split; [|split; [|split; [|split]]]].
+        - exact Hbase_new.
+        - exact Hiv_new.
+        - intros i' d' Hi' Hd'.
+          assert (Hjne : (i' * 16 + d' <> k * 16 + (15 - kk))%nat) by nia.
+          assert (Hjlt : (i' * 16 + d' < 1024)%nat) by nia.
+          pose proof (Hpres_new (i' * 16 + d')%nat Hjlt Hjne) as Hp.
+          unfold cells_state in Hp.
+          assert (Hjlt2 : (i' * 16 + d' < k * 16)%nat) by nia.
+          apply Nat.ltb_lt in Hjlt2. rewrite Hjlt2 in Hp.
+          assert (Hdiv : ((i' * 16 + d') / 16 = i')%nat).
+          { rewrite Nat.div_add_l by lia. rewrite Nat.div_small by lia. lia. }
+          assert (Hmod : ((i' * 16 + d') mod 16 = d')%nat).
+          { rewrite Nat.add_comm, Nat.Div0.mod_add. apply Nat.mod_small. lia. }
+          rewrite Hdiv, Hmod in Hp. exact Hp.
+        - intros d' [Hd'_lo Hd'_hi].
+          destruct (Nat.eq_dec d' (15 - kk)) as [Hd'eq|Hd'ne].
+          + subst d'. eapply Cell_holds_eq; [|exact Hwr_new].
+            rewrite epoint_smul_compose. reflexivity.
+          + assert (Hjne : (k * 16 + d' <> k * 16 + (15 - kk))%nat) by lia.
+            assert (Hjlt : (k * 16 + d' < 1024)%nat) by nia.
+            pose proof (Hpres_new (k * 16 + d')%nat Hjlt Hjne) as Hp.
+            unfold cells_state in Hp.
+            assert (Hnlt1 : ~(k * 16 + d' < k * 16)%nat) by lia.
+            apply Nat.ltb_nlt in Hnlt1. rewrite Hnlt1 in Hp.
+            assert (Hlt2 : (k * 16 + d' < (k + 1) * 16)%nat) by lia.
+            apply Nat.ltb_lt in Hlt2. rewrite Hlt2 in Hp.
+            assert (Hsub2 : (k * 16 + d' - k * 16 = d')%nat) by lia.
+            rewrite Hsub2 in Hp.
+            assert (Hleb : (16 - kk <= d')%nat) by lia.
+            apply Nat.leb_le in Hleb. rewrite Hleb in Hp. exact Hp.
+        - intros d' Hd'.
+          assert (Hjne : (k * 16 + d' <> k * 16 + (15 - kk))%nat) by lia.
+          assert (Hjlt : (k * 16 + d' < 1024)%nat) by nia.
+          pose proof (Hpres_new (k * 16 + d')%nat Hjlt Hjne) as Hp.
+          unfold cells_state in Hp.
+          assert (Hnlt1 : ~(k * 16 + d' < k * 16)%nat) by lia.
+          apply Nat.ltb_nlt in Hnlt1. rewrite Hnlt1 in Hp.
+          assert (Hlt2 : (k * 16 + d' < (k + 1) * 16)%nat) by lia.
+          apply Nat.ltb_lt in Hlt2. rewrite Hlt2 in Hp.
+          assert (Hsub2 : (k * 16 + d' - k * 16 = d')%nat) by lia.
+          rewrite Hsub2 in Hp.
+          assert (Hnleb : ~(16 - kk <= d')%nat) by lia.
+          apply Nat.leb_nle in Hnleb. rewrite Hnleb in Hp. exact Hp.
+        - intros j Hj.
+          assert (Hjne : (j <> k * 16 + (15 - kk))%nat) by nia.
+          pose proof (Hpres_new j ltac:(lia) Hjne) as Hp.
+          unfold cells_state in Hp.
+          assert (Hnlt1 : ~(j < k * 16)%nat) by lia.
+          apply Nat.ltb_nlt in Hnlt1. rewrite Hnlt1 in Hp.
+          assert (Hnlt2 : ~(j < (k + 1) * 16)%nat) by lia.
+          apply Nat.ltb_nlt in Hnlt2. rewrite Hnlt2 in Hp. exact Hp. }
+      (* Apply inner rfor_invariant. *)
+      pose proof (rfor_invariant "d_v" 16%nat
+                    (REdCallN "comb_cell_set" [cells_loc]
+                       [{| loc_var := "i_v"; loc_type := TU64 |}
+                       ;{| loc_var := "d_v"; loc_type := TU64 |}
+                       ; LFp "base_i"])
+                    I_inner Hstep_inner rs_pre rs3 Hinit_inner Hexec_inner)
+        as Hfinal_inner.
+      unfold I_inner in Hfinal_inner.
+      destruct Hfinal_inner as [Hbase_post [Hiv_post [Hwr_post [Hcur_w_post
+                                [Hcur_z_post Hfut_post]]]]].
+      (* Run point_mul16: base_i becomes 16 * 16^k * B = 16^(S k) * B. *)
+      pose proof (point_mul16_correct (LFp "base_i") rs3 rs'
+                    (epoint_smul (16 ^ Z.of_nat k)%Z B)
+                    eq_refl Hbase_post Hexec_mul) as [Hbase_final Hcells_frame_final].
+      (* Conclude I_outer (S k) rs'. *)
+      unfold I_outer.
+      split; [|split].
+      - eapply Fp_holds_eq; [|exact Hbase_final].
+        rewrite epoint_smul_compose. f_equal.
+        rewrite Nat2Z.inj_succ, Z.pow_succ_r by lia. ring.
+      - intros i' d' Hi' Hd'.
+        destruct (Nat.eq_dec i' k) as [Hi'eq|Hi'ne].
+        + subst i'. apply Hcells_frame_final. apply Hcur_w_post.
+          rewrite Nat.sub_diag. lia.
+        + apply Hcells_frame_final. apply Hwr_post; lia.
+      - intros j Hj. apply Hcells_frame_final.
+        apply Hfut_post. lia. }
     (* Apply rfor_invariant to the outer loop. *)
     pose proof (rfor_invariant "i_v" 64%nat
                   (outer_loop_cmd "i_v" "d_v" cells_loc (LFp "base_i"))
@@ -464,7 +621,7 @@ Section BuildCombTableCorrect.
     unfold I_outer in Hfinal_outer.
     destruct Hfinal_outer as [_ [Hwritten _]].
     apply Hwritten; lia.
-  Admitted.
+  Qed.
 
 End BuildCombTableCorrect.
 

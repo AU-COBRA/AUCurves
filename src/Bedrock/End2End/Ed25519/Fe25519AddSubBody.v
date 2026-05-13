@@ -11,21 +11,33 @@
  *  [XEdDSAVerifyBody.v]) eliminates the `extern "C"` boundaries for
  *  these symbols and drops gcc/clang from the runtime trust set.
  *
- *  Status (Phase 0b, 2026-05-13)
+ *  Status (Phase 0c, 2026-05-13)
  *  =============================
- *  [fe25519_add_body] is now an INLINE 5-limb radix-2^51 add chain
- *  expressed entirely in [rust_cmd_ed] via the new [REdLimbStore] +
+ *  [fe25519_add_body] is an INLINE 5-limb radix-2^51 add chain
+ *  expressed entirely in [rust_cmd_ed] via the [REdLimbStore] +
  *  [SLimb] constructors (see [SafeRustEd25519Sim.v] §1).  No
  *  [extern "C"] FFI boundary remains for this leaf.  Emitted Rust
  *  code is [dest[i] = a[i].wrapping_add(b[i])] for i = 0..4 (the
  *  five-limb-store sequence).  The matching C/bedrock2 emission is
  *  also pure — store_word(addr_of(dest) + 8*i, ...).
  *
- *  [fe25519_sub_body] is unchanged from Phase 0a (still one
- *  [REdCall "fe25519_sub_prim" ...]) — converting it to inline form
- *  is mechanical given the new IR but requires the +2p offset
- *  constants which we did not thread through Phase 0b scaffolding.
- *  See FOLLOW-UP at end of file.
+ *  [fe25519_sub_body] (Phase 0c, 2026-05-13) is now also an INLINE
+ *  5-limb chain: [dest[i] := (a[i] - b[i]) + 2 * encode_2p[i]] via
+ *  [REdLimbStore + SAdd + SSub + SLit].  Parameterised by [p_off :
+ *  nat -> Z] which the caller instantiates with fiat-crypto's
+ *  per-limb [2 * Positional.encode_2p] constants for radix-2^51 (the
+ *  borrow-correction constants emitted by [sub_op]).
+ *
+ *  Correctness for both leaves is in [Fe25519AddSubCorrect.v] (Phase
+ *  0c).  The two top-level theorems
+ *  [fe25519_add_body_correct] / [fe25519_sub_body_correct] are Qed,
+ *  reduced to four mechanical Section [Hypothesis] statements at the
+ *  limb level ([Fp25519_holds_intro] / [Fp25519_holds_elim] /
+ *  [Fp25519_holds_set_other] / [feval_limbwise_(add|sub)_mask64]).
+ *  These section hypotheses become Π-quantified parameters of the
+ *  closed theorems and discharge to fiat-crypto's [add_correct] /
+ *  [sub_correct] at instantiation time.  Print Assumptions reports
+ *  "Closed under the global context" — no new global axioms.
  *
  *  History
  *  =======
@@ -33,12 +45,15 @@
  *    Body was [REdCall "fe25519_add_prim" dest [a; b]] — one
  *    extern "C" call.  Three-line proof via [add_prim_correct]
  *    section hypothesis.
- *  Phase 0b (2026-05-13, this file):
- *    Body is [REdSeq (REdLimbStore ...) ...] × 5 — full inline.
- *    Proof structure unchanged ([add_inline_correct] section
- *    hypothesis), three-line delegation.  Mechanical discharge of
- *    that hypothesis against fiat-crypto's [Positional.add_correct]
- *    is the Phase 0c follow-up.
+ *  Phase 0b (2026-05-13, commit f9578ce):
+ *    [fe25519_add_body] became [REdSeq (REdLimbStore ...) ...] × 5
+ *    — full inline.  Proof via [add_inline_correct] section
+ *    hypothesis.  [fe25519_sub_body] still [REdCall].
+ *  Phase 0c (2026-05-13, this file):
+ *    Both leaves inline.  [add_inline_correct] / [sub_inline_correct]
+ *    promoted from section [Hypothesis] to internal [Lemma] in
+ *    [Fe25519AddSubCorrect.v], discharged mechanically against four
+ *    limb-level Section hypotheses.
  *
  *  IR EXTENSION
  *  ============
@@ -56,22 +71,23 @@
  *  cases — see those files for per-pass treatment.  No new global
  *  axioms.
  *
- *  FOLLOW-UP (Phase 0c, deferred)
+ *  FOLLOW-UP (Phase 0d, deferred)
  *  ==============================
- *  1. Discharge [add_inline_correct] mechanically by importing
- *     fiat-crypto's [Positional.add_correct] (radix-2^51) and
- *     chaining through [rexec_limb_store_fp25519] inversions.
- *     Estimated ~150 LoC.
- *  2. Inline [fe25519_sub_body] using the same scheme with
- *     hard-coded +2p offset constants in [SLit] form (fiat-crypto's
- *     [sub_op] subtracts then adds [2 * Positional.encode_2p]).
- *  3. Apply the same recipe to [fe25519_mul], [fe25519_square],
- *     [fe25519_carry] — each is ~25 [REdLimbStore]s.  This drops
- *     5 more `extern "C"` symbols, ~30 unsafe blocks at protocol
- *     callsites.
- *  4. Discharge [SLimb] in the WP bridge ([SafeRustEd25519WPBridge.v]
+ *  1. Apply the same recipe to [fe25519_mul], [fe25519_square],
+ *     [fe25519_carry] — each is ~25 [REdLimbStore]s.  The proof
+ *     pattern in [Fe25519AddSubCorrect.v] (5 [rexec_limb_store_inv]
+ *     + [is_addN_eq_build] + [feval_limbwise_*_mask64]) extends
+ *     directly; mul/square need [SMul] (already in IR) and a
+ *     multi-limb folding helper.  This drops 5 more `extern "C"`
+ *     symbols, ~30 unsafe blocks at protocol callsites.
+ *  2. Discharge [SLimb] in the WP bridge ([SafeRustEd25519WPBridge.v]
  *     [sexpr_well_formed] case) by extending [state_refine_ed] with
  *     a per-slot address oracle.
+ *  3. Instantiate the limb-level Section hypotheses at the
+ *     [Scalarmult_Impl_RustCmd] level using fiat-crypto's
+ *     [Positional.eval] composed with [F.of_Z], to convert the
+ *     Section-quantified [fe25519_add_body_correct] into a
+ *     theorem about a concrete [Fp25519_holds].
  *)
 
 From Stdlib Require Import Strings.String.
@@ -140,19 +156,67 @@ Definition fe25519_add_body : function_body_ed :=
     | _ => REdSkip
     end.
 
-(** [fe25519_sub_body] computes [dest := a - b] in [F p]. *)
-Definition fe25519_sub_body : function_body_ed :=
+(** [fe25519_sub_body] computes [dest := a - b] in [F p] inline, using
+    the +2p offset correction per limb (Phase 0c, 2026-05-13).
+
+    Surface AST: five [REdLimbStore] writes, each setting limb [i] of
+    [dest] to [SAdd (SSub (SLimb a i) (SLimb b i)) (SLit (p_off i))].
+    Mirrors fiat-crypto's [sub_op] / bedrock2 emission
+    [out[i] := (a[i] - b[i]) + 2 * encode_2p[i]] for i = 0..4 (radix-2^51
+    sub-with-borrow correction).  No carry is performed — bound growth
+    matches fiat-crypto's no-carry [sub], callers wanting a fully
+    reduced output compose [fe25519_carry] afterwards.
+
+    The function body is parameterized by [p_off : nat -> Z] — the
+    radix-2^51 borrow-correction constants.  At instantiation time
+    [p_off] is supplied as the fiat-crypto-generated literal list
+    [[0xfffffffffffda; 0xffffffffffffe; ...]] (concrete values
+    depend on the chosen radix-2^51 modulus encoding).  See
+    [Fe25519AddSubCorrect.v] for the algebraic correctness proof, which
+    is mechanical given [feval_limbwise_sub_mask64].
+
+    History:
+      Phase 0a (2026-05-12, commit 6999797): body was a single
+        [REdCall "fe25519_sub_prim" dest [a; b]] (one extern "C").
+      Phase 0b (2026-05-13, commit f9578ce): body unchanged from 0a;
+        plan to inline once the IR carried the new [SLit]/[REdLimbStore]
+        constructors.
+      Phase 0c (2026-05-13, this file): inline 5-limb chain.  Drops the
+        last [extern "C"] FFI for fe25519 add/sub. *)
+Definition fe25519_sub_body (p_off : nat -> Z) : function_body_ed :=
   fun dest args =>
     match args with
     | [a_loc; b_loc] =>
-        REdCall "fe25519_sub_prim" dest [a_loc; b_loc]
+        let a_v := a_loc.(loc_var) in
+        let b_v := b_loc.(loc_var) in
+        REdSeq
+          (REdLimbStore dest 0%nat
+             (SAdd (SSub (SLimb a_v 0%nat) (SLimb b_v 0%nat))
+                   (SLit (p_off 0%nat))))
+          (REdSeq
+            (REdLimbStore dest 1%nat
+               (SAdd (SSub (SLimb a_v 1%nat) (SLimb b_v 1%nat))
+                     (SLit (p_off 1%nat))))
+            (REdSeq
+              (REdLimbStore dest 2%nat
+                 (SAdd (SSub (SLimb a_v 2%nat) (SLimb b_v 2%nat))
+                       (SLit (p_off 2%nat))))
+              (REdSeq
+                (REdLimbStore dest 3%nat
+                   (SAdd (SSub (SLimb a_v 3%nat) (SLimb b_v 3%nat))
+                         (SLit (p_off 3%nat))))
+                (REdLimbStore dest 4%nat
+                   (SAdd (SSub (SLimb a_v 4%nat) (SLimb b_v 4%nat))
+                         (SLit (p_off 4%nat)))))))
     | _ => REdSkip
     end.
 
 (** Public function-table entries.  Downstream callers (e.g. the
     bedrock2-to-RustCmd bridge in [Scalarmult_Impl_RustCmd], or any
     body that wants to delegate add/sub through [REdCallFn] instead
-    of [REdCall]) extend their [function_table_ed] with these. *)
-Definition fe25519_add_sub_table : function_table_ed :=
+    of [REdCall]) extend their [function_table_ed] with these.
+    Parameterised by [p_off] (the radix-2^51 borrow-correction constants
+    used by sub). *)
+Definition fe25519_add_sub_table (p_off : nat -> Z) : function_table_ed :=
   [ ("fe25519_add", fe25519_add_body)
-  ; ("fe25519_sub", fe25519_sub_body) ].
+  ; ("fe25519_sub", fe25519_sub_body p_off) ].

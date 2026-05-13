@@ -428,6 +428,33 @@ Section Fe25519CarryCorrect.
     - apply IHi; lia.
   Qed.
 
+  (** Collapse a sequence of [list_set]s under a single [nth] read
+      when the read index differs from every write index.  Lets us
+      replace long [unfold limbsX; rewrite list_set_nth_other by lia]
+      chains with a single [rewrite nth_after_list_sets by ...]. *)
+  Lemma nth_after_list_sets :
+    forall (i : nat) (xs : list Z) (writes : list (nat * Z)),
+      (forall p, In p writes -> fst p <> i) ->
+      List.nth i
+        (List.fold_right (fun p acc => list_set (fst p) (snd p) acc) xs writes) 0
+      = List.nth i xs 0.
+  Proof.
+    intros i xs writes Hne.
+    induction writes as [|[j v] rest IH]; cbn.
+    - reflexivity.
+    - rewrite list_set_nth_other.
+      + apply IH. intros p Hp. apply Hne. right. exact Hp.
+      + assert (Hne_j : fst (j, v) <> i) by (apply Hne; left; reflexivity).
+        cbn in Hne_j. lia.
+  Qed.
+
+  (** Block the Qed kernel from re-elaborating the deep [list_set]
+      cascades.  All proofs below use [list_set] only through stated
+      lemmas; the kernel never needs to unfold [list_set] for
+      conversion.  See reference_qed_kernel_check_blowup_dealloc.md. *)
+  Local Opaque list_set.
+  Local Strategy 0 [list_set].
+
 (* ================================================================ *)
 (* §4. carry_inline_correct as a Lemma                               *)
 (* ================================================================ *)

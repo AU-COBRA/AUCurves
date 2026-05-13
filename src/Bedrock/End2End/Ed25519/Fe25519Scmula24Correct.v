@@ -439,6 +439,40 @@ Section Fe25519Scmula24Correct.
     - apply IHi; lia.
   Qed.
 
+  (** Collapse a sequence of [list_set]s under a single [nth] read
+      when the read index differs from every write index.  Lets us
+      replace long [unfold limbsX; rewrite list_set_nth_other by lia]
+      chains with a single [rewrite nth_after_list_sets by ...]. *)
+  Lemma nth_after_list_sets :
+    forall (i : nat) (xs : list Z) (writes : list (nat * Z)),
+      (forall p, In p writes -> fst p <> i) ->
+      List.nth i
+        (List.fold_right (fun p acc => list_set (fst p) (snd p) acc) xs writes) 0
+      = List.nth i xs 0.
+  Proof.
+    intros i xs writes Hne.
+    induction writes as [|[j v] rest IH]; cbn.
+    - reflexivity.
+    - rewrite list_set_nth_other.
+      + apply IH. intros p Hp. apply Hne. right. exact Hp.
+      + assert (Hne_j : fst (j, v) <> i) by (apply Hne; left; reflexivity).
+        cbn in Hne_j. lia.
+  Qed.
+
+  (** Block the Qed kernel from re-elaborating the deep [list_set]
+      cascades.  All proofs below use [list_set] only through stated
+      lemmas ([list_set_length], [list_set_nth_same],
+      [list_set_nth_other], [nth_after_list_sets]); the kernel never
+      needs to unfold [list_set] for conversion.
+
+      This is the documented fix for the Qed kernel-check exponential
+      blowup pattern (see reference_qed_kernel_check_blowup_dealloc.md):
+      tactic elaboration completes in ~0s but Qed forces re-evaluation
+      of the 17-level nested [let limbsX := list_set ... limbsY] proof
+      term, with each unfolding doubling the term size. *)
+  Local Opaque list_set.
+  Local Strategy 0 [list_set].
+
 (* ================================================================ *)
 (* §4. scmula24_inline_correct as a Lemma                            *)
 (* ================================================================ *)
@@ -983,14 +1017,18 @@ Section Fe25519Scmula24Correct.
       unfold limbsH. rewrite list_set_nth_same.
       - reflexivity.
       - rewrite HlenG; lia. }
-    rewrite (eval_SAdd_SLimb_sWrap19_SLimb _ dest.(loc_var) dest.(loc_var) 0%nat 4%nat
-              limbsI limbsI HgI HgI ltac:(lia) ltac:(lia) HlenI HlenI) in He8.
-    injection He8 as Hw8_eq.
-    rewrite HnthI0, HnthI4 in Hw8_eq.
-    change (mask64 (mask64 (v0_c lb)
-                    + mask64 (red19_lit
-                              * Z.shiftr (mask64 (v6_c lb)) radix_lit)))
-      with (v8_c lb) in Hw8_eq.
+    (* Same Rocq 9 [injection]-on-deep-nested-list_set blowup as Carry S8:
+       avoid [injection He8] (which forces normalization of the
+       deeply-nested [limbsI = list_set 3 ... (list_set 4 ...)] subterm)
+       by routing through an [assert] with the expected value on the LHS. *)
+    assert (Hw8_eq : v8_c lb = w8).
+    { assert (Hev : Some (v8_c lb) = Some w8).
+      { rewrite <- He8.
+        rewrite (eval_SAdd_SLimb_sWrap19_SLimb _ dest.(loc_var) dest.(loc_var)
+                  0%nat 4%nat limbsI limbsI HgI HgI ltac:(lia) ltac:(lia)
+                  HlenI HlenI).
+        rewrite HnthI0, HnthI4. reflexivity. }
+      injection Hev as Hev_eq. exact Hev_eq. }
     subst w8.
     rewrite rs_get_set_tower_eq in Hg8.
     apply tval_some_vfp25519_inj in Hg8.

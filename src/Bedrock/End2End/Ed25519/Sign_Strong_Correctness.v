@@ -36,6 +36,7 @@ Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.RemainingBridges.
 Require Import Bedrock.End2End.Ed25519.SHA512Bridge.
+Require Import Bedrock.Libjade.SHA512Bridge.
 Require Import Bedrock.End2End.Ed25519.Sign_Verify_RustCmd.
 Require Import Bedrock.End2End.Ed25519.Clamp64Verified.
 Import ListNotations.
@@ -67,9 +68,18 @@ Definition frames_except (rs1 rs2 : rust_state_ed) (exclude : String.string) : P
 (* §2. Per-callee Gallina specs                                       *)
 (* ================================================================ *)
 
-Parameter sha512_full_spec : list Byte.byte -> list Byte.byte.
-Parameter sha512_full_spec_len :
+(** [sha512_full_spec] / [sha512_full_spec_len] are now thin
+    redirections to the consolidated bridge in
+    [Bedrock.Libjade.SHA512Bridge].  Before commit b7db253 these were
+    fresh file-top Parameters reaching [ed25519_sign_strong_correct]
+    and [ed25519_sign_gallina_lifted_clean] as anonymous axioms; after
+    redirection [Print Assumptions] points at [sha512_libjade] /
+    [sha512_libjade_len] in the libjade-axiom registry. *)
+Definition sha512_full_spec : list Byte.byte -> list Byte.byte :=
+  sha512_libjade.
+Lemma sha512_full_spec_len :
   forall input, length (sha512_full_spec input) = 64%nat.
+Proof. intro input; apply sha512_libjade_len. Qed.
 
 (** [clamp_64_spec] is now a Definition redirecting to the verified
     [clamp_64_gallina] in [Clamp64Verified.v] (RFC 8032 byte clamping

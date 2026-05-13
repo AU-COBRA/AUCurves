@@ -472,6 +472,29 @@ Fixpoint sexpr_well_formed (e : sexpr_ed) : Prop :=
       False
   end.
 
+(** Phase 0e (2026-05-13) helper: [sexpr_well_formed] (used everywhere
+    by the WP bridge) implies the structural [sexpr_u64_safe] gate that
+    [SafeRustEd25519Sim.eval_sexpr_ed_bounded] needs as its first
+    precondition.  The two predicates only diverge on [SMul128]/[SAdd128],
+    both of which [sexpr_well_formed] gates to [False] (the WP bridge is
+    u64-only; u128 nodes go through the printer path, not bedrock2).
+    Hence at every WP-bridge call site of [eval_sexpr_ed_bounded] we can
+    discharge the new [sexpr_u64_safe e = true] obligation in one step
+    from the in-scope [Hwf : sexpr_well_formed e]. *)
+Lemma sexpr_well_formed_implies_u64_safe :
+  forall e, sexpr_well_formed e -> sexpr_u64_safe e = true.
+Proof.
+  induction e; cbn; intros Hwf; try reflexivity.
+  - destruct Hwf as [H1 H2]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - destruct Hwf as [H1 H2]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - destruct Hwf as [H1 H2]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - destruct Hwf as [H1 [H2 _]]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - destruct Hwf as [H1 H2]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - destruct Hwf as [H1 H2]. rewrite IHe1, IHe2 by assumption. reflexivity.
+  - exfalso; exact Hwf.
+  - exfalso; exact Hwf.
+Qed.
+
 (** The expression bridge: under [state_refine_ed] and
     [sexpr_well_formed e], a successful sexpr eval implies a
     corresponding [dexpr] judgment.
@@ -611,7 +634,10 @@ Proof.
     { destruct Hrefine as [_ Hsc].
       intros xx v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
       subst v'. apply Properties.word.unsigned_range. }
-    assert (Hbva : 0 <= va < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+    assert (Hbva : 0 <= va < 2^64) by
+      (eapply eval_sexpr_ed_bounded;
+       [apply sexpr_well_formed_implies_u64_safe; exact Hwf1
+        | exact Hbnd_sc | exact Hva]).
     rewrite (Z.mod_small va) by exact Hbva.
     apply Z.mod_small.
     split.
@@ -670,8 +696,14 @@ Proof.
     { destruct Hrefine as [_ Hsc].
       intros x v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
       subst v'. apply Properties.word.unsigned_range. }
-    assert (Hbva : 0 <= va < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
-    assert (Hbvb : 0 <= vb < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+    assert (Hbva : 0 <= va < 2^64) by
+      (eapply eval_sexpr_ed_bounded;
+       [apply sexpr_well_formed_implies_u64_safe; exact Hwf1
+        | exact Hbnd_sc | exact Hva]).
+    assert (Hbvb : 0 <= vb < 2^64) by
+      (eapply eval_sexpr_ed_bounded;
+       [apply sexpr_well_formed_implies_u64_safe; exact Hwf2
+        | exact Hbnd_sc | exact Hvb]).
     rewrite word.unsigned_ltu by exact wordok.
     rewrite !word.unsigned_of_Z. unfold word.wrap.
     rewrite (Z.mod_small va) by lia.
@@ -1176,7 +1208,10 @@ Proof.
   { destruct Hrefine as [_ Hsc].
     intros y v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
     subst v'. apply Properties.word.unsigned_range. }
-  assert (Hbv : 0 <= v < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+  assert (Hbv : 0 <= v < 2^64) by
+    (eapply eval_sexpr_ed_bounded;
+     [apply sexpr_well_formed_implies_u64_safe; exact Hwf
+      | exact Hbnd_sc | exact Heval]).
   specialize (Hfresh _ _ _ _ Hrefine).
   pose proof (state_refine_ed_extend_scalar rs1 l m R x v Hrefine Hbv Hfresh)
     as Hrefine'.
@@ -1256,7 +1291,10 @@ Proof.
   { destruct Hrefine as [_ Hsc].
     intros y v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
     subst v'. apply Properties.word.unsigned_range. }
-  assert (Hbv : 0 <= v < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+  assert (Hbv : 0 <= v < 2^64) by
+    (eapply eval_sexpr_ed_bounded;
+     [apply sexpr_well_formed_implies_u64_safe; exact Hwf
+      | exact Hbnd_sc | exact Heval]).
   specialize (Hfresh _ _ _ _ Hrefine).
   eapply Hpost.
   - apply bexec_scalar_set. exact Heval.
@@ -1336,7 +1374,10 @@ Proof.
       { destruct Hrefine as [_ Hsc].
         intros x v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
         subst v'. apply Properties.word.unsigned_range. }
-      assert (Hbv : 0 <= v < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+      assert (Hbv : 0 <= v < 2^64) by
+        (eapply eval_sexpr_ed_bounded;
+         [apply sexpr_well_formed_implies_u64_safe; exact Hwf
+          | exact Hbnd_sc | exact Heval]).
       assert (Hv0 : v = 0).
       { rewrite word.unsigned_of_Z in Hz. unfold word.wrap in Hz.
         rewrite Z.mod_small in Hz by lia. exact Hz. }
@@ -1471,7 +1512,10 @@ Proof.
       { destruct Hrefine as [_ Hsc].
         intros x v' Hg. apply Hsc in Hg. destruct Hg as [w [_ Hw]].
         subst v'. apply Properties.word.unsigned_range. }
-      assert (Hbvc : 0 <= vc < 2^64) by (eapply eval_sexpr_ed_bounded; eauto).
+      assert (Hbvc : 0 <= vc < 2^64) by
+        (eapply eval_sexpr_ed_bounded;
+         [apply sexpr_well_formed_implies_u64_safe; exact Hwfe
+          | exact Hbnd_sc | exact Hvc_eval]).
       rewrite word.unsigned_of_Z. unfold word.wrap.
       rewrite Z.mod_small by lia.
       exact Hvc_nz.

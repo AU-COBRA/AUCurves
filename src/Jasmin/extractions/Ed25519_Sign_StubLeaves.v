@@ -47,13 +47,76 @@ Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
 (** Per-stub helper: unique param names so jasminc's argument-naming
-    pass treats each stub independently. *)
-Definition mk_stub (name : string) (params : list string) : jasmin_func :=
+    pass treats each stub independently.
+
+    Body: identity read-write chain through every parameter — for an
+    N-arg function with params [dest; src1; ...; src_{N-1}]:
+      *dest := *src1 (if N >= 2) or *dest := *dest (if N = 1);
+      *dest := *src_i for i = 2..N-1 (each additional src read)
+
+    Rationale (closure of A25's pass-28 RegAllocation failure): the
+    previous [JCskip] body left the dest-param register's write status
+    opaque to jasminc's register allocator, which tried to unify dest
+    slots across consecutive stub calls whose actual destinations
+    differed (e.g., [R_bytes] and [A_bytes] both consumed by
+    [ed25519_compress]).  An identity load-store chain through every
+    parameter makes both reads (every src) and writes (dest) visible
+    to the allocator, breaking the spurious unification.
+
+    The values written are semantically irrelevant — these stubs are
+    placeholder declarations only; they are never inlined or executed.
+    The bytes written through dest happen to equal the bytes at src1[0]
+    or dest[0], but downstream Rust replaces these calls with the
+    real FFI implementations.
+
+    The auxiliary [JCstore dest 0 (JEload src_i 0)] entries for srcs
+    beyond src1 may overwrite the freshly-stored byte; this is fine
+    because they execute sequentially and the last write wins. *)
+Fixpoint mk_stub_body_aux (dest : string) (srcs : list string) : jasmin_cmd :=
+  match srcs with
+  | nil => JCskip
+  | s :: rest =>
+      JCseq (JCstore (JEvar dest) 0 (JEload (JEvar s) 0))
+            (mk_stub_body_aux dest rest)
+  end.
+
+Definition mk_stub_body (params : list string) : jasmin_cmd :=
+  match params with
+  | nil => JCskip
+  | dest :: nil =>
+      (* 1-arg stub: identity read-write through dest itself.
+         Reads *dest, writes back to *dest at offset 0 — true no-op. *)
+      JCstore (JEvar dest) 0 (JEload (JEvar dest) 0)
+  | dest :: srcs =>
+      mk_stub_body_aux dest srcs
+  end.
+
+(** Default stub body: identity load-store chain through every param.
+    See [mk_stub_body] above for the rationale.  Kept here so callers
+    can switch back to it by edit. *)
+Definition mk_stub_idload (name : string) (params : list string) : jasmin_func :=
+  {| jf_name := name;
+     jf_params := List.map (fun p => (p, JTptr 8)) params;
+     jf_locals := nil;
+     jf_body := mk_stub_body params;
+  |}.
+
+(** Empty-body variant used by drivers that mark callsites [inline] and
+    let jasminc's Inlining pass replace the call with [JCskip] (no-op).
+    Mirrors A25's original [JCskip]-body shape. *)
+Definition mk_stub_empty (name : string) (params : list string) : jasmin_func :=
   {| jf_name := name;
      jf_params := List.map (fun p => (p, JTptr 8)) params;
      jf_locals := nil;
      jf_body := JCskip;
   |}.
+
+(** Active stub builder.  We use [JCskip] bodies + driver-side
+    [inline]-annotated callsites + [FInfo.Internal] cc.  This minimizes
+    register pressure post-inlining (no synthetic [__store_tmp_*] vars,
+    no formal-param load-stores surviving renaming). *)
+Definition mk_stub (name : string) (params : list string) : jasmin_func :=
+  mk_stub_empty name params.
 
 (** ================================================================ *)
 (** §1. The 14 FFI leaves referenced by [ed25519_sign_rs].             *)

@@ -130,6 +130,23 @@ let mk_instr (ir : ('a, unit, 'b) ginstr_r) : ('a, unit, 'b) ginstr =
     i_info = ();
     i_annot = [] }
 
+(** Variant of [mk_instr] that attaches an [inline] annotation to the
+    i_annot field.  Used for [Ccall] sites whose callee is a stub leaf:
+    [IInfo.is_inline] reads [Annotations.has_symbol "inline" annot],
+    and that determines whether jasminc's [Inlining] pass expands the
+    call.  Without this annotation, [FInfo.Internal]-cc callees stay
+    as [Ccall] instructions and hit the [varalloc.ml:422 assert false]
+    that A25 documented. *)
+let mk_instr_inline (ir : ('a, unit, 'b) ginstr_r) : ('a, unit, 'b) ginstr =
+  let iloc = Location.refresh_i_loc Location.i_dummy in
+  let inline_annot =
+    [ (Location.mk_loc Location._dummy "inline", None) ]
+  in
+  { i_desc = ir;
+    i_loc = iloc;
+    i_info = ();
+    i_annot = inline_annot }
+
 (* ================================================================ *)
 (* Lnone: discard result (like bridge's lnone_b)                    *)
 (* ================================================================ *)
@@ -310,7 +327,17 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
             else pad :: pad_to (k-1) xs
           in translated @ pad_to (target_arity - n) []
     in
-    [mk_instr (Ccall ([], fn, adjusted))]
+    (* If the callee is registered as a stub (callee_arity_tbl contains
+       its name), attach the [inline] annotation so jasminc's Inlining
+       pass expands the call.  This is required when stubs use
+       [FInfo.Internal] cc: without the inline annotation, the
+       Ccall survives to varalloc which asserts [Internal -> false]
+       (varalloc.ml:422). *)
+    let make_call =
+      if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
+      else mk_instr
+    in
+    [make_call (Ccall ([], fn, adjusted))]
 
   | Bls12_jasmin_extracted.JCif (e, ct, cf) ->
     [mk_instr (Cif (translate_expr e, translate_cmd ct, translate_cmd cf))]
@@ -934,11 +961,31 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
   (* Step 3b: Populate the callee-arity table for stub leaves.
      For non-stub functions (real bedrock2-generated bodies) we don't
      touch the table — the BLS12 / X25519 benchmark binaries continue
-     to pass args verbatim. *)
+     to pass args verbatim.
+
+     Stub detection (2026-05-13): A25's original test was [body = JCskip].
+     That was extended to also cover the identity read-write chain
+     introduced by [Ed25519_Sign_StubLeaves.mk_stub_body] (path 1 of
+     RegAllocation closure: gives jasminc visible writes through the
+     dest param so regalloc cannot merge dest-arg registers across
+     consecutive stub callsites with overlapping liveness).
+
+     We detect new-style stubs structurally: a sequence (possibly
+     length-1) where every leaf is a [JCstore base 0 (JEload _ 0)]
+     — the identity-write-through-param pattern.  This is robust to
+     N=1 (single store) and N>=2 (JCseq chain) stubs alike. *)
+  let rec is_identity_store_chain (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
+    match b with
+    | Bls12_jasmin_extracted.JCskip -> true
+    | Bls12_jasmin_extracted.JCstore (Bls12_jasmin_extracted.JEvar _, _, _) -> true
+    | Bls12_jasmin_extracted.JCseq (c1, c2) ->
+      is_identity_store_chain c1 && is_identity_store_chain c2
+    | _ -> false
+  in
   let is_stub_body (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
     match b with
     | Bls12_jasmin_extracted.JCskip -> true
-    | _ -> false
+    | _ -> is_identity_store_chain b
   in
   Hashtbl.clear callee_arity_tbl;
   Stdlib.List.iter (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
@@ -988,17 +1035,22 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
         else
           ([], body) in
       all_inline_funcs := inline_funcs @ !all_inline_funcs;
-      (* For stub leaves the body is JCskip — [Subroutine] cc lets
-         jasminc accept the callsite-to-callee linkage at pass 16
-         (MakeReferenceArguments) but the register allocator (pass
-         26) still sees the calls as opaque and may fail to find a
-         compatible coloring across stub callsites with overlapping
-         variable lifetimes (e.g., R_bytes and A_bytes both being
-         consumed by ed25519_compress).  This is the residual cost
-         of having empty bodies: jasminc has no read/write info to
-         disambiguate.  The empirical gate accepts pass 26 as
-         significant progress over A6's pass 15. *)
-      let cc = if stub then FInfo.Subroutine else FInfo.Export in
+      (* For stub leaves the body is either [JCskip] (legacy) or an
+         identity read-write chain ([JCstore (JEvar p) 0 (JEload q 0)]
+         for params p,q — see [Ed25519_Sign_StubLeaves.mk_stub_body]).
+
+         Calling convention selection (2026-05-13, A26 closure of A25's
+         pass-28 RegAllocation conflict):
+         - [Subroutine] fails at RegAllocation because the SysV-style
+           param-register slots force [R_bytes] and [A_bytes] to coalesce
+           into the same physical register at callsites where they are
+           simultaneously live (the chal_A/chal_R/sig_R follow-up calls).
+         - [Internal] inlines the stub body at each callsite so there
+           are no cross-callsite register constraints; the identity
+           load-store body lets the inliner succeed (A25's [JCskip]
+           hit [varalloc.ml:422 assert false]; with non-empty body
+           that assertion is bypassed). *)
+      let cc = if stub then FInfo.Internal else FInfo.Export in
       wrap_func ~cc name params new_body
     ) funcs_to_compile
   in

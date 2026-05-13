@@ -145,13 +145,38 @@ Check @jade_mlkem768_dec_correct.
 
 (** Current production-path RustCrypto deps in curve25519-jasmin-rs:
 
-    1. **aes-gcm = "0.10"** — AES-256-GCM AEAD.
+    1. **aes-gcm = "0.10"** — AES-256-GCM AEAD (DEFAULT backend).
        USED BY: [src/symmetric.rs::aes256_gcm_*], consumed by Sender
        Keys + Double Ratchet AEAD step.
-       REPLACEMENT PATH: build GHASH on top of libjade AES-CTR
-       (libjade has CTR proofs at libjade/proof/crypto_aead/aes256ctr).
-       EFFORT: 1-2 sessions for GHASH + composition.
-       INTERIM: trust aes-gcm crate (published, audited, AES-NI-using).
+       REPLACEMENT PATHS (in increasing order of formal grounding):
+         (a) **libcrux HACL** [Cargo feature `aes_gcm_libcrux`,
+             LANDED 2026-05-13]: route through F*-verified HACL*
+             via [libcrux::aead].  Links the Rust runtime to the
+             CatCrypt UC theorem
+               CatCrypt.Crypto.AEAD.AESGCMBridge.aesgcm_realizes_faead
+             (F_AEAD UC realization on top of GCMReduction game-hop),
+             with composition into key exchange via aesgcm_ke_to_sc.
+             Trust transferred: from "RustCrypto crate authors" to
+             "F* / HACL* proof + Cryspen's Rust bindings".  KAT'd
+             byte-for-byte against the RustCrypto path across 15
+             message sizes in [symmetric::tests::aes_gcm_cross_backend_kat].
+             Both backends are kept feature-flagged so users can
+             fall back; the libcrux path is the verified-by-default
+             target for the Signal stack.
+         (b) **libjade Jasmin AES-GCM** (queued): build GHASH on top
+             of libjade AES-CTR (libjade has CTR proofs at
+             libjade/proof/crypto_aead/aes256ctr).  EasyCrypt-grade
+             end-to-end (compiler chain is EC-verified).  EFFORT: 1-2
+             sessions for GHASH + composition.  Brings the AES-GCM
+             primitive into the SAME EasyCrypt trust regime as
+             SHA-256/SHA-512/X25519/ML-KEM-768.
+       INTERIM (default): trust aes-gcm crate (published, audited,
+       AES-NI-using).
+       UC-CHAIN STATUS for path (a): the Lean theorem
+       [aesgcm_realizes_faead] in
+       [SSProve-lean/CatCrypt/Crypto/AEAD/AESGCMBridge.lean] is the
+       security statement; the libcrux backend is the runtime that
+       implements the realizing-protocol.
 
     2. **prost = "0.12"** — protobuf serialization.
        USED BY: not yet wired (queued for protobuf marshaling).

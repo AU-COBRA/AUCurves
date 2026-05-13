@@ -584,7 +584,262 @@ Section FiatCryptoBridge.
           and [*].
 
       ESTIMATE: ~150-250 LoC, ~3-5 hours of careful unfolding-
-      driven Rocq work, no creative content. *)
+      driven Rocq work, no creative content.
+
+      SHARPENING (Phase 0e E4, follow-up session)
+      -------------------------------------------
+      Below we expose the proof as a COMPOSITION of two
+      independent steps, each carved out as its own lemma:
+
+        Step (A) [build_limb_list_mul_u128_eq_schoolbook] (Qed):
+          a pure-Z equality on length-5 u54-bounded inputs,
+          rewriting [build_limb_list_mul_u128 la lb] as the
+          5-element schoolbook list with the 19-fold reduction
+          folded in.  No fiat-crypto dependencies.  Closes
+          via the structural collapse lemmas of §3.
+
+        Step (B) [feval_fiat_schoolbook_eq_mul] (Admitted):
+          the algebraic recognition step — the schoolbook
+          5-list, when evaluated by the radix-2^51 positional
+          decoder modulo [p = 2^255 - 19], equals
+          [F.mul (feval_fiat la) (feval_fiat lb)].  This is
+          where [Crypto.Arithmetic.Core.Positional.eval_mulmod]
+          (with [s = 2^255], [c = [(1, 19)]], [n = 5])
+          actually applies.
+
+      The headline [feval_build_u128_mul_correct_fiat] is then
+      a one-line composition: rewrite the u128 list to the
+      schoolbook list via (A), then apply (B). *)
+
+  (** Per-limb schoolbook entries with the 19-fold reduction folded
+      into the high-side products.  These mirror exactly the radix-2^51
+      Curve25519 [Positional.mulmod _ _ (2^255) [(1, 19)] _ _] body for
+      [n = 5] — but stated as pure Z, with no [mask*] decorations. *)
+  Definition mul_school_c0 (la lb : list Z) : Z :=
+       List.nth 0 la 0 * List.nth 0 lb 0
+    + 19 * (List.nth 1 la 0 * List.nth 4 lb 0)
+    + 19 * (List.nth 2 la 0 * List.nth 3 lb 0)
+    + 19 * (List.nth 3 la 0 * List.nth 2 lb 0)
+    + 19 * (List.nth 4 la 0 * List.nth 1 lb 0).
+
+  Definition mul_school_c1 (la lb : list Z) : Z :=
+       List.nth 0 la 0 * List.nth 1 lb 0
+    +  List.nth 1 la 0 * List.nth 0 lb 0
+    + 19 * (List.nth 2 la 0 * List.nth 4 lb 0)
+    + 19 * (List.nth 3 la 0 * List.nth 3 lb 0)
+    + 19 * (List.nth 4 la 0 * List.nth 2 lb 0).
+
+  Definition mul_school_c2 (la lb : list Z) : Z :=
+       List.nth 0 la 0 * List.nth 2 lb 0
+    +  List.nth 1 la 0 * List.nth 1 lb 0
+    +  List.nth 2 la 0 * List.nth 0 lb 0
+    + 19 * (List.nth 3 la 0 * List.nth 4 lb 0)
+    + 19 * (List.nth 4 la 0 * List.nth 3 lb 0).
+
+  Definition mul_school_c3 (la lb : list Z) : Z :=
+       List.nth 0 la 0 * List.nth 3 lb 0
+    +  List.nth 1 la 0 * List.nth 2 lb 0
+    +  List.nth 2 la 0 * List.nth 1 lb 0
+    +  List.nth 3 la 0 * List.nth 0 lb 0
+    + 19 * (List.nth 4 la 0 * List.nth 4 lb 0).
+
+  Definition mul_school_c4 (la lb : list Z) : Z :=
+       List.nth 0 la 0 * List.nth 4 lb 0
+    +  List.nth 1 la 0 * List.nth 3 lb 0
+    +  List.nth 2 la 0 * List.nth 2 lb 0
+    +  List.nth 3 la 0 * List.nth 1 lb 0
+    +  List.nth 4 la 0 * List.nth 0 lb 0.
+
+  Definition mul_school_list (la lb : list Z) : list Z :=
+    [ mul_school_c0 la lb
+    ; mul_school_c1 la lb
+    ; mul_school_c2 la lb
+    ; mul_school_c3 la lb
+    ; mul_school_c4 la lb ].
+
+  (** Auxiliary: every partial product in our schoolbook fits the u128
+      sum bounds required by [sum5_u128_eq].  Each [a_i * b_j] is in
+      [0, 2^108); a 19-scaled version in [0, 19 * 2^108) < [0, 2^113).
+      The accumulated sums (right-associated) stay well under 2^128. *)
+  Lemma mul_u54_bound :
+    forall a b, 0 <= a < 2^54 -> 0 <= b < 2^54 -> 0 <= a * b < 2^108.
+  Proof.
+    intros a b [Halo Hahi] [Hblo Hbhi]. split.
+    - apply Z.mul_nonneg_nonneg; lia.
+    - assert (Heq : 2^108 = 2^54 * 2^54) by reflexivity.
+      rewrite Heq. apply Z.mul_lt_mono_nonneg; lia.
+  Qed.
+
+  Lemma mul_scaled19_u54_bound :
+    forall a b, 0 <= a < 2^54 -> 0 <= b < 2^54 -> 0 <= 19 * (a * b) < 2^113.
+  Proof.
+    intros a b Ha Hb.
+    pose proof (mul_u54_bound a b Ha Hb) as [Hlo Hhi].
+    split.
+    - apply Z.mul_nonneg_nonneg; lia.
+    - assert (2^113 = 19 * 2^108 + (2^113 - 19 * 2^108)) as Hsplit by ring.
+      assert (0 < 2^113 - 19 * 2^108) by reflexivity.
+      assert (Hgrow : 19 * (a * b) < 19 * 2^108)
+        by (apply Z.mul_lt_mono_pos_l; lia).
+      lia.
+  Qed.
+
+  (** [Step (A)] — Structural collapse: pure-Z equality between the
+      u128-decorated [build_limb_list_mul_u128] list and the bare
+      schoolbook [mul_school_list], on u54-bounded length-5 inputs.
+      No fiat-crypto dependencies. *)
+  Lemma build_limb_list_mul_u128_eq_schoolbook :
+    forall la lb,
+      limbs_bounded54 la ->
+      limbs_bounded54 lb ->
+      length la = 5%nat ->
+      length lb = 5%nat ->
+      build_limb_list_mul_u128 la lb = mul_school_list la lb.
+  Proof.
+    intros la lb Hba Hbb Hla Hlb.
+    (* Every index in [0..4] is bounded, so the limb-reader collapses
+       are uniformly available.  Collect the per-limb partial product
+       and 19-scaled equalities up front. *)
+    pose proof (limbs_bounded54_nth la 0 Hba ltac:(lia)) as Ha0.
+    pose proof (limbs_bounded54_nth la 1 Hba ltac:(lia)) as Ha1.
+    pose proof (limbs_bounded54_nth la 2 Hba ltac:(lia)) as Ha2.
+    pose proof (limbs_bounded54_nth la 3 Hba ltac:(lia)) as Ha3.
+    pose proof (limbs_bounded54_nth la 4 Hba ltac:(lia)) as Ha4.
+    pose proof (limbs_bounded54_nth lb 0 Hbb ltac:(lia)) as Hb0.
+    pose proof (limbs_bounded54_nth lb 1 Hbb ltac:(lia)) as Hb1.
+    pose proof (limbs_bounded54_nth lb 2 Hbb ltac:(lia)) as Hb2.
+    pose proof (limbs_bounded54_nth lb 3 Hbb ltac:(lia)) as Hb3.
+    pose proof (limbs_bounded54_nth lb 4 Hbb ltac:(lia)) as Hb4.
+    (* Useful arithmetic identities. *)
+    assert (Hpow108 : 2^108 < 2^128)
+      by (apply Z.pow_lt_mono_r; lia).
+    assert (Hpow113 : 2^113 < 2^128)
+      by (apply Z.pow_lt_mono_r; lia).
+    (* Now collapse every entry: outer SUM5 to a 5-term sum + each
+       inner partial-product to a bare product / 19-scaled product.
+
+       For [a;b;c;d;e] = [a';b';c';d';e'], each [f_equal2] (on cons)
+       splits off one head equality + one tail equality.  Five nested
+       [f_equal2]s expose the 5 head goals; the final tail [[] = []]
+       is dispatched by [reflexivity]. *)
+    unfold build_limb_list_mul_u128, mul_school_list.
+    apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|reflexivity]]]]].
+    - (* c_0 *)
+      rewrite (pp_mul_u128_eq        la lb 0 0 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_scaled_u128_eq la lb 1 4 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 2 3 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 3 2 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 4 1 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      unfold mul_school_c0.
+      rewrite sum5_u128_eq.
+      + ring.
+      + (* p4 + p5 in u128 *) split; nia.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+    - (* c_1 *)
+      rewrite (pp_mul_u128_eq        la lb 0 1 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 1 0 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_scaled_u128_eq la lb 2 4 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 3 3 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 4 2 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      unfold mul_school_c1.
+      rewrite sum5_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+    - (* c_2 *)
+      rewrite (pp_mul_u128_eq        la lb 0 2 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 1 1 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 2 0 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_scaled_u128_eq la lb 3 4 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      rewrite (pp_mul_scaled_u128_eq la lb 4 3 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      unfold mul_school_c2.
+      rewrite sum5_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+    - (* c_3 *)
+      rewrite (pp_mul_u128_eq        la lb 0 3 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 1 2 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 2 1 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 3 0 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_scaled_u128_eq la lb 4 4 19 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia) ltac:(lia) mask64_id_lit19).
+      unfold mul_school_c3.
+      rewrite sum5_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+    - (* c_4 *)
+      rewrite (pp_mul_u128_eq        la lb 0 4 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 1 3 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 2 2 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 3 1 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      rewrite (pp_mul_u128_eq        la lb 4 0 Hba Hbb Hla Hlb ltac:(lia) ltac:(lia)).
+      unfold mul_school_c4.
+      rewrite sum5_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+      + split; nia.
+  Qed.
+
+  (** [Step (B)] — Algebraic recognition.  This is the SOLE remaining
+      arithmetic admit: identify the schoolbook 5-list (with the
+      19-fold reduction folded in) as [Positional.mulmod] specialised
+      to fe25519's [s = 2^255], [c = [(1, 19)]], [n = 5], and then
+      invoke [Crypto.Arithmetic.Core.Positional.eval_mulmod] (the
+      carry-FREE version — the radix-2^51 carry chain is emitted
+      separately as the Phase 0c [fe25519_carry] body).
+
+      ESTIMATE FOR THIS REMAINING ADMITTED: ~50-100 LoC.
+        - Unfold [feval_fiat], reducing to a [mod (2^255 - 19)] equality
+          of [Positional.eval (ModOps.weight 51 1) 5 (mul_school_list la lb)]
+          vs [Positional.eval w 5 la * Positional.eval w 5 lb].
+        - Expand [Positional.eval] for length-5 lists into the explicit
+          5-term weighted sum (already canonical: w(i) = 2^(51*i)).
+        - The [mod (2^255 - 19)] equality follows from the standard
+          Solinas identity [2^255 ≡ 19 (mod 2^255 - 19)] applied to
+          the [w(5), w(6), w(7), w(8)] terms of the unreduced product,
+          which by [mul_school_list]'s construction land back in
+          positions [0..3] scaled by 19.  This is exactly what
+          [eval_mulmod] does after evaluating the [Associational.reduce]
+          step; we are essentially doing the [reduce] step by hand.
+        - Then [F.of_Z_mod] + [F.of_Z_mul] + [F.of_Z_eq_iff] closes.
+
+      No global axiom is introduced — this Admitted is LOCAL to this
+      scaffold file and surfaces only at the [Fe25519FiatInstantiation]
+      callsite via the [MulDischarge] Section parameter. *)
+  Lemma feval_fiat_schoolbook_eq_mul :
+    forall la lb,
+      limbs_bounded54 la ->
+      limbs_bounded54 lb ->
+      length la = 5%nat ->
+      length lb = 5%nat ->
+      feval_fiat (mul_school_list la lb)
+      = F.mul (feval_fiat la) (feval_fiat lb).
+  Proof.
+  Admitted. (* Phase 0e E4 sharpened follow-up:
+              ~50-100 LoC.  Identify [mul_school_list la lb] with
+              [Positional.mulmod (ModOps.weight 51 1) 5 (2^255) [(1,19)] la lb]
+              (carry-free; the radix-2^51 carry chain is the separate
+              Phase 0c [fe25519_carry] body).  Then
+              [Crypto.Arithmetic.Core.Positional.eval_mulmod] gives the
+              [mod (2^255 - 19)] equality on the Z side, and
+              [F.of_Z_mod] + [F.of_Z_mul] close.  See the breadcrumb
+              comment above this Admitted for the precise lemma sequence. *)
+
+  (** Headline composition: rewrite the u128-decorated body to the
+      pure schoolbook via Step (A), then close via Step (B).  This is
+      the lemma consumed at the [Fe25519FiatInstantiation] callsite
+      to discharge [MulDischarge.feval_build_u128_mul_correct]. *)
   Lemma feval_build_u128_mul_correct_fiat :
     forall la lb,
       limbs_bounded54 la ->
@@ -594,13 +849,10 @@ Section FiatCryptoBridge.
       feval_fiat (build_limb_list_mul_u128 la lb)
       = F.mul (feval_fiat la) (feval_fiat lb).
   Proof.
-  Admitted. (* Phase 0e E4 follow-up:
-              fiat-crypto's Positional.eval_mulmod identification.
-              See PROOF SKETCH above; ~150-250 LoC, no creative
-              content.  Local to this scaffold — surfaces ONLY at
-              the eventual Fe25519FiatInstantiation.v callsite via
-              MulDischarge.feval_build_u128_mul_correct, never as a
-              global axiom. *)
+    intros la lb Hba Hbb Hla Hlb.
+    rewrite (build_limb_list_mul_u128_eq_schoolbook la lb Hba Hbb Hla Hlb).
+    apply feval_fiat_schoolbook_eq_mul; assumption.
+  Qed.
 
   (** Concrete u128 squaring discharge.  Symmetric mirror of
       [feval_build_u128_mul_correct_fiat] above; same structure,

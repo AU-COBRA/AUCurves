@@ -45,7 +45,14 @@ Inductive sexpr_ed : Type :=
   | SMul    : sexpr_ed -> sexpr_ed -> sexpr_ed
   | SShr    : sexpr_ed -> sexpr_ed -> sexpr_ed   (* right shift *)
   | SAnd    : sexpr_ed -> sexpr_ed -> sexpr_ed   (* bitwise and *)
-  | SLt     : sexpr_ed -> sexpr_ed -> sexpr_ed.  (* x < y → 0/1 *)
+  | SLt     : sexpr_ed -> sexpr_ed -> sexpr_ed   (* x < y → 0/1 *)
+  | SLimb   : var -> nat -> sexpr_ed.            (* Phase 0b: read limb [i] of TFp25519 / TFp25519_64
+                                                   / TFpL25519 slot named [v] as a Z scalar.  Used
+                                                   to express fiat-crypto's radix-2^51 carry chain
+                                                   inline rather than via an FFI [REdCall].  When
+                                                   [v]'s slot type is not a limb-bearing tower type
+                                                   or [i] is out of range, evaluation produces
+                                                   [None] (stuck state). *)
 
 (** The Rust subset commands.  Parallel to BLS12 [rust_cmd] in
     [SafeRustSimulation.v:282], adapted to Ed25519 (no Fp tower
@@ -126,7 +133,7 @@ Inductive rust_cmd_ed :=
                                [dst.loc_type = t].  Mirrors Lean's
                                [RArrLoad].  Additive: existing IR
                                programs are unaffected. *)
-  | REdArrStore : located_ed -> sexpr_ed -> located_ed -> rust_cmd_ed.
+  | REdArrStore : located_ed -> sexpr_ed -> located_ed -> rust_cmd_ed
                             (* Array-of-slots write:
                                REdArrStore arr idx_expr src
                                [arr[eval idx_expr] := src].  Requires
@@ -134,6 +141,25 @@ Inductive rust_cmd_ed :=
                                [src.loc_type = t].  Mirrors Lean's
                                [RArrStore].  Additive: existing IR
                                programs are unaffected. *)
+  | REdLimbStore : located_ed -> nat -> sexpr_ed -> rust_cmd_ed.
+                            (* Phase 0b limb-level write into a limb-
+                               bearing tower slot (TFp25519 /
+                               TFp25519_64 / TFpL25519).
+                               REdLimbStore loc i e
+                               [loc.limbs[i] := eval e].  Combined with
+                               the [SLimb v i] sexpr (reads limb [i] of
+                               [v]), this pair gives the IR enough power
+                               to express fiat-crypto's bedrock2
+                               carry-chain bodies for [fe25519_add],
+                               [fe25519_sub], [fe25519_mul], etc.
+                               inline, without an [extern "C"] call.
+                               Phase 0b scaffold (2026-05-13): semantics
+                               implemented for [TFp25519]; other types
+                               leave the slot untouched (no-op).  Other
+                               IR passes (BorrowCheck, NormalizeSelect,
+                               InlineCallFn, RustCmdToC, RustCmdToRust)
+                               carry trivial stub cases — see those
+                               files for the per-pass treatment. *)
 
 (* ================================================================ *)
 (* §2. Rust state                                                    *)
@@ -237,6 +263,34 @@ Fixpoint eval_sexpr_ed (rs : rust_state_ed) (e : sexpr_ed) : option Z :=
       | Some va, Some vb => Some (if Z.ltb va vb then 1 else 0)
       | _, _ => None
       end
+  | SLimb v i =>
+      (* Phase 0b: read limb [i] from the limb-bearing tower slot
+         named [v].  Three variants of "limb-bearing tower type" are
+         supported: [TFp25519] (5 × u64 radix-2^51), [TFp25519_64]
+         (4 × u64 saturated), and [TFpL25519] (4 × u64 group-order
+         representative).  Out-of-range / wrong-type / missing-slot
+         yields [None].  The returned limb value is masked through
+         [mask64] so the bounded-eval lemma stays uniform — the
+         real radix-2^51 representation has each limb in
+         [0, 2^51 + slack), which is preserved by [mask64]. *)
+      match rs_get_tower_ed rs v with
+      | Some (exist_tval_ed TFp25519     (VFp25519     limbs)) =>
+          match List.nth_error limbs i with
+          | Some z => Some (mask64 z)
+          | None => None
+          end
+      | Some (exist_tval_ed TFp25519_64  (VFp25519_64  limbs)) =>
+          match List.nth_error limbs i with
+          | Some z => Some (mask64 z)
+          | None => None
+          end
+      | Some (exist_tval_ed TFpL25519    (VFpL25519    limbs)) =>
+          match List.nth_error limbs i with
+          | Some z => Some (mask64 z)
+          | None => None
+          end
+      | _ => None
+      end
   end.
 
 (** Eval results are always in [0, 2^64) when scalar values are bounded.
@@ -271,7 +325,9 @@ Lemma eval_sexpr_ed_bounded :
     eval_sexpr_ed rs e = Some v ->
     0 <= v < 2^64.
 Proof.
-  intros rs e. induction e; intros vv Hbnd Heval; cbn in Heval.
+  intros rs e. induction e as [x|z|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|
+                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|vlimb i];
+    intros vv Hbnd Heval; cbn in Heval.
   - (* SVar *) eapply Hbnd; eauto.
   - (* SLit *) inversion Heval; subst. apply mask64_bounded.
   - (* SAdd *)
@@ -311,6 +367,12 @@ Proof.
     destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
     inversion Heval; subst.
     destruct (Z.ltb va vb); split; lia.
+  - (* SLimb vlimb i: masked through mask64 above *)
+    destruct (rs_get_tower_ed rs vlimb) as [[t' tv]|] eqn:Hgt; try discriminate.
+    destruct t'; try discriminate;
+      destruct tv; try discriminate;
+      destruct (List.nth_error limbs i) as [z|] eqn:Hnth; try discriminate;
+      inversion Heval; subst; apply mask64_bounded.
 Qed.
 
 (** The earlier [eval_sexpr_ed_bounded_for_arith] placeholder is
@@ -548,7 +610,22 @@ Inductive rust_exec_ed
       arr_v_new = list_set (Z.to_nat idx_v) src_v arr_v_old ->
       rust_exec_ed callee_post callee_post_n function_table (REdArrStore arr idx_e src) rs
         (rs_set_tower_ed rs arr.(loc_var)
-           (exist_tval_ed (TArr n t) (VArr n t arr_v_new))).
+           (exist_tval_ed (TArr n t) (VArr n t arr_v_new)))
+  | rexec_limb_store_fp25519 : forall loc i e rs val_v limbs_old limbs_new,
+      (* Phase 0b: limb write into a [TFp25519] slot.  Replaces limb
+         [i] in the slot's limb list with [val_v].  Requires
+         [loc.loc_type = TFp25519], a well-formed [VFp25519] payload,
+         and [i < 5]. *)
+      eval_sexpr_ed rs e = Some val_v ->
+      loc.(loc_type) = TFp25519 ->
+      rs_get_tower_ed rs loc.(loc_var) =
+        Some (exist_tval_ed TFp25519 (VFp25519 limbs_old)) ->
+      (i < 5)%nat ->
+      length limbs_old = 5%nat ->
+      limbs_new = list_set i val_v limbs_old ->
+      rust_exec_ed callee_post callee_post_n function_table (REdLimbStore loc i e) rs
+        (rs_set_tower_ed rs loc.(loc_var)
+           (exist_tval_ed TFp25519 (VFp25519 limbs_new))).
 
 (* ================================================================ *)
 (* §5. bedrock2 bridge — Part B (Week 1 Day 5-6, IN PROGRESS)        *)
@@ -596,8 +673,11 @@ Inductive bedrock_cmd_ed :=
                                REdSetBytes). *)
   | BEdArrLoad  : located_ed -> located_ed -> sexpr_ed -> bedrock_cmd_ed
                             (* Array-of-slots read (mirror of REdArrLoad). *)
-  | BEdArrStore : located_ed -> sexpr_ed -> located_ed -> bedrock_cmd_ed.
+  | BEdArrStore : located_ed -> sexpr_ed -> located_ed -> bedrock_cmd_ed
                             (* Array-of-slots write (mirror of REdArrStore). *)
+  | BEdLimbStore : located_ed -> nat -> sexpr_ed -> bedrock_cmd_ed.
+                            (* Phase 0b: limb-level write (mirror of
+                               REdLimbStore). *)
 
 (** Direct translation: bedrock_cmd_ed → rust_cmd_ed. *)
 Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
@@ -620,6 +700,7 @@ Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
   | BEdSetBytes loc bytes => REdSetBytes loc bytes
   | BEdArrLoad dst src idx_e => REdArrLoad dst src idx_e
   | BEdArrStore arr idx_e src => REdArrStore arr idx_e src
+  | BEdLimbStore loc i e => REdLimbStore loc i e
   end.
 
 (** Bedrock-level execution.  Same shape as [rust_exec_ed], shares
@@ -769,7 +850,19 @@ Inductive bedrock_exec_ed
       arr_v_new = list_set (Z.to_nat idx_v) src_v arr_v_old ->
       bedrock_exec_ed callee_post callee_post_n function_table (BEdArrStore arr idx_e src) rs
         (rs_set_tower_ed rs arr.(loc_var)
-           (exist_tval_ed (TArr n t) (VArr n t arr_v_new))).
+           (exist_tval_ed (TArr n t) (VArr n t arr_v_new)))
+  | bexec_limb_store_fp25519 : forall loc i e rs val_v limbs_old limbs_new,
+      (* Mirror of rexec_limb_store_fp25519 at the bedrock level. *)
+      eval_sexpr_ed rs e = Some val_v ->
+      loc.(loc_type) = TFp25519 ->
+      rs_get_tower_ed rs loc.(loc_var) =
+        Some (exist_tval_ed TFp25519 (VFp25519 limbs_old)) ->
+      (i < 5)%nat ->
+      length limbs_old = 5%nat ->
+      limbs_new = list_set i val_v limbs_old ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdLimbStore loc i e) rs
+        (rs_set_tower_ed rs loc.(loc_var)
+           (exist_tval_ed TFp25519 (VFp25519 limbs_new))).
 
 (** Simulation theorem.  Mirrors [SafeRustSimulation.v:1241]'s
     [safe_cmd_correct].  Proof: induction on [bedrock_exec_ed], 10
@@ -810,6 +903,7 @@ Proof.
   - eapply rexec_setbytes; eauto.
   - eapply rexec_arr_load; eauto.
   - eapply rexec_arr_store; eauto.
+  - eapply rexec_limb_store_fp25519; eauto.
 Qed.
 
 (* ================================================================ *)
@@ -1031,4 +1125,11 @@ Proof.
     + cbn. rewrite list_set_length.
       (* length arr_v_old = n from well-formedness of the slot *)
       exact (Hwf arr.(loc_var) (TArr n t) (VArr n t arr_v_old) H2).
+  - (* rexec_limb_store_fp25519 *)
+    subst limbs_new.
+    apply rs_set_tower_ed_preserves_wf with
+      (t := TFp25519)
+      (v := VFp25519 (list_set i val_v limbs_old)).
+    + exact Hwf.
+    + cbn. rewrite list_set_length. assumption.
 Qed.

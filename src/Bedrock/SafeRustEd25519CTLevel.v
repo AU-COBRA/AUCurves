@@ -105,6 +105,9 @@ Fixpoint sexpr_level (env : level_env) (e : sexpr_ed) : level :=
   | SShr a b => level_join (sexpr_level env a) (sexpr_level env b)
   | SAnd a b => level_join (sexpr_level env a) (sexpr_level env b)
   | SLt  a b => level_join (sexpr_level env a) (sexpr_level env b)
+  | SLimb v _ => env_lookup env v
+                   (* Phase 0b: limb read inherits the level of the
+                      enclosing tower slot. *)
   end.
 
 (* ================================================================ *)
@@ -248,6 +251,16 @@ Fixpoint cmd_ct_ok (c : rust_cmd_ed) (env : level_env) (pc : level)
       let ls := env_lookup env src.(loc_var) in
       let li := sexpr_level env idx in
       let rhs := level_join (level_join li ls) pc in
+      if level_le rhs ll then Some env else None
+
+  | REdLimbStore loc _ e =>
+      (* Phase 0b: limb-level write.  The level of the source sexpr
+         (including any [SLimb] reads it contains) joined with [pc]
+         must be at most the destination slot's level.  Mirrors the
+         [REdByteStore] case. *)
+      let ll := env_lookup env loc.(loc_var) in
+      let le := sexpr_level env e in
+      let rhs := level_join le pc in
       if level_le rhs ll then Some env else None
   end.
 

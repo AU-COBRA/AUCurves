@@ -200,7 +200,8 @@ Fixpoint normalize_select (c : rust_cmd_ed) : rust_cmd_ed :=
   | REdCallFn _ _ _
   | REdSetBytes _ _
   | REdArrLoad _ _ _
-  | REdArrStore _ _ _ => c
+  | REdArrStore _ _ _
+  | REdLimbStore _ _ _ => c
   end.
 
 (* ================================================================ *)

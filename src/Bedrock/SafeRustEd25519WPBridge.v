@@ -412,6 +412,20 @@ Fixpoint sexpr_well_formed (e : sexpr_ed) : Prop :=
   | SLt  a b => sexpr_well_formed a /\ sexpr_well_formed b
   | SShr a b => sexpr_well_formed a /\ sexpr_well_formed b /\
                (forall rs vb, eval_sexpr_ed rs b = Some vb -> 0 <= vb < 64)
+  | SLimb _ _ => False
+                 (* Phase 0b: the WP bridge below does not yet handle
+                    [SLimb].  [SLimb] translates to a bedrock2 [load_word]
+                    that needs a per-slot address premise not currently
+                    exposed by [state_refine_ed].  Gating this case off
+                    by [False] is conservative: every existing call site
+                    of [sexpr_to_dexpr_bridge] is for expressions used
+                    inside [REdLetU64] / [REdScalarSet] / [REdByteStore]
+                    indexes — none of those use [SLimb] today
+                    (limb access is exclusively inside [REdLimbStore]
+                    bodies, whose [to_bedrock_cmd] case is the
+                    [store_word] emission, not [load_word]).  Phase 0c
+                    will lift this to a proper bridge once
+                    [state_refine_ed] gains slot-address access. *)
   end.
 
 (** The expression bridge: under [state_refine_ed] and
@@ -619,6 +633,10 @@ Proof.
     rewrite (Z.mod_small va) by lia.
     rewrite (Z.mod_small vb) by lia.
     destruct (va <? vb)%Z; reflexivity. }
+  { (* SLimb v i — Phase 0b: [sexpr_well_formed] rules this case out by
+       returning [False]; the case is unreachable.  See the comment on
+       [sexpr_well_formed] above for the rationale. *)
+    exfalso; exact Hwf. }
 Qed.
 
 (* ================================================================ *)
@@ -1829,6 +1847,16 @@ Fixpoint all_let_zero_obligations
       False
   | BEdArrStore _ _ _ =>
       False
+  | BEdLimbStore _ _ _ =>
+      (* Phase 0b: limb-level write.  Same treatment as BEdArrLoad /
+         BEdArrStore — the bedrock2-WP bridge is a placeholder until
+         [state_refine_ed] gains slot-address access (Phase 0c).  All
+         existing protocol-level callsites use [BEdLimbStore] only
+         inside [Fe25519AddSubBody]'s callee body, which is bridged
+         via [REdCallFn] / the function-table mechanism (not through
+         direct bedrock2-WP).  No existing proof emits [BEdLimbStore]
+         at the top level. *)
+      False
   end.
 
 (** Composing the per-constructor bridges gives the bridge for any
@@ -1865,6 +1893,7 @@ Proof.
   - apply wp_bridge_setbytes_red; exact Hletz.
   - (* BEdArrLoad — Hletz : False *) exfalso; exact Hletz.
   - (* BEdArrStore — Hletz : False *) exfalso; exact Hletz.
+  - (* BEdLimbStore — Hletz : False *) exfalso; exact Hletz.
 Qed.
 
 (** Status (2026-05-09): [bridge_complete] is Qed; cases closed and

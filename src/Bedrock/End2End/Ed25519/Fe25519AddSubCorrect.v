@@ -4,18 +4,24 @@
  *  Companion to [Fe25519AddSubBody.v].  Mirrors the section-parameterised
  *  pattern used by [Fe25519InvertCorrect.fe25519_invert_correct]:
  *  abstract over the [Fp25519_holds] slot predicate plus a per-call
- *  oracle hypothesis on the lower-level primitive, then derive
- *  algebraic correctness of the wrapped body.
+ *  oracle hypothesis on the body, then derive algebraic correctness
+ *  of the wrapped function.
  *
- *  Status
- *  ======
- *  - [fe25519_add_body_correct] :  Qed.
- *  - [fe25519_sub_body_correct] :  Qed.
+ *  Status (Phase 0b, 2026-05-13)
+ *  =============================
+ *  - [fe25519_add_body_correct] :  Admitted (inline limb-chain body —
+ *      pending fiat-crypto [Positional.add_correct] import; see
+ *      breadcrumb at end of file).
+ *  - [fe25519_sub_body_correct] :  Qed (still Phase 0a delegating to
+ *      [sub_prim_correct], one [REdCall]).
  *
- *  Both proofs are one-step delegations from the body's inner
- *  [REdCall "fe25519_add_prim"] (resp. ["fe25519_sub_prim"]) to the
- *  primitive's section-hypothesis spec.  No new global axioms.
- *)
+ *  Phase 0a (committed 6999797) had both proofs as 3-line
+ *  [REdCall]-delegations to the [_prim] hypotheses.  Phase 0b replaces
+ *  [fe25519_add_body]'s AST with an inline 5-limb chain
+ *  ([REdSeq] of five [REdLimbStore] calls); the proof now needs to
+ *  chain through five [rexec_limb_store_fp25519] inversions and
+ *  apply the fiat-crypto [Positional.add_correct]-style algebraic
+ *  identity. *)
 
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
@@ -56,14 +62,17 @@ Section Fe25519AddSubCorrect.
       Prop :=
     forall y v, y <> exclude -> Fp25519_holds rs1 y v -> Fp25519_holds rs2 y v.
 
-  (** Primitive [fe25519_add_prim]: 5-limb radix-2^51 addition.  At
-      the surface of this scaffold the primitive's behaviour is
-      handed in as a hypothesis (same shape as
-      [Fe25519InvertCorrect.sqr_correct]).  Phase 0b will replace
-      [fe25519_add_prim] with an inline AST that itself reduces to
-      [F.add]; this hypothesis then becomes a derivable lemma about
-      that inline AST. *)
-  Hypothesis add_prim_correct :
+  (** Inline-body correctness for [fe25519_add_body] (Phase 0b shape).
+      The body executes five [REdLimbStore]s writing [a.limbs[i] +
+      b.limbs[i]] into [dest.limbs[i]] for i = 0..4.  The algebraic
+      fact that this matches [F.add] for radix-2^51 representation
+      mirrors fiat-crypto's [Positional.add_correct] /
+      [Crypto.Arithmetic.Saturated.Positional.add_correct] — its
+      mechanical port through our [Fp25519_holds] interface is the
+      Phase 0c follow-up.  Until then this is a section hypothesis,
+      keeping the parameterised-section pattern used by
+      [Fe25519InvertCorrect]. *)
+  Hypothesis add_inline_correct :
     forall (dest a b : located_ed) (rs1 rs2 : rust_state_ed) (xa xb : F p),
       dest.(loc_type) = TFp25519 ->
       a.(loc_type) = TFp25519 ->
@@ -72,7 +81,16 @@ Section Fe25519AddSubCorrect.
       dest.(loc_var) <> b.(loc_var) ->
       Fp25519_holds rs1 a.(loc_var) xa ->
       Fp25519_holds rs1 b.(loc_var) xb ->
-      Hexec (REdCall "fe25519_add_prim" dest [a; b]) rs1 rs2 ->
+      Hexec
+        (REdSeq
+           (REdLimbStore dest 0%nat (SAdd (SLimb a.(loc_var) 0%nat) (SLimb b.(loc_var) 0%nat)))
+           (REdSeq
+             (REdLimbStore dest 1%nat (SAdd (SLimb a.(loc_var) 1%nat) (SLimb b.(loc_var) 1%nat)))
+             (REdSeq
+               (REdLimbStore dest 2%nat (SAdd (SLimb a.(loc_var) 2%nat) (SLimb b.(loc_var) 2%nat)))
+               (REdSeq
+                 (REdLimbStore dest 3%nat (SAdd (SLimb a.(loc_var) 3%nat) (SLimb b.(loc_var) 3%nat)))
+                 (REdLimbStore dest 4%nat (SAdd (SLimb a.(loc_var) 4%nat) (SLimb b.(loc_var) 4%nat))))))) rs1 rs2 ->
       Fp25519_holds rs2 dest.(loc_var) (F.add xa xb) /\
       fp_frame rs1 rs2 dest.(loc_var).
 
@@ -111,7 +129,7 @@ Section Fe25519AddSubCorrect.
     intros rs1 rs2 a_loc b_loc dest xa xb
            Hat Hbt Hdt Hdne_a Hdne_b Hxa Hxb Hexec_n.
     cbn [fe25519_add_body] in Hexec_n.
-    apply (add_prim_correct dest a_loc b_loc rs1 rs2 xa xb); assumption.
+    apply (add_inline_correct dest a_loc b_loc rs1 rs2 xa xb); assumption.
   Qed.
 
   Theorem fe25519_sub_body_correct :

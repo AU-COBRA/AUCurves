@@ -99,6 +99,7 @@ Fixpoint inline_callfn_one
   | REdSetBytes loc bs => REdSetBytes loc bs
   | REdArrLoad dst src i => REdArrLoad dst src i
   | REdArrStore arr i src => REdArrStore arr i src
+  | REdLimbStore loc i e => REdLimbStore loc i e
   end.
 
 (** Iterate [inline_callfn_one] [n] times.  For a [function_table_ed]
@@ -279,6 +280,7 @@ Fixpoint callfn_free (c : rust_cmd_ed) : bool :=
   | REdSetBytes _ _ => true
   | REdArrLoad _ _ _ => true
   | REdArrStore _ _ _ => true
+  | REdLimbStore _ _ _ => true
   end.
 
 Lemma callfn_free_inline_one_id : forall ftab c,

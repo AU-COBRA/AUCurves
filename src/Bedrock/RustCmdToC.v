@@ -102,6 +102,10 @@ Fixpoint c_sexpr (e : sexpr_ed) : string :=
   | SShr a b    => "(" ++ c_sexpr a ++ " >> " ++ c_sexpr b ++ ")"
   | SAnd a b    => "(" ++ c_sexpr a ++ " & " ++ c_sexpr b ++ ")"
   | SLt a b     => "(" ++ c_sexpr a ++ " < " ++ c_sexpr b ++ ")"
+  | SLimb v i   => v ++ "[" ++ z_str (Z.of_nat i) ++ "]"
+                    (* Phase 0b: limb read.  In emitted C, an Fp25519
+                       slot is a [uint64_t[5]] array, so a static
+                       index access is the natural code shape. *)
   end.
 
 (* ================================================================ *)
@@ -210,6 +214,10 @@ Fixpoint c_emit (indent : string) (c : rust_cmd_ed) : string :=
       indent ++ "memcpy(" ++ arr.(loc_var) ++ " + (" ++ c_sexpr idx_e ++
         ") * sizeof(*" ++ src.(loc_var) ++ "), " ++ src.(loc_var) ++
         ", sizeof(*" ++ src.(loc_var) ++ "));"
+  | REdLimbStore loc i e =>
+      (* Phase 0b: limb write.  loc.limbs[i] := e. *)
+      indent ++ loc.(loc_var) ++ "[" ++ z_str (Z.of_nat i) ++ "] = " ++
+        c_sexpr e ++ ";"
   end.
 
 (* ================================================================ *)
@@ -359,6 +367,14 @@ Fixpoint to_bedrock_expr (e : sexpr_ed) : Syntax.expr :=
                                   (to_bedrock_expr a) (to_bedrock_expr b)
   | SLt a b     => Syntax.expr.op Syntax.bopname.ltu
                                   (to_bedrock_expr a) (to_bedrock_expr b)
+  | SLimb v i   =>
+      (* Phase 0b: limb read.  Emitted as load(addr_of(v) + 8*i) in
+         bedrock2 — limbs are 8-byte words stored contiguously at the
+         tower-slot address. *)
+      Syntax.expr.load Syntax.access_size.word
+        (Syntax.expr.op Syntax.bopname.add
+           (Syntax.expr.var v)
+           (Syntax.expr.literal (8 * Z.of_nat i)))
   end.
 
 Definition tt_bytes_z (t : tower_type_ed) : Z := Z.of_nat (tt_bytes_ed t).
@@ -459,6 +475,13 @@ Fixpoint to_bedrock_cmd (c : rust_cmd_ed) : Syntax.cmd :=
       Syntax.cmd.skip
   | REdArrStore _ _ _ =>
       Syntax.cmd.skip
+  | REdLimbStore loc i e =>
+      (* Phase 0b: limb store.  store_word(addr_of(loc) + 8*i, e). *)
+      Syntax.cmd.store Syntax.access_size.word
+        (Syntax.expr.op Syntax.bopname.add
+           (Syntax.expr.var loc.(loc_var))
+           (Syntax.expr.literal (8 * Z.of_nat i)))
+        (to_bedrock_expr e)
   end.
 
 (** Emit C via bedrock2's mature ToCString pipeline. *)
@@ -553,6 +576,13 @@ Fixpoint bedrock_cmd_ed_to_syntax (c : bedrock_cmd_ed) : Syntax.cmd :=
       Syntax.cmd.skip
   | BEdArrStore _ _ _ =>
       Syntax.cmd.skip
+  | BEdLimbStore loc i e =>
+      (* Mirror of REdLimbStore case in [to_bedrock_cmd]. *)
+      Syntax.cmd.store Syntax.access_size.word
+        (Syntax.expr.op Syntax.bopname.add
+           (Syntax.expr.var loc.(loc_var))
+           (Syntax.expr.literal (8 * Z.of_nat i)))
+        (to_bedrock_expr e)
   end.
 
 (** Inverse-style: any [rust_cmd_ed] with no byte-level memory ops
@@ -609,6 +639,7 @@ Fixpoint rust_to_bedrock_cmd_ed (c : rust_cmd_ed) : option bedrock_cmd_ed :=
   | REdSetBytes loc bytes => Some (BEdSetBytes loc bytes)
   | REdArrLoad dst src idx_e => Some (BEdArrLoad dst src idx_e)
   | REdArrStore arr idx_e src => Some (BEdArrStore arr idx_e src)
+  | REdLimbStore loc i e => Some (BEdLimbStore loc i e)
   end.
 
 (** **Correctness theorem 1**: roundtrip via btranslate_ed.
@@ -649,6 +680,7 @@ Proof.
   - inversion Hr; subst; reflexivity.
   - inversion Hr; subst; reflexivity.
   - inversion Hr; subst; reflexivity.
+  - (* REdLimbStore *) inversion Hr; subst; reflexivity.
 Qed.
 
 (** **Correctness theorem 2**: the two bedrock2-Syntax targets agree.
@@ -695,6 +727,7 @@ Proof.
   - inversion Hr; subst; cbn; reflexivity.
   - inversion Hr; subst; cbn; reflexivity.
   - inversion Hr; subst; cbn; reflexivity.
+  - (* REdLimbStore *) inversion Hr; subst; cbn; reflexivity.
 Qed.
 
 (** **Correctness theorem 3** (semantic preservation): given that

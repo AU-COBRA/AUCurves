@@ -101,6 +101,9 @@ Fixpoint rs_sexpr (e : sexpr_ed) : string :=
   | SShr a b    => "(" ++ rs_sexpr a ++ " >> " ++ rs_sexpr b ++ ")"
   | SAnd a b    => "(" ++ rs_sexpr a ++ " & "  ++ rs_sexpr b ++ ")"
   | SLt a b     => "((" ++ rs_sexpr a ++ " < " ++ rs_sexpr b ++ ") as u64)"
+  | SLimb v i   => rs_sanitize v ++ "[" ++ z_str (Z.of_nat i) ++ "]"
+                    (* Phase 0b: limb read.  In emitted Rust an Fp25519
+                       slot is a [u64; 5] (or similar) array. *)
   end.
 
 (* ================================================================ *)
@@ -258,6 +261,10 @@ Fixpoint rs_emit (indent : string) (c : rust_cmd_ed) : string :=
            arr[(idx_e) as usize] = src; *)
       indent ++ rs_sanitize arr.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++
         ") as usize] = " ++ rs_sanitize src.(loc_var)
+  | REdLimbStore loc i e =>
+      (* Phase 0b: limb write.  loc.limbs[i] := e. *)
+      indent ++ rs_sanitize loc.(loc_var) ++ "[" ++ z_str (Z.of_nat i) ++
+        "] = " ++ rs_sexpr e
   end.
 
 (* ================================================================ *)
@@ -525,6 +532,9 @@ Fixpoint rs_emit_inline (indent : string) (c : rust_cmd_ed) : string :=
   | REdArrStore arr idx_e src =>
       indent ++ rs_sanitize arr.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++
         ") as usize] = " ++ rs_sanitize src.(loc_var)
+  | REdLimbStore loc i e =>
+      indent ++ rs_sanitize loc.(loc_var) ++ "[" ++ z_str (Z.of_nat i) ++
+        "] = " ++ rs_sexpr e
   end.
 
 (** Emit one body as an inline-callable Rust function. *)
@@ -632,7 +642,10 @@ Inductive rust_expr_ast : Type :=
 | RAWrappingMul  (a b : rust_expr_ast)
 | RAShr          (a b : rust_expr_ast)
 | RAAnd          (a b : rust_expr_ast)
-| RALt           (a b : rust_expr_ast).   (** wraps in `(... < ...) as u64` *)
+| RALt           (a b : rust_expr_ast)    (** wraps in `(... < ...) as u64` *)
+| RALimb         (v : String.string) (i : nat).
+                              (** Phase 0b: limb read [v[i]] — emits as
+                                  the static-index access [v[i]]. *)
 
 Inductive rust_stmt_ast : Type :=
 | RSSkip                                        (* indent ++ "()" *)
@@ -662,9 +675,12 @@ Inductive rust_stmt_ast : Type :=
 | RSArrLoad    (dst src : String.string) (ix : rust_expr_ast)
                               (** Array-of-slots read:
                                   dst = src[(ix) as usize] *)
-| RSArrStore   (arr : String.string) (ix : rust_expr_ast) (src : String.string).
+| RSArrStore   (arr : String.string) (ix : rust_expr_ast) (src : String.string)
                               (** Array-of-slots write:
                                   arr[(ix) as usize] = src *)
+| RSLimbStore  (v : String.string) (i : nat) (e : rust_expr_ast).
+                              (** Phase 0b: limb write:
+                                  v[i] = e *)
 
 (** sexpr_ed → rust_expr_ast. *)
 Fixpoint sexpr_to_ast (e : sexpr_ed) : rust_expr_ast :=
@@ -677,6 +693,7 @@ Fixpoint sexpr_to_ast (e : sexpr_ed) : rust_expr_ast :=
   | SShr a b => RAShr         (sexpr_to_ast a) (sexpr_to_ast b)
   | SAnd a b => RAAnd         (sexpr_to_ast a) (sexpr_to_ast b)
   | SLt  a b => RALt          (sexpr_to_ast a) (sexpr_to_ast b)
+  | SLimb v i => RALimb       (rs_sanitize v) i
   end.
 
 (** rust_cmd_ed → rust_stmt_ast. *)
@@ -728,6 +745,8 @@ Fixpoint cmd_to_ast (c : rust_cmd_ed) : rust_stmt_ast :=
       RSArrStore (rs_sanitize arr.(loc_var))
                  (sexpr_to_ast idx_e)
                  (rs_sanitize src.(loc_var))
+  | REdLimbStore loc i e =>
+      RSLimbStore (rs_sanitize loc.(loc_var)) i (sexpr_to_ast e)
   end.
 
 (** **Concrete** pretty-printer for expressions, mirroring
@@ -742,6 +761,7 @@ Fixpoint rs_pretty_expr (e : rust_expr_ast) : String.string :=
   | RAShr a b         => "(" ++ rs_pretty_expr a ++ " >> " ++ rs_pretty_expr b ++ ")"
   | RAAnd a b         => "(" ++ rs_pretty_expr a ++ " & "  ++ rs_pretty_expr b ++ ")"
   | RALt  a b         => "((" ++ rs_pretty_expr a ++ " < " ++ rs_pretty_expr b ++ ") as u64)"
+  | RALimb v i        => v ++ "[" ++ z_str (Z.of_nat i) ++ "]"
   end.
 
 (** **Concrete** pretty-printer for statements, mirroring [rs_emit]. *)
@@ -803,6 +823,8 @@ Fixpoint rs_pretty_stmt (indent : String.string) (s : rust_stmt_ast) : String.st
   | RSArrStore arr ix src =>
       indent ++ arr ++ "[(" ++ rs_pretty_expr ix ++
         ") as usize] = " ++ src
+  | RSLimbStore v i e =>
+      indent ++ v ++ "[" ++ z_str (Z.of_nat i) ++ "] = " ++ rs_pretty_expr e
   end.
 
 (** Helper: pretty-printing expressions agrees with [rs_sexpr]. *)

@@ -82,7 +82,71 @@ Check @jade_mlkem768_enc_derand_correct.
 Check @jade_mlkem768_dec_correct.
 
 (* ================================================================ *)
-(* §3.  Section hypotheses (per-theorem, NOT global axioms)          *)
+(* §2a. Implicit Parameter: [RustcExec]                              *)
+(* ================================================================ *)
+
+(** [RustcExec] (declared at [RustCmdToRustSimulates.v:57]) is a
+    top-level [Parameter] — the OPAQUE predicate that asserts a
+    rustc-compiled binary, when executed on a given input state,
+    transitions to a given output state.
+
+    Reachability: [RustcExec] appears as a type-level constituent
+    of [RustcExec_correct] only (it is not referenced in any
+    proof term directly).  Rocq's [Print Assumptions] does NOT
+    chase axiom types, so [RustcExec] does NOT surface in the
+    audit output for [print_module_preserves_semantics] — only
+    [RustcExec_correct] does.  The trust transfer is fully
+    captured by [RustcExec_correct] (which constrains [RustcExec]
+    to coincide with our IR semantics).  Listed here so future
+    auditors don't ask "where is [RustcExec] in the registry?". *)
+
+(* ================================================================ *)
+(* §3.  Ed25519 SHA-512 spec Parameters (audit-surfaced)             *)
+(* ================================================================ *)
+
+(** Discovered by the 2026-05-13 [Print Assumptions] audit
+    (docs/trust-audit-2026-05-13.md, Finding 1).
+
+    These two [Parameter] declarations at
+    [src/Bedrock/End2End/Ed25519/Sign_Strong_Correctness.v:70-72]
+    are file-top declarations (NOT Section Hypotheses), so they
+    behave as global axioms for [Print Assumptions].  They surface
+    in the output of [ed25519_sign_strong_correct] and
+    [ed25519_sign_gallina_lifted_clean].
+
+    [sha512_full_spec : list Byte.byte -> list Byte.byte]
+    [sha512_full_spec_len :
+        forall input, length (sha512_full_spec input) = 64%nat]
+
+    Provenance: linked at runtime to the libjade SHA-512 routine
+    (axiomatized at [jade_hash_sha512_correct], registered in §2).
+    The chain is:
+
+        Rocq Parameter [sha512_full_spec]
+          ⊑ libjade Jasmin [sha512_amd64_*]
+              (linked via the [extern "C"] symbol jade_hash_sha512)
+          ⊑ EasyCrypt proof at
+              libjade/proof/crypto_hash/sha512/amd64/ref/extracted_ct_proof.ec
+
+    Audit checklist:
+    [ ] [Print Assumptions ed25519_sign_strong_correct] shows
+        exactly [sha512_full_spec]?
+    [ ] [Print Assumptions ed25519_sign_gallina_lifted_clean]
+        shows exactly [sha512_full_spec] + [sha512_full_spec_len]?
+    [ ] At [extern "C"] link time the runtime symbol
+        [jade_hash_sha512] is the libjade-compiled one (the
+        runtime [sha512] dispatch logic in
+        [curve25519-jasmin-rs/src/sha512.rs])?
+
+    Related: [SHA512Bridge.v:49-50] declares a parallel pair
+    [sha512] / [sha512_output_64] with identical signatures.  Two
+    parallel declarations exist; only the [sha512_full_spec] pair
+    is reached by the headline theorems.  TODO: unify (either
+    delete [SHA512Bridge.v]'s Parameters or have
+    [Sign_Strong_Correctness] use [SHA512Bridge.sha512]). *)
+
+(* ================================================================ *)
+(* §3b. Section hypotheses (per-theorem, NOT global axioms)          *)
 (* ================================================================ *)
 
 (** The following are NOT axioms but [Section Hypothesis]s used by the

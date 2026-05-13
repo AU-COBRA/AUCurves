@@ -322,22 +322,92 @@ toy 3-level callgraph (`quad → double → neg → REdCall`) and uses
 do not propagate (they are section-local; no downstream consumer
 requires them yet).
 
-### Blocker (3) and (4) — Not attempted this session
+### Blocker (3) and (4) — Re-scoped 2026-05-13 (later session)
 
-Time-box expired after blockers (1) and (2).  No bench changes
-attempted; per the user constraint ("if our changes do not improve
-performance, record that but don't include them"), the new files
-`InlineCallFn.v` + `InlineCallFnSmoke.v` are IR-only scaffolding
-that does not yet feed into the extraction pipeline.  They are
-included because:
+#### Blocker (2) follow-up — FWD soundness closed Qed
 
-1. They are pre-requisite infrastructure (the doc itself estimates
-   them at 250 LoC, blocker-2-closing).
-2. They build standalone in the `Bedrock` dune theory without
-   touching any other file (additive).
-3. Zero new global Rocq axioms; the soundness `Admitted`s are
-   scoped to a `Section` and the section's variables are only
-   instantiated by callers that explicitly accept that risk.
+`inline_callfn_one_preserves_semantics_fwd` and its iterated form
+`inline_callfn_n_preserves_semantics_fwd` are now **Qed** (4 tactics
+total).  Both `Print Assumptions` report `Closed under the global
+context`.  Proof: structural induction on the `rust_exec_ed`
+derivation; the structural cases (`rexec_skip`, `rexec_seq`,
+`rexec_let_*`, `rexec_if_*`, `rexec_while_*`, `rexec_for_*`,
+`rexec_block`, plus the leaf rules) all close via `econstructor;
+eauto`.  The `rexec_callfn` rule has premise
+`find ftab fname = Some (fname, body)` and `R (body dst args) rs1 rs2`;
+the inlined form is `match find ... with | Some (_, body) => body dst args | None => REdCallFn ...`,
+so `rewrite H; exact H0` (using the same `find` evidence) discharges it.
 
-No code changes outside `src/Bedrock/InlineCallFn{,Smoke}.v` and
-this doc.  No commit attempted (per task instructions).
+FWD is the direction that the extraction pipeline needs:
+
+    [R c rs1 rs2]                                  -- user-supplied spec
+      ⇒ [R (inline_callfn_one ftab c) rs1 rs2]    -- by FWD (Qed)
+      ⇒ Jasmin asm satisfies the inlined spec      -- by Jasmin compiler
+
+BWD remains `Admitted` because the general statement is provably
+unprovable without per-`ftab` structure: a `c0 = REdCallFn fname dst args`
+whose `body dst args` inlines to (say) `REdSeq c1 c2` produces the
+same inlined shape as a structural `REdSeq c1 c2`, so a derivation of
+the inlined form does not pin down `c0`.  A specialised BWD for the
+concrete `ed25519_function_table` (case-analysis on the table's
+entries) is straightforward; deferred to where it's actually needed.
+
+#### Blocker (3) — Status: infrastructure already in place
+
+Reading of `src/Jasmin/ocaml/ocaml_compile.ml` lines 692-745 +
+880-925: a `partition_for_regalloc` pass already exists in tree.
+It performs liveness-driven outlining of large bodies into
+≤ 200-instruction subroutines, each of which gets its own
+register-allocation scope.  Currently disabled (`threshold = 200`)
+because for the four 4×4 saturated multipliers (`fe25519_mul`,
+`fe25519_square`, `fe25519_to_bytes`, `fe25519_from_bytes`) all
+liveness valleys land in the first half of the body with > 13
+crossing vars, exceeding jasminc's `Ccall` arg-passing budget.
+
+For the **whole-protocol** target (an inlined `sign` body of ~60
+leaf-call sites + ~64 `REdSelect` cmovs + loops), the per-leaf body
+is small but the *number* of leaves is large.  Each leaf is < 30
+instructions; in aggregate ~3000 instructions but with low local
+register pressure between successive leaves (each leaf passes
+field-element pointers, which fit in 6 SysV arg registers).  The
+existing `partition_for_regalloc` is the right tool: outline each
+leaf as its own helper (cut-point = leaf boundary), let jasminc
+register-allocate each helper independently.  **Expected outcome:
+jasminc accepts.**  Empirical validation pending (requires steps
+2 + 3 of §4 wired through to `ocaml_compile.ml`).
+
+The `AutoSpill` pass (currently `use_autospill = false`, line 938)
+is an additional knob: enabling it would let jasminc spill any
+register-pinned variable across a `Ccall` boundary, removing the
+"20+ SysV args overwhelm RegAlloc" constraint identified in the
+inline comment.  Note: the original disabling rationale was an
+interaction with flag variables; for a whole-protocol body this
+risk is recoverable by per-call annotations.
+
+#### Blocker (4) — Re-scoped: already closed by existing OCaml driver
+
+Re-reading of `src/Jasmin/ocaml/ocaml_compile.ml` shows that path
+(b) of §2 Blocker 4 is **already implemented end-to-end**:
+`jasmin_cmd` (extracted from Rocq) → `Prog.gstmt` (via verified
+`Bridge_extracted.to_jasmin_cmd`) → `Compile.compile` (jasminc's
+own compiler) → `Pp_x86.print_prog` (asm text).  No `.jazz` source
+text generation needed; the AST is passed directly to jasminc's
+in-process API.
+
+The only thing missing is composition with steps 2-3 of the
+recommended workflow: feed an **inlined** `rust_cmd_ed` through
+`to_bedrock_cmd ∘ tr_cmd` and into the OCaml driver.  This is
+~30 LoC of extraction-glue in `src/Jasmin/extractions/`, modelled
+on `extractions/X25519_64.v`.  No new verified Rocq lemmas required.
+
+So the *real* remaining work is (a) wire up the inlined sign body
+through the extraction pipeline, (b) bench-test whether jasminc's
+register allocator survives, (c) if not, enable
+`partition_for_regalloc` and re-test.  All three are engineering
+tasks; no proofs remain at this layer.
+
+### Files touched this session
+
+- `src/Bedrock/InlineCallFn.v` — FWD soundness closed Qed; BWD
+  `Admitted` with rationale; iterated FWD closed Qed.
+- `docs/whole-protocol-jasmin-plan.md` — this section.

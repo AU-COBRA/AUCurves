@@ -85,6 +85,16 @@ Fixpoint borrow_ok_ed (c : rust_cmd_ed) : bool :=
          compositionally at call-table-registration time. *)
   | REdBlock body                 => borrow_ok_ed body
       (* Scoped block: structurally transparent to borrow checking. *)
+  | REdSetBytes _ _               => true
+      (* Whole-array literal write: only one destination, no source
+         locations to alias against.  Always borrow-ok. *)
+  | REdArrLoad _ _ _              => true
+      (* Array-of-slots read: reads one slot, writes one slot.  No
+         aliasing concern at the borrow-check level (reads complete
+         before write).  Always borrow-ok. *)
+  | REdArrStore _ _ _             => true
+      (* Array-of-slots write: writes one slot, reads one source slot.
+         Same as REdArrLoad — always borrow-ok. *)
   end.
 
 (* ================================================================ *)
@@ -145,7 +155,7 @@ Proof.
   cbn in Hbok. apply Bool.negb_true_iff in Hbok.
   assert (Hne : dest.(loc_var) <> arg.(loc_var))
     by (apply call_aliases_ed_false_ne with (args := args); assumption).
-  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | |]; subst.
+  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | | | | |]; subst.
   apply (Hframe f args dest rs rs' Hcp arg.(loc_var)).
   congruence.
 Qed.
@@ -170,7 +180,7 @@ Theorem call_frame_non_dest_ed :
       lookup_t_ed (rs_tower_ed rs') x = lookup_t_ed (rs_tower_ed rs) x.
 Proof.
   intros callee_post callee_post_n function_table Hframe f dest args rs rs' x Hexec Hne.
-  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | |]; subst.
+  inversion Hexec as [| | | | | ? ? ? ? ? Hcp | | | | | | | | | | | | | | |]; subst.
   exact (Hframe f args dest rs rs' Hcp x Hne).
 Qed.
 
@@ -196,6 +206,12 @@ Fixpoint dests_of_ed (c : rust_cmd_ed) : list String.string :=
   | REdCallFn _ dest _            => [dest.(loc_var)]
   | REdBlock body                 => dests_of_ed body
       (* Scoped block: write-set is the body's write-set. *)
+  | REdSetBytes loc _             => [loc.(loc_var)]
+      (* Whole-array literal write: writes [loc]. *)
+  | REdArrLoad dst _ _            => [dst.(loc_var)]
+      (* Array read writes to dst. *)
+  | REdArrStore arr _ _           => [arr.(loc_var)]
+      (* Array write writes to arr. *)
   end.
 
 (* ================================================================ *)
@@ -257,7 +273,7 @@ Theorem borrow_ok_ed_calln_frame :
 Proof.
   intros callee_post callee_post_n function_table Hframe f dests args rs rs' Hbok Hexec arg Hin.
   cbn in Hbok. apply Bool.negb_true_iff in Hbok.
-  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | |]; subst.
+  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | | | | |]; subst.
   apply (Hframe f dests args rs rs' Hcpn arg.(loc_var)).
   intros d Hd Heq.
   pose proof (call_aliases_n_ed_false_dest_ne_arg dests args d arg Hbok Hd Hin) as Hne.
@@ -275,6 +291,6 @@ Theorem calln_frame_non_dest_ed :
       lookup_t_ed (rs_tower_ed rs') x = lookup_t_ed (rs_tower_ed rs) x.
 Proof.
   intros callee_post callee_post_n function_table Hframe f dests args rs rs' x Hexec Hne.
-  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | |]; subst.
+  inversion Hexec as [| | | | | | | | | | | | | | | ? ? ? ? ? Hcpn | | | | |]; subst.
   exact (Hframe f dests args rs rs' Hcpn x Hne).
 Qed.

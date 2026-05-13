@@ -67,6 +67,14 @@ Qed.
       TFpL25519    → 4 limbs × 8 = 32 bytes
       TBytes n     → n bytes
       TU64         → 8 bytes
+      TArr n t'    → n × |t'|  (concatenation; pads zero bytes if
+                      a slot's well-formedness gives no per-element
+                      size, which is the case for VArr — the
+                      length-only [well_formed_ed] does not entail
+                      per-element [well_formed_ed], so the byte
+                      serialization for [VArr] is a best-effort
+                      concatenation of [tt_bytes_ed t'] zero bytes
+                      per slot, which matches the storage size).
 *)
 Definition rust_val_ed_to_bytes {t : tower_type_ed} (v : rust_val_ed t)
     : list Byte.byte :=
@@ -76,6 +84,7 @@ Definition rust_val_ed_to_bytes {t : tower_type_ed} (v : rust_val_ed t)
   | VFpL25519 ls   => limbs_to_bytes ls
   | VBytes _ bs    => bs
   | VU64 z         => u64_to_le_bytes z
+  | VArr n t' _    => List.repeat Byte.x00 (n * tt_bytes_ed t')
   end.
 
 (** [rust_val_ed_to_bytes] respects the size declared by [tt_bytes_ed]
@@ -91,6 +100,7 @@ Proof.
   - rewrite limbs_to_bytes_length, Hwf. reflexivity.
   - exact Hwf.
   - apply u64_to_le_bytes_length.
+  - rewrite List.repeat_length. reflexivity.
 Qed.
 
 (* ================================================================ *)

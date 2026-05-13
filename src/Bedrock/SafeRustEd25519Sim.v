@@ -91,7 +91,7 @@ Inductive rust_cmd_ed :=
                                leaf's correctness mechanically (rhoare of the
                                body) instead of axiomatically (callee_post).
                                Roadmap Tier 6 (2). *)
-  | REdBlock  : rust_cmd_ed -> rust_cmd_ed.
+  | REdBlock  : rust_cmd_ed -> rust_cmd_ed
                             (* Scoped-allocation block: REdBlock body
                                executes [body] in a fresh lexical scope.
                                Semantically transparent — same big-step
@@ -102,6 +102,38 @@ Inductive rust_cmd_ed :=
                                brace.  This matches Rust's block-scoped
                                variables and CatCrypt's [RBlock].
                                Roadmap Tier 6 (3). *)
+  | REdSetBytes : located_ed -> list Z -> rust_cmd_ed
+                            (* Whole-array byte-list write:
+                               REdSetBytes loc bytes
+                               Initializes a [TBytes n] slot with the
+                               given list of Z values (each truncated to
+                               a single byte via [Z_to_byte]).  Length
+                               mismatch (|bytes| ≠ n) is a stuck state
+                               (no semantic rule fires).  In emitted
+                               Rust this is a single
+                               [loc = [b0u8, b1u8, ..., bN-1u8];]
+                               literal-array assignment — replaces the
+                               paste-through shims for hand-coded
+                               constants like [B_COMPRESSED_LE] and
+                               [L_EXTRA_LE].  Mirrors Lean's
+                               [RLimbStore].  Additive: existing IR
+                               programs are unaffected. *)
+  | REdArrLoad  : located_ed -> located_ed -> sexpr_ed -> rust_cmd_ed
+                            (* Array-of-slots read:
+                               REdArrLoad dst src idx_expr
+                               [dst := src[eval idx_expr]].  Requires
+                               [src.loc_type = TArr n t] and
+                               [dst.loc_type = t].  Mirrors Lean's
+                               [RArrLoad].  Additive: existing IR
+                               programs are unaffected. *)
+  | REdArrStore : located_ed -> sexpr_ed -> located_ed -> rust_cmd_ed.
+                            (* Array-of-slots write:
+                               REdArrStore arr idx_expr src
+                               [arr[eval idx_expr] := src].  Requires
+                               [arr.loc_type = TArr n t] and
+                               [src.loc_type = t].  Mirrors Lean's
+                               [RArrStore].  Additive: existing IR
+                               programs are unaffected. *)
 
 (* ================================================================ *)
 (* §2. Rust state                                                    *)
@@ -303,6 +335,20 @@ Lemma list_set_byte_length : forall idx b bs,
   length (list_set_byte idx b bs) = length bs.
 Proof. induction idx; intros; destruct bs; cbn; auto. Qed.
 
+(** Phase Ext (2026-05-12): replace the [idx]th element of [xs] with
+    [x].  Used by [REdArrStore].  Out-of-range index leaves the list
+    unchanged (matches [list_set_byte]'s pattern). *)
+Fixpoint list_set {A : Type} (idx : nat) (x : A) (xs : list A) : list A :=
+  match xs, idx with
+  | [], _ => []
+  | _ :: rest, O => x :: rest
+  | y :: rest, S k => y :: list_set k x rest
+  end.
+
+Lemma list_set_length : forall {A} idx (x : A) xs,
+  length (list_set idx x xs) = length xs.
+Proof. induction idx; intros; destruct xs; cbn; auto. Qed.
+
 (** Truncate a Z to a single byte (mod 256). *)
 Definition Z_to_byte (z : Z) : Byte.byte :=
   match Byte.of_N (Z.to_N (Z.modulo z 256)) with
@@ -458,7 +504,51 @@ Inductive rust_exec_ed
          [REdLetZero] inside has its lifetime end at the brace, but
          the simulation level does not need to model that. *)
       rust_exec_ed callee_post callee_post_n function_table body rs1 rs2 ->
-      rust_exec_ed callee_post callee_post_n function_table (REdBlock body) rs1 rs2.
+      rust_exec_ed callee_post callee_post_n function_table (REdBlock body) rs1 rs2
+  | rexec_setbytes : forall loc bytes rs n bs_old,
+      (* Whole-array byte-list write: replaces the [TBytes n] slot at
+         [loc] with the list [bytes] of length [n], each Z value
+         truncated to a single byte via [Z_to_byte].  Length mismatch
+         is a stuck state (no rule fires). *)
+      loc.(loc_type) = TBytes n ->
+      rs_get_tower_ed rs loc.(loc_var) =
+        Some (exist_tval_ed (TBytes n) (VBytes n bs_old)) ->
+      List.length bytes = n ->
+      rust_exec_ed callee_post callee_post_n function_table (REdSetBytes loc bytes) rs
+        (rs_set_tower_ed rs loc.(loc_var)
+           (exist_tval_ed (TBytes n) (VBytes n (List.map Z_to_byte bytes))))
+  | rexec_arr_load : forall dst src idx_e rs idx_v n t arr_v elem_v,
+      (* Array-of-slots read: dst := src[idx_v].  Requires
+         [src.loc_type = TArr n t] and [dst.loc_type = t].
+         The loaded element's [well_formed_ed] is a side condition;
+         it is supplied by the call site whose invariant promises the
+         array's per-element well-formedness (e.g., a comb table
+         whose elements are precomputed limbs). *)
+      eval_sexpr_ed rs idx_e = Some idx_v ->
+      src.(loc_type) = TArr n t ->
+      dst.(loc_type) = t ->
+      rs_get_tower_ed rs src.(loc_var) =
+        Some (exist_tval_ed (TArr n t) (VArr n t arr_v)) ->
+      (Z.to_nat idx_v < n)%nat ->
+      List.nth_error arr_v (Z.to_nat idx_v) = Some elem_v ->
+      well_formed_ed elem_v ->
+      rust_exec_ed callee_post callee_post_n function_table (REdArrLoad dst src idx_e) rs
+        (rs_set_tower_ed rs dst.(loc_var) (exist_tval_ed t elem_v))
+  | rexec_arr_store : forall arr idx_e src rs idx_v n t arr_v_old arr_v_new src_v,
+      (* Array-of-slots write: arr[idx_v] := src.  Requires
+         [arr.loc_type = TArr n t] and [src.loc_type = t]. *)
+      eval_sexpr_ed rs idx_e = Some idx_v ->
+      arr.(loc_type) = TArr n t ->
+      src.(loc_type) = t ->
+      rs_get_tower_ed rs arr.(loc_var) =
+        Some (exist_tval_ed (TArr n t) (VArr n t arr_v_old)) ->
+      rs_get_tower_ed rs src.(loc_var) =
+        Some (exist_tval_ed t src_v) ->
+      (Z.to_nat idx_v < n)%nat ->
+      arr_v_new = list_set (Z.to_nat idx_v) src_v arr_v_old ->
+      rust_exec_ed callee_post callee_post_n function_table (REdArrStore arr idx_e src) rs
+        (rs_set_tower_ed rs arr.(loc_var)
+           (exist_tval_ed (TArr n t) (VArr n t arr_v_new))).
 
 (* ================================================================ *)
 (* §5. bedrock2 bridge — Part B (Week 1 Day 5-6, IN PROGRESS)        *)
@@ -497,10 +587,17 @@ Inductive bedrock_cmd_ed :=
                             (* Multi-output FFI mirror of REdCallN. *)
   | BEdCallFn : String.string -> located_ed -> list located_ed -> bedrock_cmd_ed
                             (* Verified-helper mirror of REdCallFn. *)
-  | BEdBlock  : bedrock_cmd_ed -> bedrock_cmd_ed.
+  | BEdBlock  : bedrock_cmd_ed -> bedrock_cmd_ed
                             (* Scoped-allocation block (mirror of REdBlock).
                                Transparent at semantics level; emitters
                                wrap [body] in [{ ... }]. *)
+  | BEdSetBytes : located_ed -> list Z -> bedrock_cmd_ed
+                            (* Whole-array byte-list write (mirror of
+                               REdSetBytes). *)
+  | BEdArrLoad  : located_ed -> located_ed -> sexpr_ed -> bedrock_cmd_ed
+                            (* Array-of-slots read (mirror of REdArrLoad). *)
+  | BEdArrStore : located_ed -> sexpr_ed -> located_ed -> bedrock_cmd_ed.
+                            (* Array-of-slots write (mirror of REdArrStore). *)
 
 (** Direct translation: bedrock_cmd_ed → rust_cmd_ed. *)
 Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
@@ -520,6 +617,9 @@ Fixpoint btranslate_ed (c : bedrock_cmd_ed) : rust_cmd_ed :=
   | BEdCallN fname dests args => REdCallN fname dests args
   | BEdCallFn fname dest args => REdCallFn fname dest args
   | BEdBlock body => REdBlock (btranslate_ed body)
+  | BEdSetBytes loc bytes => REdSetBytes loc bytes
+  | BEdArrLoad dst src idx_e => REdArrLoad dst src idx_e
+  | BEdArrStore arr idx_e src => REdArrStore arr idx_e src
   end.
 
 (** Bedrock-level execution.  Same shape as [rust_exec_ed], shares
@@ -634,7 +734,42 @@ Inductive bedrock_exec_ed
   | bexec_block : forall body rs1 rs2,
       (* Scoped-allocation block (transparent). *)
       bedrock_exec_ed callee_post callee_post_n function_table body rs1 rs2 ->
-      bedrock_exec_ed callee_post callee_post_n function_table (BEdBlock body) rs1 rs2.
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdBlock body) rs1 rs2
+  | bexec_setbytes : forall loc bytes rs n bs_old,
+      (* Mirror of rexec_setbytes at the bedrock level. *)
+      loc.(loc_type) = TBytes n ->
+      rs_get_tower_ed rs loc.(loc_var) =
+        Some (exist_tval_ed (TBytes n) (VBytes n bs_old)) ->
+      List.length bytes = n ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdSetBytes loc bytes) rs
+        (rs_set_tower_ed rs loc.(loc_var)
+           (exist_tval_ed (TBytes n) (VBytes n (List.map Z_to_byte bytes))))
+  | bexec_arr_load : forall dst src idx_e rs idx_v n t arr_v elem_v,
+      (* Mirror of rexec_arr_load at the bedrock level. *)
+      eval_sexpr_ed rs idx_e = Some idx_v ->
+      src.(loc_type) = TArr n t ->
+      dst.(loc_type) = t ->
+      rs_get_tower_ed rs src.(loc_var) =
+        Some (exist_tval_ed (TArr n t) (VArr n t arr_v)) ->
+      (Z.to_nat idx_v < n)%nat ->
+      List.nth_error arr_v (Z.to_nat idx_v) = Some elem_v ->
+      well_formed_ed elem_v ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdArrLoad dst src idx_e) rs
+        (rs_set_tower_ed rs dst.(loc_var) (exist_tval_ed t elem_v))
+  | bexec_arr_store : forall arr idx_e src rs idx_v n t arr_v_old arr_v_new src_v,
+      (* Mirror of rexec_arr_store at the bedrock level. *)
+      eval_sexpr_ed rs idx_e = Some idx_v ->
+      arr.(loc_type) = TArr n t ->
+      src.(loc_type) = t ->
+      rs_get_tower_ed rs arr.(loc_var) =
+        Some (exist_tval_ed (TArr n t) (VArr n t arr_v_old)) ->
+      rs_get_tower_ed rs src.(loc_var) =
+        Some (exist_tval_ed t src_v) ->
+      (Z.to_nat idx_v < n)%nat ->
+      arr_v_new = list_set (Z.to_nat idx_v) src_v arr_v_old ->
+      bedrock_exec_ed callee_post callee_post_n function_table (BEdArrStore arr idx_e src) rs
+        (rs_set_tower_ed rs arr.(loc_var)
+           (exist_tval_ed (TArr n t) (VArr n t arr_v_new))).
 
 (** Simulation theorem.  Mirrors [SafeRustSimulation.v:1241]'s
     [safe_cmd_correct].  Proof: induction on [bedrock_exec_ed], 10
@@ -672,6 +807,9 @@ Proof.
   - eapply rexec_calln; eauto.
   - eapply rexec_callfn; eauto.
   - eapply rexec_block; eauto.
+  - eapply rexec_setbytes; eauto.
+  - eapply rexec_arr_load; eauto.
+  - eapply rexec_arr_store; eauto.
 Qed.
 
 (* ================================================================ *)
@@ -872,4 +1010,25 @@ Proof.
     apply IHHexec; exact Hwf.
   - (* rexec_block *)
     apply IHHexec; exact Hwf.
+  - (* rexec_setbytes *)
+    apply rs_set_tower_ed_preserves_wf with
+      (t := TBytes n) (v := VBytes n (List.map Z_to_byte bytes)).
+    + exact Hwf.
+    + cbn. rewrite List.length_map. exact H1.
+  - (* rexec_arr_load *)
+    (* The semantic rule includes [well_formed_ed elem_v] as a side
+       condition supplied by the call site (last premise). *)
+    apply rs_set_tower_ed_preserves_wf; [exact Hwf|].
+    match goal with
+    | [ H : well_formed_ed _ |- _ ] => exact H
+    end.
+  - (* rexec_arr_store *)
+    subst arr_v_new.
+    apply rs_set_tower_ed_preserves_wf with
+      (t := TArr n t)
+      (v := VArr n t (list_set (Z.to_nat idx_v) src_v arr_v_old)).
+    + exact Hwf.
+    + cbn. rewrite list_set_length.
+      (* length arr_v_old = n from well-formedness of the slot *)
+      exact (Hwf arr.(loc_var) (TArr n t) (VArr n t arr_v_old) H2).
 Qed.

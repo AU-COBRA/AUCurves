@@ -927,6 +927,7 @@ Definition bedrock_let_zero_obligations
                 | TFp25519_64 => vfp25519_64_zero
                 | TFpL25519 => vfpL25519_zero
                 | TU64 => vu64_zero
+                | TArr n t' => tt_zero_ed (TArr n t')
                 end))
           rs2 ->
         state_refine_ed rs2 l' m' R ->
@@ -1032,6 +1033,20 @@ Proof.
       eapply (Hpost rs2 l' m'); [|exact Href2].
       apply (bexec_let_zero callee_post callee_post_n function_table x TU64 vu64_zero body rs1 rs2).
       * apply (tt_zero_ed_well_formed TU64).
+      * exact Hbexec.
+  - (* TArr n t_inner — slot initialized to [tt_zero_ed (TArr n t_inner)]
+       (recursive zero of the inner type repeated n times). *)
+    eapply (Hletz t0 m mCombined l R rs1 a bs post Hrefine).
+    + exact Hbs_len_typed.
+    + exact Hsplit.
+    + intros rs2 l' m' Hbexec Href2.
+      eapply (Hpost rs2 l' m'); [|exact Href2].
+      match goal with
+      | [ |- bedrock_exec_ed _ _ _ (BEdLetZero ?x' (TArr ?n' ?ti) ?body') ?rs1' ?rs2' ] =>
+          apply (bexec_let_zero callee_post callee_post_n function_table x'
+                                (TArr n' ti) (tt_zero_ed (TArr n' ti)) body' rs1' rs2')
+      end.
+      * apply tt_zero_ed_well_formed.
       * exact Hbexec.
 Qed.
 
@@ -1687,6 +1702,44 @@ Proof.
   eapply Hobl; eassumption.
 Qed.
 
+(** [BEdSetBytes loc bytes] translates to a [cmd.skip] at the
+    bedrock2 layer (see [bedrock_cmd_ed_to_syntax] in
+    [RustCmdToC.v]).  The Rocq IR step [bexec_setbytes] updates the
+    rust_state by writing the byte list, but the bedrock2-side
+    output state is identical to the input (skip).  This bridges
+    the gap by exposing the per-callsite obligation that, when
+    invoked, returns an arbitrary witness for the IR step + state
+    refinement.  Mirrors [bedrock_select_obligations]. *)
+Definition bedrock_setbytes_obligations
+    (functions : env)
+    (callee_post : String.string -> list located_ed -> located_ed ->
+                   rust_state_ed -> rust_state_ed -> Prop)
+    (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                     rust_state_ed -> rust_state_ed -> Prop)
+    (function_table : function_table_ed)
+    (loc : located_ed) (bytes : list Z) : Prop :=
+  forall (rs1 : rust_state_ed) (t : trace) (m : mem) (l : locals)
+         (R : mem -> Prop)
+         (post : trace -> mem -> locals -> Prop),
+    state_refine_ed rs1 l m R ->
+    (forall rs2 l' m',
+       bedrock_exec_ed callee_post callee_post_n function_table
+                       (BEdSetBytes loc bytes) rs1 rs2 ->
+       state_refine_ed rs2 l' m' R ->
+       post t m' l') ->
+    WeakestPrecondition.cmd functions
+      (bedrock_cmd_ed_to_syntax (BEdSetBytes loc bytes)) t m l post.
+
+Lemma wp_bridge_setbytes_red :
+  forall functions callee_post callee_post_n function_table loc bytes,
+    bedrock_setbytes_obligations functions callee_post callee_post_n function_table loc bytes ->
+    wp_bridge_for functions callee_post callee_post_n function_table (BEdSetBytes loc bytes).
+Proof.
+  intros functions callee_post callee_post_n function_table loc bytes Hobl.
+  intros rs1 t m l R post Hrefine Hpost.
+  eapply Hobl; eassumption.
+Qed.
+
 (** [BEdBlock body] is transparent at the bedrock2-syntax level: it
     emits exactly the body's syntax (see [bedrock_cmd_ed_to_syntax]
     in [RustCmdToC.v]).  So the bridge for [BEdBlock body] reduces
@@ -1764,6 +1817,18 @@ Fixpoint all_let_zero_obligations
       (* Block is semantically transparent — its obligations are exactly
          the body's. *)
       all_let_zero_obligations functions callee_post callee_post_n function_table body
+  | BEdSetBytes loc bytes =>
+      bedrock_setbytes_obligations functions callee_post callee_post_n function_table loc bytes
+  | BEdArrLoad _ _ _ =>
+      (* Phase Ext: array-of-slots read.  The bedrock2-WP bridge is
+         currently a placeholder — no protocol-level callsite uses
+         [BEdArrLoad] yet.  Requiring [False] documents that any
+         such callsite must supply a real obligation; until then no
+         bridge is derivable.  This does NOT affect existing proofs
+         since they do not emit [BEdArrLoad]. *)
+      False
+  | BEdArrStore _ _ _ =>
+      False
   end.
 
 (** Composing the per-constructor bridges gives the bridge for any
@@ -1797,6 +1862,9 @@ Proof.
   - apply wp_bridge_calln_red; exact Hletz.
   - apply wp_bridge_callfn_red; exact Hletz.
   - apply wp_bridge_block_red; auto.
+  - apply wp_bridge_setbytes_red; exact Hletz.
+  - (* BEdArrLoad — Hletz : False *) exfalso; exact Hletz.
+  - (* BEdArrStore — Hletz : False *) exfalso; exact Hletz.
 Qed.
 
 (** Status (2026-05-09): [bridge_complete] is Qed; cases closed and

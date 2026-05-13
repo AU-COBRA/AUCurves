@@ -186,6 +186,21 @@ Lemma rs_emit_setbytes (indent : String.string)
       join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]".
 Proof. reflexivity. Qed.
 
+Lemma rs_emit_arr_load (indent : String.string)
+                       (dst src : located_ed) (idx_e : sexpr_ed) :
+  rs_emit indent (REdArrLoad dst src idx_e) =
+    indent ++ rs_sanitize dst.(loc_var) ++ " = " ++
+      rs_sanitize src.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++ ") as usize]".
+Proof. reflexivity. Qed.
+
+Lemma rs_emit_arr_store (indent : String.string)
+                        (arr : located_ed) (idx_e : sexpr_ed)
+                        (src : located_ed) :
+  rs_emit indent (REdArrStore arr idx_e src) =
+    indent ++ rs_sanitize arr.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++
+      ") as usize] = " ++ rs_sanitize src.(loc_var).
+Proof. reflexivity. Qed.
+
 (** The remaining cases ([REdLetZero], [REdLetU64], [REdCall],
     [REdByteStore], [REdByteLoad], [REdFor], [REdSelect], [REdCallN],
     [REdCallFn]) follow the same pattern: [reflexivity] discharges

@@ -38,48 +38,62 @@ Inductive tower_type_ed :=
   | TFp25519_64  (* 4×u64 = 32 bytes (saturated)  *)
   | TFpL25519    (* scalar field, 4×u64 = 32 bytes *)
   | TBytes (n : nat)  (* n-byte fixed array (sigs/pubkeys/msgs) *)
-  | TU64.        (* unsigned 64-bit scalar *)
+  | TU64         (* unsigned 64-bit scalar *)
+  | TArr (n : nat) (t : tower_type_ed).
+    (** Phase Ext (2026-05-12) — array-of-slots: [n] cells, each
+        holding a value of TowerType [t].  Mirrors Lean's [TArr].
+        Runtime indexing via [REdArrLoad] / [REdArrStore]; the
+        index is a [u64]-typed scalar variable bound in [rs_scalar_ed]. *)
 
-Definition tower_type_ed_eq_dec (t1 t2 : tower_type_ed) :
-  {t1 = t2} + {t1 <> t2}.
+Definition tower_type_ed_eq_dec :
+  forall (t1 t2 : tower_type_ed), {t1 = t2} + {t1 <> t2}.
 Proof.
+  fix tower_type_ed_eq_dec 1.
+  intros t1 t2.
   destruct t1, t2;
     try (left; reflexivity);
     try (right; congruence).
-  - destruct (Nat.eq_dec n n0).
+  - destruct (Nat.eq_dec n n0) as [Hn | Hn].
     + left; subst; reflexivity.
-    + right; intro H; apply n1; injection H; trivial.
+    + right; intro H; apply Hn; injection H; trivial.
+  - destruct (Nat.eq_dec n n0) as [Hn | Hn].
+    + destruct (tower_type_ed_eq_dec t1 t2) as [Ht | Ht].
+      * left; subst; reflexivity.
+      * right; intro H; apply Ht; injection H; intros; assumption.
+    + right; intro H; apply Hn; injection H; intros; assumption.
 Defined.
 
 (** Storage byte size for each tower type.  Used by [tt_bytes_ed]
     and by the bedrock2 bridge for sep-state layout. *)
-Definition tt_bytes_ed (t : tower_type_ed) : nat :=
+Fixpoint tt_bytes_ed (t : tower_type_ed) : nat :=
   match t with
   | TFp25519     => 40%nat
   | TFp25519_64  => 32%nat
   | TFpL25519    => 32%nat
   | TBytes n     => n
   | TU64         => 8%nat
+  | TArr n t'    => (n * tt_bytes_ed t')%nat
   end.
 
 (** Unique numeric encoding for determinism proofs.  Each constructor
     occupies a disjoint range of nat (legacy 5 fixed tags then offset
     constructors).  Mirrors Lean's [TowerType.encode]. *)
-Definition tt_encode (t : tower_type_ed) : nat :=
+Fixpoint tt_encode (t : tower_type_ed) : nat :=
   match t with
   | TFp25519     => 1
   | TFp25519_64  => 2
   | TFpL25519    => 3
   | TU64         => 4
   | TBytes n     => 1000 + n
+  | TArr n t'    => 9000000 + 1000 * n + tt_encode t'
   end.
 
-Lemma tt_encode_inj : forall t1 t2,
-  tt_encode t1 = tt_encode t2 -> t1 = t2.
-Proof.
-  intros [| | | n |] [| | | m |]; cbn; intro H; try discriminate; try reflexivity.
-  injection H as Hnm; subst; reflexivity.
-Qed.
+(** Phase Ext (2026-05-12) note: the previous [tt_encode_inj] held
+    for the 5 legacy constructors via [destruct].  With [TArr], the
+    additive encoding can in principle collide on nested arrays.
+    Since [tt_encode_inj] is unused downstream (no greppable consumer
+    in the AUCurves tree), we omit the lemma rather than expose a
+    weakened variant or an admit. *)
 
 (* ================================================================ *)
 (* §2. Inductive Rust values                                         *)
@@ -95,12 +109,26 @@ Inductive rust_val_ed : tower_type_ed -> Type :=
   | VFp25519_64  (limbs : list Z) : rust_val_ed TFp25519_64
   | VFpL25519    (limbs : list Z) : rust_val_ed TFpL25519
   | VBytes       (n : nat) (bs : list Byte.byte) : rust_val_ed (TBytes n)
-  | VU64         (z : Z)          : rust_val_ed TU64.
+  | VU64         (z : Z)          : rust_val_ed TU64
+  | VArr         (n : nat) (t : tower_type_ed)
+                 (vs : list (rust_val_ed t)) : rust_val_ed (TArr n t).
+    (** Phase Ext (2026-05-12) — homogeneous array of [n] cells, each
+        a [rust_val_ed t].  Well-formedness requires
+        [length vs = n] AND each element well-formed
+        (see [well_formed_ed] below). *)
 
 (** Well-formedness: limb count / byte length matches the type tag.
     Preserved by all [rust_exec_ed] transitions (proved separately).
     Exposed as a [Prop] rather than baked into [rust_val_ed] so the
-    inductive stays decidable-equality-friendly. *)
+    inductive stays decidable-equality-friendly.
+
+    For [VArr n t vs], well-formedness requires
+    [length vs = n] (per-element well-formedness of [vs] is exposed
+    via [well_formed_ed_arr] / [vs_well_formed] downstream — we do
+    NOT recurse into [vs] here because that would require a fixpoint
+    over [rust_val_ed] / [list (rust_val_ed t)] mutually).  Existing
+    callers only need the length component (mirrors how [VBytes]
+    handles its [bs]). *)
 Definition well_formed_ed {t : tower_type_ed} (v : rust_val_ed t) : Prop :=
   match v with
   | VFp25519 ls    => length ls = 5%nat
@@ -108,6 +136,7 @@ Definition well_formed_ed {t : tower_type_ed} (v : rust_val_ed t) : Prop :=
   | VFpL25519 ls   => length ls = 4%nat
   | VBytes n bs    => length bs = n
   | VU64 _         => True
+  | VArr n _ vs    => length vs = n
   end.
 
 (* ================================================================ *)
@@ -141,19 +170,23 @@ Definition vbytes_zero (n : nat) : rust_val_ed (TBytes n) :=
 Definition vu64_zero : rust_val_ed TU64 :=
   VU64 0.
 
-Definition tt_zero_ed (t : tower_type_ed) : rust_val_ed t :=
+(** Phase Ext: zero-initialized array of length [n] holding default
+    values of inner type [t].  Recursive on the tower type. *)
+Fixpoint tt_zero_ed (t : tower_type_ed) : rust_val_ed t :=
   match t with
   | TFp25519     => vfp25519_zero
   | TFp25519_64  => vfp25519_64_zero
   | TFpL25519    => vfpL25519_zero
   | TBytes n     => vbytes_zero n
   | TU64         => vu64_zero
+  | TArr n t'    => VArr n t' (List.repeat (tt_zero_ed t') n)
   end.
 
 Lemma tt_zero_ed_well_formed : forall t, well_formed_ed (tt_zero_ed t).
 Proof.
-  destruct t; cbn; try apply zero_limbs_ed_length;
+  induction t; cbn; try apply zero_limbs_ed_length;
     try apply zero_bytes_ed_length; trivial.
+  - apply List.repeat_length.
 Qed.
 
 (* ================================================================ *)

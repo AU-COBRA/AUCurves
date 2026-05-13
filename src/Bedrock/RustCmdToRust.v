@@ -54,13 +54,14 @@ Definition rs_sanitize (s : String.string) : String.string :=
 (* §1. Type emission                                                  *)
 (* ================================================================ *)
 
-Definition rs_array_type (t : tower_type_ed) : string :=
+Fixpoint rs_array_type (t : tower_type_ed) : string :=
   match t with
   | TFp25519     => "[u64; 5]"
   | TFp25519_64  => "[u64; 4]"
   | TFpL25519    => "[u64; 4]"
   | TBytes n     => "[u8; " ++ nat_str n ++ "]"
   | TU64         => "u64"
+  | TArr n t'    => "[" ++ rs_array_type t' ++ "; " ++ nat_str n ++ "]"
   end.
 
 Definition rs_param_type (t : tower_type_ed) : string :=
@@ -82,6 +83,8 @@ Definition rs_decl_slot (var0 : String.string) (t : tower_type_ed) : string :=
   | TBytes n    => "    let mut " ++ var ++ ": [u8; " ++ nat_str n ++
                    "] = [0; " ++ nat_str n ++ "];"
   | TU64        => "    let mut " ++ var ++ ": u64 = 0;"
+  | TArr n t'   => "    let mut " ++ var ++ ": " ++ rs_array_type (TArr n t') ++
+                   " = Default::default();"
   end.
 
 (* ================================================================ *)
@@ -236,6 +239,25 @@ Fixpoint rs_emit (indent : string) (c : rust_cmd_ed) : string :=
       indent ++ "{" ++ LF ++
       rs_emit ("    " ++ indent) body ++ LF ++
       indent ++ "}"
+  | REdSetBytes loc bytes =>
+      (* Whole-array literal write: emits
+           loc = [b0u8, b1u8, ..., bN-1u8];
+         Replaces paste-through shims for hand-coded constants like
+         B_COMPRESSED_LE / L_EXTRA_LE. *)
+      indent ++ rs_sanitize loc.(loc_var) ++ " = [" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+  | REdArrLoad dst src idx_e =>
+      (* Array-of-slots read.  Emits
+           dst = src[(idx_e) as usize];
+         (No `let`/`let mut` — the slot is presumed pre-declared via
+         REdLetZero.) *)
+      indent ++ rs_sanitize dst.(loc_var) ++ " = " ++
+        rs_sanitize src.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++ ") as usize]"
+  | REdArrStore arr idx_e src =>
+      (* Array-of-slots write.  Emits
+           arr[(idx_e) as usize] = src; *)
+      indent ++ rs_sanitize arr.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++
+        ") as usize] = " ++ rs_sanitize src.(loc_var)
   end.
 
 (* ================================================================ *)
@@ -494,6 +516,15 @@ Fixpoint rs_emit_inline (indent : string) (c : rust_cmd_ed) : string :=
       indent ++ "{" ++ LF ++
       rs_emit_inline ("    " ++ indent) body ++ LF ++
       indent ++ "}"
+  | REdSetBytes loc bytes =>
+      indent ++ rs_sanitize loc.(loc_var) ++ " = [" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+  | REdArrLoad dst src idx_e =>
+      indent ++ rs_sanitize dst.(loc_var) ++ " = " ++
+        rs_sanitize src.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++ ") as usize]"
+  | REdArrStore arr idx_e src =>
+      indent ++ rs_sanitize arr.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++
+        ") as usize] = " ++ rs_sanitize src.(loc_var)
   end.
 
 (** Emit one body as an inline-callable Rust function. *)
@@ -622,9 +653,18 @@ Inductive rust_stmt_ast : Type :=
                               (** Multi-output: dests + args pre-rendered. *)
 | RSCallFn     (fname : String.string) (args : list String.string)
                               (** Verified-helper: same rendering as RSCall. *)
-| RSBlock      (body : rust_stmt_ast).
+| RSBlock      (body : rust_stmt_ast)
                               (** Scoped block: { body }.  Body's [RSLetZero]
                                   decls have their lifetime end at the brace. *)
+| RSSetBytes   (v : String.string) (bytes : list Z)
+                              (** Whole-array literal write:
+                                  v = [b0u8, b1u8, ..., bN-1u8] *)
+| RSArrLoad    (dst src : String.string) (ix : rust_expr_ast)
+                              (** Array-of-slots read:
+                                  dst = src[(ix) as usize] *)
+| RSArrStore   (arr : String.string) (ix : rust_expr_ast) (src : String.string).
+                              (** Array-of-slots write:
+                                  arr[(ix) as usize] = src *)
 
 (** sexpr_ed → rust_expr_ast. *)
 Fixpoint sexpr_to_ast (e : sexpr_ed) : rust_expr_ast :=
@@ -678,6 +718,16 @@ Fixpoint cmd_to_ast (c : rust_cmd_ed) : rust_stmt_ast :=
                       rs_call_inject_lens fname args)
   | REdBlock body =>
       RSBlock (cmd_to_ast body)
+  | REdSetBytes loc bytes =>
+      RSSetBytes (rs_sanitize loc.(loc_var)) bytes
+  | REdArrLoad dst src idx_e =>
+      RSArrLoad (rs_sanitize dst.(loc_var))
+                (rs_sanitize src.(loc_var))
+                (sexpr_to_ast idx_e)
+  | REdArrStore arr idx_e src =>
+      RSArrStore (rs_sanitize arr.(loc_var))
+                 (sexpr_to_ast idx_e)
+                 (rs_sanitize src.(loc_var))
   end.
 
 (** **Concrete** pretty-printer for expressions, mirroring
@@ -744,6 +794,15 @@ Fixpoint rs_pretty_stmt (indent : String.string) (s : rust_stmt_ast) : String.st
       indent ++ "{" ++ LF ++
       rs_pretty_stmt ("    " ++ indent) body ++ LF ++
       indent ++ "}"
+  | RSSetBytes v bytes =>
+      indent ++ v ++ " = [" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+  | RSArrLoad dst src ix =>
+      indent ++ dst ++ " = " ++ src ++ "[(" ++
+        rs_pretty_expr ix ++ ") as usize]"
+  | RSArrStore arr ix src =>
+      indent ++ arr ++ "[(" ++ rs_pretty_expr ix ++
+        ") as usize] = " ++ src
   end.
 
 (** Helper: pretty-printing expressions agrees with [rs_sexpr]. *)

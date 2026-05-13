@@ -221,6 +221,34 @@ Fixpoint cmd_ct_ok (c : rust_cmd_ed) (env : level_env) (pc : level)
   | REdBlock body =>
       (* Scoped block: transparent — body checks under same env / pc. *)
       cmd_ct_ok body env pc
+
+  | REdSetBytes loc _ =>
+      (* Whole-array literal write: the source list is closed Z data
+         (compile-time constants), so its level is Public.  Allow the
+         write iff the destination is at least Public ∨ pc.  We model
+         this conservatively by requiring [pc ⊑ env(loc)] — same as
+         the [REdByteStore] case with an empty value/index level. *)
+      let ll := env_lookup env loc.(loc_var) in
+      if level_le pc ll then Some env else None
+
+  | REdArrLoad dst src idx =>
+      (* Phase Ext: array-of-slots read.  Treat as REdByteLoad but
+         over the array slot: the dst's level becomes the join of the
+         src slot, index, and pc. *)
+      let ls := env_lookup env src.(loc_var) in
+      let li := sexpr_level env idx in
+      let l := level_join (level_join ls li) pc in
+      Some (env_set env dst.(loc_var) l)
+
+  | REdArrStore arr idx src =>
+      (* Phase Ext: array-of-slots write.  Treat as REdByteStore:
+         the join of src's level, idx's level, and pc must be at most
+         the array slot's level. *)
+      let ll := env_lookup env arr.(loc_var) in
+      let ls := env_lookup env src.(loc_var) in
+      let li := sexpr_level env idx in
+      let rhs := level_join (level_join li ls) pc in
+      if level_le rhs ll then Some env else None
   end.
 
 (* ================================================================ *)

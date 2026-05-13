@@ -575,7 +575,7 @@ Section RustTriple.
     - (* n = S n' : body runs once with x := n', then REdFor x n' body *)
       inversion Hexec as
         [ | | | | | | | | | | | | | ? n_inv body_inv rs_pre rs_mid rs_post
-                                       Hbody Hloop | | | | ];
+                                       Hbody Hloop | | | | | | | ];
         subst.
       pose proof (Hstep n acc0 rs ltac:(lia) Hinv0 _ Hbody) as Hacc'_ex.
       destruct Hacc'_ex as [acc' Hacc'].
@@ -762,7 +762,7 @@ Proof.
   eapply compile_red_let_u64.
   { cbn. rewrite Hget. reflexivity. }
   intros rs' Hexec.
-  inversion Hexec as [| | | | ? ? ? ? Heval | | | | | | | | | | | | |]; subst.
+  inversion Hexec as [| | | | ? ? ? ? Heval | | | | | | | | | | | | | | | |]; subst.
   (* Heval: eval_sexpr_ed of (SVar "double_tmp") in post-let_u64 state = Some v0.
      Reduce via [lookup_s_ed_update_at] to force v0 = mask64 (v+v). *)
   cbn in Heval.

@@ -104,6 +104,20 @@ Fixpoint rs_sexpr (e : sexpr_ed) : string :=
   | SLimb v i   => rs_sanitize v ++ "[" ++ z_str (Z.of_nat i) ++ "]"
                     (* Phase 0b: limb read.  In emitted Rust an Fp25519
                        slot is a [u64; 5] (or similar) array. *)
+  | SMul128 a b =>
+      (* Phase 0e (2026-05-13): u128 multiply.  Both operands are
+         cast to u128 (sub-expression results are u64 except for
+         nested [SMul128]/[SAdd128]) then [wrapping_mul]'d at u128.
+         The whole [SMul128] sub-expression has u128 type, so it
+         can be embedded inside an outer [SMul128]/[SAdd128] or
+         (at the top of a [REdLimbStore] RHS for a [TFp25519]
+         destination) cast back to u64 by the surrounding lowering
+         pass — Phase 0e bodies are expected to do `... as u64` at
+         the outer [REdLimbStore] boundary. *)
+      "((" ++ rs_sexpr a ++ " as u128).wrapping_mul(" ++ rs_sexpr b ++ " as u128))"
+  | SAdd128 a b =>
+      (* Phase 0e (2026-05-13): u128 add.  See [SMul128] comment. *)
+      "((" ++ rs_sexpr a ++ " as u128).wrapping_add(" ++ rs_sexpr b ++ " as u128))"
   end.
 
 (* ================================================================ *)
@@ -643,9 +657,24 @@ Inductive rust_expr_ast : Type :=
 | RAShr          (a b : rust_expr_ast)
 | RAAnd          (a b : rust_expr_ast)
 | RALt           (a b : rust_expr_ast)    (** wraps in `(... < ...) as u64` *)
-| RALimb         (v : String.string) (i : nat).
+| RALimb         (v : String.string) (i : nat)
                               (** Phase 0b: limb read [v[i]] — emits as
                                   the static-index access [v[i]]. *)
+| RAWrappingMul128 (a b : rust_expr_ast)
+                              (** Phase 0e (2026-05-13): u128 multiply.
+                                  Emits as
+                                  `((a as u128).wrapping_mul(b as u128))`.
+                                  Sub-expression results are u64 (or u128
+                                  for nested 128-bit ops) and the `as
+                                  u128` cast is widening, so the multiply
+                                  is performed in u128 — no truncation
+                                  for radix-2^51 limb operands. *)
+| RAWrappingAdd128 (a b : rust_expr_ast).
+                              (** Phase 0e (2026-05-13): u128 add.  Same
+                                  emission pattern as [RAWrappingMul128]
+                                  but with `wrapping_add`.  Used to sum
+                                  u128 partial products without re-
+                                  truncating to u64. *)
 
 Inductive rust_stmt_ast : Type :=
 | RSSkip                                        (* indent ++ "()" *)
@@ -694,6 +723,8 @@ Fixpoint sexpr_to_ast (e : sexpr_ed) : rust_expr_ast :=
   | SAnd a b => RAAnd         (sexpr_to_ast a) (sexpr_to_ast b)
   | SLt  a b => RALt          (sexpr_to_ast a) (sexpr_to_ast b)
   | SLimb v i => RALimb       (rs_sanitize v) i
+  | SMul128 a b => RAWrappingMul128 (sexpr_to_ast a) (sexpr_to_ast b)
+  | SAdd128 a b => RAWrappingAdd128 (sexpr_to_ast a) (sexpr_to_ast b)
   end.
 
 (** rust_cmd_ed → rust_stmt_ast. *)
@@ -762,6 +793,8 @@ Fixpoint rs_pretty_expr (e : rust_expr_ast) : String.string :=
   | RAAnd a b         => "(" ++ rs_pretty_expr a ++ " & "  ++ rs_pretty_expr b ++ ")"
   | RALt  a b         => "((" ++ rs_pretty_expr a ++ " < " ++ rs_pretty_expr b ++ ") as u64)"
   | RALimb v i        => v ++ "[" ++ z_str (Z.of_nat i) ++ "]"
+  | RAWrappingMul128 a b => "((" ++ rs_pretty_expr a ++ " as u128).wrapping_mul(" ++ rs_pretty_expr b ++ " as u128))"
+  | RAWrappingAdd128 a b => "((" ++ rs_pretty_expr a ++ " as u128).wrapping_add(" ++ rs_pretty_expr b ++ " as u128))"
   end.
 
 (** **Concrete** pretty-printer for statements, mirroring [rs_emit]. *)

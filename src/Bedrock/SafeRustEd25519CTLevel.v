@@ -108,6 +108,13 @@ Fixpoint sexpr_level (env : level_env) (e : sexpr_ed) : level :=
   | SLimb v _ => env_lookup env v
                    (* Phase 0b: limb read inherits the level of the
                       enclosing tower slot. *)
+  | SMul128 a b => level_join (sexpr_level env a) (sexpr_level env b)
+                   (* Phase 0e (2026-05-13): u128 ops are leveled
+                      identically to their u64 counterparts — the
+                      operation itself is constant-time on x86_64
+                      (single MUL + MULH or compiled to a single
+                      mulx).  Level is the join of operand levels. *)
+  | SAdd128 a b => level_join (sexpr_level env a) (sexpr_level env b)
   end.
 
 (* ================================================================ *)

@@ -375,6 +375,24 @@ Fixpoint to_bedrock_expr (e : sexpr_ed) : Syntax.expr :=
         (Syntax.expr.op Syntax.bopname.add
            (Syntax.expr.var v)
            (Syntax.expr.literal (8 * Z.of_nat i)))
+  | SMul128 a b =>
+      (* Phase 0e (2026-05-13): u128 multiply.  Bedrock2's word
+         machine is u64-only, so we lower [SMul128] to a plain u64
+         multiply.  This is a TRUNCATING approximation and is
+         UNSOUND for the WP-bridge view (high 64 bits lost) — but
+         the Phase 0e bodies that emit [SMul128] are intended to
+         be lowered through [RustCmdToRust.v] / Jasmin directly,
+         not through bedrock2.  This stub exists only so the file
+         remains exhaustive on the [sexpr_ed] inductive.
+         [SafeRustEd25519WPBridge.sexpr_well_formed] rules out
+         [SMul128]/[SAdd128] explicitly (sets them to [False]), so
+         no WP proof goes through this branch. *)
+      Syntax.expr.op Syntax.bopname.mul
+                     (to_bedrock_expr a) (to_bedrock_expr b)
+  | SAdd128 a b =>
+      (* Phase 0e — see [SMul128] comment. *)
+      Syntax.expr.op Syntax.bopname.add
+                     (to_bedrock_expr a) (to_bedrock_expr b)
   end.
 
 Definition tt_bytes_z (t : tower_type_ed) : Z := Z.of_nat (tt_bytes_ed t).

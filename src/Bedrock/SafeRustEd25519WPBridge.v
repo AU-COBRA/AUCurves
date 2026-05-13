@@ -455,6 +455,21 @@ Fixpoint sexpr_well_formed (e : sexpr_ed) : Prop :=
          conservative [False] gate and lets the WP bridge handle
          [SLimb] non-trivially. *)
       slimb_wf_obligation v i
+  | SMul128 _ _ =>
+      (* Phase 0e (2026-05-13): [SMul128] is a u128-wide multiply.
+         The bedrock2 backend (this file) is u64-only — bedrock2's
+         [word] machine doesn't model u128 — so we conservatively
+         classify [SMul128] as not WP-bridgeable.  Phase 0e bodies
+         that use [SMul128] do NOT go through this WP bridge; they
+         go through the printer ([RustCmdToRust.v]) directly to
+         emit `(a as u128).wrapping_mul(b as u128) as u64` Rust code.
+         For programs that DO need a WP-grade bedrock2 model of
+         u128 ops, the future work is to encode them as a pair of
+         u64 word operations (lo/hi) — out of scope for Phase 0e. *)
+      False
+  | SAdd128 _ _ =>
+      (* Phase 0e (2026-05-13): same rationale as [SMul128]. *)
+      False
   end.
 
 (** The expression bridge: under [state_refine_ed] and
@@ -670,6 +685,11 @@ Proof.
        closed at the callsite. *)
     unfold slimb_wf_obligation in Hwf.
     eapply Hwf; [exact Hrefine | exact Heval]. }
+  { (* SMul128 — Phase 0e (2026-05-13): unreachable because
+       [sexpr_well_formed (SMul128 _ _) = False].  Hwf : False. *)
+    exfalso; exact Hwf. }
+  { (* SAdd128 — Phase 0e (2026-05-13): unreachable, same as SMul128. *)
+    exfalso; exact Hwf. }
 Qed.
 
 (* ================================================================ *)

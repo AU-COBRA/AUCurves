@@ -12,6 +12,127 @@
  *
  * Reference: [SafeRustSimulation.v] (BLS12 analogue, §3-§5).
  * Plan: [R10_RUSTCMD_PORT_PLAN.md] Week 1.
+ *
+ * ============================================================
+ * Phase 0e (2026-05-13) — IR extension: SMul128 / SAdd128 / mask128
+ * ============================================================
+ *
+ * Goal: discharge the [feval_limbwise_mul_mask64] and
+ *       [feval_limbwise_square_mask64] section hypotheses in
+ *       [Fe25519MulCorrect.v] / [Fe25519SquareCorrect.v].
+ *
+ * Problem: the existing [SMul] semantics is [mask64 (va * vb)] — i.e.
+ * every multiply result is truncated to u64.  A radix-2^51 partial
+ * product [a_i * b_j] with each operand in [0, 2^54) is ~2^108, and
+ * the 19-scaled variant [19 * (a_i * b_j)] is ~2^113.  Both exceed
+ * u64 ⇒ the mask64 is not modular-inert ⇒ a clean algebraic
+ * discharge against fiat-crypto's [Positional.eval] is impossible
+ * without first making the truncation no-op.
+ *
+ * A36 enumerated two recovery paths.  This phase chooses path (1):
+ *
+ *   PATH 1  (chosen — implemented in this file):
+ *     Add a u128-truncating variant of [SMul] (and a companion
+ *     [SAdd128] for sums of u128 partial products) directly to the
+ *     [sexpr_ed] family.  Wide-mul semantics: [mask128 (va * vb)].
+ *     The mask is the identity on inputs bounded by 2^54 (limbs)
+ *     and on sums up to ~2^116 (sum-of-5 19-scaled), so the
+ *     algebraic discharge of [feval_limbwise_mul_mask64] collapses
+ *     to fiat-crypto's [eval_carry_mulmod].
+ *
+ *   PATH 2  (REJECTED — too invasive):
+ *     Introduce a [TFp25519_partial] tower type with 5 u128
+ *     accumulators, plus a [VFp25519_partial] value constructor, a
+ *     well-formedness clause, an [REdLimbStore128] command, an
+ *     [SLimb128] reader, parallel [SMul128]/[SAdd128]/[SLit128]
+ *     scalar operations, AND coordinated extension of the bedrock2
+ *     bridge's [state_refine_ed] to ferry u128 limbs in pairs of
+ *     u64 words.  ~3x the surface area of path 1.
+ *
+ * Rationale for picking path 1 over path 2:
+ *
+ *  (i)   Zero changes to [tower_type_ed] / [rust_val_ed] /
+ *        [well_formed_ed] / [rust_state_ed] / [tval_ed] / the
+ *        function-table layer / the simulation theorem
+ *        [safe_cmd_correct_ed] — all of these remain unchanged
+ *        because the extension lives purely inside [sexpr_ed].
+ *
+ *  (ii)  Body-file shape preserved.  [Fe25519MulBody.v] and
+ *        [Fe25519SquareBody.v] emit 5 [REdLimbStore]s carrying
+ *        [sexpr_ed] trees; Phase 0e replaces the inner [SMul]/[SAdd]
+ *        helpers with [SMul128]/[SAdd128] WITHOUT changing the
+ *        outer [REdLimbStore] / [TFp25519] surface.  No new tower
+ *        slot type, no new command, no new typing rule.
+ *
+ *  (iii) The mask is provably truncation-free.  Phase 0e's
+ *        algebraic discharge needs:
+ *          length la = length lb = 5 ∧
+ *          (∀i. nth i la 0, nth i lb 0 ∈ [0, 2^54))   ⇒
+ *          feval (build_limb_list_mul la lb) = F.mul (feval la) (feval lb)
+ *        With [SMul128]/[SAdd128] in the body, the
+ *        [pp_mul]/[pp_mul_scaled]/[sum5] definitions in
+ *        [Fe25519MulCorrect] become bare integer arithmetic
+ *        (mask128 = id on the relevant range), reducing the
+ *        hypothesis to fiat-crypto's [Positional.eval_carry_mulmod].
+ *
+ *  (iv)  Symmetric with the Lean IR — Lean's [SExpr.mul_u128] /
+ *        [add_u128] ops were added for the same reason
+ *        (see [project_lean_ir_extensions]).
+ *
+ *  (v)   Print emission is straightforward: [SMul128 a b] prints as
+ *        `(a as u128).wrapping_mul(b as u128)`; [SAdd128 a b] prints
+ *        as `(a as u128).wrapping_add(b as u128)`.  The final
+ *        REdLimbStore's expression is cast back to u64 — sound
+ *        because per-limb output bounds (after carry) fit in u64.
+ *
+ * Strictly-additive: existing programs are unaffected.  All
+ * Phase-0b/0c/0d Body and Correct files use only the pre-Phase-0e
+ * subset of [sexpr_ed] / [rust_cmd_ed] and their proofs are
+ * untouched.  See [sexpr_u64_safe] below — it characterises the
+ * "no u128 nodes" fragment, and existing call sites discharge
+ * [sexpr_u64_safe e = true] with [reflexivity].
+ *
+ * Remaining Phase 0e work (in roughly increasing order of effort):
+ *
+ *   E1. (LANDED, this commit) Extend [sexpr_ed] with [SMul128] /
+ *       [SAdd128]; extend [eval_sexpr_ed] semantics; prove
+ *       [mask128_bounded] / [eval_sexpr_ed_bounded128] /
+ *       [eval_sexpr_ed_bounded] (gated on [sexpr_u64_safe]).
+ *
+ *   E2. Per-backend stubs (compile-only): add SMul128/SAdd128 cases
+ *       to [to_bedrock_expr] ([RustCmdToC.v]), to [pp_sexpr]
+ *       ([RustCmdToRust.v]), to [Rupicola] expression compilers, to
+ *       the CT-level classifier ([SafeRustEd25519CTLevel.v]), to the
+ *       WP-bridge's [sexpr_well_formed] and [sexpr_to_dexpr_bridge]
+ *       inductions, and to the Jasmin emitter ([RustCmdToJasmin.v]).
+ *       These can be no-op stubs (e.g. [sexpr_well_formed (SMul128
+ *       _ _) := False]) since the existing bodies do not use the new
+ *       constructors.  Estimated 1-2h, mechanical.
+ *
+ *   E3. Provide a "Phase 0e helpers" module emitting [SMul128] /
+ *       [SAdd128] in the natural [Fe25519MulBody]-style helpers
+ *       (cf. [smul_limbs] / [smul_scaled]).  The Body files
+ *       themselves are read-only this session; a successor session
+ *       can swap the helpers' definitions or introduce parallel
+ *       [Fe25519MulBody_Phase0e.v] / [_Square_Phase0e.v] files.
+ *
+ *   E4. Phase 0e algebraic discharge: instantiate
+ *       [feval_limbwise_mul_mask64] / [feval_limbwise_square_mask64]
+ *       at the call-site in [Fe25519FiatInstantiation.v] using
+ *       fiat-crypto's [eval_carry_mulmod] / [eval_carry_squaremod]
+ *       composed with the [mask128_is_id_on_bounded_inputs]
+ *       structural lemma.  This is the substantive remaining work
+ *       (~200-400 LoC).  See the file header of
+ *       [Fe25519MulCorrect.v] for the precise statement shape.
+ *
+ *   E5. Once E4 closes, the Section Hypotheses
+ *       [feval_limbwise_mul_mask64] / [_square_mask64] are
+ *       discharged at the instantiation site and the
+ *       [fe25519_mul_body_correct] / [fe25519_square_body_correct]
+ *       theorems become axiom-free Qed.
+ *
+ * Effort estimate for E2-E5: ~1 working week, with the algebraic
+ * step (E4) being the dominant cost.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -19,6 +140,7 @@ From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 From Stdlib Require Import micromega.Lia.
 From Stdlib Require Import Init.Byte.
+From Stdlib Require Import Bool.Bool.
 Require Import Bedrock.SafeRustEd25519Tower.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -36,7 +158,16 @@ Inductive tval_ed : Type :=
 
 (** Symbolic Z-valued expressions used for index/loop scalars + for
     inline computations (e.g., RFC 8032 byte access).  Subset large
-    enough for Ed25519's [byte = load1(scalar + (i >> 3))] etc. *)
+    enough for Ed25519's [byte = load1(scalar + (i >> 3))] etc.
+
+    Phase 0e (2026-05-13): two NEW constructors [SMul128]/[SAdd128]
+    extend the family with u128-truncated multiply and add.  See the
+    discussion at the bottom of this file (Phase 0e block) for the
+    chosen design (option 1 of A36's two-option menu) and the rationale.
+    Existing programs are unaffected — all bodies in
+    [Fe25519{Mul,Square,Add,Sub,Carry,Scmula24}Body.v] continue to use
+    [SMul]/[SAdd] only and the [eval_sexpr_ed] semantics for those
+    constructors is byte-identical to Phase 0b. *)
 Inductive sexpr_ed : Type :=
   | SVar    : var -> sexpr_ed              (* lookup u64 named slot *)
   | SLit    : Z -> sexpr_ed                (* literal *)
@@ -46,13 +177,32 @@ Inductive sexpr_ed : Type :=
   | SShr    : sexpr_ed -> sexpr_ed -> sexpr_ed   (* right shift *)
   | SAnd    : sexpr_ed -> sexpr_ed -> sexpr_ed   (* bitwise and *)
   | SLt     : sexpr_ed -> sexpr_ed -> sexpr_ed   (* x < y → 0/1 *)
-  | SLimb   : var -> nat -> sexpr_ed.            (* Phase 0b: read limb [i] of TFp25519 / TFp25519_64
+  | SLimb   : var -> nat -> sexpr_ed             (* Phase 0b: read limb [i] of TFp25519 / TFp25519_64
                                                    / TFpL25519 slot named [v] as a Z scalar.  Used
                                                    to express fiat-crypto's radix-2^51 carry chain
                                                    inline rather than via an FFI [REdCall].  When
                                                    [v]'s slot type is not a limb-bearing tower type
                                                    or [i] is out of range, evaluation produces
                                                    [None] (stuck state). *)
+  | SMul128 : sexpr_ed -> sexpr_ed -> sexpr_ed   (* Phase 0e (2026-05-13): wide multiply.  Result
+                                                   is [mask128 (va * vb)] — i.e. the full 128-bit
+                                                   product, truncation-free for radix-2^51 limb
+                                                   inputs (each in [0, 2^54) ⇒ product in
+                                                   [0, 2^108) ⊂ [0, 2^128)).  Semantically the
+                                                   inputs may themselves come from u64-truncating
+                                                   sub-expressions ([SLimb], [SAnd], [SLit]) or
+                                                   from u128-truncating sub-expressions
+                                                   ([SMul128], [SAdd128]).  Emitted Rust:
+                                                   `(va as u128).wrapping_mul(vb as u128)`. *)
+  | SAdd128 : sexpr_ed -> sexpr_ed -> sexpr_ed.  (* Phase 0e (2026-05-13): wide add.  Result is
+                                                   [mask128 (va + vb)].  Companion to [SMul128] —
+                                                   needed because a sum of two 19-scaled partial
+                                                   products is up to 2 × 2^113 ≈ 2^114, still
+                                                   inside the u128 envelope, but the existing
+                                                   [SAdd] would re-truncate to u64.  The five
+                                                   sum-of-products trees per output limb of
+                                                   [fe25519_mul_body] use this constructor when
+                                                   the inner products are [SMul128]s. *)
 
 (** The Rust subset commands.  Parallel to BLS12 [rust_cmd] in
     [SafeRustSimulation.v:282], adapted to Ed25519 (no Fp tower
@@ -229,6 +379,25 @@ Definition rs_set_scalar_ed (rs : rust_state_ed) (x : var) (v : Z)
     use values in range. *)
 Definition mask64 (z : Z) : Z := Z.land z (Z.ones 64).
 
+(** Phase 0e (2026-05-13): 128-bit mask, used by the [SMul128] /
+    [SAdd128] semantics.  Truncates to u128 — wide enough to hold
+    every partial product / sum-of-partial-products that arises in
+    fiat-crypto's [eval_carry_mulmod] / [eval_carry_squaremod] body
+    for radix-2^51 Curve25519:
+
+      - Limb bound after carry:    each limb in [0, 2^54).
+      - Bare partial product:      a_i * b_j in [0, 2^108).
+      - 19-scaled partial product: 19 * (a_i * b_j) in [0, 2^113).
+      - Five-term sum of 19-scaled: 5 * 2^113 < 2^116.
+
+    All comfortably inside the u128 envelope (< 2^128).  The discharge
+    consequence: under the precondition "both [SMul128] inputs are
+    bounded by 2^54" (or "both [SAdd128] inputs are bounded by 2^127"),
+    [mask128] is the identity, so the algebraic content of
+    [feval_limbwise_mul_mask64] collapses to fiat-crypto's standard
+    [Positional.eval] correctness — no per-mask reasoning needed. *)
+Definition mask128 (z : Z) : Z := Z.land z (Z.ones 128).
+
 Fixpoint eval_sexpr_ed (rs : rust_state_ed) (e : sexpr_ed) : option Z :=
   match e with
   | SVar x => rs_get_scalar_ed rs x
@@ -291,6 +460,23 @@ Fixpoint eval_sexpr_ed (rs : rust_state_ed) (e : sexpr_ed) : option Z :=
           end
       | _ => None
       end
+  | SMul128 a b =>
+      (* Phase 0e (2026-05-13): wide multiply.  The output is u128-
+         truncated; for valid radix-2^51 limb inputs ([va], [vb] each
+         in [0, 2^54)) the truncation is the identity, so [SMul128]
+         soundly carries fiat-crypto's partial-product algebra. *)
+      match eval_sexpr_ed rs a, eval_sexpr_ed rs b with
+      | Some va, Some vb => Some (mask128 (va * vb))
+      | _, _ => None
+      end
+  | SAdd128 a b =>
+      (* Phase 0e (2026-05-13): wide add.  Companion to [SMul128] —
+         lets sums of u128 partial products stay in u128 rather than
+         being truncated to u64 by [SAdd]. *)
+      match eval_sexpr_ed rs a, eval_sexpr_ed rs b with
+      | Some va, Some vb => Some (mask128 (va + vb))
+      | _, _ => None
+      end
   end.
 
 (** Eval results are always in [0, 2^64) when scalar values are bounded.
@@ -319,15 +505,47 @@ Proof.
     apply Z.mod_pos_bound. apply Z.pow_pos_nonneg; lia.
 Qed.
 
+(** Phase 0e (2026-05-13): syntactic predicate ruling out the two
+    new u128 constructors.  Used to gate [eval_sexpr_ed_bounded]'s
+    u64 conclusion — an [sexpr_ed] containing [SMul128] or [SAdd128]
+    can evaluate to a value in [2^64, 2^128), so the u64 bound only
+    holds for u64-safe expressions.
+
+    All sexpr trees emitted by the existing
+    [Fe25519{Mul,Square,Add,Sub,Carry,Scmula24}Body.v] files (and the
+    larger [SafeRustEd25519WPBridge.v]) are u64-safe by construction
+    (they were authored before Phase 0e), so callers can discharge
+    this hypothesis with [reflexivity].
+
+    For the Phase 0e bodies retargeted onto [SMul128]/[SAdd128], use
+    the wider [eval_sexpr_ed_bounded128] below instead — it has no
+    syntactic precondition. *)
+Fixpoint sexpr_u64_safe (e : sexpr_ed) : bool :=
+  match e with
+  | SVar _      => true
+  | SLit _      => true
+  | SAdd a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SSub a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SMul a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SShr a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SAnd a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SLt  a b    => sexpr_u64_safe a && sexpr_u64_safe b
+  | SLimb _ _   => true
+  | SMul128 _ _ => false   (* Phase 0e wide multiply *)
+  | SAdd128 _ _ => false   (* Phase 0e wide add *)
+  end.
+
 Lemma eval_sexpr_ed_bounded :
   forall rs e v,
+    sexpr_u64_safe e = true ->
     (forall x v', rs_get_scalar_ed rs x = Some v' -> 0 <= v' < 2^64) ->
     eval_sexpr_ed rs e = Some v ->
     0 <= v < 2^64.
 Proof.
   intros rs e. induction e as [x|z|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|
-                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|vlimb i];
-    intros vv Hbnd Heval; cbn in Heval.
+                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|vlimb i|
+                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2];
+    intros vv Hsafe Hbnd Heval; cbn in Heval, Hsafe.
   - (* SVar *) eapply Hbnd; eauto.
   - (* SLit *) inversion Heval; subst. apply mask64_bounded.
   - (* SAdd *)
@@ -346,8 +564,9 @@ Proof.
     destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
     destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
     inversion Heval; subst.
-    specialize (IHe1 va Hbnd eq_refl).
-    specialize (IHe2 vb Hbnd eq_refl).
+    apply andb_prop in Hsafe. destruct Hsafe as [Hs1 Hs2].
+    specialize (IHe1 va Hs1 Hbnd eq_refl).
+    specialize (IHe2 vb Hs2 Hbnd eq_refl).
     rewrite Z.shiftr_div_pow2 by lia.
     split.
     + apply Z.div_pos; [lia | apply Z.pow_pos_nonneg; lia].
@@ -359,8 +578,9 @@ Proof.
     destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
     destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
     inversion Heval; subst.
-    specialize (IHe1 va Hbnd eq_refl).
-    specialize (IHe2 vb Hbnd eq_refl).
+    apply andb_prop in Hsafe. destruct Hsafe as [Hs1 Hs2].
+    specialize (IHe1 va Hs1 Hbnd eq_refl).
+    specialize (IHe2 vb Hs2 Hbnd eq_refl).
     apply Z_land_bounded; lia.
   - (* SLt *)
     destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
@@ -373,6 +593,102 @@ Proof.
       destruct tv; try discriminate;
       destruct (List.nth_error limbs i) as [z|] eqn:Hnth; try discriminate;
       inversion Heval; subst; apply mask64_bounded.
+  - (* SMul128 — Phase 0e *) discriminate Hsafe.
+  - (* SAdd128 — Phase 0e *) discriminate Hsafe.
+Qed.
+
+(** Phase 0e (2026-05-13): wider unconditional bound covering both the
+    legacy u64 fragment and the new [SMul128]/[SAdd128] u128 fragment.
+    Used by the Phase 0e discharge of [feval_limbwise_mul_mask64] /
+    [feval_limbwise_square_mask64].
+
+    Discharge strategy: every node in [eval_sexpr_ed] is either masked
+    through [mask64] (producing a result in [0, 2^64) ⊂ [0, 2^128)) or
+    through [mask128] (producing a result in [0, 2^128)), with two
+    exceptions — [SShr] and [SLt] are pure projection operators that
+    preserve the bound of their operand.  The scalar-bound hypothesis
+    feeds [SVar] just as in [eval_sexpr_ed_bounded]. *)
+Lemma mask128_bounded : forall z, 0 <= mask128 z < 2^128.
+Proof.
+  intros z. unfold mask128. rewrite Z.land_ones by lia.
+  apply Z.mod_pos_bound. lia.
+Qed.
+
+Lemma mask64_lt_mask128 : forall z, 0 <= mask64 z < 2^128.
+Proof.
+  intros z. pose proof (mask64_bounded z) as [Hlo Hhi].
+  split; [lia |]. eapply Z.lt_le_trans; [exact Hhi |].
+  apply Z.pow_le_mono_r; lia.
+Qed.
+
+Lemma eval_sexpr_ed_bounded128 :
+  forall rs e v,
+    (forall x v', rs_get_scalar_ed rs x = Some v' -> 0 <= v' < 2^64) ->
+    eval_sexpr_ed rs e = Some v ->
+    0 <= v < 2^128.
+Proof.
+  intros rs e. induction e as [x|z|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|
+                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2|vlimb i|
+                               e1 IHe1 e2 IHe2|e1 IHe1 e2 IHe2];
+    intros vv Hbnd Heval; cbn in Heval.
+  - (* SVar *) apply Hbnd in Heval. split; [lia |].
+    eapply Z.lt_le_trans; [apply Heval | apply Z.pow_le_mono_r; lia].
+  - (* SLit *) inversion Heval; subst. apply mask64_lt_mask128.
+  - (* SAdd *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst. apply mask64_lt_mask128.
+  - (* SSub *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst. apply mask64_lt_mask128.
+  - (* SMul *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst. apply mask64_lt_mask128.
+  - (* SShr *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst.
+    specialize (IHe1 va Hbnd eq_refl).
+    specialize (IHe2 vb Hbnd eq_refl).
+    rewrite Z.shiftr_div_pow2.
+    2:{ (* Need 0 <= vb.  The recursive bound gives 0 <= vb < 2^128 ⇒ 0 <= vb. *)
+        destruct IHe2 as [Hlo _]; exact Hlo. }
+    split.
+    + apply Z.div_pos; [destruct IHe1 as [Hlo _]; exact Hlo
+                       | apply Z.pow_pos_nonneg; [lia | destruct IHe2 as [Hlo _]; exact Hlo]].
+    + eapply Z.le_lt_trans; [| destruct IHe1 as [_ Hhi]; exact Hhi].
+      apply Z.div_le_upper_bound; [apply Z.pow_pos_nonneg; [lia | destruct IHe2 as [Hlo _]; exact Hlo] |].
+      assert (Hpvb : 0 < 2^vb) by (apply Z.pow_pos_nonneg; [lia | destruct IHe2 as [Hlo _]; exact Hlo]).
+      nia.
+  - (* SAnd *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst.
+    specialize (IHe1 va Hbnd eq_refl).
+    specialize (IHe2 vb Hbnd eq_refl).
+    apply Z_land_bounded; lia.
+  - (* SLt *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst.
+    assert (Hpow : 0 < 2^128) by (apply Z.pow_pos_nonneg; lia).
+    destruct (Z.ltb va vb); split; lia.
+  - (* SLimb *)
+    destruct (rs_get_tower_ed rs vlimb) as [[t' tv]|] eqn:Hgt; try discriminate.
+    destruct t'; try discriminate;
+      destruct tv; try discriminate;
+      destruct (List.nth_error limbs i) as [z|] eqn:Hnth; try discriminate;
+      inversion Heval; subst; apply mask64_lt_mask128.
+  - (* SMul128 — Phase 0e *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst. apply mask128_bounded.
+  - (* SAdd128 — Phase 0e *)
+    destruct (eval_sexpr_ed rs e1) as [va|] eqn:Hva; [|discriminate].
+    destruct (eval_sexpr_ed rs e2) as [vb|] eqn:Hvb; [|discriminate].
+    inversion Heval; subst. apply mask128_bounded.
 Qed.
 
 (** The earlier [eval_sexpr_ed_bounded_for_arith] placeholder is
@@ -380,6 +696,58 @@ Qed.
     derive the scalar-bound hypothesis from [state_refine_ed] (whose
     second component supplies [word.unsigned w = v], hence
     [0 <= v < 2^64]). *)
+
+(** ================================================================ *)
+(** Phase 0e (2026-05-13) structural lemmas: [mask128] is the identity
+    on bounded inputs.  These are the key bridges that the Phase 0e
+    discharge of [feval_limbwise_mul_mask64] /
+    [feval_limbwise_square_mask64] consumes: under the precondition
+    "the partial product fits in u128", [mask128] in [eval_sexpr_ed]'s
+    SMul128/SAdd128 cases collapses to identity, so the whole sexpr
+    tree denotes the ordinary [a * b]/[a + b] integer, which
+    fiat-crypto's [Positional.eval_carry_mulmod] then handles. *)
+(* ================================================================ *)
+
+(** [mask128] is the identity on values that already fit in u128. *)
+Lemma mask128_id : forall z, 0 <= z < 2^128 -> mask128 z = z.
+Proof.
+  intros z [Hlo Hhi]. unfold mask128.
+  rewrite Z.land_ones by lia.
+  apply Z.mod_small. lia.
+Qed.
+
+(** Multiplications of two u54-bounded inputs fit in u128 with room
+    to spare (product is at most 2^108).  This is the precise lemma
+    consumed by Phase 0e's SMul128 collapse: each radix-2^51 limb in
+    fiat-crypto's bound after [carry] is in [0, 2^54), so every
+    partial-product [a_i * b_j] discharges this premise. *)
+Lemma mul_u54_fits_u128 :
+  forall a b, 0 <= a < 2^54 -> 0 <= b < 2^54 -> 0 <= a * b < 2^128.
+Proof.
+  intros a b [Ha1 Ha2] [Hb1 Hb2].
+  assert (Hp54 : 0 < 2^54) by (apply Z.pow_pos_nonneg; lia).
+  assert (Hp128 : 2^108 < 2^128)
+    by (apply Z.pow_lt_mono_r; lia).
+  assert (Hbnd108 : 2^108 = 2^54 * 2^54) by (rewrite <- Z.pow_add_r; trivial; lia).
+  split; [nia | nia].
+Qed.
+
+(** Multiplication scaled by a small literal [k < 2^7] (we use [k=19]
+    and [k=38] in [feval_limbwise_mul_mask64] / [_square_mask64])
+    still fits — product is at most 2^115. *)
+Lemma mul_scaled_u54_fits_u128 :
+  forall a b k,
+    0 <= a < 2^54 -> 0 <= b < 2^54 -> 0 <= k < 2^7 ->
+    0 <= k * (a * b) < 2^128.
+Proof.
+  intros a b k Ha Hb Hk.
+  pose proof (mul_u54_fits_u128 a b Ha Hb) as [Hab1 Hab2].
+  assert (Hp115 : 2^115 < 2^128)
+    by (apply Z.pow_lt_mono_r; lia).
+  assert (Hbnd115 : 2^115 = 2^7 * 2^108) by (rewrite <- Z.pow_add_r; trivial; lia).
+  assert (Hbnd108 : 2^108 = 2^54 * 2^54) by (rewrite <- Z.pow_add_r; trivial; lia).
+  split; [nia | nia].
+Qed.
 
 (* ================================================================ *)
 (* §3.5. Byte-list helpers (used in byte-mem semantics)              *)

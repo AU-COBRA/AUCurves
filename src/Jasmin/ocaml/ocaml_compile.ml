@@ -1545,6 +1545,19 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
          top-level caller so wrapper indices i=0..N-1 correspond to
          the source-order JCcall positions within this caller. *)
       reset_wrapper_occurrence ();
+      (* Blocker B: pre-compute [(base, n)] stack-locals from [jf_locals]
+         and register them in [current_stack_locals] BEFORE [translate_cmd]
+         so [JCstore]/[JEload] of a stack-local base get rewritten to
+         [Laset]/[Pget] against the gensym'd stack-array var. *)
+      let stack_locals_pre =
+        Stdlib.List.filter_map (fun (nm, ty) ->
+          match ty with
+          | Bls12_jasmin_extracted.JTstack zn ->
+            Some (implode nm, Z.to_int (z_of_coq_z zn))
+          | _ -> None
+        ) f.Bls12_jasmin_extracted.jf_locals
+      in
+      let _ = register_stack_locals stack_locals_pre in
       let body = translate_cmd f.jf_body in
       let stub = is_stub_body f.Bls12_jasmin_extracted.jf_body in
       if verbose then
@@ -1620,7 +1633,15 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
           (String.concat ", "
             (Stdlib.List.map (fun (n,sz) -> Printf.sprintf "%s[%d]" n sz)
               stack_locals));
-      wrap_func ~cc ~locals:stack_locals name params new_body
+      let wrapped = wrap_func ~cc ~locals:stack_locals name params new_body in
+      (* Blocker B: clear the per-function stack-local mapping AFTER
+         [wrap_func] has consumed [current_stack_locals] for the
+         [Cassgn Parr_init] initializer.  Otherwise a subsequent stub
+         leaf's [JCstore (JEvar p) ...] could accidentally match a
+         stale caller-stack-local name and emit broken [Laset]
+         against an array from another function. *)
+      clear_stack_locals ();
+      wrapped
     ) funcs_to_compile
   in
   (* Blocker C: build per-callsite wrapper subroutines for every

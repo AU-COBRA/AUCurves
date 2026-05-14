@@ -106,6 +106,29 @@ let mk_var (name : string) : var =
 let mk_var_i (name : string) : var_i =
   Location.mk_loc Location._dummy (mk_var name)
 
+(** Counter used to gensym fresh stack-local names. *)
+let stack_local_counter : int ref = ref 0
+
+(** Materialize a [Stack Direct] var holding an [Arr (U64, n)] (n 64-bit
+    limbs). Gensyms a unique [__stk_<idx>_<base>] name so it cannot collide
+    with the existing register-kind var bound to [base] elsewhere in the
+    translation. Returns the fresh var (kind=Stack Direct, ty=Arr(U64,n)).
+
+    Used by [wrap_func] to consume [jf_locals] entries produced by the
+    Rocq-side [hoist_stack_decls_func] pass (src/Bedrock/Jasmin/Core.v),
+    which lifts every [JCdecl (_, JTstack n, _)] in the body up into the
+    function record's [jf_locals] field. Before this helper landed, those
+    decls were silently erased by the [JCdecl] case of [translate_cmd]
+    (around line 368). *)
+let mk_stack_var (base : string) (n : int) : var =
+  let idx = !stack_local_counter in
+  incr stack_local_counter;
+  let fresh = Printf.sprintf "__stk_%d_%s" idx base in
+  let ty = Arr (U64, n) in
+  let v = V.mk fresh (Stack Direct) ty Location._dummy [] in
+  Hashtbl.add var_tbl fresh v;
+  v
+
 (** Function name table: maps name strings to funnames. *)
 let fn_tbl : (string, CoreIdent.funname) Hashtbl.t = Hashtbl.create 97
 
@@ -274,6 +297,164 @@ let callee_arity_tbl : (string, int) Hashtbl.t = Hashtbl.create 17
     [jade_hash_sha512_amd64_ref]). *)
 let extern_leaf_tbl : (string, unit) Hashtbl.t = Hashtbl.create 17
 
+(* ================================================================ *)
+(* A103 BLOCKER C — Multi-callsite RegAlloc wrappers                 *)
+(* ================================================================ *)
+(* In the inlined Ed25519 sign body, several FFI leaves are called  *)
+(* from multiple call-sites in the SAME enclosing function with     *)
+(* DIFFERENT first-argument variables.  jasminc's RegAllocation     *)
+(* pass (regalloc.ml lines 280–297) traverses every Ccall and unions *)
+(* each caller-arg variable into the SAME equivalence class as the  *)
+(* callee's corresponding f_args slot — across ALL call-sites.      *)
+(* Caller variables from distinct call-sites end up in one class    *)
+(* and, if simultaneously live elsewhere in the caller, hit the     *)
+(* "conflicting variables ... must be merged" error (A99's          *)
+(* documented [sha512_64 k_full/r_full] failure at line ~1041).     *)
+(*                                                                   *)
+(* SOLUTION: for each leaf [F] that is called >= 2 times by ANY    *)
+(* caller in funcs_to_compile, generate per-callsite wrapper        *)
+(* subroutines [F__cs0], [F__cs1], ..., one per call-site, each    *)
+(* with fresh wrapper-local parameter names.  Each wrapper's body  *)
+(* is a single [Ccall F(p_1, ..., p_k)] forwarding to F.  The     *)
+(* per-callsite [JCcall] in the caller is rewritten to target the *)
+(* wrapper instead of F directly.                                  *)
+(*                                                                   *)
+(* RegAlloc now sees:                                              *)
+(*   - At each outer call to F__cs_i: caller-arg variables unify  *)
+(*     with the wrapper's fresh params.  Wrappers' params are     *)
+(*     disjoint per call-site so each caller variable is unified  *)
+(*     with at most ONE wrapper-param symbol — no cross-call-site *)
+(*     coalescing.                                                 *)
+(*   - At the single Ccall F inside each wrapper body: the        *)
+(*     wrapper's fresh params unify with F's f_args.  Different   *)
+(*     wrappers have different params, so F's f_args' equivalence *)
+(*     class accumulates fresh names — but those names are local  *)
+(*     to one wrapper each and never simultaneously live.         *)
+(*                                                                   *)
+(* HONESTY: this implementation is sequential after Blocker A      *)
+(* (A114, in flight) and Blocker B (stub-body pointer deref).      *)
+(* Standalone, it is necessary but not sufficient for the full    *)
+(* Ed25519 sign emission chain.  It IS, however, complete and    *)
+(* self-contained for the RegAlloc gate.                          *)
+(*                                                                   *)
+(* DESIGN doc — wrapper signature pattern:                         *)
+(*   For leaf F with params [p_1; ...; p_k], the i-th wrapper is: *)
+(*     fn F__cs{i}(reg u64 p_1__cs{i}, ..., reg u64 p_k__cs{i}) { *)
+(*       F(p_1__cs{i}, ..., p_k__cs{i});                          *)
+(*     }                                                            *)
+(*   with [FInfo.Subroutine] CC and NO [inline] annotation, so    *)
+(*   jasminc's Inlining pass does NOT collapse it back.  F itself *)
+(*   keeps whatever CC it had ([Internal] for stubs, [Subroutine] *)
+(*   for externs); jasminc inlines stub F into each wrapper.      *)
+(*                                                                   *)
+(* Per-leaf adapter recipe:                                        *)
+(*   1. Pre-scan all funcs_to_compile, count callsites per callee. *)
+(*   2. For each callee with count >= 2, mark for wrapping.        *)
+(*   3. During translate_cmd, maintain a per-callee occurrence    *)
+(*      counter; on JCcall F(args) when F is wrapped, emit the    *)
+(*      i-th wrapper's funname instead of F's.                    *)
+(*   4. After translation, emit the wrapper funcs into the prog.  *)
+
+(** Multi-call-site leaves: name -> total callsite count (>=2).    *)
+let wrap_callee_counts : (string, int) Hashtbl.t = Hashtbl.create 17
+
+(** Per-callee occurrence counter, reset before [translate_cmd] of
+    each top-level function.  Mutating during recursive [translate_cmd]
+    yields the correct site index in source-order. *)
+let wrap_callee_occurrence : (string, int) Hashtbl.t = Hashtbl.create 17
+
+(** Wrapper-funname registry for diagnostic / smoke-test introspection. *)
+let wrap_callsite_wrappers : (string, unit) Hashtbl.t = Hashtbl.create 17
+
+(** Construct the i-th wrapper name for leaf [fname].              *)
+let mk_wrapper_name (fname : string) (i : int) : string =
+  Printf.sprintf "%s__cs%d" fname i
+
+(** Construct the j-th wrapper-local parameter name for the i-th
+    wrapper of leaf [fname].                                       *)
+let mk_wrapper_param_name (fname : string) (i : int) (j : int) : string =
+  Printf.sprintf "%s__cs%d_p%d" fname i j
+
+(** Pre-scan: count [JCcall fname _] occurrences across the bodies
+    of every func in [funcs].  Records callees whose count >= 2 in
+    [wrap_callee_counts].  Returns the populated table for
+    diagnostic logging. *)
+let scan_multi_callsite_leaves
+    (funcs : Bls12_jasmin_extracted.jasmin_func list) : unit =
+  Hashtbl.clear wrap_callee_counts;
+  let counts : (string, int) Hashtbl.t = Hashtbl.create 17 in
+  let rec scan (c : Bls12_jasmin_extracted.jasmin_cmd) : unit =
+    match c with
+    | Bls12_jasmin_extracted.JCskip -> ()
+    | Bls12_jasmin_extracted.JCseq (a, b) -> scan a; scan b
+    | Bls12_jasmin_extracted.JCif (_, ct, cf) -> scan ct; scan cf
+    | Bls12_jasmin_extracted.JCwhile (_, body) -> scan body
+    | Bls12_jasmin_extracted.JCdecl (_, _, body) -> scan body
+    | Bls12_jasmin_extracted.JCcall (f, _) ->
+      let n = implode f in
+      let prev = try Hashtbl.find counts n with Not_found -> 0 in
+      Hashtbl.replace counts n (prev + 1)
+    | _ -> ()
+  in
+  Stdlib.List.iter (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
+    scan f.jf_body
+  ) funcs;
+  Hashtbl.iter (fun name c ->
+    if c >= 2 then Hashtbl.replace wrap_callee_counts name c
+  ) counts
+
+(** Build the i-th per-callsite wrapper subroutine for leaf [fname].
+    Returns the wrapper function and registers its name in
+    [wrap_callsite_wrappers].  The wrapper has [arity] parameters,
+    all reg u64, and a single-instruction body that forwards to
+    [fname].  CC = [Subroutine] (call boundary preserved). *)
+let build_wrapper_func (fname : string) (i : int) (arity : int)
+    : (unit, X86_arch.extended_op Sopn.asm_op_t) func =
+  let wname = mk_wrapper_name fname i in
+  Hashtbl.replace wrap_callsite_wrappers wname ();
+  let wfn = mk_funname wname in
+  let leaf_fn = mk_funname fname in
+  let param_names =
+    let rec range j = if j >= arity then []
+      else mk_wrapper_param_name fname i j :: range (j + 1)
+    in range 0
+  in
+  let args = Stdlib.List.map mk_var param_names in
+  let tyin = Stdlib.List.map (fun _ -> Bty (U U64)) param_names in
+  let arg_exprs = Stdlib.List.map (fun v ->
+    Pvar { gv = Location.mk_loc Location._dummy v; gs = Expr.Slocal }
+  ) args in
+  (* Body: single Ccall to the underlying leaf.  Whether to attach
+     the [inline] annotation depends on the leaf's calling
+     convention — Internal leaves (stubs) need [inline] so the
+     Inlining pass expands the call into the wrapper body;
+     extern_leaf_tbl members ([Subroutine] CC) need NO inline so
+     the call survives to asm.                                   *)
+  let make_call =
+    if Hashtbl.mem extern_leaf_tbl fname then mk_instr
+    else if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
+    else mk_instr
+  in
+  let body = [make_call (Ccall ([], leaf_fn, arg_exprs))] in
+  { f_loc = Location._dummy;
+    f_annot = FInfo.f_annot_empty;
+    f_info = ();
+    f_cc = FInfo.Subroutine;
+    f_name = wfn;
+    f_tyin = tyin;
+    f_args = args;
+    f_body = body;
+    f_tyout = [];
+    f_ret_info = { FInfo.ret_annot = []; ret_loc = Location._dummy };
+    f_ret = [] }
+
+(** Reset the per-call-site occurrence counter.  MUST be called
+    once before [translate_cmd] is run on each top-level callsite
+    function, so the i index in wrapper names matches the
+    source-order position within that caller. *)
+let reset_wrapper_occurrence () =
+  Hashtbl.clear wrap_callee_occurrence
+
 let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
   match c with
   | Bls12_jasmin_extracted.JCskip -> []
@@ -312,7 +493,21 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
 
   | Bls12_jasmin_extracted.JCcall (f, args) ->
     let fname = implode f in
-    let fn = mk_funname fname in
+    (* Blocker C: if [fname] is a multi-callsite leaf, rewrite this
+       JCcall to target the i-th per-callsite wrapper instead of
+       the leaf directly.  Each wrapper has fresh wrapper-local
+       parameter symbols so jasminc's RegAlloc cannot coalesce
+       caller-arg variables across distinct call-sites of [fname]. *)
+    let dispatch_name =
+      if Hashtbl.mem wrap_callee_counts fname then begin
+        let i = try Hashtbl.find wrap_callee_occurrence fname
+                with Not_found -> 0 in
+        Hashtbl.replace wrap_callee_occurrence fname (i + 1);
+        mk_wrapper_name fname i
+      end else
+        fname
+    in
+    let fn = mk_funname dispatch_name in
     let translated = Stdlib.List.map translate_expr args in
     (* Roadmap §9 path (b) workaround: when a callee has a fixed
        arity (recorded in [callee_arity_tbl] by the caller) but a
@@ -350,9 +545,17 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
        callees are compiled with [FInfo.Subroutine] CC so the surviving
        Ccall lowers to a real [call <symbol>] in the asm.  At link
        time the symbol can be resolved to an external implementation
-       (e.g., libjade's [jade_hash_sha512_amd64_ref] for sha512_64). *)
+       (e.g., libjade's [jade_hash_sha512_amd64_ref] for sha512_64).
+
+       Blocker C: when [dispatch_name <> fname] we have rewritten
+       the call to target a [Subroutine]-CC wrapper.  That wrapper
+       MUST be reached via a real [Ccall] (no inline annotation),
+       otherwise jasminc's Inlining pass collapses the wrapper back
+       into the caller and the regalloc-coalescing problem returns. *)
+    let is_wrapper_call = dispatch_name <> fname in
     let make_call =
-      if Hashtbl.mem extern_leaf_tbl fname then mk_instr
+      if is_wrapper_call then mk_instr
+      else if Hashtbl.mem extern_leaf_tbl fname then mk_instr
       else if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
       else mk_instr
     in
@@ -838,11 +1041,28 @@ let partition_for_regalloc ?(verbose=false) ?(threshold=200)
     convention.  Stub-leaf callees (used for the empirical pass-15+
     Jasmin gate / roadmap §9 path (b)) must be [Subroutine] so jasminc's
     MakeReferenceArguments pass accepts the callsite-to-callee linkage. *)
-let wrap_func ?(cc=FInfo.Export) (name : string) (param_names : string list)
+let wrap_func ?(cc=FInfo.Export) ?(locals=[]) (name : string)
+    (param_names : string list)
     (body : x86_stmt) : (unit, X86_arch.extended_op Sopn.asm_op_t) func =
   let fn = mk_funname name in
   let args = Stdlib.List.map mk_var param_names in
   let tyin = Stdlib.List.map (fun _ -> Bty (U U64)) param_names in
+  (* Materialize each [(base, n)] in [locals] as a [Stack Direct] var of
+     type [Arr (U64, n)] and prepend a [Cassgn (_, Parr_init U64 n)]
+     initializer so jasminc's [Prog.locals] scan (which discovers locals
+     from variables used in the body) picks it up. The Rocq side
+     ([hoist_stack_decls_func] in src/Bedrock/Jasmin/Core.v) computes
+     these entries from in-body [JCdecl (_, JTstack n, _)] nodes that
+     the [translate_cmd] [JCdecl] case would otherwise erase. *)
+  let stack_inits =
+    Stdlib.List.map (fun (base, n) ->
+      let v = mk_stack_var base n in
+      let lv = Lvar (Location.mk_loc Location._dummy v) in
+      let ty = Arr (U64, n) in
+      mk_instr (Cassgn (lv, Expr.AT_none, ty, Parr_init (U64, n)))
+    ) locals
+  in
+  let body = stack_inits @ body in
   (* Export functions get [nospill] to protect from the CF.90 bug in jasminc
      that manifests when AutoSpill is applied to large functions. Inline chunk
      functions are small enough to not trigger this bug.
@@ -1095,6 +1315,26 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     end
   ) funcs_to_compile;
 
+  (* Step 3c (Blocker C): pre-scan for multi-callsite leaves.
+     A callee is wrapped iff it is a registered stub leaf
+     (in callee_arity_tbl) AND it has >=2 distinct call-sites
+     across [funcs_to_compile].  Non-stub callees are left
+     unwrapped — the BLS12 / X25519 benchmark binaries never
+     hit the multi-callsite-same-arg coalescing problem because
+     their schoolbook-mul leaves are called only once at the top
+     of each operation. *)
+  scan_multi_callsite_leaves funcs_to_compile;
+  (* Restrict to stubs: drop counts for non-stub callees. *)
+  Hashtbl.filter_map_inplace (fun name c ->
+    if Hashtbl.mem callee_arity_tbl name then Some c else None
+  ) wrap_callee_counts;
+  Hashtbl.clear wrap_callsite_wrappers;
+  if verbose then
+    Hashtbl.iter (fun name c ->
+      Printf.eprintf "[compile_direct] multi-callsite leaf [%s] count=%d -> %d wrappers\n"
+        name c c
+    ) wrap_callee_counts;
+
   (* Step 4: Translate each function, applying register-pressure partitioning.
      Functions with a JCskip body are treated as stub leaves (e.g. the FFI
      symbols used by Ed25519 sign for the empirical Jasmin gate of roadmap
@@ -1105,6 +1345,10 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     Stdlib.List.map (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
       let name = implode f.jf_name in
       let params = Stdlib.List.map (fun (n, _ty) -> implode n) f.jf_params in
+      (* Blocker C: reset per-callee occurrence counter before each
+         top-level caller so wrapper indices i=0..N-1 correspond to
+         the source-order JCcall positions within this caller. *)
+      reset_wrapper_occurrence ();
       let body = translate_cmd f.jf_body in
       let stub = is_stub_body f.Bls12_jasmin_extracted.jf_body in
       if verbose then
@@ -1155,14 +1399,77 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
           else FInfo.Internal
         else FInfo.Export
       in
-      wrap_func ~cc name params new_body
+      (* Consume [jf_locals]: each [(name, JTstack n)] becomes a
+         [Stack Direct] var of type [Arr (U64, n)] in the emitted func.
+         JTu64 and JTptr entries (if any) are ignored — those are
+         scalar locals discovered by jasminc's [Prog.locals] scan from
+         body references, identical to the legacy path. *)
+      let stack_locals =
+        Stdlib.List.filter_map (fun (nm, ty) ->
+          match ty with
+          | Bls12_jasmin_extracted.JTstack zn ->
+            Some (implode nm, Z.to_int (z_of_coq_z zn))
+          | _ -> None
+        ) f.Bls12_jasmin_extracted.jf_locals
+      in
+      if verbose && stack_locals <> [] then
+        Printf.eprintf "    [%s] hoisted %d stack locals: %s\n"
+          name (Stdlib.List.length stack_locals)
+          (String.concat ", "
+            (Stdlib.List.map (fun (n,sz) -> Printf.sprintf "%s[%d]" n sz)
+              stack_locals));
+      wrap_func ~cc ~locals:stack_locals name params new_body
     ) funcs_to_compile
   in
+  (* Blocker C: build per-callsite wrapper subroutines for every
+     leaf in [wrap_callee_counts] (count >= 2).  Each wrapper
+     forwards to the underlying leaf; the i-th wrapper has the i-th
+     position among that leaf's callsites in source order.  The
+     wrappers must be ordered AFTER the callers but BEFORE the
+     leaves in [prog_funcs] so jasminc's inliner (foldr) processes
+     them after the leaves are "available", letting Internal-CC
+     stub bodies inline into each wrapper. *)
+  let wrapper_funcs : (unit, X86_arch.extended_op Sopn.asm_op_t) func list =
+    Hashtbl.fold (fun fname n acc ->
+      let arity =
+        try Hashtbl.find callee_arity_tbl fname
+        with Not_found -> 0
+      in
+      if arity = 0 then acc
+      else begin
+        let rec build i acc =
+          if i >= n then acc
+          else build (i + 1) (build_wrapper_func fname i arity :: acc)
+        in build 0 acc
+      end
+    ) wrap_callee_counts []
+  in
+  if verbose then
+    Printf.eprintf "[compile_direct] generated %d per-callsite wrapper subroutines\n"
+      (Stdlib.List.length wrapper_funcs);
+
   (* Inline functions must appear AFTER the export functions that call them,
      because jasminc's inliner (inline_prog) uses foldr, processing the list
      from right to left.  Functions later in the list are available to inline
-     into functions earlier in the list. *)
-  let prog = build_prog (prog_funcs @ !all_inline_funcs) in
+     into functions earlier in the list.
+
+     Layout: [callers...; wrapper_funcs...; stub_leaves...; chunk_helpers...].
+     The callers reference the wrappers via Ccall (no inline) — wrappers must
+     follow.  The wrappers' bodies call the underlying stub leaf with inline
+     annotation — the leaf must follow the wrappers.  Note that with stub leaves
+     and chunk helpers both already living in prog_funcs / all_inline_funcs,
+     splicing the wrappers between callers and leaves requires reordering. *)
+  let (caller_funcs, leaf_funcs) =
+    Stdlib.List.partition (fun (f : (unit, X86_arch.extended_op Sopn.asm_op_t) func) ->
+      (* Discriminate by whether the function's name is registered as a stub
+         (i.e., appears in callee_arity_tbl); stubs are leaves and must
+         follow their wrappers in the program list so the inliner can fold
+         the stub body into each wrapper. *)
+      let func_name_str = f.f_name.CoreIdent.fn_name in
+      not (Hashtbl.mem callee_arity_tbl func_name_str)
+    ) prog_funcs
+  in
+  let prog = build_prog (caller_funcs @ wrapper_funcs @ leaf_funcs @ !all_inline_funcs) in
 
   Printf.eprintf "[compile_direct] built prog with %d functions (%d inline helpers)\n"
     (Stdlib.List.length (snd prog)) (Stdlib.List.length !all_inline_funcs);

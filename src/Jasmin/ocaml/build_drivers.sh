@@ -43,6 +43,14 @@ build_one () {
       # finds every callee.
       extracted_ml="ed25519_sign_jasmin_extracted.ml"
       ;;
+    ed25519_sign_hoist)
+      # Blocker A consumer: sign body whose stack-array JCdecls have
+      # been hoisted into jf_locals by the Rocq-side
+      # hoist_stack_decls_func pass (src/Bedrock/Jasmin/Core.v).
+      # Driver materializes each (name, JTstack n) entry as a
+      # Stack-kind, Arr(U64,n)-typed Jasmin var.
+      extracted_ml="ed25519_sign_hoist_jasmin_extracted.ml"
+      ;;
     *) echo "unknown curve: $curve"; exit 2 ;;
   esac
 
@@ -84,6 +92,14 @@ build_one () {
     deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
           "$EXTRACTED_DIR/$extracted_ml"
           "$EXTRACTED_DIR/ed25519_sign_stubs_jasmin_extracted.ml")
+  fi
+  if [ "$curve" = "ed25519_sign_hoist" ]; then
+    # Same BLS12 alias trick as ed25519_sign.
+    if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
+      cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+      cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
+    fi
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml" "$EXTRACTED_DIR/$extracted_ml")
   fi
 
   # Stage all .ml/.mli into a temp dir so ocamlfind can compile .mli first.

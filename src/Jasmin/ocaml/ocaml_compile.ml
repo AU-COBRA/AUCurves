@@ -263,6 +263,17 @@ let mulx_rdx_counter = ref 0
     BLS12 / X25519 benchmark binaries are unaffected. *)
 let callee_arity_tbl : (string, int) Hashtbl.t = Hashtbl.create 17
 
+(** Extern-leaf set: stub callees whose callsite should be a real
+    [call <symbol>] in the emitted asm rather than an inlined empty
+    body.  Populated by [compile_funcs] from a hard-coded list
+    ([extern_leaf_names]).  When [translate_cmd] sees a JCcall to a
+    name in this set it omits the [inline] annotation, so jasminc
+    keeps the call instruction; combined with [FInfo.Subroutine] CC
+    on the callee, the asm emits [call <symbol>] for link-time
+    resolution to an external implementation (e.g., libjade's
+    [jade_hash_sha512_amd64_ref]). *)
+let extern_leaf_tbl : (string, unit) Hashtbl.t = Hashtbl.create 17
+
 let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
   match c with
   | Bls12_jasmin_extracted.JCskip -> []
@@ -332,9 +343,17 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
        pass expands the call.  This is required when stubs use
        [FInfo.Internal] cc: without the inline annotation, the
        Ccall survives to varalloc which asserts [Internal -> false]
-       (varalloc.ml:422). *)
+       (varalloc.ml:422).
+
+       A33 exception: for stubs in [extern_leaf_tbl] we DELIBERATELY
+       skip the inline annotation, so jasminc keeps the call.  These
+       callees are compiled with [FInfo.Subroutine] CC so the surviving
+       Ccall lowers to a real [call <symbol>] in the asm.  At link
+       time the symbol can be resolved to an external implementation
+       (e.g., libjade's [jade_hash_sha512_amd64_ref] for sha512_64). *)
     let make_call =
-      if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
+      if Hashtbl.mem extern_leaf_tbl fname then mk_instr
+      else if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
       else mk_instr
     in
     [make_call (Ccall ([], fn, adjusted))]
@@ -974,10 +993,24 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
      length-1) where every leaf is a [JCstore base 0 (JEload _ 0)]
      — the identity-write-through-param pattern.  This is robust to
      N=1 (single store) and N>=2 (JCseq chain) stubs alike. *)
+  (* A33 extension: also accept [JCstore (JEadd (JEvar _, JElit _), _, _)]
+     so the implementing-body refinement (real Jasmin code for clamp +
+     memmove leaves) is still detected as a stub.  The implementing
+     bodies use [JEadd (JEvar p) (JElit off)] addresses to encode
+     non-zero offsets — this is the addressing pattern jasminc's asmgen
+     accepts; offsets in [JCstore base off ...] beyond 0 are not
+     directly assembleable to x86 [mov [base+off], val]. *)
   let rec is_identity_store_chain (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
+    let is_store_with_var_base e =
+      match e with
+      | Bls12_jasmin_extracted.JEvar _ -> true
+      | Bls12_jasmin_extracted.JEadd (Bls12_jasmin_extracted.JEvar _,
+                                       Bls12_jasmin_extracted.JElit _) -> true
+      | _ -> false
+    in
     match b with
     | Bls12_jasmin_extracted.JCskip -> true
-    | Bls12_jasmin_extracted.JCstore (Bls12_jasmin_extracted.JEvar _, _, _) -> true
+    | Bls12_jasmin_extracted.JCstore (base, _, _) -> is_store_with_var_base base
     | Bls12_jasmin_extracted.JCseq (c1, c2) ->
       is_identity_store_chain c1 && is_identity_store_chain c2
     | _ -> false
@@ -987,14 +1020,45 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     | Bls12_jasmin_extracted.JCskip -> true
     | _ -> is_identity_store_chain b
   in
+  (* A33 extension (DRAFT — not active): extern_leaf_names would mark
+     stub leaves whose call site should NOT be inlined; the driver
+     would emit a real [Subroutine] callee + non-inline Ccall, so
+     jasminc lowers it to a real [call <symbol>].  AT LINK TIME the
+     symbol could resolve to an external implementation.
+
+     STATUS: currently empty.  Attempted [sha512_64] entry failed at
+     RegAllocation with "conflicting variables k_full and r_full must
+     be merged" — the same first-arg-register coalescing issue A32
+     documented for [ed25519_compress] surfaces for any consecutive
+     stub callsites whose first arg differs (sha512_64 is called 3x
+     in sign with three different dst buffers: h_full, r_full, k_full).
+
+     Closing this requires either:
+       (a) ABI manipulation: pass dst via a callee-saved register
+           that jasminc's allocator doesn't coalesce, or
+       (b) wrapper functions: emit a Subroutine wrapper per dst that
+           moves dst from a fresh reg to RDI inside the wrapper, or
+       (c) annotate the callsite so jasminc inserts mov RDI, <reg>
+           rather than coalescing.
+     None are mechanical; deferred per A33 scope.  Today every stub
+     is inlined to a no-op (or its trivial Jasmin body if non-empty).
+     The asm therefore lacks [call jade_hash_sha512_amd64_ref] but
+     contains real instructions for the 8 memmove leaves. *)
+  let extern_leaf_names : string list = [] in
+
   Hashtbl.clear callee_arity_tbl;
+  Hashtbl.clear extern_leaf_tbl;
+  Stdlib.List.iter (fun name ->
+    Hashtbl.replace extern_leaf_tbl name ()
+  ) extern_leaf_names;
   Stdlib.List.iter (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
     if is_stub_body f.Bls12_jasmin_extracted.jf_body then begin
       let name = implode f.Bls12_jasmin_extracted.jf_name in
       let arity = Stdlib.List.length f.Bls12_jasmin_extracted.jf_params in
       Hashtbl.replace callee_arity_tbl name arity;
       if verbose then
-        Printf.eprintf "[compile_direct] callee_arity_tbl[%s] = %d\n" name arity
+        Printf.eprintf "[compile_direct] callee_arity_tbl[%s] = %d (extern=%b)\n"
+          name arity (Hashtbl.mem extern_leaf_tbl name)
     end
   ) funcs_to_compile;
 
@@ -1050,7 +1114,14 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
            load-store body lets the inliner succeed (A25's [JCskip]
            hit [varalloc.ml:422 assert false]; with non-empty body
            that assertion is bypassed). *)
-      let cc = if stub then FInfo.Internal else FInfo.Export in
+      let cc =
+        if stub then
+          (* A33: extern leaves use Subroutine so jasminc keeps the call.
+             Other stubs use Internal so inlining DCEs them. *)
+          if Hashtbl.mem extern_leaf_tbl name then FInfo.Subroutine
+          else FInfo.Internal
+        else FInfo.Export
+      in
       wrap_func ~cc name params new_body
     ) funcs_to_compile
   in

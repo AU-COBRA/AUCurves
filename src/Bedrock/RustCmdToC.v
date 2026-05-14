@@ -106,6 +106,10 @@ Fixpoint c_sexpr (e : sexpr_ed) : string :=
                     (* Phase 0b: limb read.  In emitted C, an Fp25519
                        slot is a [uint64_t[5]] array, so a static
                        index access is the natural code shape. *)
+  | SMul128 a b => "((__uint128_t)" ++ c_sexpr a ++ " * (__uint128_t)" ++ c_sexpr b ++ ")"
+                    (* Phase 0e (2026-05-13): wide multiply. *)
+  | SAdd128 a b => "((__uint128_t)" ++ c_sexpr a ++ " + (__uint128_t)" ++ c_sexpr b ++ ")"
+                    (* Phase 0e (2026-05-13): wide add. *)
   end.
 
 (* ================================================================ *)

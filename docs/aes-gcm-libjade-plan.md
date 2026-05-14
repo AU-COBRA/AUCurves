@@ -214,8 +214,11 @@ narrows the gain):
   * Skip the `aesni` and `vaes` Jasmin variants; ship only `ref` and
     `mulx` (AES-NI but scalar CLMUL).  Cuts ~3 sessions.  We do this
     for X25519 (only `mulx` is the production-linked variant).
-  * Reuse the Cryspen-authored formosa-aes EC proof if it exists at
-    the time we vendor it.  Then we own only the build glue.  TBD.
+  * Reuse the Formosa Crypto formosa-aes EC proof if it exists at
+    the time we vendor it (formosa-aes would be a sibling of
+    formosa-mlkem, multi-institution authorship — NOT Cryspen, which
+    authors libcrux's separate Rust ML-KEM/AES paths).  Then we own
+    only the build glue.  TBD.
 
 ## §4 — Trust transfer and `LibjadeAxioms.v` impact
 

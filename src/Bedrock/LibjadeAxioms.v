@@ -191,10 +191,14 @@ Axiom jade_mlkem768_dec_correct :
     True (* placeholder *).
 
 (** Provenance: formosa-mlkem (vendored at curve25519-jasmin-rs/jazz/).
-    EC proofs in Cryspen's formosa-mlkem repository.
+    EC proofs in the Formosa Crypto project's formosa-mlkem repository
+    (multi-institution: INRIA, MPI-SP, IMDEA, etc.; sibling of libjade).
+    Distinct from Cryspen's libcrux ML-KEM, which is a separate
+    Rust implementation extracted via hax — formosa-mlkem is the
+    Jasmin-source side, not used by libcrux.
 
     Audit checklist:
-    [ ] EC proof closes (Cryspen's `make` succeeds)?
+    [ ] EC proof closes (formosa-mlkem `make` succeeds)?
     [ ] FIPS 203 test vectors match (validated via
         sender-keys-hax/tests proptest_equiv cross-checks)?
     [ ] Constant-time: per EC proof? *)
@@ -210,13 +214,27 @@ Axiom jade_mlkem768_dec_correct :
     its trust assumption, even if the body is `True` for now.
 
     To upgrade to a real statement:
-    1. Define a Rocq-side functional spec for each primitive (we have
-       SHA-256/SHA-512 in some bedrock2 deps; X25519 spec is in
-       fiat-crypto; ML-KEM-768 needs to be authored).
+    1. Define a Rocq-side functional spec for each primitive.  Authored
+       in [Bedrock.Libjade.<Prim>Spec]: SHA-256 (A107), SHA-512 (A108),
+       X25519 var-base + base-point (A109/A110).  ML-KEM-768 still needs
+       to be authored against FIPS 203.
     2. Replace [True] with the concrete equality (e.g.,
        [digest_out = sha256_spec input]).
     3. Optionally: re-state these as [Theorem]s with proofs going
        through the Rocq Jasmin compiler's [equivalence] theorem.
+
+    Spec-authoring policy (2026-05-14): for each primitive, follow BOTH
+    the underlying standard (FIPS / RFC / NIST publication) AND the
+    upstream EC [op] definition from the libjade / formosa-* EC proof.
+    The two should agree modulo notation; any divergence must be noted
+    explicitly in the spec file's header comment.  In practice this
+    means: author the spec from the standard, then sanity-check against
+    the EC [op] (e.g., for SHA-256 cross-check against
+    [libjade/proof/crypto_hash/sha256/amd64/ref/extracted_ct_proof.ec]'s
+    [SHA256] op; for ML-KEM cross-check against formosa-mlkem's EC ops).
+    This dual reference keeps our axiom statements faithful to both the
+    normative spec auditors will reach for AND the EC proof we transitively
+    trust via the libjade Jasmin-compiler chain.
 
     For Lean-side parallel statements, see
     [CatCrypt/Crypto/Libjade/LibjadeAxioms.lean]. *)

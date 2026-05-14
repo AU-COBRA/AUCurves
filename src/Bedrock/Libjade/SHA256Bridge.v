@@ -79,6 +79,7 @@
 From Stdlib Require Import String ZArith List.
 From Stdlib Require Import Init.Byte.
 Require Import Bedrock.LibjadeAxioms.
+Require Import Bedrock.Libjade.SHA256Spec.
 Import ListNotations.
 
 (* ================================================================ *)
@@ -89,21 +90,28 @@ Import ListNotations.
     at link time by the libjade [jade_hash_sha256_amd64_ref] Jasmin
     routine.
 
-    Trust: opaque Parameter, registered in
-    [Bedrock.LibjadeAxioms.jade_hash_sha256_correct].  See file header
-    for the EC provenance and the path to upgrading this to a real
-    Theorem. *)
-Parameter sha256_libjade : list Byte.byte -> list Byte.byte.
+    Now declared as the Parameter in [Bedrock.LibjadeAxioms] (so the
+    [jade_hash_sha256_correct] axiom can directly reference it as a byte
+    equality against the Rocq FIPS-180-4 reference spec); this bridge
+    re-exports the symbol for downstream call sites that historically
+    imported it from this file.  See file header for the EC provenance
+    and the path to upgrading this to a real Theorem. *)
+Notation sha256_libjade := Bedrock.LibjadeAxioms.sha256_libjade (only parsing).
 
 (** Length of the [sha256_libjade] output is fixed at 32 bytes (256
-    bits), per FIPS 180-4.  Opaque Parameter for the same reason as
-    [sha256_libjade] itself.
+    bits), per FIPS 180-4.  Now provable as a [Lemma] from the
+    [jade_hash_sha256_correct] axiom plus [sha256_spec_length]; no
+    additional axiom is needed.
 
-    When the EC functional-correctness proof lands in Rocq (or via the
-    Rocq Jasmin compiler), this becomes a Theorem proved from the
-    underlying spec. *)
-Parameter sha256_libjade_len :
+    Before 2026-05-14 this was an opaque Parameter; concretizing the
+    registry slot lets us discharge it from the spec's length theorem. *)
+Lemma sha256_libjade_len :
   forall input, length (sha256_libjade input) = 32%nat.
+Proof.
+  intro input.
+  rewrite jade_hash_sha256_correct.
+  apply sha256_spec_length.
+Qed.
 
 (** Convenience alias matching the FIPS-180-4 phrasing used in any
     headline SHA-256-based correctness theorem.  Identical to
@@ -115,18 +123,26 @@ Lemma sha256_libjade_correct_len :
   forall input, length (sha256_libjade_correct input) = 32%nat.
 Proof. intro input; apply sha256_libjade_len. Qed.
 
+(** Headline byte equality: the libjade Jasmin output and the Rocq
+    FIPS-180-4 spec agree bytewise on every input.  Re-export of
+    [Bedrock.LibjadeAxioms.jade_hash_sha256_correct] under the bridge's
+    naming convention. *)
+Lemma jade_hash_sha256_correct_byte_eq :
+  forall input, sha256_libjade input = sha256_spec input.
+Proof. intro input; apply jade_hash_sha256_correct. Qed.
+
 (* ================================================================ *)
 (* §2.  Audit-trail breadcrumb                                       *)
 (* ================================================================ *)
 
-(** Citation marker: when [jade_hash_sha256_correct] gets upgraded
-    from its placeholder [True] body to a real functional-correctness
-    Prop, this marker becomes the explicit per-file trust bridge
-    (replace [True] below with the upgraded axiom application).  For
-    now, [Require Import Bedrock.LibjadeAxioms] above already brings
-    the axiom into the proof environment; downstream [Print
-    Assumptions] will list it whenever the upgraded axiom is used. *)
-Definition sha256_libjade_trust_marker : Prop := True.
+(** Citation marker for the trust audit: 2026-05-14, the
+    [jade_hash_sha256_correct] axiom was upgraded from a [True]
+    placeholder to a concrete byte equality against
+    [Bedrock.Libjade.SHA256Spec.sha256_spec].  Downstream [Print
+    Assumptions] now lists the upgraded axiom (citing [sha256_spec])
+    instead of the placeholder. *)
+Definition sha256_libjade_trust_marker : Prop :=
+  forall input, sha256_libjade input = sha256_spec input.
 
 Lemma sha256_libjade_trust_marker_holds : sha256_libjade_trust_marker.
-Proof. exact I. Qed.
+Proof. exact jade_hash_sha256_correct. Qed.

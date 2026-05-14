@@ -26,6 +26,9 @@
  *)
 
 From Stdlib Require Import String ZArith List.
+From Stdlib Require Import Init.Byte.
+Require Import Bedrock.Libjade.SHA256Spec.
+Require Import Bedrock.Libjade.SHA512Spec.
 Import ListNotations.
 
 (* ================================================================ *)
@@ -38,16 +41,48 @@ Import ListNotations.
     EC provenance: libjade/proof/crypto_hash/sha256/amd64/ref/extracted_ct_proof.ec
     (constant-time + functional correctness proof in EasyCrypt).
 
-    Functional spec: the Rocq side currently has no formal SHA-256 spec
-    imported; the axiom asserts the byte-array equality directly. *)
-Axiom jade_hash_sha256_correct :
-  forall (input : list Z) (digest_out : list Z),
-    True (* placeholder: replace with concrete spec when SHA-256 spec lands in Rocq *).
+    Functional spec: [Bedrock.Libjade.SHA256Spec.sha256_spec], a pure-Gallina
+    FIPS 180-4 reference SHA-256 (constants, message schedule, compression
+    rounds, padding) authored locally so this slot can carry a real byte
+    equality rather than a [True] placeholder.
 
-(** Same provenance class for SHA-512 (used by Ed25519 + XEdDSA + HKDF-SHA-512). *)
+    The libjade-side function handle [sha256_libjade] is declared here so
+    that the registry slot can reference it concretely; the bridge file at
+    [Bedrock.Libjade.SHA256Bridge] re-exports the same handle (and adds a
+    matching length axiom) for downstream consumers. *)
+Parameter sha256_libjade : list Byte.byte -> list Byte.byte.
+
+(** Concrete byte equality between the libjade SHA-256 routine and the
+    Rocq FIPS-180-4 reference spec.  Upgraded from a [True] placeholder
+    on 2026-05-14; the bridge consumes this as
+    [Bedrock.Libjade.SHA256Bridge.jade_hash_sha256_correct_byte_eq]. *)
+Axiom jade_hash_sha256_correct :
+  forall (input : list Byte.byte),
+    sha256_libjade input = sha256_spec input.
+
+(** Same provenance class for SHA-512 (used by Ed25519 + XEdDSA + HKDF-SHA-512).
+
+    EC provenance: libjade/proof/crypto_hash/sha512/amd64/ref/extracted_ct_proof.ec
+    (constant-time + functional correctness proof in EasyCrypt).
+
+    Functional spec: [Bedrock.Libjade.SHA512Spec.sha512_spec], a pure-Gallina
+    FIPS 180-4 reference SHA-512 (80-round compression, K_512 constants,
+    1024-bit blocks, 128-bit length tail) authored locally so this slot can
+    carry a real byte equality rather than a [True] placeholder.
+
+    The libjade-side function handle [sha512_libjade] is declared here so
+    that the registry slot can reference it concretely; the bridge file at
+    [Bedrock.Libjade.SHA512Bridge] re-exports the same handle (and adds a
+    matching length lemma) for downstream consumers. *)
+Parameter sha512_libjade : list Byte.byte -> list Byte.byte.
+
+(** Concrete byte equality between the libjade SHA-512 routine and the
+    Rocq FIPS-180-4 reference spec.  Upgraded from a [True] placeholder
+    on 2026-05-14; the bridge consumes this as
+    [Bedrock.Libjade.SHA512Bridge.jade_hash_sha512_correct_byte_eq]. *)
 Axiom jade_hash_sha512_correct :
-  forall (input : list Z) (digest_out : list Z),
-    True (* placeholder *).
+  forall (input : list Byte.byte),
+    sha512_libjade input = sha512_spec input.
 
 (** Provenance:
     - SHA-256: libjade/proof/crypto_hash/sha256/amd64/ref/extracted_ct_proof.ec

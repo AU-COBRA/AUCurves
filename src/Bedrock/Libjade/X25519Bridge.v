@@ -95,6 +95,7 @@
 From Stdlib Require Import String ZArith List.
 From Stdlib Require Import Init.Byte.
 Require Import Bedrock.LibjadeAxioms.
+Require Import Bedrock.Libjade.X25519Spec.
 Import ListNotations.
 
 (* ================================================================ *)
@@ -107,14 +108,16 @@ Import ListNotations.
     32-byte [scalar] (clamped per RFC 7748) and 32-byte little-endian
     [point] (u-coordinate, high bit cleared).
 
-    Trust: opaque [Parameter], registered in
-    [Bedrock.LibjadeAxioms.jade_curve25519_x25519_correct].  See file
-    header for the EC provenance and the path to upgrading this to a
-    real Theorem. *)
-Parameter x25519_libjade :
-  list Byte.byte (* scalar, 32 bytes *) ->
-  list Byte.byte (* point,  32 bytes *) ->
-  list Byte.byte (* shared, 32 bytes *).
+    Now declared as the Parameter [x25519_libjade] in
+    [Bedrock.LibjadeAxioms] (so the [jade_curve25519_x25519_correct]
+    axiom can directly reference it as a byte equality against the Rocq
+    RFC 7748 reference spec [Bedrock.Libjade.X25519Spec.x25519_spec]);
+    this bridge re-exports the symbol for downstream call sites that
+    historically imported it from this file.  Upgraded 2026-05-14 from
+    local opaque Parameter to Notation re-export of the registry-level
+    Parameter (A109). *)
+Notation x25519_libjade :=
+  Bedrock.LibjadeAxioms.x25519_libjade (only parsing).
 
 (** [x25519_libjade_base scalar] is the 32-byte X25519 public-key
     output computed at link time by the libjade
@@ -122,131 +125,146 @@ Parameter x25519_libjade :
     32-byte [scalar] (clamped per RFC 7748) and the fixed base-point
     u-coordinate (u = 9, little-endian).
 
-    Trust: opaque [Parameter], registered in
-    [Bedrock.LibjadeAxioms.jade_curve25519_x25519_base_correct]. *)
-Parameter x25519_libjade_base :
-  list Byte.byte (* scalar, 32 bytes *) ->
-  list Byte.byte (* shared, 32 bytes *).
+    Now declared as the Parameter [x25519_base_libjade] in
+    [Bedrock.LibjadeAxioms] (so the [jade_curve25519_x25519_base_correct]
+    axiom can directly reference it as a byte equality against the Rocq
+    RFC 7748 reference spec [Bedrock.Libjade.X25519Spec.x25519_base_spec]);
+    this bridge re-exports the symbol under the historical name
+    [x25519_libjade_base] for downstream call sites that imported it
+    from this file.  Upgraded 2026-05-14 from local opaque Parameter to
+    Notation re-export of the registry-level Parameter (A110). *)
+Notation x25519_libjade_base := Bedrock.LibjadeAxioms.x25519_base_libjade (only parsing).
 
 (** Length of the [x25519_libjade] output is fixed at 32 bytes per
-    RFC 7748 §5.  Opaque [Parameter] for the same reason as
-    [x25519_libjade] itself.
-
-    When the EC functional-correctness proof lands in Rocq (or via the
-    Rocq Jasmin compiler), this becomes a Theorem proved from the
-    underlying [montladder] / [Spec.Curve25519] reference. *)
-Parameter x25519_libjade_len :
+    RFC 7748 §5.  Now provable as a [Lemma] from the
+    [jade_curve25519_x25519_correct] axiom plus [x25519_spec_length];
+    the previous [Parameter] form (which additionally required
+    [length scalar = 32] and [length point = 32]) was removed on
+    2026-05-14 in favor of the unconditional length lemma below. *)
+Lemma x25519_libjade_len :
   forall (scalar point : list Byte.byte),
-    length scalar = 32%nat ->
-    length point = 32%nat ->
     length (x25519_libjade scalar point) = 32%nat.
+Proof.
+  intros scalar point.
+  rewrite jade_curve25519_x25519_correct.
+  apply x25519_spec_length.
+Qed.
 
-Parameter x25519_libjade_base_len :
+(** Length of the [x25519_libjade_base] output is fixed at 32 bytes per
+    RFC 7748 §6.1.  Now provable as a [Lemma] from the
+    [jade_curve25519_x25519_base_correct] axiom plus
+    [x25519_base_spec_length]; the previous [Parameter] form (which
+    additionally required [length scalar = 32]) was removed on
+    2026-05-14 in favor of the unconditional length lemma below. *)
+Lemma x25519_libjade_base_len :
   forall (scalar : list Byte.byte),
-    length scalar = 32%nat ->
     length (x25519_libjade_base scalar) = 32%nat.
+Proof.
+  intro scalar.
+  rewrite jade_curve25519_x25519_base_correct.
+  apply x25519_base_spec_length.
+Qed.
 
 (* ================================================================ *)
 (* §2.  Correctness theorems (Admitted — see breadcrumbs)            *)
 (* ================================================================ *)
 
 (** [x25519_libjade_correct]: byte-for-byte agreement between the
-    libjade-extracted Jasmin routine and an abstract X25519 reference
-    spec.
+    libjade-extracted [jade_scalarmult_curve25519_amd64_mulx] Jasmin
+    routine and the Rocq RFC 7748 §5 reference spec.
 
-    Statement shape: for any well-formed 32-byte [scalar] and 32-byte
-    [point], the output of [x25519_libjade scalar point] is exactly
-    the RFC 7748 §5 X25519 shared-secret — i.e. the [montladder] of
-    [clamp(scalar)] applied to [decode_u(point)], re-encoded to 32
-    little-endian bytes.
+    Statement shape: for any 32-byte [scalar] and 32-byte [point], the
+    output of [x25519_libjade scalar point] is exactly the RFC 7748 §5
+    X25519 shared-secret — i.e. [montladder] of [clamp(scalar)] applied
+    to [decode_u(point)], re-encoded to 32 little-endian bytes — as
+    computed by [Bedrock.Libjade.X25519Spec.x25519_spec].
 
-    The connecting [Crypto.Spec.Curve25519] reference (clamp + ladder +
-    encode) and the bedrock2 [montladder] implementation live in
-    [src/Bedrock/End2End/X25519_64/MontgomeryLadder64.v]; we keep this
-    bridge spec-agnostic by stating the equality via
-    [jade_curve25519_x25519_correct], which is the registry-level
-    placeholder.
-
-    Status: [Admitted].  Closing this requires importing the
-    formosa-25519 functional-correctness proof (and discharging its
-    open [admit]s on [__mul4_a24_rs], [__mul4_rsr], [__sqr4_rr] —
-    see [formosa-25519/proof/crypto_scalarmult/curve25519/amd64/mulx/
-    CorrectnessProof_Mulx.ec] lines 12-43) into Rocq, OR composing the
-    verified Rocq Jasmin compiler with a Rocq-side RFC 7748 spec.
-
-    Missing import infrastructure (audit breadcrumbs):
-    - No Rocq-side import of EasyCrypt's [Curve25519_Spec.ec] yet
-      (would land in [src/Spec/Curve25519_Libjade.v] paralleling the
-      existing [Spec.Curve25519] in fiat-crypto).
-    - No bedrock2-↔-Jasmin equivalence theorem connecting the
-      [montladder] Rocq fnspec to the [__montgomery_ladder4] Jasmin
-      procedure (would land in [src/Bedrock/End2End/X25519_64/
-      JasminEquivalence.v]).
-    - Several leaf functional-correctness lemmas in
-      [CorrectnessProof_Mulx.ec] are [admit]ted in the source. *)
-(** Conversion from a byte list to a list of [Z], used to feed the
-    [Bedrock.LibjadeAxioms] registry axioms (which are typed on
-    [list Z] for compatibility with the bedrock2 word model). *)
-Definition bytes_to_Zs (bs : list Byte.byte) : list Z :=
-  map (fun b => Z.of_N (Byte.to_N b)) bs.
-
+    Upgraded 2026-05-14 from [True] placeholder to concrete byte
+    equality against [x25519_spec] (A109). *)
 Theorem x25519_libjade_correct :
   forall (scalar point : list Byte.byte),
-    length scalar = 32%nat ->
-    length point  = 32%nat ->
-    (* Registry-level placeholder: the body is [True] today (see
-       [LibjadeAxioms.jade_curve25519_x25519_correct]).  Once the
-       registry axiom is upgraded to a real equality with a Rocq
-       reference spec (RFC 7748 montladder over [Spec.Curve25519]),
-       the [True] target below will change to the concrete equality
-       between [x25519_libjade scalar point] and the spec — and this
-       theorem becomes a one-line consequence by [exact
-       (jade_curve25519_x25519_correct _ _ _).] *)
-    True.
+    x25519_libjade scalar point = x25519_spec scalar point.
 Proof.
-  intros scalar point _ _.
-  exact (jade_curve25519_x25519_correct
-           (bytes_to_Zs scalar)
-           (bytes_to_Zs point)
-           (bytes_to_Zs (x25519_libjade scalar point))).
+  intros scalar point; apply jade_curve25519_x25519_correct.
 Qed.
 
-(** [x25519_libjade_base_correct]: same shape for the base-point form.
+(** Headline byte equality re-export under the bridge's naming
+    convention.  Identical to [x25519_libjade_correct]; only the name
+    differs. *)
+Lemma jade_curve25519_x25519_correct_byte_eq :
+  forall (scalar point : list Byte.byte),
+    x25519_libjade scalar point = x25519_spec scalar point.
+Proof. intros scalar point; apply jade_curve25519_x25519_correct. Qed.
 
-    Status: [Qed] modulo the registry placeholder [True] — same
-    breadcrumbs as [x25519_libjade_correct]. *)
+(** Length of the [x25519_libjade_correct] alias is fixed at 32 bytes. *)
+Lemma x25519_libjade_correct_len :
+  forall (scalar point : list Byte.byte),
+    length (x25519_libjade scalar point) = 32%nat.
+Proof. intros scalar point; apply x25519_libjade_len. Qed.
+
+(** [x25519_libjade_base_correct]: byte-for-byte agreement between the
+    libjade-extracted [jade_scalarmult_curve25519_amd64_mulx_base] Jasmin
+    routine and the Rocq RFC 7748 §6.1 reference spec at u = 9.
+
+    Upgraded 2026-05-14 from [True] placeholder to concrete byte equality
+    against [Bedrock.Libjade.X25519Spec.x25519_base_spec] (A110). *)
 Theorem x25519_libjade_base_correct :
   forall (scalar : list Byte.byte),
-    length scalar = 32%nat ->
-    True.
+    x25519_libjade_base scalar = x25519_base_spec scalar.
 Proof.
-  intros scalar _.
-  exact (jade_curve25519_x25519_base_correct
-           (bytes_to_Zs scalar)
-           (bytes_to_Zs (x25519_libjade_base scalar))).
+  intro scalar; apply jade_curve25519_x25519_base_correct.
+Qed.
+
+(** Headline byte equality re-export under the bridge's naming
+    convention.  Identical to [x25519_libjade_base_correct]; only the
+    name differs. *)
+Lemma jade_curve25519_x25519_base_correct_byte_eq :
+  forall (scalar : list Byte.byte),
+    x25519_libjade_base scalar = x25519_base_spec scalar.
+Proof. intro scalar; apply jade_curve25519_x25519_base_correct. Qed.
+
+(** Length of the [x25519_libjade_base] output is fixed at 32 bytes per
+    RFC 7748 §6.1.  Now provable as a [Lemma] from the
+    [jade_curve25519_x25519_base_correct] axiom plus
+    [x25519_base_spec_length]; no additional axiom is needed.
+
+    Before 2026-05-14 this was an opaque Parameter; concretizing the
+    registry slot lets us discharge it from the spec's length theorem. *)
+Lemma x25519_libjade_base_correct_len :
+  forall scalar, length (x25519_libjade_base scalar) = 32%nat.
+Proof.
+  intro scalar.
+  rewrite jade_curve25519_x25519_base_correct.
+  apply x25519_base_spec_length.
 Qed.
 
 (* ================================================================ *)
 (* §3.  Audit-trail breadcrumb                                       *)
 (* ================================================================ *)
 
-(** Sanity check: the only new axiomatic objects this file introduces
-    are the four [Parameter]s above ([x25519_libjade],
-    [x25519_libjade_base], [x25519_libjade_len],
-    [x25519_libjade_base_len]).  The correctness theorems themselves
-    are [Qed], reducing to the registry placeholders
+(** Citation marker for the trust audit: 2026-05-14, both
     [jade_curve25519_x25519_correct] and
-    [jade_curve25519_x25519_base_correct] from [Bedrock.LibjadeAxioms].
+    [jade_curve25519_x25519_base_correct] axioms were upgraded from
+    [True] placeholders to concrete byte equalities against
+    [Bedrock.Libjade.X25519Spec.x25519_spec] /
+    [...x25519_base_spec].  This file's locally-introduced [Parameter]s
+    were also removed in favor of [Notation] re-exports of the
+    registry-level Parameters, and the previous [Parameter] length
+    statements are now Qed [Lemma]s derived from the registry axioms.
 
-    This lemma asserts that those two registry axioms are usable from
-    this file's namespace, ensuring [Print Assumptions] on any
-    consumer of the [_correct] theorems names them explicitly. *)
+    The [_registered] lemmas assert that those two registry axioms are
+    usable from this file's namespace, ensuring [Print Assumptions] on
+    any consumer of the [_correct] theorems names them explicitly. *)
 Lemma x25519_libjade_registered :
-  forall (scalar point shared : list Z),
-    True.
-Proof. intros scalar point shared. exact (jade_curve25519_x25519_correct scalar point shared). Qed.
+  forall (scalar point : list Byte.byte),
+    x25519_libjade scalar point = x25519_spec scalar point.
+Proof. intros scalar point. exact (jade_curve25519_x25519_correct scalar point). Qed.
 
+(** The base-point registry axiom is usable from this file's namespace,
+    ensuring [Print Assumptions] on any consumer of the [_correct]
+    theorems names it explicitly.  Upgraded 2026-05-14 from the [True]
+    placeholder form to the concrete byte-equality form. *)
 Lemma x25519_libjade_base_registered :
-  forall (scalar shared : list Z),
-    True.
-Proof. intros scalar shared. exact (jade_curve25519_x25519_base_correct scalar shared). Qed.
+  forall (scalar : list Byte.byte),
+    x25519_libjade_base scalar = x25519_base_spec scalar.
+Proof. intro scalar. exact (jade_curve25519_x25519_base_correct scalar). Qed.

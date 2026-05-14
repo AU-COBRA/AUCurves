@@ -29,6 +29,7 @@ From Stdlib Require Import String ZArith List.
 From Stdlib Require Import Init.Byte.
 Require Import Bedrock.Libjade.SHA256Spec.
 Require Import Bedrock.Libjade.SHA512Spec.
+Require Import Bedrock.Libjade.X25519Spec.
 Import ListNotations.
 
 (* ================================================================ *)
@@ -105,15 +106,59 @@ Axiom jade_hash_sha512_correct :
 
     EC provenance: libjade/proof/crypto_scalarmult/curve25519/amd64/mulx/extracted_ct_proof.ec
     (constant-time + functional correctness, including the field-arithmetic
-    chain compared against a Mathlib-style spec). *)
-Axiom jade_curve25519_x25519_correct :
-  forall (scalar : list Z) (point : list Z) (shared : list Z),
-    True (* placeholder *).
+    chain compared against a Mathlib-style spec).
 
-(** Same for the base-point variant (k*G). *)
+    Functional spec: [Bedrock.Libjade.X25519Spec.x25519_spec], a
+    pure-Gallina RFC 7748 reference (clamp + Montgomery ladder + Fermat
+    inversion + encode) over [N] modulo p = 2^255-19, authored locally
+    so this slot can carry a real byte equality rather than a [True]
+    placeholder.
+
+    The libjade-side function handle [x25519_libjade] is declared here
+    so that the registry slot can reference it concretely; the bridge
+    file at [Bedrock.Libjade.X25519Bridge] re-exports the same handle
+    (and adds matching length / byte-equality lemmas) for downstream
+    consumers. *)
+Parameter x25519_libjade :
+  list Byte.byte (* scalar, 32 bytes *) ->
+  list Byte.byte (* point,  32 bytes *) ->
+  list Byte.byte (* shared, 32 bytes *).
+
+(** Concrete byte equality between the libjade X25519 variable-base
+    routine and the Rocq RFC 7748 reference spec.  Upgraded from a
+    [True] placeholder on 2026-05-14; the bridge consumes this as
+    [Bedrock.Libjade.X25519Bridge.jade_curve25519_x25519_correct_byte_eq]. *)
+Axiom jade_curve25519_x25519_correct :
+  forall (scalar point : list Byte.byte),
+    x25519_libjade scalar point = x25519_spec scalar point.
+
+(** Same for the base-point variant (k*G).
+
+    [jade_scalarmult_curve25519_amd64_mulx_base] computes RFC 7748 §6.1
+    X25519 public-key derivation: shared = clamp(scalar) * G, where G is
+    the standard u = 9 base point.
+
+    Functional spec: [Bedrock.Libjade.X25519Spec.x25519_base_spec], a
+    pure-Gallina RFC 7748 reference (clamp + Montgomery ladder + encode)
+    at the fixed base point u = 9, authored locally so this slot can
+    carry a real byte equality rather than a [True] placeholder.
+
+    The libjade-side function handle [x25519_base_libjade] is declared
+    here so that the registry slot can reference it concretely; the
+    bridge file at [Bedrock.Libjade.X25519Bridge] re-exports the same
+    handle (and adds matching length / byte-equality lemmas) for
+    downstream consumers. *)
+Parameter x25519_base_libjade :
+  list Byte.byte (* scalar, 32 bytes *) ->
+  list Byte.byte (* shared, 32 bytes *).
+
+(** Concrete byte equality between the libjade X25519 base-point routine
+    and the Rocq RFC 7748 reference spec.  Upgraded from a [True]
+    placeholder on 2026-05-14; the bridge consumes this as
+    [Bedrock.Libjade.X25519Bridge.jade_curve25519_x25519_base_correct_byte_eq]. *)
 Axiom jade_curve25519_x25519_base_correct :
-  forall (scalar : list Z) (shared : list Z),
-    True (* placeholder *).
+  forall (scalar : list Byte.byte),
+    x25519_base_libjade scalar = x25519_base_spec scalar.
 
 (** Provenance:
     - mulx variant: libjade/proof/crypto_scalarmult/curve25519/amd64/mulx/extracted_ct_proof.ec

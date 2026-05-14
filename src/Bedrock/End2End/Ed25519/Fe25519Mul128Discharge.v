@@ -912,10 +912,169 @@ Section FiatCryptoBridge.
     apply feval_fiat_schoolbook_eq_mul; assumption.
   Qed.
 
+  (* ============================================================== *)
+  (* Squaring discharge — Step (A) structural collapse + Step (B)   *)
+  (* algebraic recognition.  Symmetric mirror of the mul case,      *)
+  (* reusing [mul_school_list la la] as the schoolbook target       *)
+  (* (squaring is mul with [la = lb]; the doubling of cross terms   *)
+  (* is what turns [k = 19] in the mul layout into [k = 38] for     *)
+  (* high cross products and [k = 2] for low cross products).      *)
+  (* ============================================================== *)
+
+  (** Collapse for [pp_diag_u128] — same shape as [pp_mul_u128_eq]
+      with [lb = la], [j = i].  Reads [a_i] through two [mask64]
+      wrappers, multiplies, and masks through [mask128]; on a
+      u54-bounded limb each layer is identity. *)
+  Lemma pp_diag_u128_eq :
+    forall la i,
+      limbs_bounded54 la ->
+      length la = 5%nat ->
+      (i < 5)%nat ->
+      pp_diag_u128 la i = List.nth i la 0 * List.nth i la 0.
+  Proof.
+    intros la i Hba Hla Hi.
+    unfold pp_diag_u128.
+    rewrite (mask64_id_on_bounded54 la i Hba Hla Hi).
+    apply mask128_id.
+    apply mul_u54_fits_u128;
+      apply (limbs_bounded54_nth la i Hba); lia.
+  Qed.
+
+  (** Collapse for [pp_diag_scaled_u128] — same shape as
+      [pp_mul_scaled_u128_eq] with [lb = la], [j = i]. *)
+  Lemma pp_diag_scaled_u128_eq :
+    forall la i k,
+      limbs_bounded54 la ->
+      length la = 5%nat ->
+      (i < 5)%nat ->
+      0 <= k < 2^7 ->
+      mask64 k = k ->
+      pp_diag_scaled_u128 la i k =
+      k * (List.nth i la 0 * List.nth i la 0).
+  Proof.
+    intros la i k Hba Hla Hi Hk Hmk.
+    assert (Hbai : 0 <= List.nth i la 0 < 2^54)
+      by (apply (limbs_bounded54_nth la i Hba); lia).
+    unfold pp_diag_scaled_u128.
+    rewrite (mask64_id_on_bounded54 la i Hba Hla Hi).
+    rewrite Hmk.
+    rewrite (mask128_id (List.nth i la 0 * List.nth i la 0))
+      by (apply mul_u54_fits_u128; assumption).
+    apply mask128_id.
+    apply mul_scaled_u54_fits_u128; assumption.
+  Qed.
+
+  (** Collapse for [pp_cross_scaled_u128] — pure rebinding of
+      [pp_mul_scaled_u128_eq] with [lb := la]. *)
+  Lemma pp_cross_scaled_u128_eq :
+    forall la i j k,
+      limbs_bounded54 la ->
+      length la = 5%nat ->
+      (i < 5)%nat -> (j < 5)%nat ->
+      0 <= k < 2^7 ->
+      mask64 k = k ->
+      pp_cross_scaled_u128 la i j k =
+      k * (List.nth i la 0 * List.nth j la 0).
+  Proof.
+    intros la i j k Hba Hla Hi Hj Hk Hmk.
+    assert (Hbai : 0 <= List.nth i la 0 < 2^54)
+      by (apply (limbs_bounded54_nth la i Hba); lia).
+    assert (Hbaj : 0 <= List.nth j la 0 < 2^54)
+      by (apply (limbs_bounded54_nth la j Hba); lia).
+    unfold pp_cross_scaled_u128.
+    rewrite (mask64_id_on_bounded54 la i Hba Hla Hi).
+    rewrite (mask64_id_on_bounded54 la j Hba Hla Hj).
+    rewrite Hmk.
+    rewrite (mask128_id (List.nth i la 0 * List.nth j la 0))
+      by (apply mul_u54_fits_u128; assumption).
+    apply mask128_id.
+    apply mul_scaled_u54_fits_u128; assumption.
+  Qed.
+
+  (** [Step (A)] for squaring — structural collapse: the u128
+      square layout equals [mul_school_list la la] as pure Z.
+      Same pattern as [build_limb_list_mul_u128_eq_schoolbook]
+      but each output limb is a 3-term [sum3_u128] (not 5-term
+      [sum5_u128]) and the partial products draw from a single
+      list [la]. *)
+  Lemma build_limb_list_square_u128_eq_schoolbook :
+    forall la,
+      limbs_bounded54 la ->
+      length la = 5%nat ->
+      build_limb_list_square_u128 la = mul_school_list la la.
+  Proof.
+    intros la Hba Hla.
+    pose proof (limbs_bounded54_nth la 0 Hba ltac:(lia)) as Ha0.
+    pose proof (limbs_bounded54_nth la 1 Hba ltac:(lia)) as Ha1.
+    pose proof (limbs_bounded54_nth la 2 Hba ltac:(lia)) as Ha2.
+    pose proof (limbs_bounded54_nth la 3 Hba ltac:(lia)) as Ha3.
+    pose proof (limbs_bounded54_nth la 4 Hba ltac:(lia)) as Ha4.
+    assert (Hpow108 : 2^108 < 2^128)
+      by (apply Z.pow_lt_mono_r; lia).
+    assert (Hpow113 : 2^113 < 2^128)
+      by (apply Z.pow_lt_mono_r; lia).
+    assert (Hmk2  : mask64 2  = 2 ) by reflexivity.
+    assert (Hmk19 : mask64 19 = 19) by reflexivity.
+    assert (Hmk38 : mask64 38 = 38) by reflexivity.
+    assert (Hb2  : 0 <= 2  < 2^7) by (cbv; intuition discriminate).
+    assert (Hb19 : 0 <= 19 < 2^7) by (cbv; intuition discriminate).
+    assert (Hb38 : 0 <= 38 < 2^7) by (cbv; intuition discriminate).
+    unfold build_limb_list_square_u128, mul_school_list.
+    apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|apply f_equal2; [|reflexivity]]]]].
+    - (* c_0 *)
+      rewrite (pp_diag_u128_eq         la 0 Hba Hla ltac:(lia)).
+      rewrite (pp_cross_scaled_u128_eq la 1 4 38 Hba Hla ltac:(lia) ltac:(lia) Hb38 Hmk38).
+      rewrite (pp_cross_scaled_u128_eq la 2 3 38 Hba Hla ltac:(lia) ltac:(lia) Hb38 Hmk38).
+      unfold mul_school_c0.
+      rewrite sum3_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+    - (* c_1 *)
+      rewrite (pp_cross_scaled_u128_eq la 0 1 2  Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_cross_scaled_u128_eq la 2 4 38 Hba Hla ltac:(lia) ltac:(lia) Hb38 Hmk38).
+      rewrite (pp_diag_scaled_u128_eq  la 3   19 Hba Hla ltac:(lia)             Hb19 Hmk19).
+      unfold mul_school_c1.
+      rewrite sum3_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+    - (* c_2 *)
+      rewrite (pp_cross_scaled_u128_eq la 0 2 2  Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_diag_u128_eq         la 1      Hba Hla ltac:(lia)).
+      rewrite (pp_cross_scaled_u128_eq la 3 4 38 Hba Hla ltac:(lia) ltac:(lia) Hb38 Hmk38).
+      unfold mul_school_c2.
+      rewrite sum3_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+    - (* c_3 *)
+      rewrite (pp_cross_scaled_u128_eq la 0 3 2  Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_cross_scaled_u128_eq la 1 2 2  Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_diag_scaled_u128_eq  la 4   19 Hba Hla ltac:(lia)             Hb19 Hmk19).
+      unfold mul_school_c3.
+      rewrite sum3_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+    - (* c_4 *)
+      rewrite (pp_cross_scaled_u128_eq la 0 4 2 Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_cross_scaled_u128_eq la 1 3 2 Hba Hla ltac:(lia) ltac:(lia) Hb2  Hmk2 ).
+      rewrite (pp_diag_u128_eq         la 2     Hba Hla ltac:(lia)).
+      unfold mul_school_c4.
+      rewrite sum3_u128_eq.
+      + ring.
+      + split; nia.
+      + split; nia.
+  Qed.
+
   (** Concrete u128 squaring discharge.  Symmetric mirror of
       [feval_build_u128_mul_correct_fiat] above; same structure,
-      half the partial products (10 instead of 25).  See sketch on
-      the Mul lemma. *)
+      half the partial products (10 instead of 25).
+      Composition: Step (A) rewrites the u128 layout to
+      [mul_school_list la la]; Step (B) — instantiated to [lb = la]
+      from [feval_fiat_schoolbook_eq_mul] — closes via the same
+      Solinas Z-mod witness. *)
   Lemma feval_build_u128_square_correct_fiat :
     forall la,
       limbs_bounded54 la ->
@@ -923,14 +1082,10 @@ Section FiatCryptoBridge.
       feval_fiat (build_limb_list_square_u128 la)
       = F.mul (feval_fiat la) (feval_fiat la).
   Proof.
-  Admitted. (* Phase 0e E4 follow-up:
-              fiat-crypto's Positional.eval_squaremod identification.
-              See sketch on feval_build_u128_mul_correct_fiat;
-              symmetric, half the partial-product count.  Local to
-              this scaffold — surfaces ONLY at the eventual
-              Fe25519FiatInstantiation.v callsite via
-              SquareDischarge.feval_build_u128_square_correct, never
-              as a global axiom. *)
+    intros la Hba Hla.
+    rewrite (build_limb_list_square_u128_eq_schoolbook la Hba Hla).
+    apply feval_fiat_schoolbook_eq_mul; assumption.
+  Qed.
 
 End FiatCryptoBridge.
 

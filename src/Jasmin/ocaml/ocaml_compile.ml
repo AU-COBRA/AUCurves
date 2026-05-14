@@ -109,6 +109,21 @@ let mk_var_i (name : string) : var_i =
 (** Counter used to gensym fresh stack-local names. *)
 let stack_local_counter : int ref = ref 0
 
+(** Per-function mapping from original stack-local base name (e.g. "h_full",
+    "a", "prefix") to its gensym'd [Stack Direct, Arr(U64,n)] var.  Populated
+    by [register_stack_locals] (called from [compile_funcs] BEFORE
+    [translate_cmd] runs on the function body) and cleared after each
+    function.  Consulted by [translate_cmd] and [translate_expr] when
+    translating [JCstore (JEvar X) off val] and [JEload (JEvar X) off] —
+    a hit substitutes [Lmem (Pvar X + off) = val] / [Pload (Pvar X + off)]
+    with [Laset (stk, off/8) = val] / [Pget (stk, off/8)].
+
+    Blocker B (2026-05-14): the materialized stack arrays from A114 are
+    otherwise dead-coded because the body's [JEvar X] references resolve
+    to Reg-u64 [Pvar X] (not the stack array).  This mapping reroutes
+    those references to the stack array. *)
+let current_stack_locals : (string, var * int) Hashtbl.t = Hashtbl.create 17
+
 (** Materialize a [Stack Direct] var holding an [Arr (U64, n)] (n 64-bit
     limbs). Gensyms a unique [__stk_<idx>_<base>] name so it cannot collide
     with the existing register-kind var bound to [base] elsewhere in the
@@ -128,6 +143,29 @@ let mk_stack_var (base : string) (n : int) : var =
   let v = V.mk fresh (Stack Direct) ty Location._dummy [] in
   Hashtbl.add var_tbl fresh v;
   v
+
+(** Pre-register a function's [jf_locals] (filtered to [JTstack n] entries)
+    so subsequent [translate_cmd] / [translate_expr] calls can rewrite
+    [Lmem]/[Pload] of a stack-local base to [Laset]/[Pget] against the
+    gensym'd stack-array var.  Returns the [(base, gensym_var, n)] list
+    so [wrap_func] can also prepend the [Cassgn (_, Parr_init U64 n)]
+    initializer using the SAME gensym var (rather than re-gensyming).
+
+    MUST be called before [translate_cmd f.jf_body], and [clear_stack_locals]
+    MUST be called after [wrap_func] for that function — otherwise the
+    mapping leaks across functions and a stub leaf with param name
+    accidentally matching a caller's stack-local would emit broken Laset
+    targeting a foreign array. *)
+let register_stack_locals (stack_locals : (string * int) list)
+    : (string * var * int) list =
+  Hashtbl.clear current_stack_locals;
+  Stdlib.List.map (fun (base, n) ->
+    let v = mk_stack_var base n in
+    Hashtbl.add current_stack_locals base (v, n);
+    (base, v, n)
+  ) stack_locals
+
+let clear_stack_locals () = Hashtbl.clear current_stack_locals
 
 (** Function name table: maps name strings to funnames. *)
 let fn_tbl : (string, CoreIdent.funname) Hashtbl.t = Hashtbl.create 97
@@ -233,15 +271,32 @@ let rec translate_expr (e : Bls12_jasmin_extracted.jasmin_expr) : expr =
     Papp2 (Operators.Oeq (Operators.Op_w U64), translate_expr a, translate_expr b)
   | Bls12_jasmin_extracted.JEload (base, off) ->
     let z_off = z_of_coq_z off in
-    let addr =
-      if Z.equal z_off Z.zero then
-        translate_expr base
-      else
-        Papp2 (Operators.Oadd (Operators.Op_w U64),
-               translate_expr base,
-               Pconst z_off)
+    (* Blocker B: if [base] is a [JEvar X] where X names a stack-local of
+       the current function, emit [Pget (stk, off/8)] instead of
+       [Pload (Pvar X + off)] — the stack array is the real storage. *)
+    let stack_local_match =
+      match base with
+      | Bls12_jasmin_extracted.JEvar s ->
+        Hashtbl.find_opt current_stack_locals (implode s)
+      | _ -> None
     in
-    Pload (Memory_model.Aligned, U64, addr)
+    (match stack_local_match with
+     | Some (stk_var, _n) ->
+       (* off is a byte offset; AAscale wants element index = off/8. *)
+       let idx = Z.div z_off (Z.of_int 8) in
+       let gv = { gv = Location.mk_loc Location._dummy stk_var;
+                  gs = Expr.Slocal } in
+       Pget (Memory_model.Aligned, Warray_.AAscale, U64, gv, Pconst idx)
+     | None ->
+       let addr =
+         if Z.equal z_off Z.zero then
+           translate_expr base
+         else
+           Papp2 (Operators.Oadd (Operators.Op_w U64),
+                  translate_expr base,
+                  Pconst z_off)
+       in
+       Pload (Memory_model.Aligned, U64, addr))
 
 (* ================================================================ *)
 (* Operation constructors                                            *)
@@ -403,50 +458,109 @@ let scan_multi_callsite_leaves
     if c >= 2 then Hashtbl.replace wrap_callee_counts name c
   ) counts
 
-(** Build the i-th per-callsite wrapper subroutine for leaf [fname].
-    Returns the wrapper function and registers its name in
-    [wrap_callsite_wrappers].  The wrapper has [arity] parameters,
-    all reg u64, and a single-instruction body that forwards to
-    [fname].  CC = [Subroutine] (call boundary preserved). *)
-let build_wrapper_func (fname : string) (i : int) (arity : int)
-    : (unit, X86_arch.extended_op Sopn.asm_op_t) func =
-  let wname = mk_wrapper_name fname i in
-  Hashtbl.replace wrap_callsite_wrappers wname ();
-  let wfn = mk_funname wname in
-  let leaf_fn = mk_funname fname in
-  let param_names =
-    let rec range j = if j >= arity then []
-      else mk_wrapper_param_name fname i j :: range (j + 1)
-    in range 0
+(** Clone the leaf function [leaf_jfunc]'s body with a parameter
+    rename map [param_map : leaf_param_name -> wrapper_param_name].
+    Returns a translated [x86_stmt] using the wrapper's params.
+
+    This is the heart of the Blocker C approach: instead of having
+    the wrapper [Ccall] back to a shared leaf (which would unify the
+    callee's params across all wrapper sibling subroutines and
+    re-introduce coalescing through the leaf's f_args), we INLINE
+    the leaf body at wrapper-construction time, substituting fresh
+    wrapper-param names for the original leaf-param names.  Each
+    wrapper is therefore a fully self-contained subroutine with no
+    further [Ccall] to the shared leaf — jasminc's RegAlloc unifies
+    each wrapper's params only with its OWN copy of the leaf body's
+    local variables. *)
+let clone_leaf_body_with_renames
+    (leaf_body : Bls12_jasmin_extracted.jasmin_cmd)
+    (param_map : (string * string) list)
+    (suffix : string) : Bls12_jasmin_extracted.jasmin_cmd =
+  (* Build name-rename closure: leaf params get mapped to wrapper
+     params; all other free variables (the leaf's internal locals)
+     get the suffix appended so different wrappers' cloned bodies
+     don't share local-variable identity. *)
+  let explode s =
+    let n = String.length s in
+    let rec aux i = if i >= n then [] else s.[i] :: aux (i + 1) in
+    aux 0
   in
-  let args = Stdlib.List.map mk_var param_names in
-  let tyin = Stdlib.List.map (fun _ -> Bty (U U64)) param_names in
-  let arg_exprs = Stdlib.List.map (fun v ->
-    Pvar { gv = Location.mk_loc Location._dummy v; gs = Expr.Slocal }
-  ) args in
-  (* Body: single Ccall to the underlying leaf.  Whether to attach
-     the [inline] annotation depends on the leaf's calling
-     convention — Internal leaves (stubs) need [inline] so the
-     Inlining pass expands the call into the wrapper body;
-     extern_leaf_tbl members ([Subroutine] CC) need NO inline so
-     the call survives to asm.                                   *)
-  let make_call =
-    if Hashtbl.mem extern_leaf_tbl fname then mk_instr
-    else if Hashtbl.mem callee_arity_tbl fname then mk_instr_inline
-    else mk_instr
+  let rename_name (name : char list) : char list =
+    let s = implode name in
+    match Stdlib.List.assoc_opt s param_map with
+    | Some replacement -> explode replacement
+    | None -> explode (s ^ suffix)
   in
-  let body = [make_call (Ccall ([], leaf_fn, arg_exprs))] in
-  { f_loc = Location._dummy;
-    f_annot = FInfo.f_annot_empty;
-    f_info = ();
-    f_cc = FInfo.Subroutine;
-    f_name = wfn;
-    f_tyin = tyin;
-    f_args = args;
-    f_body = body;
-    f_tyout = [];
-    f_ret_info = { FInfo.ret_annot = []; ret_loc = Location._dummy };
-    f_ret = [] }
+  let rec rename_expr (e : Bls12_jasmin_extracted.jasmin_expr)
+      : Bls12_jasmin_extracted.jasmin_expr =
+    match e with
+    | Bls12_jasmin_extracted.JEvar s ->
+      Bls12_jasmin_extracted.JEvar (rename_name s)
+    | Bls12_jasmin_extracted.JElit _ -> e
+    | Bls12_jasmin_extracted.JEadd (a, b) ->
+      Bls12_jasmin_extracted.JEadd (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEsub (a, b) ->
+      Bls12_jasmin_extracted.JEsub (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEmul (a, b) ->
+      Bls12_jasmin_extracted.JEmul (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEmulhuu (a, b) ->
+      Bls12_jasmin_extracted.JEmulhuu (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEand (a, b) ->
+      Bls12_jasmin_extracted.JEand (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEor (a, b) ->
+      Bls12_jasmin_extracted.JEor (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JExor (a, b) ->
+      Bls12_jasmin_extracted.JExor (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEshr (a, b) ->
+      Bls12_jasmin_extracted.JEshr (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEshl (a, b) ->
+      Bls12_jasmin_extracted.JEshl (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEltu (a, b) ->
+      Bls12_jasmin_extracted.JEltu (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEeq (a, b) ->
+      Bls12_jasmin_extracted.JEeq (rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JEload (base, off) ->
+      Bls12_jasmin_extracted.JEload (rename_expr base, off)
+  in
+  let rec rename_cmd (c : Bls12_jasmin_extracted.jasmin_cmd)
+      : Bls12_jasmin_extracted.jasmin_cmd =
+    match c with
+    | Bls12_jasmin_extracted.JCskip -> c
+    | Bls12_jasmin_extracted.JCseq (a, b) ->
+      Bls12_jasmin_extracted.JCseq (rename_cmd a, rename_cmd b)
+    | Bls12_jasmin_extracted.JCset (x, e) ->
+      Bls12_jasmin_extracted.JCset (rename_name x, rename_expr e)
+    | Bls12_jasmin_extracted.JCstore (base, off, v) ->
+      Bls12_jasmin_extracted.JCstore (rename_expr base, off, rename_expr v)
+    | Bls12_jasmin_extracted.JCcall (fnm, args) ->
+      (* Generally leaves don't call anything; but keep this
+         transparent if they do. *)
+      Bls12_jasmin_extracted.JCcall (fnm, Stdlib.List.map rename_expr args)
+    | Bls12_jasmin_extracted.JCif (e, ct, cf) ->
+      Bls12_jasmin_extracted.JCif (rename_expr e, rename_cmd ct, rename_cmd cf)
+    | Bls12_jasmin_extracted.JCwhile (e, body) ->
+      Bls12_jasmin_extracted.JCwhile (rename_expr e, rename_cmd body)
+    | Bls12_jasmin_extracted.JCdecl (x, ty, body) ->
+      Bls12_jasmin_extracted.JCdecl (rename_name x, ty, rename_cmd body)
+    | Bls12_jasmin_extracted.JCadd_flags (cf, result, a, b) ->
+      Bls12_jasmin_extracted.JCadd_flags
+        (rename_name cf, rename_name result, rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JCadcx (cf_out, result, a, b, cf_in) ->
+      Bls12_jasmin_extracted.JCadcx
+        (rename_name cf_out, rename_name result,
+         rename_expr a, rename_expr b, rename_name cf_in)
+    | Bls12_jasmin_extracted.JCmulx (hi, lo, a, b) ->
+      Bls12_jasmin_extracted.JCmulx
+        (rename_name hi, rename_name lo, rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JCsub_flags (cf, result, a, b) ->
+      Bls12_jasmin_extracted.JCsub_flags
+        (rename_name cf, rename_name result, rename_expr a, rename_expr b)
+    | Bls12_jasmin_extracted.JCsbb (cf_out, result, a, b, cf_in) ->
+      Bls12_jasmin_extracted.JCsbb
+        (rename_name cf_out, rename_name result,
+         rename_expr a, rename_expr b, rename_name cf_in)
+  in
+  rename_cmd leaf_body
 
 (** Reset the per-call-site occurrence counter.  MUST be called
     once before [translate_cmd] is run on each top-level callsite
@@ -469,27 +583,45 @@ let rec translate_cmd (c : Bls12_jasmin_extracted.jasmin_cmd) : x86_stmt =
 
   | Bls12_jasmin_extracted.JCstore (base, off, v) ->
     let z_off = z_of_coq_z off in
-    let addr =
-      if Z.equal z_off Z.zero then
-        translate_expr base
-      else
-        Papp2 (Operators.Oadd (Operators.Op_w U64),
-               translate_expr base,
-               Pconst z_off)
+    (* Blocker B: if [base] is a [JEvar X] where X names a stack-local of
+       the current function, emit [Laset (stk, off/8) = val] instead of
+       [Cassgn (Lmem (Pvar X + off)) = val]. *)
+    let stack_local_match =
+      match base with
+      | Bls12_jasmin_extracted.JEvar s ->
+        Hashtbl.find_opt current_stack_locals (implode s)
+      | _ -> None
     in
-    (* Hoist the store value into a fresh temp register so the RHS of
-       [Cassgn (Lmem ...)] is always a bare [Pvar]. Partial fix for
-       linearization issues; deeper nested-load patterns (clamp) still
-       hit jasminc limitations in asmgen. *)
+    (* Hoist the store value into a fresh temp register so the RHS is
+       always a bare [Pvar].  Required for [Lmem] (linearization needs
+       bare Pvar source); harmless for [Laset]. *)
     let tmp_id = let c = !mulx_rdx_counter in incr mulx_rdx_counter; c in
     let tmp_name = Printf.sprintf "__store_tmp_%d" tmp_id in
     let tmp_var = mk_var tmp_name in
     let tmp_var_i = Location.mk_loc Location._dummy tmp_var in
     let tmp_gvar = { gv = tmp_var_i; gs = Expr.Slocal } in
-    [mk_instr (Cassgn (Lvar tmp_var_i, Expr.AT_none, Bty (U U64),
-                       translate_expr v));
-     mk_instr (Cassgn (Lmem (Memory_model.Aligned, U64, Location._dummy, addr),
-                        Expr.AT_none, Bty (U U64), Pvar tmp_gvar))]
+    let copy_val = mk_instr (Cassgn (Lvar tmp_var_i, Expr.AT_none,
+                                     Bty (U U64), translate_expr v)) in
+    (match stack_local_match with
+     | Some (stk_var, _n) ->
+       let idx = Z.div z_off (Z.of_int 8) in
+       let stk_vi = Location.mk_loc Location._dummy stk_var in
+       let lv = Laset (Memory_model.Aligned, Warray_.AAscale, U64,
+                       stk_vi, Pconst idx) in
+       [copy_val;
+        mk_instr (Cassgn (lv, Expr.AT_none, Bty (U U64), Pvar tmp_gvar))]
+     | None ->
+       let addr =
+         if Z.equal z_off Z.zero then
+           translate_expr base
+         else
+           Papp2 (Operators.Oadd (Operators.Op_w U64),
+                  translate_expr base,
+                  Pconst z_off)
+       in
+       [copy_val;
+        mk_instr (Cassgn (Lmem (Memory_model.Aligned, U64, Location._dummy, addr),
+                          Expr.AT_none, Bty (U U64), Pvar tmp_gvar))])
 
   | Bls12_jasmin_extracted.JCcall (f, args) ->
     let fname = implode f in
@@ -1056,7 +1188,16 @@ let wrap_func ?(cc=FInfo.Export) ?(locals=[]) (name : string)
      the [translate_cmd] [JCdecl] case would otherwise erase. *)
   let stack_inits =
     Stdlib.List.map (fun (base, n) ->
-      let v = mk_stack_var base n in
+      (* Reuse the var [register_stack_locals] (if called) already
+         gensym'd and put into [current_stack_locals], so the body's
+         [Laset]/[Pget] (emitted by [translate_cmd]/[translate_expr])
+         and the init [Cassgn] reference the SAME var.  Otherwise
+         gensym a fresh one. *)
+      let v =
+        match Hashtbl.find_opt current_stack_locals base with
+        | Some (v', _) -> v'
+        | None -> mk_stack_var base n
+      in
       let lv = Lvar (Location.mk_loc Location._dummy v) in
       let ty = Arr (U64, n) in
       mk_instr (Cassgn (lv, Expr.AT_none, ty, Parr_init (U64, n)))
@@ -1091,6 +1232,61 @@ let wrap_func ?(cc=FInfo.Export) ?(locals=[]) (name : string)
 (** Build a prog from a list of funcs. No global declarations. *)
 let build_prog funcs : (unit, X86_arch.extended_op Sopn.asm_op_t) prog =
   ([], funcs)
+
+(** Blocker C: build the i-th per-callsite wrapper subroutine for
+    leaf described by [leaf_jfunc].  The wrapper has the same
+    arity and parameter types as the leaf, but with fresh
+    parameter names [F__cs{i}_p{j}].  The wrapper's body is a
+    CLONE of the leaf's body with parameters substituted and
+    internal locals suffixed with __cs{i}__ to make them
+    per-wrapper-unique.  CC = [Subroutine] (call boundary
+    preserved by jasminc's inliner).  No further [Ccall F(...)]
+    survives in the wrapper, so jasminc's RegAlloc cannot
+    coalesce the leaf's f_args across distinct wrapper sibling
+    subroutines.
+
+    Placed AFTER [wrap_func] and [translate_cmd] so it can
+    consume them — defining it among the wrapper-bookkeeping
+    helpers (alongside [build_wrapper_func]'s earlier
+    declarations) would cause an OCaml forward-reference. *)
+let build_wrapper_func
+    (leaf_jfunc : Bls12_jasmin_extracted.jasmin_func) (i : int)
+    : (unit, X86_arch.extended_op Sopn.asm_op_t) func =
+  let fname = implode leaf_jfunc.Bls12_jasmin_extracted.jf_name in
+  let leaf_param_names =
+    Stdlib.List.map (fun (n, _ty) -> implode n)
+      leaf_jfunc.Bls12_jasmin_extracted.jf_params
+  in
+  let arity = Stdlib.List.length leaf_param_names in
+  let wname = mk_wrapper_name fname i in
+  Hashtbl.replace wrap_callsite_wrappers wname ();
+  let wrapper_param_names =
+    let rec range j = if j >= arity then []
+      else mk_wrapper_param_name fname i j :: range (j + 1)
+    in range 0
+  in
+  (* Build parameter rename map: leaf-param name -> wrapper-param name. *)
+  let param_map = Stdlib.List.combine leaf_param_names wrapper_param_names in
+  let suffix = Printf.sprintf "__cs%d__" i in
+  let cloned_body =
+    clone_leaf_body_with_renames
+      leaf_jfunc.Bls12_jasmin_extracted.jf_body param_map suffix
+  in
+  (* Reset wrapper-occurrence counter before translating the
+     cloned body: the body should NOT itself trigger further
+     wrapper-rewrite of nested JCcalls (these would be calls
+     INSIDE the leaf's body, not callsites of the leaf itself). *)
+  let saved =
+    Hashtbl.fold (fun k v acc -> (k, v) :: acc) wrap_callee_occurrence []
+  in
+  reset_wrapper_occurrence ();
+  let body : x86_stmt = translate_cmd cloned_body in
+  Hashtbl.clear wrap_callee_occurrence;
+  Stdlib.List.iter (fun (k, v) ->
+    Hashtbl.replace wrap_callee_occurrence k v
+  ) saved;
+  wrap_func ~cc:FInfo.Subroutine ~locals:[]
+    wname wrapper_param_names body
 
 (* ================================================================ *)
 (* Main: translate all functions, compile, emit assembly             *)
@@ -1394,7 +1590,13 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
       let cc =
         if stub then
           (* A33: extern leaves use Subroutine so jasminc keeps the call.
-             Other stubs use Internal so inlining DCEs them. *)
+             Other stubs use Internal so inlining DCEs them.
+
+             Blocker C: when this stub is the target of per-callsite
+             wrappers (in [wrap_callee_counts]), the wrappers carry
+             a CLONE of its body so the leaf itself is no longer
+             called from any caller.  [Internal] CC + the
+             RemoveUnusedFunction pass DCEs it away in that case. *)
           if Hashtbl.mem extern_leaf_tbl name then FInfo.Subroutine
           else FInfo.Internal
         else FInfo.Export
@@ -1429,19 +1631,23 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
      leaves in [prog_funcs] so jasminc's inliner (foldr) processes
      them after the leaves are "available", letting Internal-CC
      stub bodies inline into each wrapper. *)
+  (* Build a name -> jasmin_func lookup so we can clone each leaf's
+     body into its per-callsite wrappers. *)
+  let leaf_lookup : (string, Bls12_jasmin_extracted.jasmin_func) Hashtbl.t =
+    Hashtbl.create 17
+  in
+  Stdlib.List.iter (fun (f : Bls12_jasmin_extracted.jasmin_func) ->
+    Hashtbl.replace leaf_lookup (implode f.jf_name) f
+  ) funcs_to_compile;
   let wrapper_funcs : (unit, X86_arch.extended_op Sopn.asm_op_t) func list =
     Hashtbl.fold (fun fname n acc ->
-      let arity =
-        try Hashtbl.find callee_arity_tbl fname
-        with Not_found -> 0
-      in
-      if arity = 0 then acc
-      else begin
+      match Hashtbl.find_opt leaf_lookup fname with
+      | None -> acc
+      | Some leaf_jfunc ->
         let rec build i acc =
           if i >= n then acc
-          else build (i + 1) (build_wrapper_func fname i arity :: acc)
+          else build (i + 1) (build_wrapper_func leaf_jfunc i :: acc)
         in build 0 acc
-      end
     ) wrap_callee_counts []
   in
   if verbose then

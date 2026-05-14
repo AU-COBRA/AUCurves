@@ -17,6 +17,16 @@
 
 let () =
   let outfile, func_filter, verbose = Ocaml_compile.parse_args () in
-  let funcs : Bls12_jasmin_extracted.jasmin_func list =
+  (* Hoisted sign body (Rocq-side [hoist_stack_decls_func] pass — A105). *)
+  let sign_funcs : Bls12_jasmin_extracted.jasmin_func list =
     Obj.magic Ed25519_sign_hoist_jasmin_extracted.ed25519_sign_hoist_all_jasmin in
+  (* FFI leaf stubs (same set the [ed25519_sign_stubbed] driver loads).
+     Without these, jasminc's MakeReferenceArguments pass fails with
+     "unknown function" — every JCcall in the sign body needs a callee
+     declaration in the program. *)
+  let stub_funcs : Bls12_jasmin_extracted.jasmin_func list =
+    Obj.magic Ed25519_sign_stubs_jasmin_extracted.ed25519_sign_stubs in
+  let funcs = sign_funcs @ stub_funcs in
+  Printf.eprintf "[hoist_driver] sign funcs: %d, stub funcs: %d, total: %d\n%!"
+    (List.length sign_funcs) (List.length stub_funcs) (List.length funcs);
   Ocaml_compile.compile_funcs ~outfile ~func_filter ~verbose ~funcs

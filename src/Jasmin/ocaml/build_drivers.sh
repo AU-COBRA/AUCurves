@@ -99,7 +99,13 @@ build_one () {
       cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
       cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
     fi
-    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml" "$EXTRACTED_DIR/$extracted_ml")
+    # Blocker B: load FFI leaf stubs alongside the hoisted sign body so
+    # jasminc's MakeReferenceArguments pass can resolve every JCcall.
+    # Order: bls12 (source type) first, then sign-hoist extraction, then
+    # the stubs extraction.
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+          "$EXTRACTED_DIR/$extracted_ml"
+          "$EXTRACTED_DIR/ed25519_sign_stubs_jasmin_extracted.ml")
   fi
 
   # Stage all .ml/.mli into a temp dir so ocamlfind can compile .mli first.

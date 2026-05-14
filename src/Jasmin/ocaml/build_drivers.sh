@@ -51,6 +51,17 @@ build_one () {
       # Stack-kind, Arr(U64,n)-typed Jasmin var.
       extracted_ml="ed25519_sign_hoist_jasmin_extracted.ml"
       ;;
+    lizard_inject)
+      # Lizard inject (16B plaintext -> 32B Ristretto): structurally
+      # simpler than Ed25519 sign (2 stack locals, 3 FFI leaves).
+      # Empirical test that the Rocq -> Jasmin Bridge produces
+      # working .jazz for a smaller Signal protocol.
+      extracted_ml="lizard_inject_jasmin_extracted.ml"
+      ;;
+    lizard_extract)
+      # Lizard extract (32B Ristretto -> 16B plaintext): inverse-direction.
+      extracted_ml="lizard_extract_jasmin_extracted.ml"
+      ;;
     *) echo "unknown curve: $curve"; exit 2 ;;
   esac
 
@@ -106,6 +117,17 @@ build_one () {
     deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
           "$EXTRACTED_DIR/$extracted_ml"
           "$EXTRACTED_DIR/ed25519_sign_stubs_jasmin_extracted.ml")
+  fi
+  if [ "$curve" = "lizard_inject" ] || [ "$curve" = "lizard_extract" ]; then
+    # Same BLS12 alias trick as ed25519_sign for Obj.magic source-type.
+    if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
+      cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+      cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
+    fi
+    # FFI leaf stubs from Lizard_StubLeaves.v.
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+          "$EXTRACTED_DIR/$extracted_ml"
+          "$EXTRACTED_DIR/lizard_stubs_jasmin_extracted.ml")
   fi
 
   # Stage all .ml/.mli into a temp dir so ocamlfind can compile .mli first.

@@ -1708,12 +1708,61 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
      these to real MOV instructions between registers and stack slots.
      OptIn strategy: only spill variables explicitly annotated [#spill].
      We don't use OptOut because it can interfere with flag variables. *)
-  (* AutoSpill pass: insert spill/unspill pseudo-ops to break long live ranges *)
+  (* AutoSpill pass: insert spill/unspill pseudo-ops to break long live ranges.
+
+     Blocker D investigation (A117, 2026-05-14): the 23-instr [ed25519_sign]
+     body has ~20 simultaneously-live Reg variables crossing the 9
+     callsite-wrapper [Ccall]s — see A117 design notes below.  RegAllocation
+     fails with "no more free register" (only 15 GPRs available).
+
+     AutoSpill is intentionally LEFT DISABLED here.  Reasoning:
+
+       - [OptOut] would spill every Reg variable in functions NOT annotated
+         [nospill].  [ed25519_sign] is currently annotated [nospill] (line
+         ~1213 below).  Removing that annotation lets [OptOut] try to spill
+         the export's locals, but it then trips [LowerSpill] with:
+           "The variable h_full.152 needs to be spilled before"
+         The root cause: [translate_expr (JEvar "h_full")] creates a
+         phantom Reg-kind var that is READ (passed as a [Ccall] arg) but
+         never WRITTEN in [ed25519_sign]'s body.  The materialized stack
+         array [__stk_N_h_full] is a SEPARATE var that is only referenced
+         in the [Cassgn _ (Parr_init U64 n)] init at the function entry,
+         not by the body's [Pvar h_full] arg pass.  AutoSpill assumes every
+         Reg var is either a function arg (spilled at entry) or assigned
+         before being read; the phantom Reg vars satisfy neither.
+
+       - [OptIn] requires explicit [#[spill]] annotations on each
+         variable, which the bedrock2-extracted bodies don't carry.
+
+     Path-out options (all >100 LoC, not landed in this commit):
+       (1) Rework [translate_expr (JEvar s)] to consult [current_stack_locals]
+           and redirect to the stack array.  Needs a [Reg Pointer]-kind
+           alias declared at the function entry that points to the stack
+           array, plus type changes in the wrapper subroutines' params
+           (currently typed [Reg u64]).  Roughly a 200-LoC OCaml change.
+       (2) Convert ALL stub leaves to [Subroutine] cc and generate
+           per-callsite wrappers for every one (not just multi-callsite).
+           Today's [scan_multi_callsite_leaves] handles count>=2 only;
+           extending to count>=1 produces wrappers for clamp_64 and all 8
+           memmove leaves.  This would break the per-Ccall live ranges by
+           giving each wrapper distinct param symbols.  Probably 50-80
+           LoC, but the wrappers themselves still need their args allocated
+           inside [ed25519_sign].
+       (3) Manual outlining: split [ed25519_sign] into 3-4 helper
+           subroutines (e.g. seed-hash, clamp+nonce-build, ml+final-hash,
+           compress+output).  This is the cleanest reduction of per-function
+           live sets but the cut points are non-obvious without rerunning
+           liveness analysis and the cross-helper state passing needs
+           stack-struct args.
+
+     For now AutoSpill stays off and the regalloc failure stays as the
+     gate.  Blocker D remains open; this commit documents what was tried
+     and what didn't work. *)
   let use_autospill = false in
   let prog =
     if use_autospill then begin
-      Printf.eprintf "[compile_direct] running AutoSpill (OptIn strategy)...\n%!";
-      let prog' = AutoSpill.doit AutoSpill.OptIn prog in
+      Printf.eprintf "[compile_direct] running AutoSpill (OptOut strategy)...\n%!";
+      let prog' = AutoSpill.doit AutoSpill.OptOut prog in
       Printf.eprintf "[compile_direct] AutoSpill done\n%!";
       prog'
     end else

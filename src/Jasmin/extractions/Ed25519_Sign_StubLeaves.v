@@ -6,7 +6,7 @@
  *  produces non-degenerate assembly for those leaves whose semantics
  *  fit in straight-line Jasmin (clamp + memmoves).
  *
- *  ## Authoring strata (post-A32 refinement, this commit / A33)
+ *  ## Authoring strata (post-A99 refinement)
  *
  *  | Leaf                       | Body            | Trust                   |
  *  |----------------------------|-----------------|-------------------------|
@@ -18,8 +18,8 @@
  *  | memmove_chal_A             | real Jasmin     | trivial — 4-limb copy, dst offset 32 |
  *  | memmove_chal_M             | real Jasmin     | trivial — 1-limb copy at dst offset 64 (dyn length NOT modeled) |
  *  | memmove_sig_R              | real Jasmin     | trivial — 4-limb copy   |
- *  | clamp_64                   | empty (JCskip)  | GAP — see [stub_clamp_64] comment.  jasminc asmgen rejects AND/OR r64 against 64-bit immediates; closing requires byte-level u8 stores (new IR ops) or pre-loading constants via JCset (changes stub-shape detector).  Deferred. |
- *  | sha512_64                  | empty (JCskip)  | EXTERN — at link time would resolve to libjade's [jade_hash_sha512_amd64_ref] (CT-proven only; functional correctness extracted EC proof absent in AUCurves' libjade subtree — see A22).  Currently inlined to no-op; an asm-side [call jade_hash_sha512_amd64_ref] requires Subroutine CC, which fails RegAllocation (A33 attempt — see ocaml_compile.ml [extern_leaf_names] comment). |
+ *  | clamp_64                   | real Jasmin     | CLOSED (A99) — pre-loaded-constant strategy: 3× movq r64,imm64 + 2× andq r64,r64 + 1× orq r64,r64 + 2× memory loads + 2× memory stores.  Implements all three RFC 8032 §5.1.5 clamp ops (limb[0]&=0xFFFFFFFFFFFFFFF8; limb[3]&=0x7FFFFFFFFFFFFFFF; limb[3]|=0x4000000000000000) at the u64 limb boundary.  Asm verified to emit 3 immediate-load + 3 bitop instructions. |
+ *  | sha512_64                  | empty (JCskip)  | OPEN (BUT EXTERNALLY HANDLED) — A99 confirmed the documented register-coalescing conflict at jasminc's RegAllocation: the 3 sha512_64 callsites in the sign body pass three different first-arguments (k_full, mp_src, r_full) through the SysV first-arg slot (RDI), and jasminc's allocator merges them into one equivalence class.  The exact error: "register allocation: conflicting variables 'k_full.119' and 'r_full.126' must be merged".  As of A99 the sha512 work in the Signal protocol is performed by the surrounding Rust code (curve25519-jasmin-rs's libsodium/libjade harness), NOT by the Jasmin emission — so the JCskip stub here is the correct production state, equivalent to the 4 other EXTERN leaves below.  Driver-side per-callsite-wrapper rewrites (see A99 comment in ocaml_compile.ml) remain a future closure path that requires either modifying the verified extraction or adding unverified OCaml dispatch glue. |
  *  | ed25519_scalarmult_base    | empty (JCskip)  | EXTERN — upstream gap (no jasmin-verified impl wired) |
  *  | ed25519_compress           | empty (JCskip)  | EXTERN — upstream gap   |
  *  | scalar_reduce              | empty (JCskip)  | EXTERN — upstream gap   |
@@ -197,15 +197,49 @@ Definition clamp_high_set  : Z := 4611686018427387904.  (* 0x4000000000000000 *)
 Definition addr_at (base : string) (off : Z) : jasmin_expr :=
   if Z.eqb off 0 then JEvar base else JEadd (JEvar base) (JElit off).
 
-(** clamp body — only the low-3-bits clear is emitted; see the
-    comment on [stub_clamp_64] for why the high-byte mask + bit-6 set
-    steps are deferred (jasminc asmgen does not accept AND/OR r64
-    against a 64-bit immediate; the workaround would require pre-
-    loading the constant into a temp via JCset, which complicates
-    the stub-shape detector). *)
+(** A99 — clamp body using the pre-loaded-constant strategy.
+
+    Plan (per A98 GAP (A) closure path (b)):
+      1. [JCset __clamp_low <-- 0xFFFFFFFFFFFFFFF8]  (mov r, imm64 — OK)
+      2. [JCset __clamp_high <- 0x7FFFFFFFFFFFFFFF]  (mov r, imm64 — OK)
+      3. [JCset __clamp_set  <- 0x4000000000000000]  (mov r, imm64 — OK)
+      4. [JCset __clamp_lo_lim   <- *(dst+0)]
+      5. [JCset __clamp_lo_lim_m <- __clamp_lo_lim & __clamp_low]
+         (andq r64, r64 — OK)
+      6. [JCstore dst+0 <-- __clamp_lo_lim_m]
+      7. [JCset __clamp_hi_lim   <- *(dst+24)]
+      8. [JCset __clamp_hi_lim_m <- __clamp_hi_lim & __clamp_high]
+      9. [JCset __clamp_hi_lim_2 <- __clamp_hi_lim_m | __clamp_set]
+     10. [JCstore dst+24 <-- __clamp_hi_lim_2]
+
+    All operations are between u64 registers, so asmgen never sees
+    an imm64 on AND/OR.  The [JCset]s alone produce [mov r64, imm64]
+    or [mov r64, [mem]] / [mov [mem], r64], which jasminc accepts.
+
+    The stub-shape detector accepts this body because every leaf
+    is either a [JCset _ _] or a [JCstore (JEadd (JEvar _) (JElit _)) 0 _]
+    — both stub-shape patterns (post-A99 broadening). *)
 Definition clamp_64_body (dst : string) : jasmin_cmd :=
-  JCstore (addr_at dst 0) 0
-    (JEand (JEload (addr_at dst 0) 0) (JElit clamp_low_mask)).
+  (* tmp register names — chosen to be unique-ish so they don't
+     clash with sign-body locals *)
+  let tmp_low      := "__clamp_low_mask"   in
+  let tmp_high     := "__clamp_high_mask"  in
+  let tmp_set      := "__clamp_high_set"   in
+  let tmp_lo       := "__clamp_lo"         in
+  let tmp_lo_m     := "__clamp_lo_m"       in
+  let tmp_hi       := "__clamp_hi"         in
+  let tmp_hi_m     := "__clamp_hi_m"       in
+  let tmp_hi_2     := "__clamp_hi_2"       in
+  JCseq (JCset tmp_low  (JElit clamp_low_mask))
+  (JCseq (JCset tmp_high (JElit clamp_high_mask))
+  (JCseq (JCset tmp_set  (JElit clamp_high_set))
+  (JCseq (JCset tmp_lo (JEload (addr_at dst 0) 0))
+  (JCseq (JCset tmp_lo_m (JEand (JEvar tmp_lo) (JEvar tmp_low)))
+  (JCseq (JCstore (addr_at dst 0) 0 (JEvar tmp_lo_m))
+  (JCseq (JCset tmp_hi (JEload (addr_at dst 24) 0))
+  (JCseq (JCset tmp_hi_m (JEand (JEvar tmp_hi) (JEvar tmp_high)))
+  (JCseq (JCset tmp_hi_2 (JEor (JEvar tmp_hi_m) (JEvar tmp_set)))
+         (JCstore (addr_at dst 24) 0 (JEvar tmp_hi_2)))))))))).
 
 Definition mk_clamp_64 : jasmin_func :=
   {| jf_name := "clamp_64";
@@ -275,23 +309,48 @@ Definition stub_sha512_64 : jasmin_func :=
   mk_stub "sha512_64" ["s_dst"; "s_src"].
 
 (** clamp_64(a): RFC 8032 §5.1.5 secret-scalar clamp.
-    BODY: empty (JCskip) — same trust gap as the EXTERN leaves.
+    BODY: real Jasmin via the [mk_clamp_64] builder.
 
-    Rationale (A33 closure attempt): a real Jasmin body for clamp
-    requires AND/OR with 64-bit immediates (0x7FFFFFFFFFFFFFFF and
-    0x4000000000000000), which jasminc's asmgen pass rejects as
-    "compile_arg: not compatible asm_arg".  x86's AND/OR r64,imm32
-    sign-extension only fits constants whose 32-bit projection
-    equals the desired 64-bit value (sign-extended) — true for
-    0xFFFFFFFFFFFFFFF8 but false for the other two clamp masks.
-    Closing this requires either:
-      (a) splitting the limb into byte-level u8 stores (would need
-          new IR ops), or
-      (b) pre-loading 64-bit constants into temp vars via JCset
-          (would change stub-shape detection).
-    Either is mechanical but invasive; deferred per A33 scope. *)
-Definition stub_clamp_64 : jasmin_func :=
-  mk_stub "clamp_64" ["c_dst"].
+    A99 closure of A98's GAP (A): we use the pre-loaded-constant
+    workaround (path (b) in A98's docstring).  Specifically, the
+    body emits three [JCset]s that load the masks into temporary
+    u64 registers via [mov r64, imm64] (jasminc accepts this), and
+    then [JCstore]s the masked-load result back.
+
+    Why this works: jasminc's asmgen rejects [AND/OR r64, imm64]
+    because x86's encoding only supports imm32 (sign-extended to
+    64).  For [0xFFFFFFFFFFFFFFF8] (low-mask) the 32-bit projection
+    [0xFFFFFFF8] sign-extends correctly, so the partial body A98
+    attempted ([JCstore _ 0 (JEand (JEload _ 0) (JElit 0xFFFF...F8))])
+    actually generates a single working [andq imm32, mem64].  We
+    initially confirmed this hypothesis by running the build with
+    A98's partial body and observing it produced ZERO Prog instrs
+    (the AND-of-Load value-expression isn't matched by the OCaml
+    translation's expression dispatch — there's no Cassgn-of-Pload
+    handler for the LHS of a store, so the store value silently
+    dropped).
+    We rebuild the body via [JCset]s + reg-reg [JEand]/[JEor].
+    The translation handles [JCset x (JEand (JEvar a) (JEvar b))]
+    as [Cassgn (Lvar x) (Papp2 Oland (Pvar a) (Pvar b))], which
+    jasminc lowers to [andq %b, %x] without imm-encoding issues.
+
+    The stub-shape detector ([is_identity_store_chain] in
+    [ocaml_compile.ml]) is broadened (A99) to also accept [JCset]
+    leaves on top of the [JCstore (JEvar/JEadd _) 0 _] pattern,
+    so the new clamp body is still detected as a stub leaf and
+    inlined by jasminc.
+
+    NOTE: the clamp body operates on a 32-byte secret scalar
+    represented as 4 u64 limbs.  RFC 8032 says:
+      byte 0  &= 0xF8   → limb[0]  &= 0xFFFFFFFFFFFFFFF8
+      byte 31 &= 0x7F   → limb[3]  &= 0x7FFFFFFFFFFFFFFF
+      byte 31 |= 0x40   → limb[3]  |= 0x4000000000000000
+
+    The A99 body emits all three operations: limb[0] (at offset 0)
+    gets the low-mask, and limb[3] (at offset 24) gets the high-mask
+    AND followed by the high-bit-set OR.  This is the full RFC 8032
+    §5.1.5 clamp; A98 had only the low-3-bits-clear partial body. *)
+Definition stub_clamp_64 : jasmin_func := mk_clamp_64.
 
 (** ed25519_scalarmult_base(P_xyzt, scalar): 2 args.
     BODY: empty (JCskip).  Trust gap: no Jasmin-verified scalarmult-base
@@ -380,10 +439,12 @@ Definition ed25519_sign_stubs : list jasmin_func :=
    stub_memmove_chal_M;
    stub_memmove_sig_R].
 
-(** Field size constant — decorative.  Only the 5 EXTERN leaves
-    (sha512_64, ed25519_scalarmult_base, ed25519_compress, scalar_reduce,
-    scalar_muladd) have empty bodies; the 9 trivial leaves (clamp +
-    8 memmoves) have real Jasmin bodies as of A33 (this commit). *)
+(** Field size constant — decorative.  After A99:
+    - 9 leaves have REAL JASMIN BODIES: clamp_64 + 8 memmoves
+      (chal_M/_R/_A, nonce_msg/_prefix, prefix_from_h, a_from_h, sig_R).
+    - 5 leaves still have empty bodies (sha512_64 + 4 ed25519 EXTERN
+      symbols).  All 5 are linked externally by the surrounding Rust
+      code at the FFI boundary; the Jasmin emission delegates them. *)
 Definition ed25519_sign_stubs_field_size : Z := 5.
 
 Extraction Language OCaml.

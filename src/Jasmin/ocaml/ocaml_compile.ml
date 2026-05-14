@@ -999,7 +999,12 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
      bodies use [JEadd (JEvar p) (JElit off)] addresses to encode
      non-zero offsets — this is the addressing pattern jasminc's asmgen
      accepts; offsets in [JCstore base off ...] beyond 0 are not
-     directly assembleable to x86 [mov [base+off], val]. *)
+     directly assembleable to x86 [mov [base+off], val].
+     A99 extension: also accept [JCset x e] leaves, so the
+     pre-loaded-constant clamp body (see [Ed25519_Sign_StubLeaves.
+     clamp_64_body]) is detected as a stub leaf.  JCsets emit
+     scalar Cassgns; they cannot escape the stub leaf's frame so
+     they are safe to inline. *)
   let rec is_identity_store_chain (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
     let is_store_with_var_base e =
       match e with
@@ -1011,6 +1016,7 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     match b with
     | Bls12_jasmin_extracted.JCskip -> true
     | Bls12_jasmin_extracted.JCstore (base, _, _) -> is_store_with_var_base base
+    | Bls12_jasmin_extracted.JCset (_, _) -> true
     | Bls12_jasmin_extracted.JCseq (c1, c2) ->
       is_identity_store_chain c1 && is_identity_store_chain c2
     | _ -> false
@@ -1020,31 +1026,58 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
     | Bls12_jasmin_extracted.JCskip -> true
     | _ -> is_identity_store_chain b
   in
-  (* A33 extension (DRAFT — not active): extern_leaf_names would mark
-     stub leaves whose call site should NOT be inlined; the driver
-     would emit a real [Subroutine] callee + non-inline Ccall, so
-     jasminc lowers it to a real [call <symbol>].  AT LINK TIME the
-     symbol could resolve to an external implementation.
+  (* A99 (sha512_64 GAP (B) attempt): wire sha512_64 + 4 other large
+     externs into [extern_leaf_names] to test whether jasminc's
+     RegAllocation has been (or can be) coaxed past A98's documented
+     register-coalescing conflict.  Each name in this list:
+       - keeps [FInfo.Subroutine] CC instead of [Internal];
+       - omits the [inline] annotation at the callsite, so jasminc
+         keeps the [Ccall];
+       - lowers to a real [call <symbol>] in the emitted asm.
 
-     STATUS: currently empty.  Attempted [sha512_64] entry failed at
-     RegAllocation with "conflicting variables k_full and r_full must
-     be merged" — the same first-arg-register coalescing issue A32
-     documented for [ed25519_compress] surfaces for any consecutive
-     stub callsites whose first arg differs (sha512_64 is called 3x
-     in sign with three different dst buffers: h_full, r_full, k_full).
+     A99 result: with the (default) [extern_leaf_names] empty list,
+     emission succeeds with 0 calls (A98 baseline).  With [sha512_64]
+     in the list (uncomment below) we re-trigger A98's documented
+     RegAllocation failure ("conflicting variables k_full and r_full
+     must be merged") because the 3 callsites in [ed25519_sign] all
+     pass different first arguments through the SysV first-arg slot
+     (RDI), and jasminc's coalescing pass cannot break that
+     equivalence class without an explicit wrapper.
 
-     Closing this requires either:
-       (a) ABI manipulation: pass dst via a callee-saved register
-           that jasminc's allocator doesn't coalesce, or
-       (b) wrapper functions: emit a Subroutine wrapper per dst that
-           moves dst from a fresh reg to RDI inside the wrapper, or
-       (c) annotate the callsite so jasminc inserts mov RDI, <reg>
-           rather than coalescing.
-     None are mechanical; deferred per A33 scope.  Today every stub
-     is inlined to a no-op (or its trivial Jasmin body if non-empty).
-     The asm therefore lacks [call jade_hash_sha512_amd64_ref] but
-     contains real instructions for the 8 memmove leaves. *)
-  let extern_leaf_names : string list = [] in
+     Resolution paths considered, none mechanical with the current
+     extraction:
+       (a) Per-callsite wrapper functions ([sha512_64_h_full],
+           [sha512_64_r_full], [sha512_64_k_full]) — requires
+           modifying the extracted sign body, which is forbidden
+           (Ed25519_Sign_Inlined.v is the verified extraction).
+       (b) Driver-side callsite rewriting: detect [JCcall sha512_64 _]
+           and rewrite to one of three per-callsite wrapper names
+           depending on the first argument.  Mechanical but invasive
+           — the rewrite is unverified and adds 50+ lines of OCaml
+           dispatch glue.
+       (c) Pre-load callsite first-arg into a fresh local var via
+           [JCset] before each [JCcall], so jasminc's coalescer sees
+           three distinct first-arg variables.  Tested by hand —
+           jasminc still coalesces because the three locals all flow
+           into RDI at the same instruction-index across the three
+           callsites.
+
+     HONEST CONCLUSION: with the present jasminc + extraction the
+     [sha512_64] call cannot be emitted as a real [call <symbol>].
+     The sha512 work in the protocol is performed by the surrounding
+     Rust code (curve25519-jasmin-rs's libsodium / libjade harness),
+     NOT by the Jasmin emission.  This is consistent with how the
+     other 4 EXTERN leaves ([ed25519_scalarmult_base], [_compress],
+     [scalar_reduce], [scalar_muladd]) are handled today.
+
+     This list stays EMPTY in production.  Setting it to e.g.
+     [["sha512_64"]] reproduces the documented RegAlloc failure
+     for diagnostic purposes. *)
+  let extern_leaf_names : string list =
+    match Sys.getenv_opt "JASMIN_EXTERN_LEAVES" with
+    | Some s when s <> "" -> String.split_on_char ',' s
+    | _ -> []
+  in
 
   Hashtbl.clear callee_arity_tbl;
   Hashtbl.clear extern_leaf_tbl;

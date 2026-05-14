@@ -212,6 +212,16 @@ Section Fe25519CopyCorrect.
     - apply IHi; lia.
   Qed.
 
+  (** Block the Qed kernel from re-elaborating the nested [list_set]
+      cascade.  Defense-in-depth fix matching A73's
+      Fe25519CarryCorrect/Scmula24Correct.  All proofs below access
+      [list_set] only through the lemmas above; the kernel never needs
+      to unfold [list_set] for conversion.
+
+      See reference_qed_kernel_check_blowup_dealloc.md for the pattern. *)
+  Local Opaque list_set.
+  Local Strategy 0 [list_set].
+
   (** The "5-limb copy result" predicate. *)
   Definition is_copy5 (out la : list Z) : Prop :=
     length out = 5%nat

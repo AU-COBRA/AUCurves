@@ -381,6 +381,16 @@ Section Fe25519SquareCorrect.
     - apply IHi; lia.
   Qed.
 
+  (** Block the Qed kernel from re-elaborating the nested [list_set]
+      cascade in [is_square5].  Defense-in-depth fix matching A73's
+      Fe25519CarryCorrect/Scmula24Correct.  All proofs below access
+      [list_set] only through the lemmas above; the kernel never needs
+      to unfold [list_set] for conversion.
+
+      See reference_qed_kernel_check_blowup_dealloc.md for the pattern. *)
+  Local Opaque list_set.
+  Local Strategy 0 [list_set].
+
   (** The "5-limb square result" predicate: a list [out] of length 5
       whose [i]-th limb is the [sum3] of three partial products
       computed from [la], matching the per-limb formula in

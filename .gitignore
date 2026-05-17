@@ -65,6 +65,10 @@ bls12_381_safe_inner.rs
 bls12_safe_tower.rs
 bls12_safe_tower_fixed.rs
 
+# Generated OCaml extraction outputs (top-level — src/Bedrock/*.ml is covered above)
+/*_extracted.ml
+/*_extracted.mli
+
 # BLS12-381 safe-rust crate: generated files and build artifacts
 bls12-381-safe-rust/generated/
 bls12-381-safe-rust/Cargo.lock
@@ -91,6 +95,7 @@ scripts/*.log
 _CoqProject.bak
 _build/
 .claude/
+AGENTS.md
 main.fdb_latexmk
 texput.*
 

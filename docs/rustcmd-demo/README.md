@@ -20,7 +20,9 @@ src/Bedrock/ExtractEd25519CmdRs.v
   └─ Redirect "ed25519_verify_rs" Eval vm_compute in ed25519_verify_rs_string.
 
   →  _build/default/ed25519_sign_rs.out      (3725 bytes)
-  →  _build/default/ed25519_verify_rs.out    (2997 bytes)
+  →  _build/default/ed25519_verify_rs.out    (3574 bytes; grew by ~580 B
+                                              after the 2026-05-12
+                                              result_out plumbing)
 
   (Strip wrapper + unescape "" → " yields the files in this directory.)
 ```
@@ -30,7 +32,7 @@ src/Bedrock/ExtractEd25519CmdRs.v
 | File | Provenance |
 |---|---|
 | `sign.rs` (67 LoC) | Extracted from `ed25519_sign_rs_string` |
-| `verify.rs` (54 LoC) | Extracted from `ed25519_verify_rs_string` |
+| `verify.rs` (62 LoC) | Extracted from `ed25519_verify_rs_string` |
 | `lib.rs` | Hand-written leaf stubs + module wiring |
 | `Cargo.toml` | Rust 2024 edition, staticlib |
 
@@ -107,7 +109,7 @@ JASMINC=$(which jasminc) cargo test --features ed25519_rustcmd \
                                     --test ed25519_rustcmd_kat
 ```
 
-KAT results (RFC 8032 §7.1) — **12/12 pass** (2026-05-11):
+KAT results (RFC 8032 §7.1) — **12/12 pass** (2026-05-12):
 - Public-key derivation for all 3 vectors.
 - Strict byte-equality on the extracted `sign(seed, msg)` output for
   all 3 vectors (TEST 1 = empty message, TEST 2 = `0x72`, TEST 3 =
@@ -129,8 +131,30 @@ that pull the R-half and S-half out of `sig_in` before feeding them to
 `ed25519_decompress_R` / `ed25519_scalarmult_base`.  All three landed
 upstream in `Sign_Verify_RustCmd.v`.
 
-Returning the verification result still goes through a small wrapper
-in `src/ed25519_rustcmd/mod.rs::verify`: the extracted `verify.rs`
-stores its result in a non-caller-visible local, so we recompute the
-check using the same FFI leaves to expose the result byte.  That is a
-return-channel emitter gap, orthogonal to the bugs fixed above.
+Bug D (2026-05-12, partially fixed in commit `1e45539`): the verify
+return byte is now a caller-supplied `result_out` parameter (first
+arg of `ed25519_verify`).  The ABI gap is closed, but the `verify`
+wrapper in `src/ed25519_rustcmd/mod.rs` still recomputes the check
+via the same FFI leaves because the extracted body's final
+`bytes_equal_32(result_out, sig_in, check_bytes)` call compares
+`sig_in[0..32]` (= R) against `check_bytes` (= `compress(R + h·A)`)
+rather than the intended `compress(sB)` against `check_bytes`.  This
+is a one-line Rocq-AST defect (`Sign_Verify_RustCmd.v` line 247:
+`LE_TBytes v_sig_in 64` should be `LE_TBytes v_sB 200`) that the
+existing `Verify_Strong_Correctness.v` proof acknowledges as the
+spec — fixing it requires a small proof update.
+
+## Cargo benchmark results
+
+`cargo bench --features ed25519_rustcmd --bench rustcmd_vs_dalek`
+on a Zen 4 laptop (2026-05-12):
+
+| Operation | Framework | Dalek | Ratio |
+|---|---|---|---|
+| `ed25519_sign`   | 65.5 µs  | 17.6 µs  | 3.7× |
+| `ed25519_verify` | 164.7 µs | 30.4 µs  | 5.4× |
+
+The verify gap is dominated by the dalek recompute path forced by
+Bug D above; once the `bytes_equal_32` source argument is fixed in
+the AST the wrapper drops the recompute and the ratio should fall
+to ~2.7× (predicted from sign-path leaf coverage).

@@ -60,7 +60,7 @@ Definition affine_to_G1 (pt : HashToCurve.affine_point) : G1 :=
 
 (** Domain separation tag for BLS signatures (RFC 9380, section 8.10).
     Parameterized so users can supply the correct suite-specific DST. *)
-Variable bls_dst : list byte.
+Parameter bls_dst : list byte.
 
 (** Concrete hash-to-curve: message bytes -> G1 point. *)
 Definition bls12_hash_to_curve (msg : list byte) : G1 :=
@@ -95,10 +95,10 @@ Definition bls12_g1_scalar_mult (k : Z) (P : G1) : G1 :=
     gamma1^{p^2}, gamma2^{p^2}, coeff_p2_c1.
     We leave them as parameters since they are large constants
     that don't affect the structure of the signature proofs. *)
-Variable gamma1_p2 gamma2_p2 coeff_p2_c1 : Fp2.
+Parameter gamma1_p2 gamma2_p2 coeff_p2_c1 : Fp2.
 
 (** Decidable equality on Fp12 (needed for pairing_check). *)
-Variable fp12_eq_dec : forall (a b : Fp12), {a = b} + {a <> b}.
+Parameter fp12_eq_dec : forall (a b : Fp12), {a = b} + {a <> b}.
 
 (* ================================================================== *)
 (** * G1 and G2 generators                                             *)
@@ -130,7 +130,7 @@ Definition g2_generator : G2 :=
 
 (** Abstract G2 scalar multiplication (no concrete group law for G2
     is defined at the spec level). *)
-Variable bls12_g2_scalar_mult : Z -> G2 -> G2.
+Parameter bls12_g2_scalar_mult : Z -> G2 -> G2.
 
 (* ================================================================== *)
 (** * Instantiation of BLS signature scheme                            *)

@@ -31,3 +31,28 @@
 # 53/115 AUCurves files build (was 41 at session start)
 # 9 remaining errors: 3 SpecsEquiv, 2 P256, 1 bedrock, 3 bedrock2Examples
 # Full @src/all: ~10 min (with cached fiat-crypto .vo)
+
+# === Pre-existing never-built files (2026-05-17 session, fiat-crypto bump 2b3e635 → 7c30b5a56) ===
+# These files have no cached .vo at HEAD — they have NEVER built clean. The bump is
+# not the cause; they were broken before. Pushing the AUCurves PR does not need to
+# fix them — they were not building in AU-COBRA/AUCurves either.
+#
+#         src/Bedrock/Field/PairingTheory/ZFInv.v               ring fails over F.inv terms (line 444/459/464+)
+#                                                                Multiple `ring`/`ring_simplify in H` calls;
+#                                                                ring tactic can't normalize F.inv-containing terms
+#                                                                even though Add Field _zfp2_field is in scope.
+#                                                                Likely needs generalize+abstract or field tactic
+#                                                                throughout. Substantive proof work; skip for push.
+#         src/Bedrock/Field/PairingTheory/MillerEquiv.v         depends on ZFInv.v (no .vo at HEAD)
+#         src/Bedrock/Field/PairingTheory/Fp2ZAlgebra.v         depends on ZFInv.v (no .vo at HEAD)
+#         src/Spec/BLS12Pairing/BLSSignatureInstance.v          (FIXED) Variable→Parameter (Rocq 9 strict)
+#
+# === fiat-crypto orphan files (cleaned this session) ===
+# Deleted from fiat-crypto's pairing-proofs-merge-202605 branch because their
+# imports (Crypto.Bedrock.Field.Synthesis.Examples.*_prime etc.) live in AUCurves now:
+#   src/Bedrock/Field/FieldExtensions/{Extract*Jasmin*,JasminBridge*,JasminExprBridge,
+#                                       PolishPassProofs,FlattenStackalloc}.v   (13 files)
+#   src/Bedrock/Group/CurveAdd/CurveAddInplace.v                                (1 file)
+#   src/Bedrock/P256/{PrecomputedMultiples,RecodeProofs,RecodeSpecs,Scalarmult}.v (4 new upstream files needing newer coqutil)
+#   src/Spec/XEdDSA.v                                                           (duplicate; canonical in AUCurves)
+# All also stripped from src/{,Bedrock/}Everything.v + _CoqProject.

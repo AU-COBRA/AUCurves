@@ -15,39 +15,32 @@
  *      already-Qed building blocks — see [Bedrock.RustCmdEdToRealJasmin]
  *      for the chain).
  *
- *  Build status (2026-05-12):
+ *  Build status (2026-05-12):  builds clean.
  *
- *    This file is BLOCKED at build time on the [JasminBridge] dune
- *    theory not being live.  The theory's pre-built .vo files at
- *    `$WORKSPACE/jasmin/proofs/lang/expr.vo` etc. were
- *    compiled with Rocq 9.0.0 and report version 90000 against the
- *    current switch [rocq-9] / Rocq 9.0.1 (expects 90001).  This
- *    causes [Require Import JasminBridge.BridgeReal] to fail with a
- *    "bad version number" parsing error before any AUCurves code is
- *    touched.
+ *  Typeclass-resolution fix:  Jasmin's [cmd = seq instr], where
+ *  [instr] is parameterised over [asm_op : Type] and
+ *  [asmop : asmOp asm_op].  Inside a [Module] (which Rocq 9 disallows
+ *  inside a [Section]) typeclass instances do NOT propagate from an
+ *  enclosing [Context].  We therefore fix the architecture to
+ *  x86-64 at the top level by:
  *
- *    The fix is a full rebuild of the Jasmin proof suite (178 files,
- *    estimated multi-hour, mathcomp-heavy compiler proofs) via the
- *    Makefile at `$WORKSPACE/jasmin/proofs/Makefile`:
+ *    1. Axiomatising [atoI : arch_toIdent] (the variable-naming
+ *       convention; a function from kinds × types × strings to
+ *       [Ident.ident]; not used in any proof, but needed for
+ *       [x86_extended_op] to be a [Type]).  This mirrors the existing
+ *       axioms [int_to_ident] / [int_to_funname] in [BridgeReal] and
+ *       is identity at extraction time.
  *
- *        eval $(opam env --switch=rocq-9 --set-switch)
- *        cd $WORKSPACE/jasmin/proofs
- *        make clean && make -j4
+ *    2. Fixing [@asm_opI] at the canonical x86 instance.
  *
- *    Once the rebuild lands and `BridgeReal.vo` builds under the
- *    AUCurves [JasminBridge] dune theory, this file compiles
- *    unchanged.
- *
- *  Until that rebuild, the file is kept as documentation /
- *  scaffolding: it shows precisely how `to_jasmin_cmd` would be
- *  instantiated, and the file is excluded from the [JasminBridge]
- *  dune theory's [modules] list so it does not break the build.
+ *    3. Specialising [jasmin_cmd_T] to
+ *       [@cmd x86_extended_op asm_opI].
  *)
 
 From HB Require Import structures.
 From Jasmin Require Import expr psem_defs psem operators ident
-                           x86_instr_decl x86_extra.
-From mathcomp Require Import ssreflect ssrfun.
+                           x86_decl x86_instr_decl x86_extra arch_extra.
+From mathcomp Require Import ssreflect ssrfun ssrnat seq.
 From Stdlib Require Import Uint63.
 From Stdlib Require Import String ZArith List Ascii.
 Import ListNotations.
@@ -60,37 +53,49 @@ Require Import JasminBridge.BridgeReal.
 Local Open Scope Z_scope.
 
 (* ================================================================ *)
-(* §1. RealJasmin instance of JasminEmit                            *)
+(* §1. Fix the architecture at x86-64                               *)
 (* ================================================================ *)
 
-Section RealJasminInstance.
+(** We axiomatise [arch_toIdent] (a variable-naming convention; a
+    bundle of [ToIdent] instances for the four register classes).
+    Discharging it requires either constructing concrete [ToIdent]
+    records — non-trivial in Rocq because the underlying [Cident.t]
+    is sealed via [CORE_IDENT] — or instantiating it at the OCaml
+    level via Jasmin's [AToIdent_T.mk] (the standard route in the
+    [jasminc] OCaml driver).  This axiom is identity at extraction
+    time; eliminating it is tracked together with the [int_to_ident]
+    / [int_to_funname] axioms in [BridgeReal]. *)
+Axiom atoI : @arch_toIdent _ _ _ _ _ x86_decl.
 
-  Context {atoI : arch_toIdent}.
-  #[local] Existing Instance asm_opI | 0.
+#[local] Existing Instance atoI | 0.
 
-  (** The [RealJasmin] instance: emit into [Jasmin.expr.cmd] via the
-      verified [to_jasmin_cmd] translator. *)
-
-  Module RealJasmin <: JasminEmit.
-    Definition jasmin_cmd_T : Type := cmd.   (* = Jasmin.expr.cmd *)
-    Definition emit (c : jasmin_cmd) : jasmin_cmd_T := to_jasmin_cmd c.
-  End RealJasmin.
-
-  Module RealChain := RustCmdToReal RealJasmin.
-
-  (** Specialised entry point: produce [Jasmin.expr.cmd] directly. *)
-  Definition rust_cmd_ed_to_real_jasmin (c : rust_cmd_ed) : cmd :=
-    RealChain.rust_cmd_ed_to_real_jasmin c.
-
-End RealJasminInstance.
+(* With [atoI] in scope, [x86_extended_op] is a concrete [Type] and
+   [asm_opI] specialises to [asmOp x86_extended_op]. *)
+Notation real_cmd := (list (@instr x86_extended_op asm_opI)).
 
 (* ================================================================ *)
-(* §2. End-to-end simulation (statement; proof Admitted)            *)
+(* §2. RealJasmin instance of JasminEmit                            *)
+(* ================================================================ *)
+
+Module RealJasmin <: JasminEmit.
+  Definition jasmin_cmd_T : Type := real_cmd.
+  Definition emit (c : jasmin_cmd) : jasmin_cmd_T :=
+    @to_jasmin_cmd _ asm_opI c.
+End RealJasmin.
+
+Module RealChain := RustCmdToReal RealJasmin.
+
+(** Specialised entry point: produce [Jasmin.expr.cmd] directly. *)
+Definition rust_cmd_ed_to_real_jasmin
+  (c : SafeRustEd25519Sim.rust_cmd_ed) : real_cmd :=
+  RealChain.rust_cmd_ed_to_real_jasmin c.
+
+(* ================================================================ *)
+(* §3. End-to-end simulation (statement; proof Admitted)            *)
 (* ================================================================ *)
 
 Section EndToEnd.
 
-  Context {atoI : arch_toIdent}.
   Context {wsw : WithSubWord} {dc : DirectCall}
           {syscall_state_ : Type} {sc_sem : syscall.syscall_sem syscall_state_}
           {ep : EstateParams syscall_state_}
@@ -125,8 +130,8 @@ Section EndToEnd.
       cases) but verbose; tracked as the last open obligation in
       `docs/jasmin-extraction-progress.md` step (d). *)
   Theorem rust_cmd_ed_to_real_jasmin_correct_e2e :
-    forall (state_refines : _ -> estate -> Prop)
-           callee_post callee_post_n function_table c rs1 rs2,
+    forall {RST : Type} (state_refines : RST -> estate -> Prop)
+           (c : SafeRustEd25519Sim.rust_cmd_ed) (rs1 rs2 : RST),
       (* Premise: source executes correctly. *)
       True (* placeholder for [rust_exec_ed callee_post callee_post_n function_table c rs1 rs2]
               — kept abstract so the file's signature does not depend on
@@ -140,8 +145,7 @@ Section EndToEnd.
   Proof.
     (* Mechanical composition:
          bridge_complete  ; tr_cmd_correct  ; real_jsem_call/seq/...
-       Each link is Qed; the file is BLOCKED on the Jasmin theory
-       rebuild before this proof can be elaborated. *)
+       Each link is Qed; only the syntactic composition remains. *)
   Admitted.
 
 End EndToEnd.

@@ -52,6 +52,17 @@ pub fn miller_loop(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
 }
 
 /// Projective Miller loop (uses Fp12_mul_by_024 sparse multiply).
+///
+/// **UNVERIFIED**: the bedrock2 body `bls12_miller_loop_proj` (defined in
+/// `src/Bedrock/Field/Synthesis/Examples/BLS12_Pairing.v:1428`) has no
+/// matching `spec_of_bls12_miller_loop_proj` / `bls12_miller_loop_proj_ok`
+/// theorem in `BLS12_MillerLoop.v` (which Qed's only the affine
+/// `bls12_miller_loop`).  Observed to disagree with `pairing` (affine)
+/// on synthetic inputs — see
+/// `~/Claude/catcrypt-private/docs/kzg-aucurves-pairing-perf-notes.md`
+/// "pairing_proj upstream-bug investigation" punch-list item.  Do not
+/// rely on this in verified contexts.
+#[deprecated(note = "unverified — bedrock2 body has no Qed'd correctness theorem; use miller_loop (affine) instead")]
 pub fn miller_loop_proj(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bls12_miller_loop_proj(out, p_x, p_y, q_x, q_y)
 }
@@ -74,6 +85,12 @@ pub fn final_exp(out: &mut Fp12, f: &Fp12) {
 }
 
 /// Pairing using the projective miller loop variant.
+///
+/// **UNVERIFIED** — same gap as [`miller_loop_proj`]: the bedrock2 body
+/// is in tree but has no `_ok` theorem and disagrees with the affine
+/// `pairing` on synthetic inputs.  Use [`pairing`] in verified contexts.
+#[deprecated(note = "unverified — calls miller_loop_proj which has no Qed'd correctness theorem; use pairing (affine) instead")]
+#[allow(deprecated)]
 pub fn pairing_proj(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     let mut tmp = Fp12::zero();
     let mut g1p2 = Fp2::zero();

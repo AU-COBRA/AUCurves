@@ -62,7 +62,21 @@ pub fn bls12_Fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) {
 }
 #[inline]
 pub fn bls12_Fp2_square(out: &mut Fp2, x: &Fp2) {
-    let xv = *x; bls12_Fp2_mul(out, &xv, &xv);
+    // Specialised Fp2 squaring for β = −1:
+    //   (a + bu)² = (a² − b²) + 2ab·u
+    // 2 Fp_squares + 1 Fp_mul vs the 4 Fp_muls in bls12_Fp2_mul(out, x, x).
+    // Same algorithm as bn254_Fp2_square / bn256_Fp2_square (same β).
+    // No defensive copy of x: each leaf call reads x.{c0,c1} into fresh
+    // Fp locals (v0, v1, out.c1) before any subsequent read; Rust's borrow
+    // checker prevents `out` from aliasing `x` at the call site.
+    let mut v0 = Fp::zero();
+    let mut v1 = Fp::zero();
+    bls12_square(&mut v0, &x.c0);          // v0 = a²
+    bls12_square(&mut v1, &x.c1);          // v1 = b²
+    bls12_mul(&mut out.c1, &x.c0, &x.c1);  // out.c1 = a·b
+    let ab = out.c1;
+    bls12_add(&mut out.c1, &ab, &ab);      // out.c1 = 2ab
+    bls12_sub(&mut out.c0, &v0, &v1);      // out.c0 = a² − b²
 }
 #[inline]
 pub fn bls12_Fp2_inv(out: &mut Fp2, x: &Fp2) {

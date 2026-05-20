@@ -32,15 +32,29 @@ Signal-messenger paper:
 ## Directory structure
 
 ```
-src/                      Rocq proofs (see breakdown below)
-curve25519-jasmin-rs/     Rust runtime for the Signal stack; also hosts the
-                          Bernstein–Yang divstep port for all 14 verified primes
-                          as safegcd_<curve>.rs modules
-Signal/                   Sigma-protocol theories (Lizard, LinearSigma, Poksho)
-bls12-381-safe-rust/      Packaged safe-Rust crate: field + group ops
-bn254-safe-rust/          Packaged safe-Rust crate: field + group ops
-bn256-safe-rust/          Packaged safe-Rust crate: field + group ops
-bn446-safe-rust/          Packaged safe-Rust crate: field + group ops
+src/                       Rocq proofs (see breakdown below)
+curve25519-jasmin-rs/      Rust runtime for the Signal stack; also hosts the
+                           Bernstein–Yang divstep port for all 14 verified primes
+                           as safegcd_<curve>.rs modules
+Signal/                    Sigma-protocol theories (Lizard, LinearSigma, Poksho)
+
+# Pairing curves (full field + Fp2/Fp6/Fp12 + Miller loop)
+bls12-381-safe-rust/       Packaged crate
+bn254-safe-rust/           Packaged crate
+bn256-safe-rust/           Packaged crate
+bn446-safe-rust/           Packaged crate
+bls12-377-safe-rust/       SKELETON — extraction of pairing tower pending
+bls24-509-safe-rust/       SKELETON — extraction of pairing tower pending
+bw6-761-safe-rust/         SKELETON — extraction of pairing tower pending
+
+# Non-pairing curves (field ops via fiat-rust + safegcd CT inverse)
+p224-safe-rust/            fiat-rust wrapper, KAT tested
+p256-safe-rust/            fiat-rust wrapper, KAT tested
+p384-safe-rust/            fiat-rust wrapper, KAT tested
+p521-safe-rust/            fiat-rust wrapper (Solinas form), KAT tested
+secp256k1-safe-rust/       fiat-rust wrapper, KAT tested
+pallas-safe-rust/          SKELETON — Pasta primes not yet in fiat-rust
+vesta-safe-rust/           SKELETON — Pasta primes not yet in fiat-rust
 
 src/
 ├── Arithmetic/       Field arithmetic helpers (safegcd divstep certificate)
@@ -53,14 +67,25 @@ src/
 └── Theory/           Mathematical foundations (see src/Theory/README.md)
 ```
 
-Of the 14 verified primes, only **four** (BLS12-381, BN254, BN256, BN446)
-are currently shipped as standalone safe-Rust crates. The other ten —
-BLS12-377, BLS24-509, BW6-761, P-224, P-256, P-384, P-521, secp256k1,
-Pallas, Vesta — have full Rocq proofs and the bedrock2 → Rust extraction
-chain wired in `src/Bedrock/Field/Synthesis/Examples/<Curve>_*.v`, but
-the packaged crates are pending. The Bernstein–Yang constant-time
-modular inversion is the exception: it is shipped for all 14 primes as
-`safegcd_<curve>.rs` modules inside `curve25519-jasmin-rs/`.
+Crate status:
+
+- **Packaged**: BLS12-381, BN254, BN256, BN446 ship full field + pairing
+  tower + Miller loop. See each crate's `README.md` for the public API.
+- **fiat-rust wrappers**: P-224, P-256, P-384, P-521, secp256k1 are
+  thin wrappers around the auto-generated `fiat-crypto/fiat-rust`
+  crate (Montgomery for P-224/256/384/secp256k1, Solinas for P-521),
+  with constant-time inversion re-exported from
+  `curve25519-jasmin-rs/src/safegcd_<curve>.rs`.  KAT tests pass.
+- **Skeletons**: BLS12-377, BLS24-509, BW6-761 (pairing-tower
+  extraction pending), Pallas, Vesta (Pasta primes not yet in
+  fiat-rust).  Each carries a `PENDING.md` listing the verified Rocq
+  components already in tree and the concrete steps to turn the
+  skeleton into a real crate.  The Bernstein–Yang constant-time
+  inversion is the exception: it ships for all 14 primes as
+  `safegcd_<curve>.rs` modules inside `curve25519-jasmin-rs/`.
+
+The scaffolder lives at `scripts/scaffold_safe_rust.sh` — re-run it to
+regenerate any of the wrapper / skeleton crates from their templates.
 
 ## Building
 

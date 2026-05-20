@@ -1,0 +1,11 @@
+[package]
+name = "bls12-377-safe-rust"
+version = "0.0.0-pending"
+edition = "2021"
+description = "BLS12-377 base field Fp + pairing tower — SKELETON, extraction pending"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "bls12_377"
+path = "src/lib.rs"

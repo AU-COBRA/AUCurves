@@ -1,0 +1,11 @@
+[package]
+name = "pallas-safe-rust"
+version = "0.0.0-pending"
+edition = "2021"
+description = "Pallas (Pasta) base field — Fp — SKELETON, extraction pending"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "pallas"
+path = "src/lib.rs"

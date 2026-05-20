@@ -1,0 +1,11 @@
+[package]
+name = "bw6-761-safe-rust"
+version = "0.0.0-pending"
+edition = "2021"
+description = "BW6-761 base field Fp + pairing tower — SKELETON, extraction pending"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "bw6_761"
+path = "src/lib.rs"

@@ -46,7 +46,19 @@ output-tests/*.expected.processed
 *.rlib
 bls12-381-safe-rust/target/
 bn254-safe-rust/target/
+bn256-safe-rust/target/
+bn446-safe-rust/target/
 curve25519-jasmin-rs/target/
+p224-safe-rust/target/
+p256-safe-rust/target/
+p384-safe-rust/target/
+p521-safe-rust/target/
+secp256k1-safe-rust/target/
+pallas-safe-rust/target/
+vesta-safe-rust/target/
+bls12-377-safe-rust/target/
+bls24-509-safe-rust/target/
+bw6-761-safe-rust/target/
 
 # Local planning and session notes (never commit)
 CLAUDE.md

@@ -1,0 +1,11 @@
+[package]
+name = "vesta-safe-rust"
+version = "0.0.0-pending"
+edition = "2021"
+description = "Vesta (Pasta) base field — Fq — SKELETON, extraction pending"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "vesta"
+path = "src/lib.rs"

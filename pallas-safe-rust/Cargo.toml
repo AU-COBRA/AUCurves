@@ -2,10 +2,13 @@
 name = "pallas-safe-rust"
 version = "0.0.0-pending"
 edition = "2021"
-description = "Pallas (Pasta) base field — Fp — SKELETON, extraction pending"
+description = "Pallas (Pasta) base field — Fp — SKELETON (safegcd inverse only), field-op extraction pending"
 license = "Apache-2.0"
 publish = false
 
 [lib]
 name = "pallas"
 path = "src/lib.rs"
+
+[dependencies]
+safegcd = { path = "../safegcd-rs" }

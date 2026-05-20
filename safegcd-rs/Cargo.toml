@@ -1,0 +1,15 @@
+[package]
+name = "safegcd"
+version = "0.1.0"
+edition = "2021"
+description = "Bernstein–Yang constant-time modular inversion for 14+1 primes (libsecp256k1 secp256k1_modinv64 algorithm, EUROCRYPT 2026 δ₀=1/2 framework). Const-generic Signed62<N> core; verified against the convergence certificates in AUCurves/src/Arithmetic/safegcd/."
+license = "Apache-2.0"
+
+[lib]
+name = "safegcd"
+path = "src/lib.rs"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3

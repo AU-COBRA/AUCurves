@@ -4,8 +4,8 @@
 //! to/from bytes) come from the auto-generated, machine-checked
 //! `fiat-crypto/fiat-rust/src/secp256k1_montgomery_64.rs`.  Constant-time modular
 //! inversion comes from the Bernstein-Yang divstep port in
-//! `../curve25519-jasmin-rs/src/safegcd_secp256k1.rs` (verified
-//! against the convergence certificate in
+//! `safegcd-rs/src/safegcd_secp256k1.rs` (verified against the
+//! convergence certificate in
 //! `src/Arithmetic/safegcd/divsteps_secp256k1_half.v`).
 //!
 //! 256-bit prime, 4×u64 saturated limb representation.
@@ -30,6 +30,16 @@ use fiat_crypto::secp256k1_montgomery_64::*;
 }
 #[inline] pub fn fp_to_montgomery(out: &mut Fp, x: &FpRaw)    { fiat_secp256k1_montgomery_to_montgomery(out, x) }
 #[inline] pub fn fp_from_montgomery(out: &mut FpRaw, x: &Fp)  { fiat_secp256k1_montgomery_from_montgomery(out, x) }
+
+/// Constant-time modular inverse via the Bernstein–Yang divstep port.
+/// Input/output are in Montgomery form.  Convert out → invert → convert in.
+pub fn fp_inv(out: &mut Fp, x: &Fp) {
+    let mut raw_in = FpRaw([0u64; 4]);
+    fp_from_montgomery(&mut raw_in, x);
+    let mut raw_inv = [0u64; 4];
+    safegcd::safegcd_secp256k1::secp_invert_divstep_sat(&mut raw_inv, &raw_in.0);
+    fp_to_montgomery(out, &FpRaw(raw_inv));
+}
 
 #[cfg(test)]
 mod kat;

@@ -28,6 +28,33 @@ use fiat_crypto::p521_64::*;
 #[inline] pub fn fp_to_bytes(out: &mut [u8; 66], x: &FpT)      { fiat_p521_to_bytes(out, x) }
 #[inline] pub fn fp_from_bytes(out: &mut FpT, bs: &[u8; 66])   { fiat_p521_from_bytes(out, bs) }
 
+/// Constant-time modular inverse via the Bernstein–Yang divstep port.
+/// P-521 uses Solinas form so we round-trip through bytes to/from the
+/// 9×u64 saturated representation safegcd expects.
+pub fn fp_inv(out: &mut FpT, x: &FpT) {
+    // tight -> bytes -> 9 saturated u64 little-endian limbs
+    let mut bytes_in = [0u8; 66];
+    fp_to_bytes(&mut bytes_in, x);
+    let mut sat_in = [0u64; 9];
+    for i in 0..8 {
+        sat_in[i] = u64::from_le_bytes(bytes_in[8*i..8*i+8].try_into().unwrap());
+    }
+    // 9th limb holds the top 2 bytes (= 521 % 64 = 9 bits) of the prime.
+    sat_in[8] = u64::from(bytes_in[64]) | (u64::from(bytes_in[65]) << 8);
+
+    let mut sat_inv = [0u64; 9];
+    safegcd::safegcd_p521::p521_invert_divstep_sat(&mut sat_inv, &sat_in);
+
+    // Re-pack to 66 LE bytes, then from_bytes.
+    let mut bytes_out = [0u8; 66];
+    for i in 0..8 {
+        bytes_out[8*i..8*i+8].copy_from_slice(&sat_inv[i].to_le_bytes());
+    }
+    bytes_out[64] = (sat_inv[8] & 0xff) as u8;
+    bytes_out[65] = ((sat_inv[8] >> 8) & 0xff) as u8;
+    fp_from_bytes(out, &bytes_out);
+}
+
 #[cfg(test)]
 mod kat {
     use super::*;
@@ -74,5 +101,31 @@ mod kat {
         let mut out = zero_t();
         fp_carry_mul(&mut out, &a_loose, &a_loose);  // 1 * 1 = 1
         assert_eq!(out.0, a.0);
+    }
+
+    #[test]
+    fn invert_roundtrip() {
+        // Construct a non-trivial tight element via from_bytes.
+        let mut bytes = [0u8; 66];
+        for i in 0..64 { bytes[i] = ((i as u8).wrapping_mul(7)) | 1; }
+        bytes[64] = 0x01;
+        bytes[65] = 0x00;
+        let mut a = zero_t();
+        fp_from_bytes(&mut a, &bytes);
+
+        let mut a_inv = zero_t();
+        fp_inv(&mut a_inv, &a);
+
+        // a * a^-1 should reduce to 1.  Cross-check via to_bytes canonical form.
+        let mut a_loose = zero_l(); fp_relax(&mut a_loose, &a);
+        let mut inv_loose = zero_l(); fp_relax(&mut inv_loose, &a_inv);
+        let mut prod_tight = zero_t();
+        fp_carry_mul(&mut prod_tight, &a_loose, &inv_loose);
+        let mut prod_bytes = [0u8; 66];
+        fp_to_bytes(&mut prod_bytes, &prod_tight);
+
+        let mut expected_one = [0u8; 66];
+        expected_one[0] = 1;
+        assert_eq!(prod_bytes, expected_one, "a * a^-1 should equal 1 in canonical bytes");
     }
 }

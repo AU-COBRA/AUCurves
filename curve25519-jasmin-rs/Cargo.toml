@@ -233,7 +233,7 @@ aes-gcm = { version = "0.10", optional = true }
 # by `libcrux-lean-specs/rust-specs` as the source-of-truth Lean
 # extraction target, so wiring it here also closes the
 # Rust-runtime / Lean-spec extraction loop on the block cipher.
-libcrux-specs = { path = "../../libcrux-lean-specs/rust-specs" }
+libcrux-specs = { path = "../../../libcrux-lean-specs/rust-specs" }
 # prost: protobuf serialization (libsignal wire format).  Industry-
 # standard, unverified.  Verified-marshaler alternative (~1-2 months
 # total, per docs/signal-tracks-status-2026-05-12.md) would replace
@@ -243,22 +243,22 @@ rand_core = "0.6"
 curve25519-dalek = { version = "4", features = ["alloc"], optional = true }
 # fiat-crypto: portable radix-2^51 Curve25519 field arithmetic for the
 # `decomposed_leaves` fe25519 shim (see src/ed25519_rustcmd/fe25519_portable.rs).
-fiat-crypto = { path = "../AUCurves/fiat-crypto/fiat-rust", default-features = false, features = ["std"] }
+fiat-crypto = { path = "../fiat-crypto/fiat-rust", default-features = false, features = ["std"] }
 # libcrux: F*-verified HACL* AES-GCM (and friends).  Optional, gated
 # by the `aes_gcm_libcrux` feature.  Wired into the AES-256-GCM
 # encrypt/decrypt path in `src/symmetric.rs` as a verified
 # alternative to RustCrypto's `aes-gcm`.  Connects to the CatCrypt
 # UC chain via `CatCrypt.Crypto.AEAD.AESGCMBridge.aesgcm_realizes_faead`.
-libcrux = { path = "../../libcrux", optional = true }
+libcrux = { path = "../../../libcrux", optional = true }
 
 [dev-dependencies]
 blst = "0.3.16"
-signal-spqr-hax = { path = "../../SSProve-lean/signal-spqr-hax" }
-zkgroup-hax = { path = "../../SSProve-lean/zkgroup-hax" }
-x3dh-hax = { path = "../../signal-hax/x3dh-hax" }
-pqxdh-hax = { path = "../../signal-hax/pqxdh-hax" }
-sender-keys-hax = { path = "../../signal-hax/sender-keys-hax" }
-doubleratchet-hax = { path = "../../signal-hax/doubleratchet-hax" }
+signal-spqr-hax = { path = "../../../SSProve-lean/signal-spqr-hax" }
+zkgroup-hax = { path = "../../../SSProve-lean/zkgroup-hax" }
+x3dh-hax = { path = "../../../signal-hax/x3dh-hax" }
+pqxdh-hax = { path = "../../../signal-hax/pqxdh-hax" }
+sender-keys-hax = { path = "../../../signal-hax/sender-keys-hax" }
+doubleratchet-hax = { path = "../../../signal-hax/doubleratchet-hax" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 curve25519-dalek = { version = "4", features = ["alloc"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }

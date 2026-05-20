@@ -2,10 +2,13 @@
 name = "bls24-509-safe-rust"
 version = "0.0.0-pending"
 edition = "2021"
-description = "BLS24-509 base field Fp + pairing tower — SKELETON, extraction pending"
+description = "BLS24-509 base field Fp + pairing tower — SKELETON (safegcd inverse only), field-op extraction pending"
 license = "Apache-2.0"
 publish = false
 
 [lib]
 name = "bls24_509"
 path = "src/lib.rs"
+
+[dependencies]
+safegcd = { path = "../safegcd-rs" }

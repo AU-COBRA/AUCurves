@@ -2,10 +2,13 @@
 name = "vesta-safe-rust"
 version = "0.0.0-pending"
 edition = "2021"
-description = "Vesta (Pasta) base field — Fq — SKELETON, extraction pending"
+description = "Vesta (Pasta) base field — Fq — SKELETON (safegcd inverse only), field-op extraction pending"
 license = "Apache-2.0"
 publish = false
 
 [lib]
 name = "vesta"
 path = "src/lib.rs"
+
+[dependencies]
+safegcd = { path = "../safegcd-rs" }

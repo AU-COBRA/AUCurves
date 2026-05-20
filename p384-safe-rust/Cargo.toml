@@ -16,5 +16,6 @@ opt-level = 3
 
 [dependencies]
 fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
+safegcd     = { path = "../safegcd-rs" }
 
 [dev-dependencies]

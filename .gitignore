@@ -59,6 +59,7 @@ vesta-safe-rust/target/
 bls12-377-safe-rust/target/
 bls24-509-safe-rust/target/
 bw6-761-safe-rust/target/
+safegcd-rs/target/
 
 # Local planning and session notes (never commit)
 CLAUDE.md

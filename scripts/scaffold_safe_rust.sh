@@ -36,6 +36,7 @@ opt-level = 3
 
 [dependencies]
 fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
+safegcd     = { path = "../safegcd-rs" }
 
 [dev-dependencies]
 EOF
@@ -48,18 +49,21 @@ mk_cargo_stub() {
 name = "${name}-safe-rust"
 version = "0.0.0-pending"
 edition = "2021"
-description = "${desc} — SKELETON, extraction pending"
+description = "${desc} — SKELETON (safegcd inverse only), field-op extraction pending"
 license = "Apache-2.0"
 publish = false
 
 [lib]
 name = "${name//-/_}"
 path = "src/lib.rs"
+
+[dependencies]
+safegcd = { path = "../safegcd-rs" }
 EOF
 }
 
 mk_lib_fiat() {
-    local name=$1 mod_64=$2 fn_prefix=$3 limbs=$4 bits=$5
+    local name=$1 mod_64=$2 fn_prefix=$3 limbs=$4 bits=$5 safegcd_mod=$6 safegcd_fn=$7
     cat >"${name}-safe-rust/src/lib.rs" <<EOF
 //! ${name} field arithmetic — fiat-rust leaves + Bernstein-Yang inverse.
 //!
@@ -67,9 +71,9 @@ mk_lib_fiat() {
 //! to/from bytes) come from the auto-generated, machine-checked
 //! \`fiat-crypto/fiat-rust/src/${mod_64}.rs\`.  Constant-time modular
 //! inversion comes from the Bernstein-Yang divstep port in
-//! \`../curve25519-jasmin-rs/src/safegcd_${name//-/_}.rs\` (verified
-//! against the convergence certificate in
-//! \`src/Arithmetic/safegcd/divsteps_${name//-/_}_half.v\`).
+//! \`safegcd-rs/src/safegcd_${safegcd_mod}.rs\` (verified against the
+//! convergence certificate in
+//! \`src/Arithmetic/safegcd/divsteps_${safegcd_mod}_half.v\`).
 //!
 //! ${bits}-bit prime, ${limbs}×u64 saturated limb representation.
 
@@ -93,6 +97,16 @@ use fiat_crypto::${mod_64}::*;
 }
 #[inline] pub fn fp_to_montgomery(out: &mut Fp, x: &FpRaw)    { ${fn_prefix}_to_montgomery(out, x) }
 #[inline] pub fn fp_from_montgomery(out: &mut FpRaw, x: &Fp)  { ${fn_prefix}_from_montgomery(out, x) }
+
+/// Constant-time modular inverse via the Bernstein–Yang divstep port.
+/// Input/output are in Montgomery form.  Convert out → invert → convert in.
+pub fn fp_inv(out: &mut Fp, x: &Fp) {
+    let mut raw_in = FpRaw([0u64; ${limbs}]);
+    fp_from_montgomery(&mut raw_in, x);
+    let mut raw_inv = [0u64; ${limbs}];
+    safegcd::safegcd_${safegcd_mod}::${safegcd_fn}(&mut raw_inv, &raw_in.0);
+    fp_to_montgomery(out, &FpRaw(raw_inv));
+}
 
 #[cfg(test)]
 mod kat;
@@ -120,6 +134,19 @@ fn one_mont() -> Fp {
     out
 }
 
+fn nontrivial_raw() -> FpRaw {
+    let mut a = [0u64; ${limbs}];
+    a[0] = 0x0123_4567_89ab_cdef;
+    if ${limbs} > 1 { a[1] = 0xfedc_ba98_7654_3210; }
+    if ${limbs} > 2 { a[2] = 0x0011_2233_4455_6677; }
+    if ${limbs} > 3 { a[3] = 0x7766_5544_3322_1100; }
+    if ${limbs} > 4 { a[4] = 0xdead_beef_cafe_babe; }
+    if ${limbs} > 5 { a[5] = 0x1357_9bdf_2468_ace0; }
+    // Mask top to ensure < p (most-significant limb cleared in top bits).
+    a[${limbs} - 1] &= 0x0fff_ffff_ffff_ffff;
+    FpRaw(a)
+}
+
 #[test]
 fn add_zero_identity() {
     let a = one_mont();
@@ -143,19 +170,39 @@ fn mul_one_identity() {
     fp_mul(&mut out, &a, &a);  // 1 * 1 = 1
     assert_eq!(out.0, a.0);
 }
+
+#[test]
+fn invert_roundtrip() {
+    let mut a = zero();
+    fp_to_montgomery(&mut a, &nontrivial_raw());
+    let mut a_inv = zero();
+    fp_inv(&mut a_inv, &a);
+    let mut prod = zero();
+    fp_mul(&mut prod, &a, &a_inv);
+    assert_eq!(prod.0, one_mont().0, "a * a^-1 should equal 1 in Montgomery form");
+}
 EOF
 }
 
 mk_lib_stub() {
-    local name=$1 desc=$2 reason=$3
+    local name=$1 desc=$2 reason=$3 safegcd_mod=$4 safegcd_fn=$5 limbs=$6
     cat >"${name}-safe-rust/src/lib.rs" <<EOF
 //! ${desc}
 //!
 //! SKELETON — see ../PENDING.md.  ${reason}
+//!
+//! The Bernstein–Yang constant-time inverse IS available (it doesn't
+//! depend on Montgomery field ops), exposed below as
+//! \`invert_raw\`.  Verified against
+//! \`src/Arithmetic/safegcd/divsteps_${safegcd_mod}_half.v\`.
 
 #![allow(non_snake_case, dead_code)]
 
-// Intentionally empty.  Fill in once the extraction step lands.
+/// Constant-time modular inverse on raw saturated little-endian limbs.
+/// Returns \`x^-1 mod p\` in the same limb format.  ${limbs}×u64.
+pub fn invert_raw(out: &mut [u64; ${limbs}], x: &[u64; ${limbs}]) {
+    safegcd::safegcd_${safegcd_mod}::${safegcd_fn}(out, x);
+}
 EOF
 }
 
@@ -203,20 +250,20 @@ EOF
 }
 
 # ─── fiat-rust covered ────────────────────────────────────────────────
-# name           mod_64                       fn_prefix          limbs  bits
+# name        mod_64                   fn_prefix                limbs bits safegcd_mod safegcd_fn
 declare -a FIAT=(
-    "p256          p256_64                       fiat_p256          4      256"
-    "p224          p224_64                       fiat_p224          4      224"
-    "p384          p384_64                       fiat_p384          6      384"
-    "p521          p521_64                       fiat_p521          9      521"
-    "secp256k1     secp256k1_montgomery_64       fiat_secp256k1_montgomery 4 256"
+    "p256      p256_64                  fiat_p256                4     256  p256       p256_invert_divstep_sat"
+    "p224      p224_64                  fiat_p224                4     224  p224       p224_invert_divstep_sat"
+    "p384      p384_64                  fiat_p384                6     384  p384       p384_invert_divstep_sat"
+    "secp256k1 secp256k1_montgomery_64  fiat_secp256k1_montgomery 4    256  secp256k1  secp_invert_divstep_sat"
 )
+# P-521 uses Solinas not Montgomery; handled separately (hand-written lib.rs).
 
 for spec in "${FIAT[@]}"; do
-    read -r name mod_64 fn_prefix limbs bits <<<"$spec"
+    read -r name mod_64 fn_prefix limbs bits safegcd_mod safegcd_fn <<<"$spec"
     mkdir -p "${name}-safe-rust/src"
     mk_cargo_toml  "$name" "${name^^} field arithmetic — fiat-rust leaves + Bernstein-Yang CT inverse"
-    mk_lib_fiat    "$name" "$mod_64" "$fn_prefix" "$limbs" "$bits"
+    mk_lib_fiat    "$name" "$mod_64" "$fn_prefix" "$limbs" "$bits" "$safegcd_mod" "$safegcd_fn"
     mk_kat_fiat    "$name" "$fn_prefix" "$limbs"
     mk_gitignore   "$name"
     echo "  created: ${name}-safe-rust/  (fiat-rust wrapper, ${bits}-bit)"
@@ -245,17 +292,28 @@ declare -A SKELETON_VFILE=(
     [bls24-509]="BLS24_509_FpInv.v + BLS24_509_FpInv_closed.v + BLS24_509_InvertBoundInstantiation.v"
     [bw6-761]="BW6_761_FpInv.v + BW6_761_FpInv_closed.v + BW6_761_InvertBoundInstantiation.v"
 )
+declare -A SKELETON_SG=(
+    [pallas]="pallas pallas_invert_divstep_sat 4"
+    [vesta]="vesta vesta_invert_divstep_sat 4"
+    [bls12-377]="bls12_381 bls12_invert_divstep_sat 6"
+    [bls24-509]="bls24_509 bls24_invert_divstep_sat 8"
+    [bw6-761]="bw6_761 bw6_761_invert_divstep_sat 12"
+)
+# Note: bls12-377 currently shares the bls12_381 safegcd module (same chunk
+# size, similar 6×u64 layout).  Replace with a dedicated safegcd_bls12_377.rs
+# when the cert lands.
 
 for name in pallas vesta bls12-377 bls24-509 bw6-761; do
     desc="${SKELETON_DESC[$name]}"
     reason="${SKELETON_REASON[$name]}"
     vfile="${SKELETON_VFILE[$name]}"
+    read -r sg_mod sg_fn sg_limbs <<<"${SKELETON_SG[$name]}"
     mkdir -p "${name}-safe-rust/src"
     mk_cargo_stub   "$name" "$desc"
-    mk_lib_stub     "$name" "$desc" "$reason"
+    mk_lib_stub     "$name" "$desc" "$reason" "$sg_mod" "$sg_fn" "$sg_limbs"
     mk_pending      "$name" "$desc" "$reason" "$vfile"
     mk_gitignore    "$name"
-    echo "  skeleton: ${name}-safe-rust/  (extraction pending)"
+    echo "  skeleton: ${name}-safe-rust/  (safegcd inverse only)"
 done
 
 echo

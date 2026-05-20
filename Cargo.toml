@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = [
+    "safegcd-rs",
+    "bls12-381-safe-rust",
+    "bn254-safe-rust",
+    "bn256-safe-rust",
+    "bn446-safe-rust",
+    "bls12-377-safe-rust",
+    "bls24-509-safe-rust",
+    "bw6-761-safe-rust",
+    "p224-safe-rust",
+    "p256-safe-rust",
+    "p384-safe-rust",
+    "p521-safe-rust",
+    "secp256k1-safe-rust",
+    "pallas-safe-rust",
+    "vesta-safe-rust",
+    # curve25519-jasmin-rs has its own [workspace] block (deliberate
+    # standalone scope; see its Cargo.toml `[workspace]` line) so it
+    # cannot be a member here.  Keep listed in the README but not in
+    # `members`.
+]
+# curve25519-jasmin-rs intentionally excluded -- see comment above.
+exclude = [
+    "fiat-crypto",          # upstream submodule
+    "curve25519-jasmin-rs", # has own [workspace]
+]

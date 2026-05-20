@@ -44,6 +44,11 @@ output-tests/*.expected.processed
 
 # Rust static libs and build dirs
 *.rlib
+
+# Workspace-level Rust build artifacts
+/target/
+/Cargo.lock
+
 bls12-381-safe-rust/target/
 bn254-safe-rust/target/
 bn256-safe-rust/target/

@@ -13,3 +13,9 @@ path = "src/lib.rs"
 lto = "fat"
 codegen-units = 1
 opt-level = 3
+
+[dev-dependencies]
+# Cross-check fiat-crypto's per-step divstep reference in
+# safegcd_p256.rs's #[cfg(test)] mod.  Path dep on the in-tree
+# fiat-rust extraction.
+fiat-crypto = { path = "../fiat-crypto/fiat-rust" }

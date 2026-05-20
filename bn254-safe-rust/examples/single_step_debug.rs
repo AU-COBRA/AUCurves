@@ -61,8 +61,12 @@ fn main() {
     println!("  c1.c1.c0 = {:016x?}", line.c1.c1.c0.0);  // position 4
     println!("  c1.c1.c1 = {:016x?}", line.c1.c1.c1.0);
 
-    // arkworks: get the first ell coefficient from G2Prepared
-    use ark_bn254::g2::G2Prepared;
+    // arkworks: get the first ell coefficient from G2Prepared.
+    // In arkworks v0.5 the BN-curve-specific G2Prepared moved from
+    // `ark_bn254::g2::G2Prepared` to the generic
+    // `ark_ec::bn::G2Prepared<P: BnConfig>` (models/bn/g2.rs:22).
+    // Specialise to BN254's config.
+    type G2Prepared = ark_ec::bn::G2Prepared<ark_bn254::Config>;
     let ark_q = G2Affine::generator();
     let prepared: G2Prepared = ark_q.into();
 

@@ -62,9 +62,23 @@ Section Field.
   Definition to_mont_string := prefix ++ "to_mont".
   Definition from_mont_string := prefix ++ "from_mont".
 
-  (* Call fiat-crypto pipeline on all field operations *)
+  (* Call fiat-crypto pipeline on all field operations.
+     Use a local native_compute variant of make_computed_op — the WBW
+     synthesis on a 6-limb prime is far too slow under the upstream
+     vm_compute (killed at 19 min with no progress on this machine).
+     The convergence proof is value equality, so native_compute should
+     produce the same residual.  Logically identical to the upstream
+     make_computed_op tactic (see fiat-crypto/.../New/ComputedOp.v),
+     only the reduction strategy differs. *)
+  Local Ltac make_computed_op_native :=
+    eapply Build_computed_op;
+    lazymatch goal with
+    | |- _ = ErrorT.Success _ => native_compute; reflexivity
+    | _ => idtac
+    end;
+    native_compute; reflexivity.
   Instance bls377_ops : @word_by_word_Montgomery_ops from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _ (WordByWordMontgomery.n m machine_wordsize) m.
-  Proof using Type. Time constructor; make_computed_op. Defined.
+  Proof using Type. Time constructor; make_computed_op_native. Defined.
 
   Instance bls377_frep : FieldRepresentation := field_representation m.
   Instance bls377_frep_raw : FieldRepresentation := field_representation_raw m.

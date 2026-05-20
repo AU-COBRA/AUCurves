@@ -138,3 +138,4 @@ bn256-safe-rust/target/
 bn446-safe-rust/target/
 bn256-safe-rust/Cargo.lock
 bn446-safe-rust/Cargo.lock
+src/Bedrock/bls12_377_safe_tower

@@ -30,11 +30,11 @@ Local Notation function_t :=
     for BN256 — negate each Fp component at offset 0 and offset 48
     (6 limbs × 8 bytes = 48-byte stride). *)
 Definition Fp2_opp_bls377 : function_t :=
-  ("bls12_377_Fp2_opp", (["out"; "x"], []:list String.string,
+  ("bls377_Fp2_opp", (["out"; "x"], []:list String.string,
     (Syntax.cmd.seq
-      (Syntax.cmd.call [] "bls12_377_opp"
+      (Syntax.cmd.call [] "bls377_opp"
         [Syntax.expr.var "out"; Syntax.expr.var "x"])
-      (Syntax.cmd.call [] "bls12_377_opp"
+      (Syntax.cmd.call [] "bls377_opp"
         [Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "out") (Syntax.expr.literal (BinInt.Z.of_nat 48));
          Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "x") (Syntax.expr.literal (BinInt.Z.of_nat 48))])))).
 
@@ -54,5 +54,8 @@ From Stdlib Require Export Extraction ExtrOcamlBasic ExtrOcamlString.
 Extraction Language OCaml.
 Global Set Warnings Append "-extraction-opaque-accessed".
 
-Extraction "src/Bedrock/bls12_377_rust_extracted"
+(* Rocq 9 puts extracted files alongside the .v source by default; pass
+   -output-directory at compile time if a different location is needed.
+   We just emit the basename. *)
+Extraction "bls12_377_rust_extracted"
   bls377_tower_funcs safe_rust_fn type_decls safe_rust_module callee_types.

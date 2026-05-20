@@ -87,11 +87,30 @@ Measured on Zen 4 with `taskset -c 0`; full table in
 X25519 (DH), SHA-256/512, HMAC, HKDF, and ML-KEM-768 stay within a few
 percent of the best hand-tuned implementations on the same hardware.
 
-## Pairing crates (bls12-jasmin-rs)
+## Pairing throughput (`bls12-jasmin-rs`, sibling repo)
 
-| Curve | Pairing | Notes |
-|---|---|---|
-| BLS12-381 | 1.95 ms / pairing | Projective Miller loop, gnark final-exp port, constant-time scalar mul. |
-| BLS12-377 | 2.5 ms / pairing | DSD optimization on; 2 axioms remain. |
+The hand-tuned Rust-native pairing crate at `BLS/bls12-jasmin-rs/`
+(remote `spitters/bls12-jasmin-rs`) is the perf-leader for BLS12-381
+in our ecosystem.  Distinct from `bls12-381-safe-rust/` (which is the
+bedrock2 → safe-Rust full-tower extraction): `bls12-jasmin-rs`
+combines hand-written G1/G2/pairing in Rust with libjade Jasmin
+assembly for field leaves and Coq-extracted MSM bodies.
 
-Source: `bls12-jasmin-rs/` (sibling crate; benches under `bls12-jasmin-rs/benches/`).
+| Curve | Operation | This crate | Notes |
+|---|---|---:|---|
+| BLS12-381 | Pairing (full) | 1.95 ms | Projective Miller loop, gnark final-exp port, constant-time scalar mul. |
+| BLS12-381 | G1 add | 17 ns (Jasmin asm) | Vs GCC -O3: 26 ns → 36 % faster |
+| BLS12-381 | Fp mul (CryptOpt) | ~170 cyc | Vs GCC -O3: 265 cyc → 55 % faster |
+| BLS12-381 | MSM (extracted) | within 1.5× of arkworks at KZG sizes | 4 c-window variants (c=5/7/9/11), cache-aware dispatch |
+| BLS12-377 | Pairing (full) | 2.5 ms | DSD optimization on; 2 axioms remain. |
+
+Relationship to the other 14 packaged crates in this workspace:
+- `bls12-jasmin-rs` = perf-tuned, hand-written, with Jasmin leaves
+- `bls12-381-safe-rust` = bedrock2 → safe-Rust extraction, full Coq pipeline (BridgeReal Qed)
+- The two ship the same field semantics; choose `safe-rust` for the
+  verified-extraction story and `jasmin-rs` for raw perf.
+
+Source: `BLS/bls12-jasmin-rs/` (own remote at `spitters/bls12-jasmin-rs`,
+intentionally NOT moved into the AUCurves workspace since it carries
+its own commit history).  Benches: `bls12-jasmin-rs/examples/` +
+`bls12-jasmin-rs/benches/`.

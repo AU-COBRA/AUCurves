@@ -34,73 +34,181 @@ Fixpoint join (sep : string) (xs : list string) : string :=
 (* Tower geometry: field sizes and offset → path resolution          *)
 (* ================================================================ *)
 
+(** Tower shape: ordered list of [(name, base_name, arity)] entries
+    describing each non-base level, from closest-to-base to top.  Base
+    type [Fp] is implicit and not listed.  For BLS12-style towers
+    (BN254/BN256/BN446/BLS12-381/BLS12-377):
+      [("Fp2","Fp",2); ("Fp6","Fp2",3); ("Fp12","Fp6",2)]
+    For BLS24-509:
+      [("Fp2","Fp",2); ("Fp4","Fp2",2); ("Fp8","Fp4",2); ("Fp24","Fp8",3)]. *)
+Record tower_shape : Type := mk_tower {
+  ts_levels : list (string * string * Z)
+}.
+
+Definition bls12_tower : tower_shape :=
+  mk_tower [("Fp2","Fp",2); ("Fp6","Fp2",3); ("Fp12","Fp6",2)].
+
+Definition bls24_509_tower : tower_shape :=
+  mk_tower [("Fp2","Fp",2); ("Fp4","Fp2",2);
+            ("Fp8","Fp4",2); ("Fp24","Fp8",3)].
+
 (** All sizes in bytes, parameterized by Fp limb count [n]. *)
 Definition fp_sz  (n : Z) := n * 8.
 Definition fp2_sz (n : Z) := 2 * n * 8.
 Definition fp6_sz (n : Z) := 6 * n * 8.
 Definition fp12_sz (n : Z) := 12 * n * 8.
 
-(** Map a stackalloc byte count to a type name. *)
-Definition type_of_bytes (n : Z) (b : Z) : string :=
+(** Size of a named tower level in bytes.  Walks the shape from base
+    upward (each level's size is its arity times its base's size).
+    Base [Fp] is [fp_sz n]; [u64] is 8. *)
+Fixpoint ts_size_aux (lvls : list (string * string * Z))
+    (n : Z) (t : string) (acc : list (string * Z)) : option Z :=
+  if seq t "Fp" then Some (fp_sz n)
+  else if seq t "u64" then Some 8
+  else
+    match lvls with
+    | nil =>
+      match List.find (fun '(k,_) => seq k t) acc with
+      | Some (_, sz) => Some sz | None => None
+      end
+    | (name, base, arity) :: rest =>
+      (* Compute size of [base] first via acc lookup or [Fp]. *)
+      let base_sz :=
+        if seq base "Fp" then fp_sz n
+        else match List.find (fun '(k,_) => seq k base) acc with
+             | Some (_, sz) => sz | None => 0 end in
+      let this_sz := arity * base_sz in
+      let acc' := (name, this_sz) :: acc in
+      if seq t name then Some this_sz
+      else ts_size_aux rest n t acc'
+    end.
+
+Definition ts_size (ts : tower_shape) (n : Z) (t : string) : Z :=
+  match ts_size_aux (ts_levels ts) n t [] with
+  | Some sz => sz | None => fp_sz n
+  end.
+
+(** Map a stackalloc byte count to a type name, using the tower shape.
+    Falls back to "Fp" for unknown sizes. *)
+Fixpoint ts_type_of_bytes_aux (lvls : list (string * string * Z))
+    (n : Z) (b : Z) (acc : list (string * Z)) : string :=
+  match lvls with
+  | nil => ""
+  | (name, base, arity) :: rest =>
+    let base_sz :=
+      if seq base "Fp" then fp_sz n
+      else match List.find (fun '(k,_) => seq k base) acc with
+           | Some (_, sz) => sz | None => 0 end in
+    let this_sz := arity * base_sz in
+    if b =? this_sz then name
+    else ts_type_of_bytes_aux rest n b ((name, this_sz) :: acc)
+  end.
+
+Definition ts_type_of_bytes (ts : tower_shape) (n : Z) (b : Z) : string :=
   if b =? fp_sz n then "Fp"
-  else if b =? fp2_sz n then "Fp2"
-  else if b =? fp6_sz n then "Fp6"
-  else if b =? fp12_sz n then "Fp12"
   else if b =? 8 then "u64"
-  else "Fp".
+  else
+    let r := ts_type_of_bytes_aux (ts_levels ts) n b [] in
+    if seq r "" then "Fp" else r.
 
-(** Resolve a byte offset within a parent type to a field path.
-    Non-recursive, max 3 levels (Fp12 → Fp6 → Fp2 → Fp). *)
-Definition field_path (n : Z) (parent : string) (off : Z) : string :=
-  if off =? 0 then ""
-  else if seq parent "Fp2" then
-    ".c" ++ z_str (off / fp_sz n)
-  else if seq parent "Fp6" then
-    let i := off / fp2_sz n in
-    let r := off mod fp2_sz n in
-    ".c" ++ z_str i ++
-    (if r =? 0 then "" else ".c" ++ z_str (r / fp_sz n))
-  else if seq parent "Fp12" then
-    let i := off / fp6_sz n in
-    let r := off mod fp6_sz n in
-    let j := r / fp2_sz n in
-    let r2 := r mod fp2_sz n in
-    ".c" ++ z_str i ++
-    (if r =? 0 then "" else
-     ".c" ++ z_str j ++
-     (if r2 =? 0 then "" else ".c" ++ z_str (r2 / fp_sz n)))
-  else "".
+(** Map a tower-level name to its [(base, arity)] descriptor.
+    [Fp] and [u64] return [None]. *)
+Definition ts_lookup (ts : tower_shape) (t : string)
+    : option (string * Z) :=
+  match List.find (fun '(n,_,_) => seq n t) (ts_levels ts) with
+  | Some (_, base, arity) => Some (base, arity)
+  | None => None
+  end.
 
-(* ================================================================ *)
-(* Type ranking for drill-down                                       *)
-(* ================================================================ *)
+(** Tower depth from base [Fp]: 0 for [Fp]/[u64], else 1 + depth(base). *)
+Fixpoint ts_rank_aux (lvls : list (string * string * Z))
+    (t : string) (fuel : nat) : Z :=
+  match fuel with
+  | O => 0
+  | S f =>
+    if seq t "Fp" then 1
+    else if seq t "u64" then 0
+    else
+      match List.find (fun '(n,_,_) => seq n t) lvls with
+      | Some (_, base, _) => 1 + ts_rank_aux lvls base f
+      | None => 1
+      end
+  end.
 
-Definition type_rank (t : string) : Z :=
-  if seq t "Fp12" then 4 else if seq t "Fp6" then 3
-  else if seq t "Fp2" then 2 else 1.
+Definition ts_rank (ts : tower_shape) (t : string) : Z :=
+  ts_rank_aux (ts_levels ts) t 8%nat.
+
+(** Resolve a byte offset within a parent type to a field path.  Walks
+    the tower from [parent] downward, dividing the offset by the current
+    level's stride and recursing on the remainder. *)
+Fixpoint ts_field_path_aux (ts : tower_shape) (n : Z)
+    (parent : string) (off : Z) (fuel : nat) : string :=
+  match fuel with
+  | O => ""
+  | S f =>
+    if off =? 0 then ""
+    else
+      match ts_lookup ts parent with
+      | None => ""
+      | Some (base, _) =>
+        let stride := ts_size ts n base in
+        if stride =? 0 then ""
+        else
+          let i := off / stride in
+          let r := off mod stride in
+          ".c" ++ z_str i ++ ts_field_path_aux ts n base r f
+      end
+  end.
+
+Definition ts_field_path (ts : tower_shape) (n : Z)
+    (parent : string) (off : Z) : string :=
+  ts_field_path_aux ts n parent off 8%nat.
 
 (** When a variable of type [vt] is passed to a callee expecting [ct],
     add .c0 suffixes to drill down if [vt] is strictly larger. *)
-Definition drill (vt ct : string) : string :=
-  if type_rank vt <=? type_rank ct then ""
-  else if seq vt "Fp2" then ".c0"
-  else if andb (seq vt "Fp6") (seq ct "Fp2") then ".c0"
-  else if andb (seq vt "Fp6") (seq ct "Fp") then ".c0.c0"
-  else if andb (seq vt "Fp12") (seq ct "Fp6") then ".c0"
-  else if andb (seq vt "Fp12") (seq ct "Fp2") then ".c0.c0"
-  else if andb (seq vt "Fp12") (seq ct "Fp") then ".c0.c0.c0"
-  else "".
+Fixpoint ts_drill_aux (ts : tower_shape)
+    (vt ct : string) (fuel : nat) : string :=
+  match fuel with
+  | O => ""
+  | S f =>
+    if seq vt ct then ""
+    else
+      match ts_lookup ts vt with
+      | None => ""
+      | Some (base, _) => ".c0" ++ ts_drill_aux ts base ct f
+      end
+  end.
 
-(** Descend [depth] levels in the tower type hierarchy. *)
-Fixpoint descend (t : string) (depth : nat) : string :=
+Definition ts_drill (ts : tower_shape) (vt ct : string) : string :=
+  if ts_rank ts vt <=? ts_rank ts ct then ""
+  else ts_drill_aux ts vt ct 8%nat.
+
+(** Descend [depth] levels in the tower type hierarchy (strip one base
+    name at a time). *)
+Fixpoint ts_descend (ts : tower_shape) (t : string) (depth : nat) : string :=
   match depth with
   | O => t
   | S d =>
-    if seq t "Fp12" then descend "Fp6" d
-    else if seq t "Fp6" then descend "Fp2" d
-    else if seq t "Fp2" then descend "Fp" d
-    else t
+    match ts_lookup ts t with
+    | Some (base, _) => ts_descend ts base d
+    | None => t
+    end
   end.
+
+(* === Backwards-compat: BLS12-style tower defaults === *)
+
+Definition type_of_bytes (n : Z) (b : Z) : string :=
+  ts_type_of_bytes bls12_tower n b.
+
+Definition field_path (n : Z) (parent : string) (off : Z) : string :=
+  ts_field_path bls12_tower n parent off.
+
+Definition type_rank (t : string) : Z := ts_rank bls12_tower t.
+
+Definition drill (vt ct : string) : string := ts_drill bls12_tower vt ct.
+
+Definition descend (t : string) (depth : nat) : string :=
+  ts_descend bls12_tower t depth.
 
 (** Count '.' in a field path to determine depth. *)
 Definition dot_char : Ascii.ascii := Ascii.Ascii false true true true false true false false.
@@ -140,15 +248,20 @@ Fixpoint expr_var_off (e : expr.expr) : string * Z :=
   | _ => ("/*expr*/", 0)
   end.
 
-(** Resolve an expr in context: produce "var.field_path" string and resolved type. *)
-Definition resolve (n : Z) (c : ctx) (e : expr.expr) : string * string :=
+(** Resolve an expr in context: produce "var.field_path" string and
+    resolved type, using the given tower shape. *)
+Definition resolve_ts (ts : tower_shape) (n : Z) (c : ctx) (e : expr.expr)
+    : string * string :=
   let '(v, off) := expr_var_off e in
   if off =? -1 then (v, "literal")
   else
     let vt := ctx_get c v in
     if off =? 0 then (v, vt)
-    else (v ++ field_path n vt off,
-          descend vt (path_depth (field_path n vt off))).
+    else (v ++ ts_field_path ts n vt off,
+          ts_descend ts vt (path_depth (ts_field_path ts n vt off))).
+
+Definition resolve (n : Z) (c : ctx) (e : expr.expr) : string * string :=
+  resolve_ts bls12_tower n c e.
 
 (* ================================================================ *)
 (* Per-function parameter type table                                 *)
@@ -326,28 +439,165 @@ Definition param_table : list (string * list string) := [
   ("bn446_Fp12_pow_u", ["Fp12";"Fp12"]); ("bn446_final_exp_hard_dsd", ["Fp12";"Fp12"]);
   ("bn446_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn446_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
-  ("bn446_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"])
+  ("bn446_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+
+  (* === BLS24-509 tower entries.  Base Fp ops use the [bls24_509_*]
+     prefix (8-limb 509-bit prime, 10-char prefix); tower ops use the
+     short [bls24_*] prefix (6 chars).  Tower shape: Fp/Fp2/Fp4/Fp8/Fp24. *)
+  ("bls24_509_add", ["Fp";"Fp";"Fp"]); ("bls24_509_sub", ["Fp";"Fp";"Fp"]);
+  ("bls24_509_mul", ["Fp";"Fp";"Fp"]); ("bls24_509_square", ["Fp";"Fp"]);
+  ("bls24_509_opp", ["Fp";"Fp"]); ("bls24_509_felem_copy", ["Fp";"Fp"]);
+  ("bls24_509_from_word", ["Fp";"Fp"]);
+  (* bls24_509_select_znz: out, mask, x, y.  Mask is a u64 word
+     (not an Fp value); the extern leaf wrapper signature confirms
+     [c: u64].  The existing BN/BLS12 entries above use "Fp" as a
+     historical artifact — they're never called from a quad-extension
+     [Fp{n}_select_znz] body in those crates, so the type-mismatch
+     was latent. *)
+  ("bls24_509_select_znz", ["Fp";"u64";"Fp";"Fp"]);
+  ("bls24_509_inv", ["Fp";"Fp"]);
+  ("bls24_509_one", ["Fp"]);  ("bls24_509_zero", ["Fp"]);
+  ("bls24_Fp2_felem_copy", ["Fp2";"Fp2"]);
+  ("bls24_Fp2_zero", ["Fp2"]); ("bls24_Fp2_one", ["Fp2"]);
+  ("bls24_Fp2_add", ["Fp2";"Fp2";"Fp2"]);
+  ("bls24_Fp2_sub", ["Fp2";"Fp2";"Fp2"]);
+  ("bls24_Fp2_mul", ["Fp2";"Fp2";"Fp2"]);
+  ("bls24_Fp2_square", ["Fp2";"Fp2"]);
+  ("bls24_Fp2_opp", ["Fp2";"Fp2"]);
+  ("bls24_Fp2_mul_xi", ["Fp2";"Fp2"]);
+  (* bls24_Fp2_mul_by_nr operates on the BASE field Fp (it multiplies
+     an Fp value by the Fp2 non-residue β to compute the Fp2
+     reduction in Fp2_mul / Fp2_square). *)
+  ("bls24_Fp2_mul_by_nr", ["Fp";"Fp"]);
+  (* select_znz: out, mask, x, y.  The mask [c] is a u64 word, NOT a
+     field element.  Type-check against the BLS24 leaf wrapper
+     declaration: fn bls24_509_select_znz(o, c: u64, x, y).  Each
+     Fp{n}_select_znz in the verified tower forwards the [c] mask
+     unchanged down to bls24_509_select_znz; emit it as u64. *)
+  ("bls24_Fp2_select_znz", ["Fp2";"u64";"Fp2";"Fp2"]);
+  ("bls24_Fp4_felem_copy", ["Fp4";"Fp4"]);
+  ("bls24_Fp4_zero", ["Fp4"]); ("bls24_Fp4_one", ["Fp4"]);
+  ("bls24_Fp4_add", ["Fp4";"Fp4";"Fp4"]);
+  ("bls24_Fp4_sub", ["Fp4";"Fp4";"Fp4"]);
+  ("bls24_Fp4_mul", ["Fp4";"Fp4";"Fp4"]);
+  ("bls24_Fp4_square", ["Fp4";"Fp4"]);
+  ("bls24_Fp4_opp", ["Fp4";"Fp4"]);
+  ("bls24_Fp4_select_znz", ["Fp4";"u64";"Fp4";"Fp4"]);
+  ("bls24_Fp4_mul_by_v", ["Fp4";"Fp4"]);
+  ("bls24_Fp4_mul_fp", ["Fp4";"Fp4";"Fp"]);
+  ("bls24_Fp4_inv", ["Fp4";"Fp4"]);
+  ("bls24_Fp8_felem_copy", ["Fp8";"Fp8"]);
+  ("bls24_Fp8_zero", ["Fp8"]); ("bls24_Fp8_one", ["Fp8"]);
+  ("bls24_Fp8_add", ["Fp8";"Fp8";"Fp8"]);
+  ("bls24_Fp8_sub", ["Fp8";"Fp8";"Fp8"]);
+  ("bls24_Fp8_mul", ["Fp8";"Fp8";"Fp8"]);
+  ("bls24_Fp8_square", ["Fp8";"Fp8"]);
+  ("bls24_Fp8_opp", ["Fp8";"Fp8"]);
+  ("bls24_Fp8_select_znz", ["Fp8";"u64";"Fp8";"Fp8"]);
+  ("bls24_Fp8_mul_by_w", ["Fp8";"Fp8"]);
+  ("bls24_Fp8_inv", ["Fp8";"Fp8"]);
+  ("bls24_Fp24_felem_copy", ["Fp24";"Fp24"]);
+  ("bls24_Fp24_zero", ["Fp24"]); ("bls24_Fp24_one", ["Fp24"]);
+  ("bls24_Fp24_add", ["Fp24";"Fp24";"Fp24"]);
+  ("bls24_Fp24_sub", ["Fp24";"Fp24";"Fp24"]);
+  ("bls24_Fp24_mul", ["Fp24";"Fp24";"Fp24"]);
+  ("bls24_Fp24_square", ["Fp24";"Fp24"]);
+  ("bls24_Fp24_opp", ["Fp24";"Fp24"]);
+  ("bls24_Fp24_inv", ["Fp24";"Fp24"]);
+  (* Note: bedrock2 emits some Fp24-level helpers with lowercase
+     [fp24] (frob, conjugate, pow_z, pow_abs_z). *)
+  ("bls24_fp24_conjugate", ["Fp24";"Fp24"]);
+  ("bls24_fp24_pow_abs_z", ["Fp24";"Fp24"]);
+  ("bls24_fp24_pow_z", ["Fp24";"Fp24"]);
+  (* Frobenius parameters: gamma_fp4 ∈ Fp2 (constant ξ^{(p−1)/2}),
+     gamma_fp8 ∈ Fp4 (v^{(p−1)/2}), gamma_fp24_1 / gamma_fp24_2 ∈ Fp8
+     (w^{(p−1)/3} and w^{2(p−1)/3}).  See BLS24_509_FinalExp.v frob doc. *)
+  ("bls24_fp24_frob", ["Fp24";"Fp24";"Fp2";"Fp4";"Fp8";"Fp8"]);
+  ("bls24_fp24_frob_p2", ["Fp24";"Fp24";"Fp2";"Fp4";"Fp8";"Fp8"]);
+  ("bls24_fp24_frob_p4", ["Fp24";"Fp24";"Fp2";"Fp4";"Fp8";"Fp8"]);
+  (* bls24_make_line: out_Fp24, lam_Fp4, x_t_Fp4, y_t_Fp4, x_p_Fp, y_p_Fp.
+     Lambda and twist coords live in Fp4 (the bottom of Fp8) per the
+     BLS24 line construction in BLS24_509_MillerLoop.v:233. *)
+  ("bls24_make_line", ["Fp24";"Fp4";"Fp4";"Fp4";"Fp";"Fp"]);
+  (* bls24_miller_loop: out_Fp24, P.x_Fp, P.y_Fp, Q.x_Fp4, Q.y_Fp4
+     (Q lives on G2 ⊂ E(Fp4) for BLS24-509 — the twist over Fp4). *)
+  ("bls24_miller_loop", ["Fp24";"Fp";"Fp";"Fp4";"Fp4"]);
+  ("bls24_final_exp_easy", ["Fp24";"Fp24";"Fp2";"Fp4";"Fp8";"Fp8"]);
+  ("bls24_final_exp_hard",
+    ["Fp24";"Fp24";
+     "Fp2";"Fp4";"Fp8";"Fp8";
+     "Fp2";"Fp4";"Fp8";"Fp8";
+     "Fp2";"Fp4";"Fp8";"Fp8"]);
+  ("bls24_final_exp",
+    ["Fp24";"Fp24";
+     "Fp2";"Fp4";"Fp8";"Fp8";
+     "Fp2";"Fp4";"Fp8";"Fp8";
+     "Fp2";"Fp4";"Fp8";"Fp8"])
 ].
+
+(** Check whether [s] contains [needle] as a contiguous substring.
+    Walks every starting position; for small strings this is fine. *)
+Fixpoint contains_at (s needle : string) (start : nat) : bool :=
+  match start with
+  | O => seq (substring 0 (String.length needle) s) needle
+  | S k =>
+    if seq (substring start (String.length needle) s) needle then true
+    else contains_at s needle k
+  end.
+
+Definition contains (s needle : string) : bool :=
+  let ls := String.length s in
+  let ln := String.length needle in
+  if Nat.leb ln ls then contains_at s needle (ls - ln)
+  else false.
+
+(** Detect the tower level a function operates on by scanning its name
+    for an occurrence of any level's name (longer names first, so
+    "Fp24" wins over "Fp2"). *)
+Definition ts_base_type_of_name (ts : tower_shape) (f : string) : string :=
+  (* sort levels descending by name length so "Fp24" matches before "Fp2" *)
+  let lvls := ts_levels ts in
+  let sorted :=
+    List.fold_right
+      (fun lvl acc =>
+        let '(name, _, _) := lvl in
+        let n := String.length name in
+        let fix insert (l : list (string * string * Z))
+            : list (string * string * Z) :=
+          match l with
+          | nil => [lvl]
+          | ((nm, _, _) as h) :: t =>
+            if Nat.leb (String.length nm) n
+            then lvl :: l
+            else h :: insert t
+          end in
+        insert acc)
+      nil lvls in
+  match List.find (fun '(name,_,_) => contains f name) sorted with
+  | Some (name, _, _) => name
+  | None => "Fp"
+  end.
+
+Definition base_type_of_name (f : string) : string :=
+  ts_base_type_of_name bls12_tower f.
 
 (** Look up callee parameter types. If the table entry is shorter than
     the actual arg count, pad with the function's base tower type
     (inferred from the name prefix). This handles functions like
     frobenius_p3 which take extra gamma parameters. *)
-Definition base_type_of_name (f : string) : string :=
-  if seq (substring 6 4 f) "Fp12" then "Fp12"
-  else if seq (substring 6 3 f) "Fp6" then "Fp6"
-  else if seq (substring 6 3 f) "Fp2" then "Fp2"
-  else "Fp".
-
-Definition callee_types (f : string) (nargs : nat) : list string :=
-  let base := base_type_of_name f in
+Definition callee_types_ts (ts : tower_shape) (f : string) (nargs : nat)
+    : list string :=
+  let base := ts_base_type_of_name ts f in
   match List.find (fun '(k,_) => seq k f) param_table with
-  | Some (_, ts) =>
-      let n := List.length ts in
-      if Nat.leb nargs n then ts
-      else ts ++ List.repeat base (nargs - n)
+  | Some (_, tys) =>
+      let n := List.length tys in
+      if Nat.leb nargs n then tys
+      else tys ++ List.repeat base (nargs - n)
   | None => List.repeat base nargs
   end.
+
+Definition callee_types (f : string) (nargs : nat) : list string :=
+  callee_types_ts bls12_tower f nargs.
 
 (* ================================================================ *)
 (* In-place aliasing check                                           *)
@@ -422,37 +672,44 @@ Fixpoint scalar_expr (c : ctx) (e : expr.expr) : string :=
 (* Command → safe Rust                                               *)
 (* ================================================================ *)
 
-(** Format a source argument with appropriate drill-down. *)
-Definition fmt_src (n : Z) (c : ctx) (ct : string) (e : expr.expr) : string :=
-  let '(path, rt) := resolve n c e in
+(** Format a source argument with appropriate drill-down.  Special
+    case: if the callee expects a [u64] (e.g. a select_znz mask), pass
+    the local by value without [&]. *)
+Definition fmt_src_ts (ts : tower_shape) (n : Z) (c : ctx)
+    (ct : string) (e : expr.expr) : string :=
+  let '(path, rt) := resolve_ts ts n c e in
   if seq rt "literal" then path (* literal: emit as-is *)
-  else "&" ++ path ++ drill rt ct.
+  else if seq ct "u64" then path
+  else "&" ++ path ++ ts_drill ts rt ct.
 
-Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
-    (cmd : Syntax.cmd.cmd) : string * ctx * nat :=
+Definition fmt_src (n : Z) (c : ctx) (ct : string) (e : expr.expr) : string :=
+  fmt_src_ts bls12_tower n c ct e.
+
+Fixpoint safe_cmd_ts (ts : tower_shape) (ind : string) (n : Z)
+    (c : ctx) (ci : nat) (cmd : Syntax.cmd.cmd) : string * ctx * nat :=
   match cmd with
   | cmd.skip => ("", c, ci)
   | cmd.seq c1 c2 =>
-      let '(s1, cx1, ci1) := safe_cmd ind n c ci c1 in
-      let '(s2, cx2, ci2) := safe_cmd ind n cx1 ci1 c2 in
+      let '(s1, cx1, ci1) := safe_cmd_ts ts ind n c ci c1 in
+      let '(s2, cx2, ci2) := safe_cmd_ts ts ind n cx1 ci1 c2 in
       (s1 ++ s2, cx2, ci2)
 
   | cmd.stackalloc x nbytes body =>
       let xn := esc x in
-      let t := type_of_bytes n nbytes in
+      let t := ts_type_of_bytes ts n nbytes in
       let init := if seq t "u64" then "0u64" else t ++ "::zero()" in
       let decl := ind ++ "let mut " ++ xn ++ ": " ++ t ++ " = " ++ init ++ ";" ++ LF in
-      let '(body_s, cx, ci') := safe_cmd ind n ((xn, t) :: c) ci body in
+      let '(body_s, cx, ci') := safe_cmd_ts ts ind n ((xn, t) :: c) ci body in
       (decl ++ body_s, cx, ci')
 
   | cmd.call nil f args =>
       let fname := f in
       let nargs := List.length args in
-      let cts := callee_types fname nargs in
+      let cts := callee_types_ts ts fname nargs in
       match args, cts with
       | dest_e :: src_es, dest_ct :: src_cts =>
-        let '(dpath, drt) := resolve n c dest_e in
-        let dd := drill drt dest_ct in
+        let '(dpath, drt) := resolve_ts ts n c dest_e in
+        let dd := ts_drill ts drt dest_ct in
         let dest_full := dpath ++ dd in
         let '(dv, _) := expr_var_off dest_e in
         if any_uses_var dv src_es then
@@ -462,10 +719,10 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
           let fix fmt_srcs (cts : list string) (es : list expr.expr) : list string :=
             match cts, es with
             | ct :: cts', e :: es' =>
-                let '(sp, srt) := resolve n c e in
-                let s := if seq (sp ++ drill srt ct) dest_full
+                let '(sp, srt) := resolve_ts ts n c e in
+                let s := if seq (sp ++ ts_drill ts srt ct) dest_full
                          then "&" ++ cn
-                         else fmt_src n c ct e in
+                         else fmt_src_ts ts n c ct e in
                 s :: fmt_srcs cts' es'
             | _, _ => nil
             end in
@@ -483,7 +740,8 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
                       join ", " srcs ++ ");" ++ LF in
           (copy ++ call, c, S ci)
         else
-          let srcs := List.map (fun '(ct, e) => fmt_src n c ct e) (List.combine src_cts src_es) in
+          let srcs := List.map (fun '(ct, e) => fmt_src_ts ts n c ct e)
+                       (List.combine src_cts src_es) in
           (* B-3 copy elimination: even when there is no caller-side aliasing,
              the regular leaf wraps inputs in allocx/allocy felem_copies for
              defensive aliasing handling.  When dest provably differs from
@@ -510,14 +768,14 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
       (decl ++ s, c', ci)
 
   | cmd.cond test ct cf =>
-      let '(st, _, ci1) := safe_cmd ("    " ++ ind) n c ci ct in
-      let '(sf, _, ci2) := safe_cmd ("    " ++ ind) n c ci1 cf in
+      let '(st, _, ci1) := safe_cmd_ts ts ("    " ++ ind) n c ci ct in
+      let '(sf, _, ci2) := safe_cmd_ts ts ("    " ++ ind) n c ci1 cf in
       let cond_s := scalar_expr c test in
       (ind ++ "if " ++ cond_s ++ " != 0 {" ++ LF ++
        st ++ ind ++ "} else {" ++ LF ++ sf ++ ind ++ "}" ++ LF, c, ci2)
 
   | cmd.while test body =>
-      let '(body_s, _, ci') := safe_cmd ("    " ++ ind) n c ci body in
+      let '(body_s, _, ci') := safe_cmd_ts ts ("    " ++ ind) n c ci body in
       let test_s := scalar_expr c test in
       (ind ++ "while " ++ test_s ++ " != 0 {" ++ LF ++
        body_s ++ ind ++ "}" ++ LF, c, ci')
@@ -532,8 +790,9 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
       let fp_aligned := (off / fp_bytes) * fp_bytes in
       let limb_idx := (off - fp_aligned) / 8 in
       (* Drill all the way down to the Fp that contains this limb *)
-      let fp_field := field_path n vt fp_aligned in
-      let fp_field' := fp_field ++ drill (descend vt (path_depth fp_field)) "Fp" in
+      let fp_field := ts_field_path ts n vt fp_aligned in
+      let fp_field' :=
+        fp_field ++ ts_drill ts (ts_descend ts vt (path_depth fp_field)) "Fp" in
       let fp_path := vname ++ fp_field' in
       let val_s := scalar_expr c val in
       if seq vt "u64" then
@@ -546,44 +805,91 @@ Fixpoint safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
   | _ => ("", c, ci)
   end.
 
-(** Generate a complete safe Rust function. *)
-Definition safe_rust_fn (n : Z) (ptypes : list string)
+Definition safe_cmd (ind : string) (n : Z) (c : ctx) (ci : nat)
+    (cmd : Syntax.cmd.cmd) : string * ctx * nat :=
+  safe_cmd_ts bls12_tower ind n c ci cmd.
+
+(** Generate a complete safe Rust function.  Param formatting:
+    - The first param is the output ([&mut T]).
+    - Subsequent params are inputs ([&T] for struct types, [T] by-value
+      for [u64] scalars). *)
+Definition fmt_input_param (a t : string) : string :=
+  if seq t "u64" then esc a ++ ": u64"
+  else esc a ++ ": &" ++ t.
+
+Definition safe_rust_fn_ts (ts : tower_shape) (n : Z) (ptypes : list string)
     (func : string * (list string * list string * Syntax.cmd.cmd)) : string :=
   let '(name, (args, _, body)) := func in
   let params := List.combine args ptypes in
   let param_strs := match params with
     | (a, t) :: rest =>
         ("mut " ++ esc a ++ ": &mut " ++ t) ::
-        List.map (fun '(a, t) => esc a ++ ": &" ++ t) rest
+        List.map (fun '(a, t) => fmt_input_param a t) rest
     | nil => nil
     end in
   let init_ctx : ctx := List.map (fun '(a, t) => (esc a, t)) params in
-  let '(body_s, _, _) := safe_cmd "    " n init_ctx 0 body in
+  let '(body_s, _, _) := safe_cmd_ts ts "    " n init_ctx 0 body in
   "#[inline]" ++ LF ++
   "pub fn " ++ name ++ "(" ++ join ", " param_strs ++ ") {" ++ LF ++
   body_s ++
   "}" ++ LF.
 
-(** Type declarations for BN254. *)
-Definition type_decls (n : Z) : string :=
+Definition safe_rust_fn (n : Z) (ptypes : list string)
+    (func : string * (list string * list string * Syntax.cmd.cmd)) : string :=
+  safe_rust_fn_ts bls12_tower n ptypes func.
+
+(** Tower-aware type declarations.  Emits one [#[repr(C)] struct + impl
+    zero] per non-base level, in the order given (base→top, so each
+    level can reference its base by name).  The base [Fp] is always
+    emitted as the limb-vector wrapper. *)
+Fixpoint gen_fields_aux (base : string) (start : Z) (k : nat) : list string :=
+  match k with
+  | O => nil
+  | S k' =>
+    ("c" ++ z_str start ++ ": " ++ base)
+      :: gen_fields_aux base (start + 1) k'
+  end.
+
+Fixpoint gen_zero_fields_aux (base : string) (start : Z) (k : nat) : list string :=
+  match k with
+  | O => nil
+  | S k' =>
+    ("c" ++ z_str start ++ ": " ++ base ++ "::zero()")
+      :: gen_zero_fields_aux base (start + 1) k'
+  end.
+
+Definition ts_emit_level (n : Z)
+    (lvl : string * string * Z) : string :=
+  let '(name, base, arity) := lvl in
+  let an := Z.to_nat arity in
+  let fields :=
+    List.map (fun s => "pub " ++ s) (gen_fields_aux base 0 an) in
+  let zero_fields := gen_zero_fields_aux base 0 an in
+  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+  "pub struct " ++ name ++ " { " ++ join ", " fields ++ " }" ++ LF ++
+  "impl " ++ name ++ " { #[inline] pub const fn zero() -> Self { " ++
+  name ++ " { " ++ join ", " zero_fields ++ " } } }" ++ LF ++ LF.
+
+Definition type_decls_ts (ts : tower_shape) (n : Z) : string :=
   let ns := z_str n in
-  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct Fp(pub [u64; " ++ ns ++ "]);" ++ LF ++
-  "impl Fp { #[inline] pub const fn zero() -> Self { Fp([0u64; " ++ ns ++ "]) } }" ++ LF ++ LF ++
-  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct Fp2 { pub c0: Fp, pub c1: Fp }" ++ LF ++
-  "impl Fp2 { #[inline] pub const fn zero() -> Self { Fp2 { c0: Fp::zero(), c1: Fp::zero() } } }" ++ LF ++ LF ++
-  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct Fp6 { pub c0: Fp2, pub c1: Fp2, pub c2: Fp2 }" ++ LF ++
-  "impl Fp6 { #[inline] pub const fn zero() -> Self { Fp6 { c0: Fp2::zero(), c1: Fp2::zero(), c2: Fp2::zero() } } }" ++ LF ++ LF ++
-  "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
-  "pub struct Fp12 { pub c0: Fp6, pub c1: Fp6 }" ++ LF ++
-  "impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }" ++ LF.
+  let base_decl :=
+    "#[repr(C)] #[derive(Clone, Copy, Debug, PartialEq, Eq)]" ++ LF ++
+    "pub struct Fp(pub [u64; " ++ ns ++ "]);" ++ LF ++
+    "impl Fp { #[inline] pub const fn zero() -> Self { Fp([0u64; "
+    ++ ns ++ "]) } }" ++ LF ++ LF in
+  base_decl ++
+  List.fold_right (fun lvl acc => ts_emit_level n lvl ++ acc) "" (ts_levels ts).
+
+Definition type_decls (n : Z) : string := type_decls_ts bls12_tower n.
 
 (** Generate safe Rust for a list of tower functions. *)
-Definition safe_rust_module (n : Z)
+Definition safe_rust_module_ts (ts : tower_shape) (n : Z)
     (funcs : list (string * (list string * list string * Syntax.cmd.cmd))) : string :=
   join LF (List.map (fun '((name, (args, _, _)) as f) =>
-    let ptypes := callee_types name (List.length args) in
-    safe_rust_fn n ptypes f
+    let ptypes := callee_types_ts ts name (List.length args) in
+    safe_rust_fn_ts ts n ptypes f
   ) funcs).
+
+Definition safe_rust_module (n : Z)
+    (funcs : list (string * (list string * list string * Syntax.cmd.cmd))) : string :=
+  safe_rust_module_ts bls12_tower n funcs.

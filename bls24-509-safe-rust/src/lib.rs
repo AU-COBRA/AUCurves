@@ -48,38 +48,18 @@ pub fn invert_raw(out: &mut [u64; 8], x: &[u64; 8]) {
     safegcd::safegcd_bls24_509::bls24_invert_divstep_sat(out, x);
 }
 
-// Safe tower extraction pipeline IS wired (see
-// src/Bedrock/ExtractSafeTowerBLS24_509.v + bls24_509_safe_tower_main.ml);
-// generated/bls24_509_safe_tower.rs has 58 functions across the BLS24
-// Fp2/Fp4/Fp8/Fp24 tower.  BLOCKED at a deeper level than missing
-// aggregator entries:
-//
-//  (1) ToSafeRustBody.v's type-inference (type_of_bytes / field_path /
-//      type_rank / drill / descend / base_type_of_name / type_decls)
-//      hardcodes the BLS12-style tower Fp/Fp2/Fp6/Fp12.  BLS24 uses
-//      Fp/Fp2/Fp4/Fp8/Fp24.  Result: all bls24_Fp4_*, bls24_Fp8_*,
-//      bls24_Fp24_* functions are emitted with `&mut Fp` parameters
-//      instead of the correct tower type, and bls24_Fp24_inv reads
-//      `.c8`/`.c16` fields that the (BLS12) Fp2 type doesn't have.
-//
-//  (2) bls24_Fp4_inv and bls24_Fp8_inv exist only as `spec_of` instances
-//      in BLS24_509_MillerLoop_proof.v — no `Definition` of an actual
-//      bedrock2 body.  Compare to bls12_377_Fp2.v which has a closed
-//      hand-written Fp2_inv using the norm trick.  BLS24 needs the same
-//      for Fp4 (norm into Fp2, base inv on the norm) and Fp8 (norm into
-//      Fp4, recursive).
-//
-//  (3) The aggregator bls24_all_funcs duplicates the base-Fp ops
-//      (bls24_509_add etc.) which collide with the extern-C leaf
-//      wrappers emitted by bls24_509_safe_tower_main.ml.
-//
-//  (4) bls24_509_one / bls24_509_zero are called by Fp2 zero/one bodies
-//      but the leaf wrapper block only declares add/sub/mul/square/opp/
-//      felem_copy/from_word/select_znz/inv.
-//
-// Until ToSafeRustBody.v is generalised over the tower shape (or a
-// BLS24-specific variant is forked), the generated file cannot link.
-// Field-op wrapper above remains the linkable surface.
+/// Verified safe-Rust extension tower (Fp2/Fp4/Fp8/Fp24) emitted by
+/// ToSafeRustBody.v from the bedrock2 pairing definitions.  Generated
+/// by `src/Bedrock/ExtractSafeTowerBLS24_509.v` + the OCaml driver
+/// `src/Bedrock/bls24_509_safe_tower_main.ml`; the heredoc in the
+/// driver provides the extern-C leaf wrappers and the recursive
+/// `bls24_Fp2_inv` / `bls24_Fp4_inv` / `bls24_Fp8_inv` helpers used
+/// by the verified `bls24_Fp24_inv` body.
+pub mod tower {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/bls24_509_safe_tower.rs"));
+}
+
+pub use tower::{Fp2 as TowerFp2, Fp4, Fp8, Fp24};
 
 #[cfg(test)]
 mod kat;

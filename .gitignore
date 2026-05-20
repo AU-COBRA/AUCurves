@@ -46,6 +46,7 @@ output-tests/*.expected.processed
 *.rlib
 bls12-381-safe-rust/target/
 bn254-safe-rust/target/
+curve25519-jasmin-rs/target/
 
 # Local planning and session notes (never commit)
 CLAUDE.md

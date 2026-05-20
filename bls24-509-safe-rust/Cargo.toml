@@ -1,8 +1,8 @@
 [package]
 name = "bls24-509-safe-rust"
-version = "0.0.0-pending"
+version = "0.1.0"
 edition = "2021"
-description = "BLS24-509 base field Fp + pairing tower — SKELETON (safegcd inverse only), field-op extraction pending"
+description = "BLS24-509 field arithmetic — fiat-rust leaves + Bernstein-Yang CT inverse"
 license = "Apache-2.0"
 publish = false
 
@@ -10,5 +10,13 @@ publish = false
 name = "bls24_509"
 path = "src/lib.rs"
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
 [dependencies]
-safegcd = { path = "../safegcd-rs" }
+fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
+safegcd     = { path = "../safegcd-rs" }
+
+[dev-dependencies]

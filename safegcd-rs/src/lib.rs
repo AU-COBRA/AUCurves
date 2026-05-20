@@ -19,6 +19,7 @@ pub mod safegcd_p521;
 pub mod safegcd_bn254;
 pub mod safegcd_bn256;
 pub mod safegcd_bn446;
+pub mod safegcd_bls12_377;
 pub mod safegcd_bls12_381;
 pub mod safegcd_bls24_509;
 pub mod safegcd_bw6_761;

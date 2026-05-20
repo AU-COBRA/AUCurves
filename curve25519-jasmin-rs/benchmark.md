@@ -17,14 +17,33 @@ JASMINC=$(which jasminc) cargo bench --bench bench_vs_production \
 
 | Curve / field    | OURS (safegcd divstep) | Production CT reference                                | Speedup                       |
 |------------------|-----------------------:|--------------------------------------------------------|------------------------------:|
-| secp256k1 Fp     |               1.41 µs  | `k256` Fermat addition chain                            | **4.3×** faster (6.11 µs)     |
-| P-256 Fp         |               1.42 µs  | RustCrypto Fermat chain                                 | **4.7×** faster (6.71 µs)     |
-| P-384 Fp         |               2.52 µs  | RustCrypto Fermat chain                                 | **18.7×** faster (47.16 µs)   |
-| Pallas Fp        |               1.40 µs  | `pasta_curves` Fermat chain (`pow_vartime` over public p−2) | **6.7×** faster (9.38 µs) |
-| Vesta Fq         |               1.41 µs  | `pasta_curves` Fermat chain (`pow_vartime` over public p−2) | **6.7×** faster (9.38 µs) |
-| BLS12-381 Fp     |               2.53 µs  | `blst` hand-tuned x86_64 assembly                       | 0.88×  (blst: 2.22 µs)        |
-| BLS12-381 Fp     |               same     | `blst` classical Euclidean                              | 0.88×  (2.23 µs)              |
-| BN254 Fp         |               1.41 µs  | (no CT reference installed)                             | —                             |
+| secp256k1 Fp     |               2.28 µs  | `k256` Fermat addition chain                            | **3.3×** faster (7.54 µs)     |
+| P-256 Fp         |               1.86 µs  | RustCrypto Fermat chain                                 | **4.0×** faster (7.53 µs)     |
+| P-384 Fp         |               2.87 µs  | RustCrypto Fermat chain                                 | **24.5×** faster (70.35 µs)   |
+| Pallas Fp        |               1.59 µs  | `pasta_curves` Fermat chain (`pow_vartime` over public p−2) | **6.5×** faster (10.28 µs) |
+| Vesta Fq         |               1.45 µs  | `pasta_curves` Fermat chain (`pow_vartime` over public p−2) | **6.5×** faster (9.51 µs)  |
+| BLS12-381 Fp     |               2.64 µs  | `blst` hand-tuned x86_64 assembly                       | 0.88×  (blst: 2.33 µs)        |
+| BLS12-381 Fp     |               same     | `blst` classical Euclidean                              | 0.89×  (2.36 µs)              |
+| BN254 Fp         |               1.39 µs  | (no CT reference installed)                             | —                             |
+| BLS12-377 Fp     |               2.58 µs  | (no CT reference installed)                             | —                             |
+| BLS24-509 Fp     |               3.51 µs  | (no CT reference installed)                             | —                             |
+| BW6-761 Fp       |               5.85 µs  | (no CT reference installed)                             | —                             |
+
+The four `_noref` rows have no constant-time reference impl in any
+pure-Rust crate we could install:
+
+- **BN254 / BLS12-377 / BW6-761**: the only widely-used Rust impls are in
+  arkworks (`ark-{bn254,bls12-377,bw6-761}`), which uses BEA (Algorithm
+  16 GKPP, `ark-ff/montgomery_backend.rs:295`) — data-dependent
+  `while u.is_even()` loops, NOT constant-time. Excluded per the
+  CT-only policy.
+- **BLS24-509**: no mature pure-Rust impl exists at all (no `ark-bls24-509`
+  on crates.io as of 2026-05).
+- `blst` covers BLS12-381 only.
+
+These rows nevertheless usefully measure how OUR safegcd scales across
+prime sizes: 254 → 377 → 509 → 761 bits at 4/6/8/12 saturated u64
+limbs.
 
 ## Constant-time verification per library
 

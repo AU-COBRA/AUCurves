@@ -101,6 +101,8 @@ pub mod safegcd_p384;
 pub mod safegcd_p521;
 /// Per-curve safegcd inversion for BN254 base prime.
 pub mod safegcd_bn254;
+/// Per-curve safegcd inversion for BLS12-377 base prime (7 limbs).
+pub mod safegcd_bls12_377;
 /// Per-curve safegcd inversion for BLS12-381 base prime (7 limbs).
 pub mod safegcd_bls12_381;
 /// Per-curve safegcd inversion for BLS24-509 base prime (9 limbs).

@@ -25,6 +25,12 @@
 //!                + blst::blst_fp_inverse         (hand-tuned asm)
 //!                + blst::blst_fp_eucl_inverse    (classical Euclidean)
 //!
+//! `_noref` rows (our impl only, no CT production reference available):
+//!  - BN254, BLS12-377, BLS24-509, BW6-761.  Each curve's only mature
+//!    pure-Rust modular-inverse impl is arkworks' BEA (variable-time,
+//!    excluded); blst supports BLS12-381 only.  These rows still
+//!    measure how OUR safegcd scales across prime sizes (256/377/509/761).
+//!
 //! Note on `pow_vartime`: the name refers to vartime-over-exponent.  For
 //! invert the exponent is the PUBLIC constant `p-2`, so the function is
 //! CT over the secret input — same situation as p256's fixed addition chain.
@@ -32,8 +38,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ff::Field as _;
 
+use curve25519_jasmin::safegcd_bls12_377::bls12_377_invert_divstep_sat;
 use curve25519_jasmin::safegcd_bls12_381::bls12_invert_divstep_sat;
+use curve25519_jasmin::safegcd_bls24_509::bls24_invert_divstep_sat;
 use curve25519_jasmin::safegcd_bn254::bn254_invert_divstep_sat;
+use curve25519_jasmin::safegcd_bw6_761::bw6_761_invert_divstep_sat;
 use curve25519_jasmin::safegcd_p256::p256_invert_divstep_sat;
 use curve25519_jasmin::safegcd_p384::p384_invert_divstep_sat;
 use curve25519_jasmin::safegcd_pallas::pallas_invert_divstep_sat;
@@ -204,6 +213,69 @@ fn bench(c: &mut Criterion) {
     g.bench_function("bn254_OURS_divstep_noref", |b| {
         let mut out = [0u64; 4];
         b.iter(|| bn254_invert_divstep_sat(&mut out, black_box(&bn_x)));
+    });
+
+    // ─── BLS12-377 base field ─────────────────────────────────────────────
+    // No CT reference in pure-Rust crates today.  arkworks `ark-bls12-377`
+    // uses BEA (variable-time, excluded per top-of-file policy); blst does
+    // not support BLS12-377.  Mark `_noref`.
+    // BLS12-377 base prime top limb is 0x01AE_3A46_17C5_10EA — clamp to a
+    // value strictly below it.
+    let bls12_377_x: [u64; 6] = [
+        x4[0],
+        x4[1],
+        x4[2],
+        x4[3],
+        0x0123_4567_89ab_cdef,
+        0x0011_2233_4455_6677, // < 0x01AE_3A46_17C5_10EA
+    ];
+    g.bench_function("bls12_377_OURS_divstep_noref", |b| {
+        let mut out = [0u64; 6];
+        b.iter(|| bls12_377_invert_divstep_sat(&mut out, black_box(&bls12_377_x)));
+    });
+
+    // ─── BLS24-509 base field ─────────────────────────────────────────────
+    // No CT reference in pure-Rust crates today (no arkworks bls24-509;
+    // blst does not support it).  Mark `_noref`.
+    // BLS24-509 base prime top limb is 0x1555_56FF_FF39_CA9B — mask top
+    // limb with 0x0FFF_FFFF_FFFF_FFFF to stay below p.
+    let bls24_x: [u64; 8] = [
+        x4[0],
+        x4[1],
+        x4[2],
+        x4[3],
+        x4[0] ^ 0xa5a5_a5a5_a5a5_a5a5,
+        x4[1] ^ 0x5a5a_5a5a_5a5a_5a5a,
+        x4[2] ^ 0xdead_beef_cafe_babe,
+        x4[3] & 0x0FFF_FFFF_FFFF_FFFF,
+    ];
+    g.bench_function("bls24_509_OURS_divstep_noref", |b| {
+        let mut out = [0u64; 8];
+        b.iter(|| bls24_invert_divstep_sat(&mut out, black_box(&bls24_x)));
+    });
+
+    // ─── BW6-761 base field ───────────────────────────────────────────────
+    // No CT reference in pure-Rust crates today (arkworks `ark-bw6-761`
+    // uses BEA, blst doesn't support it).  Mark `_noref`.
+    // BW6-761 base prime top limb is 0x0122_E824_FB83_CE0A — clamp top
+    // limb to 0x00FF_FFFF_FFFF_FFFF to stay below p.
+    let bw6_x: [u64; 12] = [
+        x4[0],
+        x4[1],
+        x4[2],
+        x4[3],
+        x4[0] ^ 0xa5a5_a5a5_a5a5_a5a5,
+        x4[1] ^ 0x5a5a_5a5a_5a5a_5a5a,
+        x4[2] ^ 0xdead_beef_cafe_babe,
+        x4[3] ^ 0xfeed_face_0c0f_fee0,
+        0x0123_4567_89ab_cdef,
+        0xfedc_ba98_7654_3210,
+        0x1357_9bdf_2468_ace0,
+        0x0011_2233_4455_6677, // < 0x0122_E824_FB83_CE0A
+    ];
+    g.bench_function("bw6_761_OURS_divstep_noref", |b| {
+        let mut out = [0u64; 12];
+        b.iter(|| bw6_761_invert_divstep_sat(&mut out, black_box(&bw6_x)));
     });
 
     g.finish();

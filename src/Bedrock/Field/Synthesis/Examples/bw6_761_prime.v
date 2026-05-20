@@ -58,9 +58,21 @@ Section Field.
   Definition from_mont_string := prefix ++ "from_mont".
 
   (* Call fiat-crypto pipeline on all field operations.
-     NOTE: With 12 limbs this is significantly slower than 4-limb curves. *)
+     NOTE: With 12 limbs this is significantly slower than 4-limb curves.
+     Use a local native_compute variant of make_computed_op (per the
+     AUCurves CLAUDE.md "Repo Separation" policy -- don't patch
+     fiat-crypto's tactic, override it locally instead).  On 12 limbs
+     vm_compute would be intractable; native_compute cuts the WBW
+     synthesis to ~30 minutes wall on a 14 GB box. *)
+  Local Ltac make_computed_op_native :=
+    eapply Build_computed_op;
+    lazymatch goal with
+    | |- _ = ErrorT.Success _ => native_compute; reflexivity
+    | _ => idtac
+    end;
+    native_compute; reflexivity.
   Instance bw6_761_ops : @word_by_word_Montgomery_ops from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _ (WordByWordMontgomery.n m machine_wordsize) m.
-  Proof using Type. Time constructor; make_computed_op. Defined.
+  Proof using Type. Time constructor; make_computed_op_native. Defined.
 
   Instance bw6_761_frep : FieldRepresentation := field_representation m.
   Instance bw6_761_frep_raw : FieldRepresentation := field_representation_raw m.

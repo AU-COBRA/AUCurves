@@ -411,7 +411,20 @@ Fixpoint lower_binop_assigns (c : jasmin_cmd) : jasmin_cmd :=
   | JCskip => JCskip
   | JCseq c1 c2 => JCseq (lower_binop_assigns c1) (lower_binop_assigns c2)
   | JCset x e => lower_set x e
-  | JCstore base off v => JCstore base off v
+  | JCstore base off v =>
+      (* ANF the value expression so jasminc's linearization /
+         asmgen accept it: a deep [JEadd (JEmul ...) (JEadd ...)] tree
+         (which [to_bedrock_cmd] emits straight from [rust_cmd_ed]'s
+         sexpr trees, e.g. fe25519_mul's 5-of-25 partial-product sum)
+         is decomposed into JCset temps terminating in an atomic
+         JCstore base off (JEvar t).
+         Before this case existed, JCstore passed through unchanged
+         and jasminc's `linearization` (check_rexpr) / `asmgen`
+         (compile_arg) rejected the monolithic value tree.
+         The "st" temp-name prefix matches the [x ++ "a"] convention
+         in [lower_set]; flatten_expr's counter starts at 0. *)
+      let '(prefix, atom, _) := flatten_expr 0 "st" v in
+      JCseq prefix (JCstore base off atom)
   | JCcall f args => JCcall f args
   | JCif e ct cf => JCif e (lower_binop_assigns ct) (lower_binop_assigns cf)
   | JCwhile e body => JCwhile e (lower_binop_assigns body)

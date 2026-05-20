@@ -73,8 +73,13 @@ Section Extract.
 
 End Extract.
 
-(* Apply stackalloc flattening to tower mul/sqr functions *)
-Require Import Crypto.Bedrock.Jasmin.FlattenStackalloc.
+(* Apply stackalloc flattening to tower mul/sqr functions.
+   NOTE: FlattenStackalloc lives in AUCurves's own src/Bedrock/Jasmin/
+   (logical path `Bedrock.Jasmin.FlattenStackalloc`), NOT fiat-crypto.
+   The earlier `Crypto.Bedrock.Jasmin.FlattenStackalloc` import was a
+   stale reference from when the file might have been planned for
+   fiat-crypto. *)
+Require Import Bedrock.Jasmin.FlattenStackalloc.
 
 Definition bls24_flatten_targets : list String.string :=
   ["bls24_Fp2_mul"; "bls24_Fp2_square";

@@ -55,10 +55,22 @@ Section Field.
   Definition to_mont_string := prefix ++ "to_mont".
   Definition from_mont_string := prefix ++ "from_mont".
 
-  (* Synthesize all field operations via word-by-word Montgomery *)
+  (* Synthesize all field operations via word-by-word Montgomery.
+     Use a local native_compute variant of make_computed_op (per the
+     AUCurves CLAUDE.md "Repo Separation" policy — don't patch
+     fiat-crypto's tactic, override it locally instead).  Cuts the
+     WBW synthesis step from O(hours) to ~17 min on 6-limb primes;
+     8-limb BLS24-509 should still be tractable. *)
+  Local Ltac make_computed_op_native :=
+    eapply Build_computed_op;
+    lazymatch goal with
+    | |- _ = ErrorT.Success _ => native_compute; reflexivity
+    | _ => idtac
+    end;
+    native_compute; reflexivity.
   Instance bls24_509_ops : @word_by_word_Montgomery_ops
     from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _
     (WordByWordMontgomery.n m machine_wordsize) m.
-  Proof using Type. Time constructor; make_computed_op. Defined.
+  Proof using Type. Time constructor; make_computed_op_native. Defined.
 
 End Field.

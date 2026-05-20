@@ -48,5 +48,17 @@ pub fn invert_raw(out: &mut [u64; 8], x: &[u64; 8]) {
     safegcd::safegcd_bls24_509::bls24_invert_divstep_sat(out, x);
 }
 
+// Safe tower extraction pipeline IS wired (see
+// src/Bedrock/ExtractSafeTowerBLS24_509.v + bls24_509_safe_tower_main.ml);
+// generated/bls24_509_safe_tower.rs has 58 functions across Fp2/Fp4/Fp8/
+// Fp24.  BLOCKED: the aggregated BLS24_509_Extract.bls24_all_funcs list
+// is missing helpers needed by the emitted Rust:
+//   - bls24_509_one, bls24_509_zero (Fp constructors)
+//   - bls24_Fp4_inv, bls24_Fp8_inv (intermediate-tower inverses)
+//   - bls24_Fp2_mul_by_nr type mismatch (called with &Fp; expects &Fp2)
+// Need to extend bls24_all_funcs in BLS24_509_Extract.v to cover these.
+// For now the tower mod is NOT included; the field-op wrapper above is
+// the linkable surface.
+
 #[cfg(test)]
 mod kat;

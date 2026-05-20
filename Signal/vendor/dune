@@ -1,0 +1,4 @@
+; Exclude vendor subdirectories from dune scanning.
+; Signal theories do not depend on SSProve directly;
+; the SSProve-based security proofs live in Commitments/.
+(dirs ())

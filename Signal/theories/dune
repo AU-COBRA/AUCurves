@@ -1,0 +1,14 @@
+(env
+ (_
+  (coq
+   (flags -w -notation-overridden -w -ambiguous-paths
+          -w -deprecated-from-Coq -w -deprecated-dirpath-Coq
+          -w -deprecated-since-mathcomp-2.3.0
+          -w -deprecated-since-mathcomp-2.4.0
+          -native-compiler ondemand))))
+
+(coq.theory
+ (name Signal)
+ (mode vo)
+ (plugins rocq-elpi.elpi)
+ (theories Stdlib HB elpi elpi_elpi mathcomp extructures deriving Equations Coqprime))

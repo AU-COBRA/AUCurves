@@ -357,6 +357,53 @@ Definition param_table : list (string * list string) := [
   ("bls12_miller_loop_proj", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bls12_pairing", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
 
+  (* === BLS12-377 entries (mirror of bls12_*, prefix `bls377_*`) === *)
+  ("bls377_add", ["Fp";"Fp";"Fp"]); ("bls377_sub", ["Fp";"Fp";"Fp"]);
+  ("bls377_mul", ["Fp";"Fp";"Fp"]); ("bls377_square", ["Fp";"Fp"]);
+  ("bls377_opp", ["Fp";"Fp"]); ("bls377_felem_copy", ["Fp";"Fp"]);
+  ("bls377_from_word", ["Fp";"Fp"]); ("bls377_select_znz", ["Fp";"Fp";"Fp";"Fp"]);
+  ("bls377_inv", ["Fp";"Fp"]);
+  ("bls377_Fp2_felem_copy", ["Fp2";"Fp2"]); ("bls377_Fp2_add", ["Fp2";"Fp2";"Fp2"]);
+  ("bls377_Fp2_sub", ["Fp2";"Fp2";"Fp2"]); ("bls377_Fp2_mul", ["Fp2";"Fp2";"Fp2"]);
+  ("bls377_Fp2_square", ["Fp2";"Fp2"]); ("bls377_Fp2_sqr", ["Fp2";"Fp2"]);
+  ("bls377_Fp2_mul_xi", ["Fp2";"Fp2"]);
+  ("bls377_Fp2_conjugate", ["Fp2";"Fp2"]); ("bls377_Fp2_mul_fp", ["Fp2";"Fp2";"Fp"]);
+  ("bls377_Fp2_opp", ["Fp2";"Fp2"]); ("bls377_Fp2_inv", ["Fp2";"Fp2"]);
+  ("bls377_Fp6_felem_copy", ["Fp6";"Fp6"]); ("bls377_Fp6_add", ["Fp6";"Fp6";"Fp6"]);
+  ("bls377_Fp6_sub", ["Fp6";"Fp6";"Fp6"]); ("bls377_Fp6_opp", ["Fp6";"Fp6"]);
+  ("bls377_Fp6_mul", ["Fp6";"Fp6";"Fp6"]); ("bls377_Fp6_square", ["Fp6";"Fp6"]);
+  ("bls377_Fp6_inv", ["Fp6";"Fp6"]); ("bls377_Fp6_add_nocopy", ["Fp6";"Fp6";"Fp6"]);
+  ("bls377_Fp6_sub_nocopy", ["Fp6";"Fp6";"Fp6"]); ("bls377_Fp6_mul_by_v", ["Fp6";"Fp6"]);
+  ("bls377_Fp6_mul_fp2", ["Fp6";"Fp6";"Fp2"]);
+  ("bls377_Fp6_frobenius", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bls377_Fp6_frobenius_p2", ["Fp6";"Fp6";"Fp2";"Fp2"]);
+  ("bls377_Fp12_felem_copy", ["Fp12";"Fp12"]); ("bls377_Fp12_add", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_add_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_sub", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_sub_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_opp", ["Fp12";"Fp12"]);
+  ("bls377_Fp12_mul", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_mul_nocopy", ["Fp12";"Fp12";"Fp12"]);
+  ("bls377_Fp12_square", ["Fp12";"Fp12"]);
+  ("bls377_Fp12_inv", ["Fp12";"Fp12"]); ("bls377_Fp12_conjugate", ["Fp12";"Fp12"]);
+  ("bls377_Fp12_mul_by_w", ["Fp12";"Fp12"]);
+  ("bls377_Fp12_mul_by_024", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_Fp12_frobenius", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_Fp12_frobenius_p2", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_Fp12_frobenius_p3", ["Fp12";"Fp12"]);
+  ("bls377_make_line", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bls377_load_gamma1_p2", ["Fp2"]); ("bls377_load_gamma2_p2", ["Fp2"]);
+  ("bls377_load_w_frob_p2_c1", ["Fp2"]); ("bls377_load_gamma1", ["Fp2"]);
+  ("bls377_load_gamma2", ["Fp2"]); ("bls377_load_w_frob_c1", ["Fp2"]);
+  ("bls377_load_w_frob_p3_c1", ["Fp2"]);
+  ("bls377_Fp12_pow_u", ["Fp12";"Fp12"]);
+  ("bls377_final_exp_hard_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_final_exp", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
+  ("bls377_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bls377_pairing", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bls377_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+
   (* === BN256 entries (parallel to bn254) === *)
   ("bn256_add", ["Fp";"Fp";"Fp"]); ("bn256_sub", ["Fp";"Fp";"Fp"]);
   ("bn256_mul", ["Fp";"Fp";"Fp"]); ("bn256_square", ["Fp";"Fp"]);

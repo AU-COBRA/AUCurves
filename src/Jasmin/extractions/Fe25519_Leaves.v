@@ -1,36 +1,39 @@
-(** * Fe25519_Leaves: extract the 5 fe25519 leaf [_prog]s directly to
- *    OCaml for end-to-end Jasmin compilation.
+(** * Fe25519_Leaves: extract the 5 fe25519 leaf programs as
+ *    [jasmin_func list] for the existing Ocaml_compile pipeline.
  *
- *  Direct AST-target path (no .jazz text rendering required).
- *  Mirror of [BLS12_381.v] / [X25519_64.v] but for the rust_cmd_ed
- *  pipeline: each leaf's [wrap_prog] composition lands a Jasmin
- *  [_prog] that can be fed straight into Jasmin's OCaml compilation
- *  entry point (Ocaml_compile.compile_funcs after Obj.magic at the
- *  structurally-identical type boundary, same trick as the existing
- *  ast_bridge_driver.ml).
+ *  Refactored to use the bedrock2-Syntax IR path that
+ *  Ocaml_compile.compile_funcs consumes (matches BLS12-381 /
+ *  X25519_64 / Ed25519_Sign_Inlined pattern).
+ *
+ *  Pipeline per leaf:
+ *      function_body_ed     (Fe25519*Body.v)
+ *        ↓ instantiate with concrete TBytes 40 locals
+ *      rust_cmd_ed
+ *        ↓ to_bedrock_cmd                     (RustCmdToC.v, structural)
+ *      bedrock2.Syntax.cmd
+ *        ↓ build (name, (params, rets, cmd))
+ *      function_t
+ *        ↓ tr_func_sized 5 + polish_func      (Jasmin/Core.v)
+ *      jasmin_func   ← consumed by Ocaml_compile.compile_funcs
+ *
+ *  The 5-limb size (radix-2^51 fe25519) is the same as X25519_64.v.
  *)
 
-From HB Require Import structures.
-From Jasmin Require Import expr x86_instr_decl x86_extra arch_extra.
-From mathcomp Require Import ssreflect ssrfun ssrnat seq.
 From Stdlib Require Import ZArith String List.
 From Stdlib Require Import Extraction ExtrOcamlBasic ExtrOcamlString.
-Import ListNotations.
+Require Import bedrock2.Syntax.
 
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
-Require Import Bedrock.RustCmdEdToRealJasmin.
+Require Import Bedrock.RustCmdToC.
 Require Import Bedrock.Jasmin.Core.
-Require Import JasminBridge.RealJasminInstance.
-Require Import JasminBridge.BridgeReal.
-Require Import JasminBridge.WrapFundef.
 
 Require Import Bedrock.End2End.Ed25519.Fe25519MulBody.
 Require Import Bedrock.End2End.Ed25519.Fe25519AddSubBody.
 Require Import Bedrock.End2End.Ed25519.Fe25519SquareBody.
 Require Import Bedrock.End2End.Ed25519.Fe25519Scmula24Body.
 
-#[local] Existing Instance atoI | 0.
+Import BinInt String List.ListNotations.
 Local Open Scope string_scope.
 Local Open Scope Z_scope.
 
@@ -44,53 +47,56 @@ Definition y_slot   : located_ed := {| loc_var := "y";   loc_type := TBytes 40 |
 
 Definition p_off_concrete : nat -> Z := fun _ => 0%Z.
 
-(* ================================================================ *)
-(* §2. Per-leaf programs                                             *)
-(*                                                                  *)
-(* Each [_prog] is built by composing the rust_cmd_ed body through  *)
-(* [rust_cmd_ed_to_real_jasmin] and wrapping in a function via      *)
-(* [WrapFundef.wrap_prog].                                          *)
-(* ================================================================ *)
-
-Definition fe25519_mul_prog :=
-  Eval vm_compute in
-    wrap_prog "fe25519_mul" out_slot [x_slot; y_slot]
-      (rust_cmd_ed_to_real_jasmin (fe25519_mul_body out_slot [x_slot; y_slot])).
-
-Definition fe25519_add_prog :=
-  Eval vm_compute in
-    wrap_prog "fe25519_add" out_slot [x_slot; y_slot]
-      (rust_cmd_ed_to_real_jasmin (fe25519_add_body out_slot [x_slot; y_slot])).
-
-Definition fe25519_sub_prog :=
-  Eval vm_compute in
-    wrap_prog "fe25519_sub" out_slot [x_slot; y_slot]
-      (rust_cmd_ed_to_real_jasmin (fe25519_sub_body p_off_concrete out_slot [x_slot; y_slot])).
-
-Definition fe25519_square_prog :=
-  Eval vm_compute in
-    wrap_prog "fe25519_square" out_slot [x_slot]
-      (rust_cmd_ed_to_real_jasmin (fe25519_square_body out_slot [x_slot])).
-
-Definition fe25519_scmula24_prog :=
-  Eval vm_compute in
-    wrap_prog "fe25519_scmula24" out_slot [x_slot]
-      (rust_cmd_ed_to_real_jasmin (fe25519_scmula24_body out_slot [x_slot])).
+Local Notation function_t :=
+  (String.string * (list String.string * list String.string * Syntax.cmd))%type.
 
 (* ================================================================ *)
-(* §3. Aggregated list for the OCaml driver                          *)
+(* §2. Per-leaf [function_t] via to_bedrock_cmd                       *)
 (* ================================================================ *)
 
-(** All 5 leaves as a single list of (funname, fundef) pairs,
-    matching the shape Jasmin's compile entry expects.  Type
-    annotation elided to dodge the [seq]-vs-[ssrnat] resolution
-    collision; Rocq infers it from the components. *)
-Definition fe25519_all_jasmin :=
-  (p_funcs fe25519_mul_prog ++
-   p_funcs fe25519_add_prog ++
-   p_funcs fe25519_sub_prog ++
-   p_funcs fe25519_square_prog ++
-   p_funcs fe25519_scmula24_prog)%list.
+Definition fe25519_mul_func : function_t :=
+  ("fe25519_mul",
+   (["out"; "x"; "y"], []%list,
+    to_bedrock_cmd (fe25519_mul_body out_slot [x_slot; y_slot]))).
+
+Definition fe25519_add_func : function_t :=
+  ("fe25519_add",
+   (["out"; "x"; "y"], []%list,
+    to_bedrock_cmd (fe25519_add_body out_slot [x_slot; y_slot]))).
+
+Definition fe25519_sub_func : function_t :=
+  ("fe25519_sub",
+   (["out"; "x"; "y"], []%list,
+    to_bedrock_cmd (fe25519_sub_body p_off_concrete out_slot [x_slot; y_slot]))).
+
+Definition fe25519_square_func : function_t :=
+  ("fe25519_square",
+   (["out"; "x"], []%list,
+    to_bedrock_cmd (fe25519_square_body out_slot [x_slot]))).
+
+Definition fe25519_scmula24_func : function_t :=
+  ("fe25519_scmula24",
+   (["out"; "x"], []%list,
+    to_bedrock_cmd (fe25519_scmula24_body out_slot [x_slot]))).
+
+(** All 5 leaves; the OCaml driver iterates this list. *)
+Definition fe25519_funcs : list function_t :=
+  [ fe25519_mul_func; fe25519_add_func; fe25519_sub_func;
+    fe25519_square_func; fe25519_scmula24_func ]%list.
+
+(* ================================================================ *)
+(* §3. Polished jasmin_func list (matches BLS12 / X25519_64 shape)   *)
+(* ================================================================ *)
+
+(** Fe25519 uses 5 u64 limbs (unsaturated radix-2^51, prime 2^255−19).
+    [vm_compute] reduces typeclass-projected sizes to literal Z so
+    stackalloc args become concrete limb counts. *)
+Definition fe25519_field_size : Z := 5.
+
+Definition fe25519_all_jasmin : list jasmin_func :=
+  Eval vm_compute in
+    List.map (fun f => polish_func (tr_func_sized fe25519_field_size f))
+             fe25519_funcs.
 
 (* ================================================================ *)
 (* §4. OCaml extraction                                              *)
@@ -100,9 +106,5 @@ Extraction Language OCaml.
 Global Set Warnings Append "-extraction-opaque-accessed".
 
 Extraction "fe25519_leaves_jasmin_extracted"
-  fe25519_mul_prog
-  fe25519_add_prog
-  fe25519_sub_prog
-  fe25519_square_prog
-  fe25519_scmula24_prog
-  fe25519_all_jasmin.
+  fe25519_all_jasmin fe25519_field_size
+  pp_func pp_module.

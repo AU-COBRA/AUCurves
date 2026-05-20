@@ -40,14 +40,15 @@ safegcd-rs/                Standalone Bernstein–Yang inverse crate; all 14
                            primes available as safegcd_<curve> modules
 Signal/                    Sigma-protocol theories (Lizard, LinearSigma, Poksho)
 
-# Pairing curves (full field + Fp2/Fp6/Fp12 + Miller loop)
+# Pairing curves
 bls12-381-safe-rust/       Packaged crate (full field + pairing tower)
 bn254-safe-rust/           Packaged crate (full field + pairing tower)
 bn256-safe-rust/           Packaged crate (full field + pairing tower)
 bn446-safe-rust/           Packaged crate (full field + pairing tower)
-bls12-377-safe-rust/       Skeleton: safegcd inverse only; tower extraction pending
-bls24-509-safe-rust/       Skeleton: safegcd inverse only; tower extraction pending
-bw6-761-safe-rust/         Skeleton: safegcd inverse only; tower extraction pending
+bls12-377-safe-rust/       fiat-rust wrapper + fp_inv + Coq-extracted pairing tower
+                           (51 functions in generated/), 4 KAT tests pass
+bls24-509-safe-rust/       fiat-rust wrapper + fp_inv, 4 KAT tests pass
+bw6-761-safe-rust/         fiat-rust wrapper + fp_inv, 4 KAT tests pass
 
 # Non-pairing curves (field ops via fiat-rust + safegcd CT inverse)
 p224-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
@@ -83,12 +84,14 @@ Crate status:
   to fiat-crypto by registering them in `fiat-crypto/Makefile.examples`
   via `add_curve_keys WORD_BY_WORD_MONTGOMERY`; the generated
   `pallas_64.rs` / `vesta_64.rs` are checked into `fiat-crypto/fiat-rust/src/`.
-- **Skeletons** (CT inverse only): BLS12-377, BLS24-509, BW6-761 —
-  pairing-tower extraction pending.  Each exposes a typed
-  `invert_raw(&mut [u64; N], &[u64; N])` backed by the verified
-  safegcd inverter and carries a per-crate `PENDING.md` listing the
-  verified `.v` files already in tree plus the 4-step recipe to turn
-  the skeleton into a packaged crate.
+- **No skeletons left** — all 13 generated crates are now real
+  wrappers.  BLS12-377, BLS24-509, BW6-761 were promoted to fiat-rust
+  wrappers via the same Makefile.examples + `word_by_word_montgomery`
+  Standalone-OCaml-CLI recipe used for Pallas/Vesta.  Extraction
+  timings: 9 s (BLS12-377, 6 limbs) → 28 s (BLS24-509, 8 limbs) →
+  3 min (BW6-761, 12 limbs).  BLS12-377 additionally ships the
+  Coq-extracted pairing tower (51 functions in `generated/`) from
+  `BLS12_377_Pairing.v` via `ExtractSafeTowerBLS12_377.v`.
 
 The scaffolder lives at `scripts/scaffold_safe_rust.sh` — re-run it to
 regenerate any of the wrapper / skeleton crates from their templates.

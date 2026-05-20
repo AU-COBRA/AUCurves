@@ -50,15 +50,36 @@ pub fn invert_raw(out: &mut [u64; 8], x: &[u64; 8]) {
 
 // Safe tower extraction pipeline IS wired (see
 // src/Bedrock/ExtractSafeTowerBLS24_509.v + bls24_509_safe_tower_main.ml);
-// generated/bls24_509_safe_tower.rs has 58 functions across Fp2/Fp4/Fp8/
-// Fp24.  BLOCKED: the aggregated BLS24_509_Extract.bls24_all_funcs list
-// is missing helpers needed by the emitted Rust:
-//   - bls24_509_one, bls24_509_zero (Fp constructors)
-//   - bls24_Fp4_inv, bls24_Fp8_inv (intermediate-tower inverses)
-//   - bls24_Fp2_mul_by_nr type mismatch (called with &Fp; expects &Fp2)
-// Need to extend bls24_all_funcs in BLS24_509_Extract.v to cover these.
-// For now the tower mod is NOT included; the field-op wrapper above is
-// the linkable surface.
+// generated/bls24_509_safe_tower.rs has 58 functions across the BLS24
+// Fp2/Fp4/Fp8/Fp24 tower.  BLOCKED at a deeper level than missing
+// aggregator entries:
+//
+//  (1) ToSafeRustBody.v's type-inference (type_of_bytes / field_path /
+//      type_rank / drill / descend / base_type_of_name / type_decls)
+//      hardcodes the BLS12-style tower Fp/Fp2/Fp6/Fp12.  BLS24 uses
+//      Fp/Fp2/Fp4/Fp8/Fp24.  Result: all bls24_Fp4_*, bls24_Fp8_*,
+//      bls24_Fp24_* functions are emitted with `&mut Fp` parameters
+//      instead of the correct tower type, and bls24_Fp24_inv reads
+//      `.c8`/`.c16` fields that the (BLS12) Fp2 type doesn't have.
+//
+//  (2) bls24_Fp4_inv and bls24_Fp8_inv exist only as `spec_of` instances
+//      in BLS24_509_MillerLoop_proof.v — no `Definition` of an actual
+//      bedrock2 body.  Compare to bls12_377_Fp2.v which has a closed
+//      hand-written Fp2_inv using the norm trick.  BLS24 needs the same
+//      for Fp4 (norm into Fp2, base inv on the norm) and Fp8 (norm into
+//      Fp4, recursive).
+//
+//  (3) The aggregator bls24_all_funcs duplicates the base-Fp ops
+//      (bls24_509_add etc.) which collide with the extern-C leaf
+//      wrappers emitted by bls24_509_safe_tower_main.ml.
+//
+//  (4) bls24_509_one / bls24_509_zero are called by Fp2 zero/one bodies
+//      but the leaf wrapper block only declares add/sub/mul/square/opp/
+//      felem_copy/from_word/select_znz/inv.
+//
+// Until ToSafeRustBody.v is generalised over the tower shape (or a
+// BLS24-specific variant is forked), the generated file cannot link.
+// Field-op wrapper above remains the linkable surface.
 
 #[cfg(test)]
 mod kat;

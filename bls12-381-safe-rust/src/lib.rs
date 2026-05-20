@@ -56,6 +56,23 @@ pub fn miller_loop_proj(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2
     tower::bls12_miller_loop_proj(out, p_x, p_y, q_x, q_y)
 }
 
+/// Final exponentiation on an Fp12 value (typically a Miller-loop output).
+///
+/// Thin wrapper around the verified `tower::bls12_final_exp` that loads
+/// the gamma / frobenius constants. Exposed so callers can implement
+/// pairing-equality checks as `final_exp(m1 * m2^{-1}) == Fp12::one()`
+/// (one final-exp instead of two — the same shortcut blst's
+/// `blst_fp12_finalverify` uses).
+pub fn final_exp(out: &mut Fp12, f: &Fp12) {
+    let mut g1p2 = Fp2::zero();
+    let mut g2p2 = Fp2::zero();
+    let mut wfp2 = Fp2::zero();
+    tower::bls12_load_gamma1_p2(&mut g1p2);
+    tower::bls12_load_gamma2_p2(&mut g2p2);
+    tower::bls12_load_w_frob_p2_c1(&mut wfp2);
+    tower::bls12_final_exp(out, f, &g1p2, &g2p2, &wfp2);
+}
+
 /// Pairing using the projective miller loop variant.
 pub fn pairing_proj(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     let mut tmp = Fp12::zero();

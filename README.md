@@ -33,12 +33,14 @@ Signal-messenger paper:
 
 ```
 src/                      Rocq proofs (see breakdown below)
-curve25519-jasmin-rs/     Rust runtime for the Signal stack
+curve25519-jasmin-rs/     Rust runtime for the Signal stack; also hosts the
+                          Bernstein–Yang divstep port for all 14 verified primes
+                          as safegcd_<curve>.rs modules
 Signal/                   Sigma-protocol theories (Lizard, LinearSigma, Poksho)
-bls12-381-safe-rust/      Extracted safe-Rust BLS12-381 ops
-bn254-safe-rust/          Extracted safe-Rust BN254 ops
-bn256-safe-rust/          Extracted safe-Rust BN256 ops
-bn446-safe-rust/          Extracted safe-Rust BN446 ops
+bls12-381-safe-rust/      Packaged safe-Rust crate: field + group ops
+bn254-safe-rust/          Packaged safe-Rust crate: field + group ops
+bn256-safe-rust/          Packaged safe-Rust crate: field + group ops
+bn446-safe-rust/          Packaged safe-Rust crate: field + group ops
 
 src/
 ├── Arithmetic/       Field arithmetic helpers (safegcd divstep certificate)
@@ -50,6 +52,15 @@ src/
 ├── Spec/             High-level specifications (pairing, hash-to-curve, XEdDSA)
 └── Theory/           Mathematical foundations (see src/Theory/README.md)
 ```
+
+Of the 14 verified primes, only **four** (BLS12-381, BN254, BN256, BN446)
+are currently shipped as standalone safe-Rust crates. The other ten —
+BLS12-377, BLS24-509, BW6-761, P-224, P-256, P-384, P-521, secp256k1,
+Pallas, Vesta — have full Rocq proofs and the bedrock2 → Rust extraction
+chain wired in `src/Bedrock/Field/Synthesis/Examples/<Curve>_*.v`, but
+the packaged crates are pending. The Bernstein–Yang constant-time
+modular inversion is the exception: it is shipped for all 14 primes as
+`safegcd_<curve>.rs` modules inside `curve25519-jasmin-rs/`.
 
 ## Building
 

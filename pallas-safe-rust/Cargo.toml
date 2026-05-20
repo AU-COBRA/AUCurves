@@ -1,14 +1,21 @@
 [package]
 name = "pallas-safe-rust"
-version = "0.0.0-pending"
+version = "0.1.0"
 edition = "2021"
-description = "Pallas (Pasta) base field — Fp — SKELETON (safegcd inverse only), field-op extraction pending"
+description = "Pallas (Pasta) base field — Fp — fiat-rust leaves + Bernstein-Yang CT inverse"
 license = "Apache-2.0"
-publish = false
 
 [lib]
 name = "pallas"
 path = "src/lib.rs"
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
 [dependencies]
-safegcd = { path = "../safegcd-rs" }
+fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
+safegcd     = { path = "../safegcd-rs" }
+
+[dev-dependencies]

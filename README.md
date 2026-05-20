@@ -55,8 +55,8 @@ p256-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
 p384-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
 p521-safe-rust/            fiat-rust wrapper (Solinas) + fp_inv, 4 KAT tests pass
 secp256k1-safe-rust/       fiat-rust wrapper + fp_inv, 4 KAT tests pass
-pallas-safe-rust/          Skeleton: safegcd inverse only; Pasta primes not in fiat-rust
-vesta-safe-rust/           Skeleton: safegcd inverse only; Pasta primes not in fiat-rust
+pallas-safe-rust/          fiat-rust wrapper + fp_inv, 4 KAT tests pass
+vesta-safe-rust/           fiat-rust wrapper + fp_inv, 4 KAT tests pass
 
 src/
 ├── Arithmetic/       Field arithmetic helpers (safegcd divstep certificate)
@@ -74,19 +74,21 @@ Crate status:
 - **Packaged** (full field + pairing tower + Miller loop): BLS12-381,
   BN254, BN256, BN446.  See each crate's `README.md` for the public API.
 - **fiat-rust wrappers** (full field + CT inverse via safegcd): P-224,
-  P-256, P-384, P-521, secp256k1 — thin wrappers around
-  `fiat-crypto/fiat-rust` (Montgomery for the first four, Solinas for
-  P-521).  Each exposes a `fp_inv` that round-trips through the
+  P-256, P-384, P-521, secp256k1, Pallas, Vesta — thin wrappers around
+  `fiat-crypto/fiat-rust` (Montgomery for all but P-521, which uses
+  Solinas).  Each exposes a `fp_inv` that round-trips through the
   Bernstein–Yang divstep core in `safegcd-rs/`, and ships 4 KAT tests
   (`add_zero_identity`, `sub_self_is_zero`, `mul_one_identity`,
-  `invert_roundtrip`) — all passing.
-- **Skeletons** (CT inverse only): BLS12-377, BLS24-509, BW6-761
-  (pairing-tower extraction pending), Pallas, Vesta (Pasta primes not
-  yet in fiat-rust).  Each exposes a typed `invert_raw(&mut [u64; N],
-  &[u64; N])` backed by the verified safegcd inverter and carries a
-  per-crate `PENDING.md` listing the verified `.v` files already in
-  tree plus the 4-step recipe to turn the skeleton into a packaged
-  crate.
+  `invert_roundtrip`) — all passing.  Pallas / Vesta primes were added
+  to fiat-crypto by registering them in `fiat-crypto/Makefile.examples`
+  via `add_curve_keys WORD_BY_WORD_MONTGOMERY`; the generated
+  `pallas_64.rs` / `vesta_64.rs` are checked into `fiat-crypto/fiat-rust/src/`.
+- **Skeletons** (CT inverse only): BLS12-377, BLS24-509, BW6-761 —
+  pairing-tower extraction pending.  Each exposes a typed
+  `invert_raw(&mut [u64; N], &[u64; N])` backed by the verified
+  safegcd inverter and carries a per-crate `PENDING.md` listing the
+  verified `.v` files already in tree plus the 4-step recipe to turn
+  the skeleton into a packaged crate.
 
 The scaffolder lives at `scripts/scaffold_safe_rust.sh` — re-run it to
 regenerate any of the wrapper / skeleton crates from their templates.

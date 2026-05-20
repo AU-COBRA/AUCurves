@@ -2,12 +2,12 @@
 # Generate skeleton `<curve>-safe-rust/` crates for the 10 verified curves
 # that don't yet have packaged Rust crates.
 #
-# Five curves (P-224/256/384/521, secp256k1) get a working skeleton that
-# wraps fiat-rust for field arithmetic and re-exports the safegcd
-# Bernstein-Yang inverse from curve25519-jasmin-rs.  The other five
-# (Pallas, Vesta, BLS12-377, BLS24-509, BW6-761) get a non-compiling
-# PENDING.md plus a stub Cargo.toml because fiat-rust does not cover
-# them yet — they require a Rocq extraction run first.
+# Seven curves (P-224/256/384/521, secp256k1, Pallas, Vesta) get a
+# working skeleton that wraps fiat-rust for field arithmetic and
+# re-exports the safegcd Bernstein-Yang inverse from safegcd-rs.  The
+# remaining three (BLS12-377, BLS24-509, BW6-761) get a non-compiling
+# PENDING.md plus a stub Cargo.toml because fiat-rust does not yet
+# emit those primes — they require a Rocq extraction run first.
 #
 # Idempotent: re-running overwrites Cargo.toml / src/lib.rs / PENDING.md
 # but leaves any in-progress tests/ alone.
@@ -256,6 +256,8 @@ declare -a FIAT=(
     "p224      p224_64                  fiat_p224                4     224  p224       p224_invert_divstep_sat"
     "p384      p384_64                  fiat_p384                6     384  p384       p384_invert_divstep_sat"
     "secp256k1 secp256k1_montgomery_64  fiat_secp256k1_montgomery 4    256  secp256k1  secp_invert_divstep_sat"
+    "pallas    pallas_64                fiat_pallas              4     256  pallas     pallas_invert_divstep_sat"
+    "vesta     vesta_64                 fiat_vesta               4     256  vesta      vesta_invert_divstep_sat"
 )
 # P-521 uses Solinas not Montgomery; handled separately (hand-written lib.rs).
 
@@ -272,29 +274,21 @@ done
 # ─── skeleton-only (fiat-rust does not cover) ─────────────────────────
 # name           desc-suffix                                 reason
 declare -A SKELETON_DESC=(
-    [pallas]="Pallas (Pasta) base field — Fp"
-    [vesta]="Vesta (Pasta) base field — Fq"
     [bls12-377]="BLS12-377 base field Fp + pairing tower"
     [bls24-509]="BLS24-509 base field Fp + pairing tower"
     [bw6-761]="BW6-761 base field Fp + pairing tower"
 )
 declare -A SKELETON_REASON=(
-    [pallas]="fiat-rust does not currently emit Pasta primes; needs a fresh extraction from the bedrock2 specs."
-    [vesta]="fiat-rust does not currently emit Pasta primes; needs a fresh extraction from the bedrock2 specs."
     [bls12-377]="Needs Rocq extraction of the full Fp2/Fp6/Fp12 pairing tower (see bn256-safe-rust for the pattern)."
     [bls24-509]="Needs Rocq extraction of the full Fp2/Fp4/Fp8/Fp24 pairing tower."
     [bw6-761]="Needs Rocq extraction of the full Fp3/Fp6 pairing tower."
 )
 declare -A SKELETON_VFILE=(
-    [pallas]="Pallas_FpInv.v + Pallas_FpInv_closed.v + Pallas_InvertBoundInstantiation.v"
-    [vesta]="Vesta_FpInv.v + Vesta_FpInv_closed.v + Vesta_InvertBoundInstantiation.v"
     [bls12-377]="BLS12_377_FpInv.v + BLS12_377_FpInv_closed.v + BLS12_377_InvertBoundInstantiation.v"
     [bls24-509]="BLS24_509_FpInv.v + BLS24_509_FpInv_closed.v + BLS24_509_InvertBoundInstantiation.v"
     [bw6-761]="BW6_761_FpInv.v + BW6_761_FpInv_closed.v + BW6_761_InvertBoundInstantiation.v"
 )
 declare -A SKELETON_SG=(
-    [pallas]="pallas pallas_invert_divstep_sat 4"
-    [vesta]="vesta vesta_invert_divstep_sat 4"
     [bls12-377]="bls12_381 bls12_invert_divstep_sat 6"
     [bls24-509]="bls24_509 bls24_invert_divstep_sat 8"
     [bw6-761]="bw6_761 bw6_761_invert_divstep_sat 12"
@@ -303,7 +297,7 @@ declare -A SKELETON_SG=(
 # size, similar 6×u64 layout).  Replace with a dedicated safegcd_bls12_377.rs
 # when the cert lands.
 
-for name in pallas vesta bls12-377 bls24-509 bw6-761; do
+for name in bls12-377 bls24-509 bw6-761; do
     desc="${SKELETON_DESC[$name]}"
     reason="${SKELETON_REASON[$name]}"
     vfile="${SKELETON_VFILE[$name]}"

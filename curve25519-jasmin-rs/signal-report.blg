@@ -1,0 +1,5 @@
+[0] Config.pm:307> INFO - This is Biber 2.19
+[0] Config.pm:310> INFO - Logfile is 'signal-report.blg'
+[50] biber:340> INFO - === Mon Apr 13, 2026, 22:25:58
+[120] Utils.pm:399> ERROR - Cannot find 'signal-report.bcf'!
+[121] Biber.pm:136> INFO - ERRORS: 1

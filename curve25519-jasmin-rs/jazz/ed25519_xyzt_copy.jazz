@@ -1,0 +1,31 @@
+// fe25519_xyzt_copy: copy a 200-byte extended-twisted-Edwards point slot.
+//
+// This is the simplest leaf in the Ed25519 [function_body_ed] table: a
+// 200-byte memcpy.  Hand-written because the verified pipeline
+// (rust_cmd_ed -> ... -> Jasmin.expr.cmd -> .jazz) produces a `Ccall`
+// node referencing this function by name; the function itself is a
+// leaf and must be defined separately.
+//
+// Layout: 200 bytes = 25 × u64 (8 bytes each).
+//
+// Verification path for the *caller* (xyzt_copy_body):
+//   AUCurves/src/Bedrock/End2End/Ed25519/XyztCopyBody.v
+//   --(rust_cmd_ed_to_real_jasmin, Qed)-->
+//   real Jasmin Ccall AST in `xyzt_copy_real_jasmin_ast.out`
+//   --(jasminc, EasyCrypt-verified)--> x86-64 callsite.
+//
+// This file defines the *callee*.  Its body is a plain memcpy and is
+// not verified beyond the EasyCrypt-checked jasminc lowering of the
+// 25 load/store pair.
+export fn fe25519_xyzt_copy(
+  reg u64 out_ptr,
+  reg u64 src_ptr)
+{
+  inline int i;
+  reg u64 tmp;
+
+  for i=0 to 25 {
+    tmp = [src_ptr + 8*i];
+    [out_ptr + 8*i] = tmp;
+  }
+}

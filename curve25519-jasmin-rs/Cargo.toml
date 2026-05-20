@@ -1,0 +1,365 @@
+[package]
+name = "curve25519-jasmin"
+version = "0.1.0"
+edition = "2021"
+description = "X25519: verified Jasmin assembly (libjade/formosa-25519) + CryptOpt superoptimized field ops"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "curve25519_jasmin"
+
+[features]
+# The Ed25519 sign/verify path uses bodies extracted from the
+# verified `rust_cmd_ed` AST.  The non-curve leaves (`sha512_64`,
+# `clamp_64`, `scalar_*`, `bytes_equal_32`, `verify_fail`,
+# `memmove_*`) are end-to-end verified: SHA-512 is the libjade
+# Jasmin assembly, clamp comes from the bedrock2→Jasmin chain, the
+# scalar ops are pure byte-level Rust.
+#
+# The CURVE leaves (`ed25519_scalarmult{,_base}`, `ed25519_xyzt_add`,
+# `ed25519_compress`, `ed25519_decompress_{R,A}`) currently have two
+# alternative implementations selected by mutually-exclusive features:
+#
+#   - `dalek_leaves` (default, performance): backed by
+#     `curve25519-dalek`.  Pulls in the dalek dep.  This is the
+#     PERFORMANCE path used by the cargo benches.
+#
+#   - `decomposed_leaves` (paper claim, currently STUB): backed by
+#     the framework decomposed bodies from
+#     `AUCurves/src/Bedrock/End2End/Ed25519/{ScalarmultBodyDecomposed,
+#     ScalarmultBaseBodyDecomposed,XyztAddBodyDecomposed,
+#     XyztDoubleBodyDecomposed}.v` — once an extraction emitter for
+#     those bodies lands, this feature flips to the framework
+#     implementation and the dalek dep can be dropped entirely.
+#     For now, enabling `decomposed_leaves` without `dalek_leaves`
+#     produces stub symbols that panic at runtime — this is the
+#     paper-grade configuration with the framework's verified
+#     decomposed bodies plugged in as soon as extraction is wired up.
+#
+# `ed25519_rustcmd` enables the extracted Ed25519 path; one of
+# `dalek_leaves` / `decomposed_leaves` must also be set.
+ed25519_rustcmd = []
+
+# `divstep_invert`: route `mont_to_edwards::fe25519_invert` through
+# Bernstein-Yang divstep (`safegcd25519::fe25519_invert_divstep_tight`,
+# port of libsecp256k1 `secp256k1_modinv64`) instead of the Fermat
+# 254-square + 11-multiplication chain.  ~2× faster on Zen 4
+# (~4040 cyc vs ~7960 cyc per invert).  Affects every caller that
+# goes through `mont_to_edwards::fe25519_invert` — notably
+# `mont_u_to_edwards_compressed` used by XEdDSA.
+# Does NOT affect the rustcmd_vs_dalek bench under `dalek_leaves`,
+# which routes curve ops through dalek and never enters this path.
+divstep_invert = []
+dalek_leaves = ["ed25519_rustcmd", "dep:curve25519-dalek"]
+# `decomposed_leaves` still depends on `curve25519-dalek` for two
+# leaves (compress / decompress) that the framework decomposition
+# does not yet cover.  See `leaves.rs::decomposed_curve_leaves` —
+# scalarmult{,_base} and xyzt_add go through the framework, but
+# ed25519_compress and ed25519_decompress_{R,A} bridge through
+# dalek's `EdwardsPoint::{compress,decompress}` for now.
+decomposed_leaves = ["ed25519_rustcmd", "dep:curve25519-dalek"]
+# `cryptopt_leaves`: when set alongside `decomposed_leaves`, the
+# extracted curve bodies link against `fe25519_cryptopt.rs` (4×64
+# saturated-Solinas with CryptOpt asm for mul/square) instead of the
+# default `fe25519_portable.rs` (5×51 unsaturated with fiat-rust).
+# B2 of the closing-the-gap plan.
+cryptopt_leaves = ["decomposed_leaves"]
+# `inline_leaves`: Path (2) of the gap inventory.  Replaces the
+# raw-pointer extern-C `decomposed_bodies.rs` with the inline-callable
+# `decomposed_bodies_inline.rs` (extracted via
+# `Bedrock/ExtractCurveBodiesInline.v`).  Each body is `#[inline(always)]
+# pub fn name(out: &mut [u8; N], ...)` so LLVM can inline cross-body
+# call sites and run alias analysis on the typed slots.  Uses the same
+# `fe25519_portable.rs` leaf shim as `decomposed_leaves`.
+inline_leaves = ["ed25519_rustcmd", "dep:curve25519-dalek"]
+# `wnaf_comb_leaves`: extracted wNAF + comb-table bodies from
+# `Bedrock/ExtractWnafCombBodies.v` (Phase B-class scalar-mult
+# optimisations).  Sign goes through the new comb body
+# (64-window × 16-entry fixed-base table; ZERO doublings at runtime),
+# verify goes through the new wnaf body (52-digit signed window-5 NAF).
+# Both bodies dispatch to the Phase A xyzt_add/double/copy leaves
+# already shipped under `decomposed_leaves`.  The `comb_table_lookup`
+# leaf is backed by a one-time dalek-initialised 204KB table; the
+# wnaf body uses a per-call odd-multiples-of-P table.
+wnaf_comb_leaves = ["ed25519_rustcmd", "dep:curve25519-dalek"]
+# `jasminc_leaves`: end-to-end through the verified
+# rust_cmd_ed -> Jasmin.expr.cmd -> jasminc -> x86-64 pipeline.
+# Builds on `wnaf_comb_leaves` and additionally replaces the
+# `fe25519_xyzt_copy` leaf with a `.jazz`-compiled symbol emitted by
+# the EasyCrypt-verified Jasmin compiler.  The corresponding caller
+# AST is dumped in `_build/default/xyzt_copy_real_jasmin_ast.out` by
+# `AUCurves/src/Jasmin/ExtractXyztCopyReal.v`.  This is the smallest
+# representative slice of Option C step (d).
+jasminc_leaves = ["wnaf_comb_leaves"]
+# `tfp25519_limbs`: prototype of the TFp25519_64 plumbing.  Exports
+# `fe25519_*_limbs(out: *mut u64, ...)` from `fe25519_limbs.rs` —
+# parallel to the byte-canonical `fe25519_*(out: *mut u8, ...)` shim
+# but skipping the `from_bytes`/`to_bytes` conversion on every call.
+# No callers in tree yet (the rust_cmd_ed AST still emits TBytes 40
+# slots); benched standalone via the `fe25519_micro_limbs` bench.
+# See `docs/perf-gap-analysis.md` and `docs/tfp25519-plumbing-plan.md`.
+# `tfp25519_limbs`: live path for the verified TFp25519_64 plumbing.
+# Activates the auto-extracted limb-typed `xyzt_{add,double}_decomposed`
+# bodies from `decomposed_bodies_limbs.rs` (output of AUCurves's
+# retyped XyztAdd/Double BodyDecomposed.v via ExtractCurveBodies.v)
+# plus the limb-typed `fe25519_*` shim in `fe25519_limbs.rs`.
+# Implies `xyzt_limb_abi` — the 200-byte XYZT slot is interpreted as
+# 5 × [u64; 5] fiat tight limbs at byte offsets 0/40/80/120/160
+# (no byte↔limb conversion at the protocol body boundary).  All
+# producers/consumers (comb_table_lookup, decompress_A/_R, compress)
+# write/read in the limb format.
+tfp25519_limbs = ["ed25519_rustcmd", "xyzt_limb_abi"]
+# `xyzt_limb_abi`: the limb-format 200-byte XYZT slot.  Implied by
+# `tfp25519_limbs`; can be used standalone with the byte-canonical
+# `fe25519_*` shim (decomposed_bodies.rs xyzt_*_decomposed) ONLY if
+# all field-op leaves are updated to accept limb-format coords —
+# this is not yet wired, so practically `xyzt_limb_abi` is always
+# paired with `tfp25519_limbs`.
+xyzt_limb_abi = ["ed25519_rustcmd"]
+# `tfp25519_inline_limbs`: Rust-level #[inline(always)] field ops over
+# [u64; 5] tight-limb slots, inlined into #[inline(always)] xyzt_add/
+# double bodies.  LLVM keeps limbs in registers across the 18 (add) /
+# 11 (double) inner ops — no extern "C" boundaries between field ops.
+# Suppresses the auto-extracted decomposed_bodies_limbs.rs exports so
+# the linker picks up the inline-body versions.  Implies tfp25519_limbs
+# (which implies xyzt_limb_abi).  See docs/perf-gap-analysis.md.
+tfp25519_inline_limbs = ["tfp25519_limbs"]
+# `verify_projective_eq`: Phase 4 of projective-boundary-plan.md.
+# Replaces the verify body's final compress + compress + bytes_equal_32
+# (2× ~3 µs Z⁻¹ chain + 32-byte byte compare) with a projective
+# equality check: cross-multiply (sB.X · RcheckA.Z == RcheckA.X · sB.Z)
+# AND (sB.Y · RcheckA.Z == RcheckA.Y · sB.Z).  4 muls + 2 sub + 1 OR
+# vs 2 inversions.  Net: ~6 µs off verify.
+# Rust-only stop-gap (does not re-extract verify.rs from
+# Sign_Verify_RustCmd.v; that's the Phase 4 verified follow-on).
+# Requires the limb path (tfp25519_limbs) so the projective-eq leaf
+# can read [u64; 5] slots directly.
+verify_projective_eq = ["tfp25519_limbs"]
+# `wnaf_signed`: EXPERIMENTAL — switch ed25519_scalarmult from
+# window-4 to the signed-wnaf-5 body (Phase 1a, AUCurves
+# WnafScalarmultBody.v + xyzt_cond_negate leaf).  CURRENTLY BROKEN:
+# the wnaf body expects fixed-spacing 5-bit windows with odd-only
+# magnitudes, but `wnaf_digits_compute` produces variable-spacing
+# wNAF (skips zero bits).  These are incompatible.  KAT fails.
+# Closing requires either fixed-spacing recoding (loses skip-zero
+# benefit) or making the body handle even digits.  Deferred.
+wnaf_signed = ["tfp25519_limbs"]
+# `lean_emitted_invert`: link in the `fe25519_invert` body emitted from
+# the verified Lean RustCmd AST in `SSProve-lean/.../Examples/Fe25519Invert.lean`.
+# Source AST: 254 squarings + 11 multiplies + N copies, all `RCall`
+# leaves over fiat-crypto primitives.  Trust: Lean's
+# `RustcExec_correct` named axiom (one statement).  KAT'd against the
+# hand-coded `mont_to_edwards::fe25519_invert` in unit tests.
+lean_emitted_invert = []
+# `lean_emitted_comb_table`: link in `build_comb_table_emitted`, the comb
+# table builder emitted from `Examples/CombTableInit.lean`.  1024
+# verified-leaf-call cells.  Used by an alternative `build_comb_table`
+# wrapper that delegates to the Lean-emitted body instead of hand-coding
+# the loop.  KAT'd against the hand-coded version (and indirectly via
+# RFC 8032 KAT through the comb scalarmult_base path).
+lean_emitted_comb_table = ["wnaf_comb_leaves"]
+# `lean_emitted_mont_to_edwards`: link in `mont_to_edwards_emitted`, the
+# field-arithmetic core of `mont_u_to_edwards_compressed` emitted from
+# `Examples/MontUToEdwards.lean`.  The shim around the emitted body
+# handles `[u8; 32]` <-> `Fp25519` conversion, the `u == -1` rejection,
+# and the sign-bit OR — these are byte-level operations outside the
+# verified IR.  KAT'd against the hand-coded version (which is itself
+# KAT'd against dalek).
+lean_emitted_mont_to_edwards = []
+# `lean_emitted_scalar25519`: link in `scalar25519_emitted`, the
+# Scalar25519 method bodies emitted from `Examples/Scalar25519Ops.lean`.
+# Each method is a thin AST over fiat-crypto's verified `curve25519_scalar_64`
+# primitives.  KAT'd against the hand-coded `scalar25519` module per method.
+lean_emitted_scalar25519 = []
+# `aes_gcm_libcrux`: route the legacy `aes256_gcm_{encrypt,decrypt}`
+# entry points through the libcrux HACL bindings (`libcrux::aead`)
+# instead of the RustCrypto `aes-gcm` crate.  Only meaningful when
+# combined with `aes_gcm_legacy` (the legacy AES-GCM AEAD module is
+# itself feature-gated since the 2026-05-13 migration to
+# AES-256-CBC + HMAC-SHA256).  libcrux is the Cryspen-maintained
+# Rust binding to the F*-verified HACL* AES-GCM implementation.
+aes_gcm_libcrux = ["aes_gcm_legacy", "dep:libcrux"]
+
+# `aes_gcm_legacy`: enables the legacy AES-256-GCM AEAD path
+# (`symmetric::aes256_gcm_{encrypt,decrypt}` + the AES-GCM tests).
+# OFF by default — runtime AEAD migrated to AES-256-CBC + HMAC-SHA256
+# (Signal-spec compliance) on 2026-05-13.  Keep this on for
+# wire-compat with data encrypted under the old wire format
+# (`ciphertext || 16-byte GCM tag`).  See
+# `docs/aes-gcm-to-cbc-hmac-2026-05-13.md`.
+aes_gcm_legacy = ["dep:aes-gcm"]
+
+# `upstream-signal`: enables the byte-identical cross-check against
+# Signal's `libsignal-zkgroup` reference implementation in
+# `tests/zkgroup_upstream_kat.rs` (Tier B tests).  OFF by default
+# because libsignal-zkgroup is NOT on crates.io — it lives in the
+# `signalapp/libsignal` GitHub monorepo and pulling it in requires
+# a `git = "..."` dev-dep (~80 transitive crates).
+#
+# To actually run the Tier B cross-check:
+#   (1) Add the dev-dep below (uncomment and adjust pin if needed):
+#
+#       [dev-dependencies]
+#       libsignal-zkgroup = { git = "https://github.com/signalapp/libsignal",
+#                              branch = "main",
+#                              package = "zkgroup" }
+#
+#   (2) Replace the `#[ignore]` markers in
+#       `tests/zkgroup_upstream_kat.rs::upstream` with real bodies
+#       (per-test docstrings document the upstream fixture path).
+#   (3) Run:
+#         cargo test --features "dalek_leaves upstream-signal" \
+#             --test zkgroup_upstream_kat -- --ignored
+#
+# Tier A in the same test file remains feature-independent and runs
+# under the default test suite — it certifies the byte plane our
+# trait wiring shares with `curve25519-dalek` (which libsignal-zkgroup
+# itself uses internally for group arithmetic).
+upstream-signal = []
+
+[dependencies]
+sha3 = "0.10"
+# AES-256-GCM: RustCrypto crate, hardware-accelerated (AES-NI / ARMv8).
+# LEGACY: as of 2026-05-13 the runtime AEAD switched to
+# AES-256-CBC + HMAC-SHA256 (Signal-spec) backed by
+# `libcrux-lean-specs::aes` (pure-Rust FIPS-197 + safe-Rust CBC) +
+# our verified HMAC-SHA-256.  This dep is only pulled in under
+# `aes_gcm_legacy`; keep around for wire-compat with old data.
+aes-gcm = { version = "0.10", optional = true }
+# libcrux-lean-specs: pure-Rust FIPS-197 AES-128/256 (no dependencies,
+# byte-identical to libcrux HACL via FIPS-197 spec).  Used as the
+# block-cipher primitive for AES-256-CBC + HMAC-SHA256 (the runtime
+# Signal AEAD path since 2026-05-13).  This is the same crate used
+# by `libcrux-lean-specs/rust-specs` as the source-of-truth Lean
+# extraction target, so wiring it here also closes the
+# Rust-runtime / Lean-spec extraction loop on the block cipher.
+libcrux-specs = { path = "../../libcrux-lean-specs/rust-specs" }
+# prost: protobuf serialization (libsignal wire format).  Industry-
+# standard, unverified.  Verified-marshaler alternative (~1-2 months
+# total, per docs/signal-tracks-status-2026-05-12.md) would replace
+# this with hand-authored per-message-type marshalers in CatCrypt.
+prost = "0.12"
+rand_core = "0.6"
+curve25519-dalek = { version = "4", features = ["alloc"], optional = true }
+# fiat-crypto: portable radix-2^51 Curve25519 field arithmetic for the
+# `decomposed_leaves` fe25519 shim (see src/ed25519_rustcmd/fe25519_portable.rs).
+fiat-crypto = { path = "../AUCurves/fiat-crypto/fiat-rust", default-features = false, features = ["std"] }
+# libcrux: F*-verified HACL* AES-GCM (and friends).  Optional, gated
+# by the `aes_gcm_libcrux` feature.  Wired into the AES-256-GCM
+# encrypt/decrypt path in `src/symmetric.rs` as a verified
+# alternative to RustCrypto's `aes-gcm`.  Connects to the CatCrypt
+# UC chain via `CatCrypt.Crypto.AEAD.AESGCMBridge.aesgcm_realizes_faead`.
+libcrux = { path = "../../libcrux", optional = true }
+
+[dev-dependencies]
+blst = "0.3.16"
+signal-spqr-hax = { path = "../../SSProve-lean/signal-spqr-hax" }
+zkgroup-hax = { path = "../../SSProve-lean/zkgroup-hax" }
+x3dh-hax = { path = "../../signal-hax/x3dh-hax" }
+pqxdh-hax = { path = "../../signal-hax/pqxdh-hax" }
+sender-keys-hax = { path = "../../signal-hax/sender-keys-hax" }
+doubleratchet-hax = { path = "../../signal-hax/doubleratchet-hax" }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+curve25519-dalek = { version = "4", features = ["alloc"] }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+hex = "0.4"
+sha2 = "0.10"
+# crabgrind: Valgrind client-request interface for Track F (CT verification).
+# Used by `tests/valgrind_ct.rs` to mark inputs to
+# `safegcd25519::fe25519_invert_divstep_sat` as undefined and then run the
+# resulting binary under `valgrind --tool=memcheck`; any data-dependent
+# branch or address calculation is flagged as a Conditional-jump-on-
+# uninitialised-value error.  Outside valgrind the client requests are
+# silent no-ops, so this dep does not affect normal `cargo test` runs.
+# Compiling the dep does require the Valgrind C headers on bindgen's
+# include path — see the recipe in `tests/valgrind_ct.rs`.
+crabgrind = "0.2"
+
+# ─── Production crypto reference impls for Track X (CT-only invert bench) ─
+# Each lib's inversion API is called via its CT path.  Some libs have BOTH
+# CT and var-time APIs; we deliberately use only CT.  Vars-time libs noted
+# below are NOT installed (skipped to keep the comparison fair).
+# --- CT-verified production references ---
+k256 = { version = "0.13", features = ["arithmetic", "expose-field"] }            # RustCrypto secp256k1 pure-Rust, Fermat addition chain, CT
+p256 = { version = "0.13", features = ["arithmetic", "expose-field"] }            # RustCrypto, Fermat chain, CT
+p384 = { version = "0.13", features = ["arithmetic", "expose-field"] }            # RustCrypto, Fermat chain, CT
+# p224/p521 (RustCrypto): NO `expose-field` feature → FieldElement is
+# crate-private.  Their `Scalar::invert` runs at a different prime (n) so
+# would not be a fair Fp comparison.  Excluded.
+pasta_curves = "0.5"                                                               # zcash, Fermat chain (pow over public p-2), CT over secret
+bls12_381 = "0.8"                                                                  # zkcrypto pure-Rust, CT (CtOption + Fermat)
+ff = "0.13"                                                                        # CT field trait used by pasta_curves
+# --- variable-time, EXCLUDED ---
+# arkworks (ark-bn254 / ark-bls12-377 / ark-bls12-381) uses BEA (Algorithm 16
+# Guajardo-Kumar-Paar-Pelzl, ark-ff/src/fields/models/fp/montgomery_backend.rs:295)
+# — data-dependent `while u.is_even()` loops → NOT constant-time.  Excluded.
+# secp256k1 (rust-secp256k1) doesn't expose Scalar::inverse publicly.  Use k256 instead.
+# ring 0.17 doesn't expose modular inverse to users.
+# openssl BN_mod_inverse is variable-time (paper Table 1.2.1).
+# libsodium: would need `libsodium-dev` apt package (no sudo) or network
+# access to fetch via libsodium-sys-stable (sandbox-blocked).  Skipping;
+# install via:
+#   sudo apt install libsodium-dev
+#   then: libsodium-sys-stable = { version = "1", features = ["use-pkg-config"] }
+# openssl with vendored: NOT installed — OpenSSL's BN_mod_inverse is
+# variable-time, and BN_mod_inverse_no_branch is misleadingly named (still
+# variable in subtle ways per the paper Table 1.2.1).  Comparing against it
+# is unfair to our CT impl.  If a CT OpenSSL impl appears, install then.
+#
+# RELIC (CT mode): would need build-from-source with --enable-timing=cycle
+# and the right --with-x build flags; skipping per the user's apt-no-sudo
+# limitation.  See docs.
+#
+# gnark-crypto: requires Go runtime (not installed on this box) and cgo
+# bindings.  Skipping; can be added once `golang-go` is installed.
+
+[build-dependencies]
+# None — build.rs shells out to jasminc, as, nasm
+
+[[bench]]
+name = "comparison"
+harness = false
+
+[[bench]]
+name = "rustcmd_vs_dalek"
+harness = false
+# Only requires `ed25519_rustcmd`; works under either
+# `dalek_leaves` (perf baseline) or `decomposed_leaves`
+# (framework path).  ed25519-dalek is a dev-dependency anyway.
+required-features = ["ed25519_rustcmd"]
+
+[[bench]]
+name = "fe25519_micro"
+harness = false
+required-features = ["decomposed_leaves"]
+
+[[bench]]
+name = "aead_cbc_vs_gcm"
+harness = false
+# CBC+HMAC always available; the GCM comparison arm is feature-gated
+# inside the bench source so this bench works with or without
+# `aes_gcm_legacy`.
+
+[[bench]]
+name = "xyzt_micro"
+harness = false
+required-features = ["wnaf_comb_leaves", "tfp25519_limbs"]
+
+[[bench]]
+name = "invert_compare"
+harness = false
+# Always available — uses only fiat-crypto's scalar field divstep
+# (always-on) and the existing fe25519_invert (always-on).
+
+[[bench]]
+name = "bench_vs_production"
+harness = false
+# Track X: CT-only invert benchmark vs production references.
+# Compares OUR safegcd impl against k256/p224/p256/p384/p521/pasta_curves/
+# blst.  arkworks/openssl excluded as variable-time.
+
+# Standalone workspace root — needed when this crate is consumed as a
+# `path = "..."` dep from another workspace (e.g. signal-wasm/host/).
+[workspace]

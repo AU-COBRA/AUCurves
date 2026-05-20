@@ -1,0 +1,1062 @@
+// Generated from Bedrock code. Avoid editing directly.
+#include <stdint.h>
+#include <string.h>
+#include <assert.h>
+
+#define BR_WORD_MAX UINTPTR_MAX
+typedef uintptr_t br_word_t;
+typedef intptr_t br_signed_t;
+
+static_assert(sizeof(br_word_t) == sizeof(br_signed_t), "signed size");
+static_assert(UINTPTR_MAX <= BR_WORD_MAX, "pointer fits in int");
+static_assert(~(br_signed_t)0 == -(br_signed_t)1, "two's complement");
+
+#if __STDC_VERSION__ >= 202311L && __has_include(<stdbit.h>)
+  #include <stdbit.h>
+  static_assert(__STDC_ENDIAN_NATIVE__ == __STDC_ENDIAN_LITTLE__, "little-endian");
+#elif defined(__GNUC__) && defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+  static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "little-endian");
+#elif defined(_MSC_VER) && !defined(__clang__) &&                              \
+    (defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64))
+  // these MSVC targets are little-endian
+#else
+  #error "failed to confirm that target is little-endian"
+#endif
+
+// "An object shall have its stored value accessed only ... a character type."
+static inline br_word_t _br_load1(br_word_t a) {
+  return *((uint8_t *)a);
+}
+
+static inline br_word_t _br_load2(br_word_t a) {
+  uint16_t r = 0;
+  memcpy(&r, (void *)a, sizeof(r));
+  return r;
+}
+
+static inline br_word_t _br_load4(br_word_t a) {
+  uint32_t r = 0;
+  memcpy(&r, (void *)a, sizeof(r));
+  return r;
+}
+
+static inline br_word_t _br_load(br_word_t a) {
+  br_word_t r = 0;
+  memcpy(&r, (void *)a, sizeof(r));
+  return r;
+}
+
+static inline void _br_store1(br_word_t a, uint8_t v) {
+  *((uint8_t *)a) = v;
+}
+
+static inline void _br_store2(br_word_t a, uint16_t v) {
+  memcpy((void *)a, &v, sizeof(v));
+}
+
+static inline void _br_store4(br_word_t a, uint32_t v) {
+  memcpy((void *)a, &v, sizeof(v));
+}
+
+static inline void _br_store(br_word_t a, br_word_t v) {
+  memcpy((void *)a, &v, sizeof(v));
+}
+
+static inline br_word_t _br_mulhuu(br_word_t a, br_word_t b) {
+  #if BR_WORD_MAX == UINT32_MAX
+	  return ((uint64_t)a * b) >> 32;
+  #elif BR_WORD_MAX == UINT64_MAX && (defined(__GNUC__) || defined(__clang__))
+    return ((unsigned __int128)a * b) >> 64;
+  #elif defined(_M_X64)
+    uint64_t hi;
+    _umul128(a, b, &hi);
+    return hi;
+  #elif defined(_M_ARM64)
+    return __umulh(a, b);
+  #else
+    // See full_mul.v
+    br_word_t hh, lh, hl, low, second_halfword_w_oflow, n, ll, M;
+    n = ((((0u-(br_word_t)0x1)>>27)&0x3f)+0x1)>>1;
+    M = ((br_word_t)0x1<<n)-0x1;
+    ll = (a&M)*(b&M);
+    lh = (a&M)*(b>>n);
+    hl = (a>>n)*(b&M);
+    hh = (a>>n)*(b>>n);
+    second_halfword_w_oflow = ((ll>>n)+(lh&M))+(hl&M);
+    return ((hh+(lh>>n))+(hl>>n))+(second_halfword_w_oflow>>n);
+  #endif
+}
+
+static inline br_word_t _br_divu(br_word_t a, br_word_t b) {
+  if (!b) return -1;
+  return a/b;
+}
+
+static inline br_word_t _br_remu(br_word_t a, br_word_t b) {
+  if (!b) return a;
+  return a%b;
+}
+
+static void x25519_base(br_word_t out, br_word_t sk);
+static void montladder(br_word_t OUT, br_word_t K, br_word_t U);
+static void fe25519_to_bytes(br_word_t out0, br_word_t in0);
+static void fe25519_from_bytes(br_word_t out0, br_word_t in0);
+static void fe25519_from_word(br_word_t out0, br_word_t in0);
+static void felem_cswap(br_word_t mask, br_word_t a1, br_word_t a2);
+static void fe25519_copy(br_word_t out0, br_word_t in0);
+static void fe25519_inv(br_word_t res, br_word_t x);
+static void ladderstep(br_word_t X1, br_word_t X2, br_word_t Z2, br_word_t X3, br_word_t Z3);
+static void fe25519_mul(br_word_t out0, br_word_t in0, br_word_t in1);
+static void fe25519_add(br_word_t out0, br_word_t in0, br_word_t in1);
+static void fe25519_sub(br_word_t out0, br_word_t in0, br_word_t in1);
+static void fe25519_square(br_word_t out0, br_word_t in0);
+static void fe25519_scmula24(br_word_t out0, br_word_t in0);
+static void clamp(br_word_t sk);
+
+void x25519(br_word_t out, br_word_t sk, br_word_t pk) {
+  br_word_t U, OUT;
+  clamp(sk);
+  uint8_t _br_stackalloc_U[40] = {0}; U = (br_word_t)&_br_stackalloc_U;
+  fe25519_from_bytes(U, pk);
+  uint8_t _br_stackalloc_OUT[40] = {0}; OUT = (br_word_t)&_br_stackalloc_OUT;
+  montladder(OUT, sk, U);
+  fe25519_to_bytes(out, OUT);
+}
+
+static void x25519_base(br_word_t out, br_word_t sk) {
+  br_word_t U, OUT;
+  clamp(sk);
+  uint8_t _br_stackalloc_U[40] = {0}; U = (br_word_t)&_br_stackalloc_U;
+  fe25519_from_word(U, (br_word_t)9);
+  uint8_t _br_stackalloc_OUT[40] = {0}; OUT = (br_word_t)&_br_stackalloc_OUT;
+  montladder(OUT, sk, U);
+  fe25519_to_bytes(out, OUT);
+}
+
+static void montladder(br_word_t OUT, br_word_t K, br_word_t U) {
+  br_word_t _gs_i0, s_i, X2, swap, Z2, Z1, X1;
+  uint8_t _br_stackalloc_X1[40] = {0}; X1 = (br_word_t)&_br_stackalloc_X1;
+  fe25519_from_word(X1, (br_word_t)1);
+  uint8_t _br_stackalloc_Z1[40] = {0}; Z1 = (br_word_t)&_br_stackalloc_Z1;
+  fe25519_from_word(Z1, (br_word_t)0);
+  uint8_t _br_stackalloc_X2[40] = {0}; X2 = (br_word_t)&_br_stackalloc_X2;
+  fe25519_copy(X2, U);
+  uint8_t _br_stackalloc_Z2[40] = {0}; Z2 = (br_word_t)&_br_stackalloc_Z2;
+  fe25519_from_word(Z2, (br_word_t)1);
+  swap = (br_word_t)0;
+  _gs_i0 = (br_word_t)0xff;
+  while ((br_word_t)((br_word_t)0<_gs_i0)) {
+    _gs_i0 = _gs_i0-1;
+    s_i = ((_br_load1(K+(_gs_i0>>3)))>>((_gs_i0&7)&(sizeof(br_word_t)*8-1)))&1;
+    swap = swap^s_i;
+    felem_cswap(swap, X1, X2);
+    felem_cswap(swap, Z1, Z2);
+    ladderstep(U, X1, Z1, X2, Z2);
+    swap = s_i;
+    // unset s_i
+  }
+  felem_cswap(swap, X1, X2);
+  felem_cswap(swap, Z1, Z2);
+  fe25519_inv(OUT, Z1);
+  fe25519_mul(OUT, X1, OUT);
+}
+
+static void fe25519_to_bytes(br_word_t out0, br_word_t in0) {
+  br_word_t x0, x6, x5, x1, x8, x9, x10, x12, x13, x11, x2, x15, x16, x17, x19, x20, x18, x3, x22, x23, x24, x26, x27, x25, x4, x29, x30, x31, x33, x34, x32, x36, x7, x38, x39, x41, x14, x42, x43, x45, x44, x46, x48, x21, x49, x50, x52, x51, x53, x55, x28, x56, x57, x59, x58, x60, x62, x35, x63, x37, x64, x65, x61, x54, x47, x40, x71, x73, x75, x77, x79, x69, x81, x82, x84, x86, x88, x90, x92, x68, x94, x95, x97, x99, x101, x103, x105, x107, x67, x109, x110, x112, x114, x116, x118, x120, x66, x122, x123, x125, x127, x129, x131, x133, x70, x72, x74, x76, x78, x80, x83, x85, x87, x89, x91, x93, x96, x98, x100, x102, x104, x106, x108, x111, x113, x115, x117, x119, x121, x124, x126, x128, x130, x132, x134, x135, x136, x137, x138, x139, x140, x141, x142, x143, x144, x145, x146, x147, x148, x149, x150, x151, x152, x153, x154, x155, x156, x157, x158, x159, x160, x161, x162, x163, x164, x165, x166, x167;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  /*skip*/
+  x5 = x0-0x7ffffffffffed;
+  x6 = (br_word_t)(x0<x5);
+  x7 = x5&0x7ffffffffffff;
+  x8 = (x6<<13)-(x5>>((br_word_t)51&(sizeof(br_word_t)*8-1)));
+  x9 = x1-0x7ffffffffffff;
+  x10 = (br_word_t)(x1<x9);
+  x11 = x9-x8;
+  x12 = (br_word_t)(x9<x11);
+  x13 = x10+x12;
+  x14 = x11&0x7ffffffffffff;
+  x15 = (x13<<13)-(x11>>((br_word_t)51&(sizeof(br_word_t)*8-1)));
+  x16 = x2-0x7ffffffffffff;
+  x17 = (br_word_t)(x2<x16);
+  x18 = x16-x15;
+  x19 = (br_word_t)(x16<x18);
+  x20 = x17+x19;
+  x21 = x18&0x7ffffffffffff;
+  x22 = (x20<<13)-(x18>>((br_word_t)51&(sizeof(br_word_t)*8-1)));
+  x23 = x3-0x7ffffffffffff;
+  x24 = (br_word_t)(x3<x23);
+  x25 = x23-x22;
+  x26 = (br_word_t)(x23<x25);
+  x27 = x24+x26;
+  x28 = x25&0x7ffffffffffff;
+  x29 = (x27<<13)-(x25>>((br_word_t)51&(sizeof(br_word_t)*8-1)));
+  x30 = x4-0x7ffffffffffff;
+  x31 = (br_word_t)(x4<x30);
+  x32 = x30-x29;
+  x33 = (br_word_t)(x30<x32);
+  x34 = x31+x33;
+  x35 = x32&0x7ffffffffffff;
+  x36 = (x34<<13)-(x32>>((br_word_t)51&(sizeof(br_word_t)*8-1)));
+  x37 = (0u-(br_word_t)1)+((br_word_t)(x36==(br_word_t)0));
+  x38 = x7+(x37&0x7ffffffffffed);
+  x39 = (br_word_t)(x38<x7);
+  x40 = x38&0x7ffffffffffff;
+  x41 = (x38>>((br_word_t)51&(sizeof(br_word_t)*8-1)))+(x39<<13);
+  x42 = x41+x14;
+  x43 = (br_word_t)(x42<x14);
+  x44 = x42+(x37&0x7ffffffffffff);
+  x45 = (br_word_t)(x44<(x37&0x7ffffffffffff));
+  x46 = x43+x45;
+  x47 = x44&0x7ffffffffffff;
+  x48 = (x44>>((br_word_t)51&(sizeof(br_word_t)*8-1)))+(x46<<13);
+  x49 = x48+x21;
+  x50 = (br_word_t)(x49<x21);
+  x51 = x49+(x37&0x7ffffffffffff);
+  x52 = (br_word_t)(x51<(x37&0x7ffffffffffff));
+  x53 = x50+x52;
+  x54 = x51&0x7ffffffffffff;
+  x55 = (x51>>((br_word_t)51&(sizeof(br_word_t)*8-1)))+(x53<<13);
+  x56 = x55+x28;
+  x57 = (br_word_t)(x56<x28);
+  x58 = x56+(x37&0x7ffffffffffff);
+  x59 = (br_word_t)(x58<(x37&0x7ffffffffffff));
+  x60 = x57+x59;
+  x61 = x58&0x7ffffffffffff;
+  x62 = (x58>>((br_word_t)51&(sizeof(br_word_t)*8-1)))+(x60<<13);
+  x63 = x62+x35;
+  x64 = x63+(x37&0x7ffffffffffff);
+  x65 = x64&0x7ffffffffffff;
+  x66 = x65<<4;
+  x67 = x61*2;
+  x68 = x54<<6;
+  x69 = x47<<3;
+  x70 = x40&0xff;
+  x71 = x40>>8;
+  x72 = x71&0xff;
+  x73 = x71>>8;
+  x74 = x73&0xff;
+  x75 = x73>>8;
+  x76 = x75&0xff;
+  x77 = x75>>8;
+  x78 = x77&0xff;
+  x79 = x77>>8;
+  x80 = x79&0xff;
+  x81 = x79>>8;
+  x82 = x69+x81;
+  x83 = x82&0xff;
+  x84 = x82>>8;
+  x85 = x84&0xff;
+  x86 = x84>>8;
+  x87 = x86&0xff;
+  x88 = x86>>8;
+  x89 = x88&0xff;
+  x90 = x88>>8;
+  x91 = x90&0xff;
+  x92 = x90>>8;
+  x93 = x92&0xff;
+  x94 = x92>>8;
+  x95 = x68+x94;
+  x96 = x95&0xff;
+  x97 = x95>>8;
+  x98 = x97&0xff;
+  x99 = x97>>8;
+  x100 = x99&0xff;
+  x101 = x99>>8;
+  x102 = x101&0xff;
+  x103 = x101>>8;
+  x104 = x103&0xff;
+  x105 = x103>>8;
+  x106 = x105&0xff;
+  x107 = x105>>8;
+  x108 = x107&0xff;
+  x109 = x107>>8;
+  x110 = x67+x109;
+  x111 = x110&0xff;
+  x112 = x110>>8;
+  x113 = x112&0xff;
+  x114 = x112>>8;
+  x115 = x114&0xff;
+  x116 = x114>>8;
+  x117 = x116&0xff;
+  x118 = x116>>8;
+  x119 = x118&0xff;
+  x120 = x118>>8;
+  x121 = x120&0xff;
+  x122 = x120>>8;
+  x123 = x66+x122;
+  x124 = x123&0xff;
+  x125 = x123>>8;
+  x126 = x125&0xff;
+  x127 = x125>>8;
+  x128 = x127&0xff;
+  x129 = x127>>8;
+  x130 = x129&0xff;
+  x131 = x129>>8;
+  x132 = x131&0xff;
+  x133 = x131>>8;
+  x134 = x133&0xff;
+  x135 = x133>>8;
+  x136 = x70;
+  x137 = x72;
+  x138 = x74;
+  x139 = x76;
+  x140 = x78;
+  x141 = x80;
+  x142 = x83;
+  x143 = x85;
+  x144 = x87;
+  x145 = x89;
+  x146 = x91;
+  x147 = x93;
+  x148 = x96;
+  x149 = x98;
+  x150 = x100;
+  x151 = x102;
+  x152 = x104;
+  x153 = x106;
+  x154 = x108;
+  x155 = x111;
+  x156 = x113;
+  x157 = x115;
+  x158 = x117;
+  x159 = x119;
+  x160 = x121;
+  x161 = x124;
+  x162 = x126;
+  x163 = x128;
+  x164 = x130;
+  x165 = x132;
+  x166 = x134;
+  x167 = x135;
+  /*skip*/
+  _br_store1(out0+0, x136);
+  _br_store1(out0+1, x137);
+  _br_store1(out0+2, x138);
+  _br_store1(out0+3, x139);
+  _br_store1(out0+4, x140);
+  _br_store1(out0+5, x141);
+  _br_store1(out0+6, x142);
+  _br_store1(out0+7, x143);
+  _br_store1(out0+8, x144);
+  _br_store1(out0+9, x145);
+  _br_store1(out0+10, x146);
+  _br_store1(out0+11, x147);
+  _br_store1(out0+12, x148);
+  _br_store1(out0+13, x149);
+  _br_store1(out0+14, x150);
+  _br_store1(out0+15, x151);
+  _br_store1(out0+16, x152);
+  _br_store1(out0+17, x153);
+  _br_store1(out0+18, x154);
+  _br_store1(out0+19, x155);
+  _br_store1(out0+20, x156);
+  _br_store1(out0+21, x157);
+  _br_store1(out0+22, x158);
+  _br_store1(out0+23, x159);
+  _br_store1(out0+24, x160);
+  _br_store1(out0+25, x161);
+  _br_store1(out0+26, x162);
+  _br_store1(out0+27, x163);
+  _br_store1(out0+28, x164);
+  _br_store1(out0+29, x165);
+  _br_store1(out0+30, x166);
+  _br_store1(out0+31, x167);
+  /*skip*/
+}
+
+static void fe25519_from_bytes(br_word_t out0, br_word_t in0) {
+  br_word_t x31, x30, x29, x28, x27, x26, x25, x24, x23, x22, x21, x20, x19, x18, x17, x16, x15, x14, x13, x12, x11, x10, x9, x8, x7, x6, x5, x4, x3, x2, x1, x0, x62, x63, x61, x64, x60, x65, x59, x66, x58, x67, x57, x68, x69, x56, x71, x55, x72, x54, x73, x53, x74, x52, x75, x51, x76, x77, x50, x79, x49, x80, x48, x81, x47, x82, x46, x83, x45, x84, x44, x85, x86, x43, x88, x42, x89, x41, x90, x40, x91, x39, x92, x38, x93, x94, x37, x96, x36, x97, x35, x98, x34, x99, x33, x100, x32, x101, x70, x78, x87, x95, x102, x103, x104, x105, x106, x107;
+  x0 = _br_load1(in0+0);
+  x1 = _br_load1(in0+1);
+  x2 = _br_load1(in0+2);
+  x3 = _br_load1(in0+3);
+  x4 = _br_load1(in0+4);
+  x5 = _br_load1(in0+5);
+  x6 = _br_load1(in0+6);
+  x7 = _br_load1(in0+7);
+  x8 = _br_load1(in0+8);
+  x9 = _br_load1(in0+9);
+  x10 = _br_load1(in0+10);
+  x11 = _br_load1(in0+11);
+  x12 = _br_load1(in0+12);
+  x13 = _br_load1(in0+13);
+  x14 = _br_load1(in0+14);
+  x15 = _br_load1(in0+15);
+  x16 = _br_load1(in0+16);
+  x17 = _br_load1(in0+17);
+  x18 = _br_load1(in0+18);
+  x19 = _br_load1(in0+19);
+  x20 = _br_load1(in0+20);
+  x21 = _br_load1(in0+21);
+  x22 = _br_load1(in0+22);
+  x23 = _br_load1(in0+23);
+  x24 = _br_load1(in0+24);
+  x25 = _br_load1(in0+25);
+  x26 = _br_load1(in0+26);
+  x27 = _br_load1(in0+27);
+  x28 = _br_load1(in0+28);
+  x29 = _br_load1(in0+29);
+  x30 = _br_load1(in0+30);
+  x31 = _br_load1(in0+31);
+  /*skip*/
+  /*skip*/
+  x32 = x31<<((br_word_t)44&(sizeof(br_word_t)*8-1));
+  x33 = x30<<((br_word_t)36&(sizeof(br_word_t)*8-1));
+  x34 = x29<<28;
+  x35 = x28<<20;
+  x36 = x27<<12;
+  x37 = x26<<4;
+  x38 = x25<<((br_word_t)47&(sizeof(br_word_t)*8-1));
+  x39 = x24<<((br_word_t)39&(sizeof(br_word_t)*8-1));
+  x40 = x23<<31;
+  x41 = x22<<23;
+  x42 = x21<<15;
+  x43 = x20<<7;
+  x44 = x19<<((br_word_t)50&(sizeof(br_word_t)*8-1));
+  x45 = x18<<((br_word_t)42&(sizeof(br_word_t)*8-1));
+  x46 = x17<<((br_word_t)34&(sizeof(br_word_t)*8-1));
+  x47 = x16<<26;
+  x48 = x15<<18;
+  x49 = x14<<10;
+  x50 = x13<<2;
+  x51 = x12<<((br_word_t)45&(sizeof(br_word_t)*8-1));
+  x52 = x11<<((br_word_t)37&(sizeof(br_word_t)*8-1));
+  x53 = x10<<29;
+  x54 = x9<<21;
+  x55 = x8<<13;
+  x56 = x7<<5;
+  x57 = x6<<((br_word_t)48&(sizeof(br_word_t)*8-1));
+  x58 = x5<<((br_word_t)40&(sizeof(br_word_t)*8-1));
+  x59 = x4<<((br_word_t)32&(sizeof(br_word_t)*8-1));
+  x60 = x3<<24;
+  x61 = x2<<16;
+  x62 = x1<<8;
+  x63 = x0;
+  x64 = x62+x63;
+  x65 = x61+x64;
+  x66 = x60+x65;
+  x67 = x59+x66;
+  x68 = x58+x67;
+  x69 = x57+x68;
+  x70 = x69&0x7ffffffffffff;
+  x71 = x69>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x72 = x56+x71;
+  x73 = x55+x72;
+  x74 = x54+x73;
+  x75 = x53+x74;
+  x76 = x52+x75;
+  x77 = x51+x76;
+  x78 = x77&0x7ffffffffffff;
+  x79 = x77>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x80 = x50+x79;
+  x81 = x49+x80;
+  x82 = x48+x81;
+  x83 = x47+x82;
+  x84 = x46+x83;
+  x85 = x45+x84;
+  x86 = x44+x85;
+  x87 = x86&0x7ffffffffffff;
+  x88 = x86>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x89 = x43+x88;
+  x90 = x42+x89;
+  x91 = x41+x90;
+  x92 = x40+x91;
+  x93 = x39+x92;
+  x94 = x38+x93;
+  x95 = x94&0x7ffffffffffff;
+  x96 = x94>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x97 = x37+x96;
+  x98 = x36+x97;
+  x99 = x35+x98;
+  x100 = x34+x99;
+  x101 = x33+x100;
+  x102 = x32+x101;
+  x103 = x70;
+  x104 = x78;
+  x105 = x87;
+  x106 = x95;
+  x107 = x102;
+  /*skip*/
+  _br_store(out0+0, x103);
+  _br_store(out0+8, x104);
+  _br_store(out0+16, x105);
+  _br_store(out0+24, x106);
+  _br_store(out0+32, x107);
+  /*skip*/
+}
+
+static void fe25519_from_word(br_word_t out0, br_word_t in0) {
+  br_word_t x0, x1, x2, x3, x4, x5, x6;
+  /*skip*/
+  /*skip*/
+  x0 = in0&0x7ffffffffffff;
+  x1 = in0>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x2 = x0;
+  x3 = x1;
+  x4 = (br_word_t)0;
+  x5 = (br_word_t)0;
+  x6 = (br_word_t)0;
+  /*skip*/
+  _br_store(out0+0, x2);
+  _br_store(out0+8, x3);
+  _br_store(out0+16, x4);
+  _br_store(out0+24, x5);
+  _br_store(out0+32, x6);
+  /*skip*/
+}
+
+static void felem_cswap(br_word_t mask, br_word_t a1, br_word_t a2) {
+  br_word_t _gs_to0, nmask, r1, r2, v1, v2, _gs_from0;
+  nmask = (br_word_t)0-mask;
+  mask = nmask^((br_word_t)-1);
+  _gs_from0 = (br_word_t)0;
+  _gs_to0 = (br_word_t)5;
+  while ((br_word_t)(_gs_from0<_gs_to0)) {
+    v1 = _br_load(a1+((br_word_t)8*_gs_from0));
+    v2 = _br_load(a2+((br_word_t)8*_gs_from0));
+    r1 = (mask&v1)|(nmask&v2);
+    r2 = (mask&v2)|(nmask&v1);
+    _br_store(a1+((br_word_t)8*_gs_from0), r1);
+    _br_store(a2+((br_word_t)8*_gs_from0), r2);
+    // unset r1
+    // unset r2
+    // unset v1
+    // unset v2
+    _gs_from0 = _gs_from0+1;
+  }
+}
+
+static void fe25519_copy(br_word_t out0, br_word_t in0) {
+  br_word_t x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  /*skip*/
+  x5 = x0;
+  x6 = x1;
+  x7 = x2;
+  x8 = x3;
+  x9 = x4;
+  x10 = x5;
+  x11 = x6;
+  x12 = x7;
+  x13 = x8;
+  x14 = x9;
+  /*skip*/
+  _br_store(out0+0, x10);
+  _br_store(out0+8, x11);
+  _br_store(out0+16, x12);
+  _br_store(out0+24, x13);
+  _br_store(out0+32, x14);
+  /*skip*/
+}
+
+static void fe25519_inv(br_word_t res, br_word_t x) {
+  br_word_t _gs_i0;
+  fe25519_square(res, x);
+  fe25519_mul(res, x, res);
+  _gs_i0 = (br_word_t)248;
+  while ((br_word_t)((br_word_t)0<_gs_i0)) {
+    _gs_i0 = _gs_i0-1;
+    fe25519_square(res, res);
+    fe25519_mul(res, res, x);
+  }
+  fe25519_square(res, res);
+  fe25519_square(res, res);
+  fe25519_mul(res, x, res);
+  fe25519_square(res, res);
+  _gs_i0 = (br_word_t)2;
+  while ((br_word_t)((br_word_t)0<_gs_i0)) {
+    _gs_i0 = _gs_i0-1;
+    fe25519_square(res, res);
+    fe25519_mul(res, res, x);
+  }
+}
+
+static void ladderstep(br_word_t X1, br_word_t X2, br_word_t Z2, br_word_t X3, br_word_t Z3) {
+  br_word_t A, E;
+  uint8_t _br_stackalloc_A[40] = {0}; A = (br_word_t)&_br_stackalloc_A;
+  fe25519_add(A, X2, Z2);
+  fe25519_sub(X2, X2, Z2);
+  fe25519_add(Z2, X3, Z3);
+  fe25519_sub(Z3, X3, Z3);
+  fe25519_mul(Z3, Z3, A);
+  fe25519_mul(Z2, Z2, X2);
+  fe25519_square(A, A);
+  fe25519_square(X2, X2);
+  uint8_t _br_stackalloc_E[40] = {0}; E = (br_word_t)&_br_stackalloc_E;
+  fe25519_sub(E, A, X2);
+  fe25519_add(X3, Z3, Z2);
+  fe25519_square(X3, X3);
+  fe25519_sub(Z3, Z3, Z2);
+  fe25519_square(Z3, Z3);
+  fe25519_mul(Z3, X1, Z3);
+  fe25519_mul(X2, A, X2);
+  fe25519_scmula24(Z2, E);
+  fe25519_add(Z2, A, Z2);
+  fe25519_mul(Z2, E, Z2);
+}
+
+static void fe25519_mul(br_word_t out0, br_word_t in0, br_word_t in1) {
+  br_word_t x4, x3, x2, x1, x9, x8, x7, x6, x0, x5, x16, x22, x61, x23, x62, x17, x60, x26, x65, x27, x66, x63, x64, x28, x69, x29, x70, x67, x68, x58, x73, x59, x74, x71, x75, x72, x30, x32, x79, x33, x80, x31, x78, x36, x83, x37, x84, x81, x82, x42, x87, x43, x88, x85, x86, x50, x91, x51, x92, x89, x10, x34, x95, x35, x96, x11, x94, x38, x99, x39, x100, x97, x98, x44, x103, x45, x104, x101, x102, x52, x107, x53, x108, x105, x12, x18, x111, x19, x112, x13, x110, x40, x115, x41, x116, x113, x114, x46, x119, x47, x120, x117, x118, x54, x123, x55, x124, x121, x14, x20, x127, x21, x128, x15, x126, x24, x131, x25, x132, x129, x130, x48, x135, x49, x136, x133, x134, x56, x139, x57, x140, x137, x138, x76, x143, x141, x144, x142, x122, x145, x148, x125, x149, x147, x106, x150, x153, x109, x154, x152, x90, x155, x158, x93, x159, x157, x160, x77, x162, x163, x164, x146, x166, x167, x151, x165, x168, x169, x156, x161, x170, x171, x172, x173, x174;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  x5 = _br_load(in1+0);
+  x6 = _br_load(in1+8);
+  x7 = _br_load(in1+16);
+  x8 = _br_load(in1+24);
+  x9 = _br_load(in1+32);
+  /*skip*/
+  /*skip*/
+  x10 = x4*(x9*19);
+  x11 = _br_mulhuu(x4, (x9*19));
+  x12 = x4*(x8*19);
+  x13 = _br_mulhuu(x4, (x8*19));
+  x14 = x4*(x7*19);
+  x15 = _br_mulhuu(x4, (x7*19));
+  x16 = x4*(x6*19);
+  x17 = _br_mulhuu(x4, (x6*19));
+  x18 = x3*(x9*19);
+  x19 = _br_mulhuu(x3, (x9*19));
+  x20 = x3*(x8*19);
+  x21 = _br_mulhuu(x3, (x8*19));
+  x22 = x3*(x7*19);
+  x23 = _br_mulhuu(x3, (x7*19));
+  x24 = x2*(x9*19);
+  x25 = _br_mulhuu(x2, (x9*19));
+  x26 = x2*(x8*19);
+  x27 = _br_mulhuu(x2, (x8*19));
+  x28 = x1*(x9*19);
+  x29 = _br_mulhuu(x1, (x9*19));
+  x30 = x4*x5;
+  x31 = _br_mulhuu(x4, x5);
+  x32 = x3*x6;
+  x33 = _br_mulhuu(x3, x6);
+  x34 = x3*x5;
+  x35 = _br_mulhuu(x3, x5);
+  x36 = x2*x7;
+  x37 = _br_mulhuu(x2, x7);
+  x38 = x2*x6;
+  x39 = _br_mulhuu(x2, x6);
+  x40 = x2*x5;
+  x41 = _br_mulhuu(x2, x5);
+  x42 = x1*x8;
+  x43 = _br_mulhuu(x1, x8);
+  x44 = x1*x7;
+  x45 = _br_mulhuu(x1, x7);
+  x46 = x1*x6;
+  x47 = _br_mulhuu(x1, x6);
+  x48 = x1*x5;
+  x49 = _br_mulhuu(x1, x5);
+  x50 = x0*x9;
+  x51 = _br_mulhuu(x0, x9);
+  x52 = x0*x8;
+  x53 = _br_mulhuu(x0, x8);
+  x54 = x0*x7;
+  x55 = _br_mulhuu(x0, x7);
+  x56 = x0*x6;
+  x57 = _br_mulhuu(x0, x6);
+  x58 = x0*x5;
+  x59 = _br_mulhuu(x0, x5);
+  x60 = x22+x16;
+  x61 = (br_word_t)(x60<x22);
+  x62 = x61+x23;
+  x63 = x62+x17;
+  x64 = x26+x60;
+  x65 = (br_word_t)(x64<x26);
+  x66 = x65+x27;
+  x67 = x66+x63;
+  x68 = x28+x64;
+  x69 = (br_word_t)(x68<x28);
+  x70 = x69+x29;
+  x71 = x70+x67;
+  x72 = x58+x68;
+  x73 = (br_word_t)(x72<x58);
+  x74 = x73+x59;
+  x75 = x74+x71;
+  x76 = (x72>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x75<<13);
+  x77 = x72&0x7ffffffffffff;
+  x78 = x32+x30;
+  x79 = (br_word_t)(x78<x32);
+  x80 = x79+x33;
+  x81 = x80+x31;
+  x82 = x36+x78;
+  x83 = (br_word_t)(x82<x36);
+  x84 = x83+x37;
+  x85 = x84+x81;
+  x86 = x42+x82;
+  x87 = (br_word_t)(x86<x42);
+  x88 = x87+x43;
+  x89 = x88+x85;
+  x90 = x50+x86;
+  x91 = (br_word_t)(x90<x50);
+  x92 = x91+x51;
+  x93 = x92+x89;
+  x94 = x34+x10;
+  x95 = (br_word_t)(x94<x34);
+  x96 = x95+x35;
+  x97 = x96+x11;
+  x98 = x38+x94;
+  x99 = (br_word_t)(x98<x38);
+  x100 = x99+x39;
+  x101 = x100+x97;
+  x102 = x44+x98;
+  x103 = (br_word_t)(x102<x44);
+  x104 = x103+x45;
+  x105 = x104+x101;
+  x106 = x52+x102;
+  x107 = (br_word_t)(x106<x52);
+  x108 = x107+x53;
+  x109 = x108+x105;
+  x110 = x18+x12;
+  x111 = (br_word_t)(x110<x18);
+  x112 = x111+x19;
+  x113 = x112+x13;
+  x114 = x40+x110;
+  x115 = (br_word_t)(x114<x40);
+  x116 = x115+x41;
+  x117 = x116+x113;
+  x118 = x46+x114;
+  x119 = (br_word_t)(x118<x46);
+  x120 = x119+x47;
+  x121 = x120+x117;
+  x122 = x54+x118;
+  x123 = (br_word_t)(x122<x54);
+  x124 = x123+x55;
+  x125 = x124+x121;
+  x126 = x20+x14;
+  x127 = (br_word_t)(x126<x20);
+  x128 = x127+x21;
+  x129 = x128+x15;
+  x130 = x24+x126;
+  x131 = (br_word_t)(x130<x24);
+  x132 = x131+x25;
+  x133 = x132+x129;
+  x134 = x48+x130;
+  x135 = (br_word_t)(x134<x48);
+  x136 = x135+x49;
+  x137 = x136+x133;
+  x138 = x56+x134;
+  x139 = (br_word_t)(x138<x56);
+  x140 = x139+x57;
+  x141 = x140+x137;
+  x142 = x76+x138;
+  x143 = (br_word_t)(x142<x76);
+  x144 = x143+x141;
+  x145 = (x142>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x144<<13);
+  x146 = x142&0x7ffffffffffff;
+  x147 = x145+x122;
+  x148 = (br_word_t)(x147<x145);
+  x149 = x148+x125;
+  x150 = (x147>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x149<<13);
+  x151 = x147&0x7ffffffffffff;
+  x152 = x150+x106;
+  x153 = (br_word_t)(x152<x150);
+  x154 = x153+x109;
+  x155 = (x152>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x154<<13);
+  x156 = x152&0x7ffffffffffff;
+  x157 = x155+x90;
+  x158 = (br_word_t)(x157<x155);
+  x159 = x158+x93;
+  x160 = (x157>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x159<<13);
+  x161 = x157&0x7ffffffffffff;
+  x162 = x160*19;
+  x163 = x77+x162;
+  x164 = x163>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x165 = x163&0x7ffffffffffff;
+  x166 = x164+x146;
+  x167 = x166>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x168 = x166&0x7ffffffffffff;
+  x169 = x167+x151;
+  x170 = x165;
+  x171 = x168;
+  x172 = x169;
+  x173 = x156;
+  x174 = x161;
+  /*skip*/
+  _br_store(out0+0, x170);
+  _br_store(out0+8, x171);
+  _br_store(out0+16, x172);
+  _br_store(out0+24, x173);
+  _br_store(out0+32, x174);
+  /*skip*/
+}
+
+static void fe25519_add(br_word_t out0, br_word_t in0, br_word_t in1) {
+  br_word_t x0, x5, x1, x6, x2, x7, x3, x8, x4, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  x5 = _br_load(in1+0);
+  x6 = _br_load(in1+8);
+  x7 = _br_load(in1+16);
+  x8 = _br_load(in1+24);
+  x9 = _br_load(in1+32);
+  /*skip*/
+  /*skip*/
+  x10 = x0+x5;
+  x11 = x1+x6;
+  x12 = x2+x7;
+  x13 = x3+x8;
+  x14 = x4+x9;
+  x15 = x10;
+  x16 = x11;
+  x17 = x12;
+  x18 = x13;
+  x19 = x14;
+  /*skip*/
+  _br_store(out0+0, x15);
+  _br_store(out0+8, x16);
+  _br_store(out0+16, x17);
+  _br_store(out0+24, x18);
+  _br_store(out0+32, x19);
+  /*skip*/
+}
+
+static void fe25519_sub(br_word_t out0, br_word_t in0, br_word_t in1) {
+  br_word_t x0, x5, x1, x6, x2, x7, x3, x8, x4, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  x5 = _br_load(in1+0);
+  x6 = _br_load(in1+8);
+  x7 = _br_load(in1+16);
+  x8 = _br_load(in1+24);
+  x9 = _br_load(in1+32);
+  /*skip*/
+  /*skip*/
+  x10 = ((br_word_t)0xfffffffffffda+x0)-x5;
+  x11 = ((br_word_t)0xffffffffffffe +x1)-x6;
+  x12 = ((br_word_t)0xffffffffffffe +x2)-x7;
+  x13 = ((br_word_t)0xffffffffffffe +x3)-x8;
+  x14 = ((br_word_t)0xffffffffffffe +x4)-x9;
+  x15 = x10;
+  x16 = x11;
+  x17 = x12;
+  x18 = x13;
+  x19 = x14;
+  /*skip*/
+  _br_store(out0+0, x15);
+  _br_store(out0+8, x16);
+  _br_store(out0+16, x17);
+  _br_store(out0+24, x18);
+  _br_store(out0+32, x19);
+  /*skip*/
+}
+
+static void fe25519_square(br_word_t out0, br_word_t in0) {
+  br_word_t x4, x5, x3, x8, x9, x2, x6, x1, x7, x10, x11, x12, x0, x21, x25, x44, x26, x45, x22, x43, x41, x48, x42, x49, x46, x50, x47, x23, x27, x54, x28, x55, x24, x53, x33, x58, x34, x59, x56, x13, x29, x62, x30, x63, x14, x61, x35, x66, x36, x67, x64, x15, x31, x70, x32, x71, x16, x69, x37, x74, x38, x75, x72, x17, x19, x78, x20, x79, x18, x77, x39, x82, x40, x83, x80, x81, x51, x86, x84, x87, x85, x73, x88, x91, x76, x92, x90, x65, x93, x96, x68, x97, x95, x57, x98, x101, x60, x102, x100, x103, x52, x105, x106, x107, x89, x109, x110, x94, x108, x111, x112, x99, x104, x113, x114, x115, x116, x117;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  /*skip*/
+  x5 = x4*19;
+  x6 = x5*2;
+  x7 = x4*2;
+  x8 = x3*19;
+  x9 = x8*2;
+  x10 = x3*2;
+  x11 = x2*2;
+  x12 = x1*2;
+  x13 = x4*x5;
+  x14 = _br_mulhuu(x4, x5);
+  x15 = x3*x6;
+  x16 = _br_mulhuu(x3, x6);
+  x17 = x3*x8;
+  x18 = _br_mulhuu(x3, x8);
+  x19 = x2*x6;
+  x20 = _br_mulhuu(x2, x6);
+  x21 = x2*x9;
+  x22 = _br_mulhuu(x2, x9);
+  x23 = x2*x2;
+  x24 = _br_mulhuu(x2, x2);
+  x25 = x1*x6;
+  x26 = _br_mulhuu(x1, x6);
+  x27 = x1*x10;
+  x28 = _br_mulhuu(x1, x10);
+  x29 = x1*x11;
+  x30 = _br_mulhuu(x1, x11);
+  x31 = x1*x1;
+  x32 = _br_mulhuu(x1, x1);
+  x33 = x0*x7;
+  x34 = _br_mulhuu(x0, x7);
+  x35 = x0*x10;
+  x36 = _br_mulhuu(x0, x10);
+  x37 = x0*x11;
+  x38 = _br_mulhuu(x0, x11);
+  x39 = x0*x12;
+  x40 = _br_mulhuu(x0, x12);
+  x41 = x0*x0;
+  x42 = _br_mulhuu(x0, x0);
+  x43 = x25+x21;
+  x44 = (br_word_t)(x43<x25);
+  x45 = x44+x26;
+  x46 = x45+x22;
+  x47 = x41+x43;
+  x48 = (br_word_t)(x47<x41);
+  x49 = x48+x42;
+  x50 = x49+x46;
+  x51 = (x47>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x50<<13);
+  x52 = x47&0x7ffffffffffff;
+  x53 = x27+x23;
+  x54 = (br_word_t)(x53<x27);
+  x55 = x54+x28;
+  x56 = x55+x24;
+  x57 = x33+x53;
+  x58 = (br_word_t)(x57<x33);
+  x59 = x58+x34;
+  x60 = x59+x56;
+  x61 = x29+x13;
+  x62 = (br_word_t)(x61<x29);
+  x63 = x62+x30;
+  x64 = x63+x14;
+  x65 = x35+x61;
+  x66 = (br_word_t)(x65<x35);
+  x67 = x66+x36;
+  x68 = x67+x64;
+  x69 = x31+x15;
+  x70 = (br_word_t)(x69<x31);
+  x71 = x70+x32;
+  x72 = x71+x16;
+  x73 = x37+x69;
+  x74 = (br_word_t)(x73<x37);
+  x75 = x74+x38;
+  x76 = x75+x72;
+  x77 = x19+x17;
+  x78 = (br_word_t)(x77<x19);
+  x79 = x78+x20;
+  x80 = x79+x18;
+  x81 = x39+x77;
+  x82 = (br_word_t)(x81<x39);
+  x83 = x82+x40;
+  x84 = x83+x80;
+  x85 = x51+x81;
+  x86 = (br_word_t)(x85<x51);
+  x87 = x86+x84;
+  x88 = (x85>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x87<<13);
+  x89 = x85&0x7ffffffffffff;
+  x90 = x88+x73;
+  x91 = (br_word_t)(x90<x88);
+  x92 = x91+x76;
+  x93 = (x90>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x92<<13);
+  x94 = x90&0x7ffffffffffff;
+  x95 = x93+x65;
+  x96 = (br_word_t)(x95<x93);
+  x97 = x96+x68;
+  x98 = (x95>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x97<<13);
+  x99 = x95&0x7ffffffffffff;
+  x100 = x98+x57;
+  x101 = (br_word_t)(x100<x98);
+  x102 = x101+x60;
+  x103 = (x100>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x102<<13);
+  x104 = x100&0x7ffffffffffff;
+  x105 = x103*19;
+  x106 = x52+x105;
+  x107 = x106>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x108 = x106&0x7ffffffffffff;
+  x109 = x107+x89;
+  x110 = x109>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x111 = x109&0x7ffffffffffff;
+  x112 = x110+x94;
+  x113 = x108;
+  x114 = x111;
+  x115 = x112;
+  x116 = x99;
+  x117 = x104;
+  /*skip*/
+  _br_store(out0+0, x113);
+  _br_store(out0+8, x114);
+  _br_store(out0+16, x115);
+  _br_store(out0+24, x116);
+  _br_store(out0+32, x117);
+  /*skip*/
+}
+
+static void fe25519_scmula24(br_word_t out0, br_word_t in0) {
+  br_word_t x4, x3, x2, x1, x0, x14, x13, x11, x15, x18, x12, x19, x17, x9, x20, x23, x10, x24, x22, x7, x25, x28, x8, x29, x27, x5, x30, x33, x6, x34, x32, x35, x16, x37, x38, x39, x21, x41, x42, x26, x40, x43, x44, x31, x36, x45, x46, x47, x48, x49;
+  x0 = _br_load(in0+0);
+  x1 = _br_load(in0+8);
+  x2 = _br_load(in0+16);
+  x3 = _br_load(in0+24);
+  x4 = _br_load(in0+32);
+  /*skip*/
+  /*skip*/
+  x5 = (br_word_t)0x1db41*x4;
+  x6 = _br_mulhuu((br_word_t)0x1db41, x4);
+  x7 = (br_word_t)0x1db41*x3;
+  x8 = _br_mulhuu((br_word_t)0x1db41, x3);
+  x9 = (br_word_t)0x1db41*x2;
+  x10 = _br_mulhuu((br_word_t)0x1db41, x2);
+  x11 = (br_word_t)0x1db41*x1;
+  x12 = _br_mulhuu((br_word_t)0x1db41, x1);
+  x13 = (br_word_t)0x1db41*x0;
+  x14 = _br_mulhuu((br_word_t)0x1db41, x0);
+  x15 = (x13>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x14<<13);
+  x16 = x13&0x7ffffffffffff;
+  x17 = x15+x11;
+  x18 = (br_word_t)(x17<x15);
+  x19 = x18+x12;
+  x20 = (x17>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x19<<13);
+  x21 = x17&0x7ffffffffffff;
+  x22 = x20+x9;
+  x23 = (br_word_t)(x22<x20);
+  x24 = x23+x10;
+  x25 = (x22>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x24<<13);
+  x26 = x22&0x7ffffffffffff;
+  x27 = x25+x7;
+  x28 = (br_word_t)(x27<x25);
+  x29 = x28+x8;
+  x30 = (x27>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x29<<13);
+  x31 = x27&0x7ffffffffffff;
+  x32 = x30+x5;
+  x33 = (br_word_t)(x32<x30);
+  x34 = x33+x6;
+  x35 = (x32>>((br_word_t)51&(sizeof(br_word_t)*8-1)))|(x34<<13);
+  x36 = x32&0x7ffffffffffff;
+  x37 = x35*19;
+  x38 = x16+x37;
+  x39 = x38>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x40 = x38&0x7ffffffffffff;
+  x41 = x39+x21;
+  x42 = x41>>((br_word_t)51&(sizeof(br_word_t)*8-1));
+  x43 = x41&0x7ffffffffffff;
+  x44 = x42+x26;
+  x45 = x40;
+  x46 = x43;
+  x47 = x44;
+  x48 = x31;
+  x49 = x36;
+  /*skip*/
+  _br_store(out0+0, x45);
+  _br_store(out0+8, x46);
+  _br_store(out0+16, x47);
+  _br_store(out0+24, x48);
+  _br_store(out0+32, x49);
+  /*skip*/
+}
+
+static void clamp(br_word_t sk) {
+  _br_store1(sk, (_br_load1(sk))&248);
+  _br_store1(sk+31, ((_br_load1(sk+31))&127)|64);
+}

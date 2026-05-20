@@ -39,21 +39,24 @@ unsafe extern "C" {
 #[inline] pub fn bls12_Fp2_sub(o: &mut Fp2, x: &Fp2, y: &Fp2) { bls12_sub(&mut o.c0, &x.c0, &y.c0); bls12_sub(&mut o.c1, &x.c1, &y.c1); }
 #[inline]
 pub fn bls12_Fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) {
-    // Schoolbook: 4 Fp muls + 2 Fp add/sub.
-    // Karatsuba (3 muls + 5 add/sub) was tried but is slower in practice
-    // here because (a) bls12_mul via CryptOpt is only ~33 ns -- the gap
-    // between mul and add/sub is small, (b) the extra Fp scratch vars
-    // (5 vs 4) inflate the per-call frame, (c) the saved mul doesn't
-    // amortise the extra inter-leaf call overhead.  Real lazy-reduction
-    // (defer Montgomery normalisation to combine the mul + sub) needs new
-    // fiat-crypto reified ops and is out of scope here.
-    let xv = *x; let yv = *y;
+    // Schoolbook: 4 Fp muls + 2 Fp add/sub.  (See history for Karatsuba
+    // / lazy-reduction discussion.)
+    //
+    // _nocopy: dropped the original `let xv = *x; let yv = *y;` Fp2-level
+    // pre-copies (192 bytes each).  Safe because the body's structure is
+    // read-all-inputs-then-write-output: all four bls12_mul calls read
+    // x/y and write to fresh local Fp temporaries t0..t3; the two final
+    // bls12_sub/bls12_add then write to out.c0/out.c1 from those temps.
+    // No out write happens until after all x/y reads complete, so even
+    // if caller-side aliasing slipped past the borrow checker (it
+    // doesn't — &mut out coexisting with &x or &y is rejected at the
+    // call site), the algebra would still hold.
     let mut t0 = Fp::zero(); let mut t1 = Fp::zero();
     let mut t2 = Fp::zero(); let mut t3 = Fp::zero();
-    bls12_mul(&mut t0, &xv.c0, &yv.c0);
-    bls12_mul(&mut t1, &xv.c1, &yv.c1);
-    bls12_mul(&mut t2, &xv.c0, &yv.c1);
-    bls12_mul(&mut t3, &xv.c1, &yv.c0);
+    bls12_mul(&mut t0, &x.c0, &y.c0);
+    bls12_mul(&mut t1, &x.c1, &y.c1);
+    bls12_mul(&mut t2, &x.c0, &y.c1);
+    bls12_mul(&mut t3, &x.c1, &y.c0);
     bls12_sub(&mut out.c0, &t0, &t1);
     bls12_add(&mut out.c1, &t2, &t3);
 }

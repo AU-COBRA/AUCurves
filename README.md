@@ -2,14 +2,17 @@
 
 Rocq verification of elliptic curve cryptography using the
 [fiat-crypto](https://github.com/mit-plv/fiat-crypto) /
-[bedrock2](https://github.com/mit-plv/bedrock2) stack.
+[bedrock2](https://github.com/mit-plv/bedrock2) /
+[Rupicola](https://github.com/mit-plv/rupicola) stack, with
+[Jasmin](https://github.com/jasmin-lang/jasmin) as a verified-assembly
+back-end for the curve leaves.
 
 ## What is verified
 
 Pairing-friendly curves paper:
 
 - **Pairing curves**: BLS12-381, BLS12-377, BN254, BN256, BN446, BLS24-509, BW6-761
-- **General-purpose curves**: P-256, secp256k1, Pallas, Vesta (Pasta)
+- **General-purpose curves**: P-224, P-256, P-384, P-521, secp256k1, Pallas, Vesta (Pasta), Curve25519
 - **Operations**: G1/G2 point addition, scalar multiplication (GLV, wNAF), Miller loop, final exponentiation, constant-time modular inversion
 - **Hash-to-curve**: G1 and G2 (SWU + isogeny), SHAKE-256 via verified Keccak
 

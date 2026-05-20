@@ -10,7 +10,7 @@ Pairing-friendly curves paper:
 
 - **Pairing curves**: BLS12-381, BLS12-377, BN254, BN256, BN446, BLS24-509, BW6-761
 - **General-purpose curves**: P-256, secp256k1, Pallas, Vesta (Pasta)
-- **Operations**: G1/G2 point addition, scalar multiplication (GLV, wNAF), Miller loop, final exponentiation
+- **Operations**: G1/G2 point addition, scalar multiplication (GLV, wNAF), Miller loop, final exponentiation, constant-time modular inversion
 - **Hash-to-curve**: G1 and G2 (SWU + isogeny), SHAKE-256 via verified Keccak
 
 Commitments paper (built on the pairings above):
@@ -29,6 +29,14 @@ Signal-messenger paper:
 ## Directory structure
 
 ```
+src/                      Rocq proofs (see breakdown below)
+curve25519-jasmin-rs/     Rust runtime for the Signal stack
+Signal/                   Sigma-protocol theories (Lizard, LinearSigma, Poksho)
+bls12-381-safe-rust/      Extracted safe-Rust BLS12-381 ops
+bn254-safe-rust/          Extracted safe-Rust BN254 ops
+bn256-safe-rust/          Extracted safe-Rust BN256 ops
+bn446-safe-rust/          Extracted safe-Rust BN446 ops
+
 src/
 ├── Arithmetic/       Field arithmetic helpers (safegcd divstep certificate)
 ├── Bedrock/          Bedrock2 WP proofs (see src/Bedrock/README.md)
@@ -79,3 +87,5 @@ In preparation:
   SPQR) on top of the verified core. Mirrors how `curve25519-dalek` already
   builds on fiat-crypto, providing verified replacements for the remaining
   unverified surface (group operations, scalar arithmetic, protocol glue).
+  The production Rust runtime lives in `curve25519-jasmin-rs/`; the
+  Sigma-protocol theories used by zkgroup live in `Signal/`.

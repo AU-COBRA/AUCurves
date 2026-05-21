@@ -70,11 +70,13 @@ safegcd-rs/target/
 CLAUDE.md
 BUGS_FOUND.md
 EXTRACTION_AUDIT.md
+HAND_WRITTEN_AUDIT.md
 PERF_OPTIMIZATION_PLAN.md
 PLAN_FORMAL_REFINEMENT.md
 TODO.md
 PASTA_COMPLETION_PLAN.md
 PLAN_PAIRING_SPECS.md
+docs/bw6-761-*.md
 
 # Process monitor / temp logs
 Crypto

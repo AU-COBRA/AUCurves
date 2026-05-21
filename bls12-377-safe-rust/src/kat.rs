@@ -64,26 +64,32 @@ fn invert_roundtrip() {
 }
 
 #[test]
-fn tower_link_smoke() {
-    // Calls a tower function from the Coq-extracted module to prove the
-    // `_bls377_*` C-ABI extern_shim is invoked at runtime.
-    // bls377_Fp2_add is two parallel Fp adds on offsets 0 and 48.
-    // Tower's untyped Fp emission lets us pass the c0 half (Fp[u64;6])
-    // and check (a + 0) reproduces a.
-    //
-    // This implicitly exercises the extern_shim: the tower's
-    // bls377_Fp2_add body calls `bls377_add` which resolves to the
-    // `_bls377_add` C-ABI symbol from extern_shim.
-    use tower::{bls377_Fp2_add, Fp as TFp};
+fn tower_link_smoke_fp2_add() {
+    // Exercises the typed-Fp2 tower entry point + extern_shim leaf.
+    // bls377_Fp2_add is two parallel Fp adds on offsets 0 / 48.  The
+    // tower body calls bls377_add(...) which resolves to the C-ABI
+    // _bls377_add symbol exported by extern_shim, so a green test
+    // proves the typed-signature wrapper links through to fiat-rust.
+    use tower::{bls377_Fp2_add, Fp as TFp, Fp2 as TFp2};
     let one = one_mont().0;
-    // Tower's Fp2 = struct { c0: Fp, c1: Fp }; pass Fp pointers as
-    // if they're Fp2 (untyped emission means it's the same byte size,
-    // 48 bytes per half, total 96 bytes for an Fp2).  Read only the
-    // c0 half (first Fp[u64;6]).
-    let a = TFp(one);
-    let zero = TFp([0u64; 6]);
-    let mut out = TFp([0u64; 6]);
-    // bls377_Fp2_add: out = a + 0; the c0 component is one Fp add.
-    bls377_Fp2_add(&mut out, &a, &zero);
-    assert_eq!(out.0, one, "Fp2_add(a, 0) c0 should equal a.c0");
+    let a  = TFp2 { c0: TFp(one),      c1: TFp([0u64; 6]) };
+    let z  = TFp2 { c0: TFp([0u64; 6]), c1: TFp([0u64; 6]) };
+    let mut out = TFp2 { c0: TFp([0u64; 6]), c1: TFp([0u64; 6]) };
+    bls377_Fp2_add(&mut out, &a, &z);
+    assert_eq!(out.c0.0, one, "Fp2_add(a, 0) c0 should equal a.c0");
+    assert_eq!(out.c1.0, [0u64; 6], "Fp2_add(a, 0) c1 should equal a.c1 (zero)");
+}
+
+#[test]
+fn tower_link_smoke_fp2_mul() {
+    // Exercises bls377_Fp2_mul: (a + b·u) * (c + d·u) with b = d = 0
+    // collapses to a·c in Fp, providing a direct cross-check between
+    // the typed tower entry and the fiat-rust leaf via extern_shim.
+    use tower::{bls377_Fp2_mul, Fp as TFp, Fp2 as TFp2};
+    let one = one_mont().0;
+    let a = TFp2 { c0: TFp(one), c1: TFp([0u64; 6]) };
+    let mut out = TFp2 { c0: TFp([0u64; 6]), c1: TFp([0u64; 6]) };
+    bls377_Fp2_mul(&mut out, &a, &a);  // 1 * 1 = 1
+    assert_eq!(out.c0.0, one, "Fp2_mul(1, 1) c0 should equal 1");
+    assert_eq!(out.c1.0, [0u64; 6], "Fp2_mul(1, 1) c1 should be zero");
 }

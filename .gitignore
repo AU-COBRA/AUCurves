@@ -67,16 +67,12 @@ bw6-761-safe-rust/target/
 safegcd-rs/target/
 
 # Local planning and session notes (never commit)
-CLAUDE.md
-BUGS_FOUND.md
-EXTRACTION_AUDIT.md
-HAND_WRITTEN_AUDIT.md
-PERF_OPTIMIZATION_PLAN.md
-PLAN_FORMAL_REFINEMENT.md
-TODO.md
-PASTA_COMPLETION_PLAN.md
-PLAN_PAIRING_SPECS.md
-docs/bw6-761-*.md
+#
+# Policy (2026-05-21): only EXPLICIT documentation (README.md) is
+# tracked.  All other .md files are internal planning / status notes
+# and stay local.  To track a new .md, add a whitelist entry below.
+*.md
+!**/README.md
 
 # Process monitor / temp logs
 Crypto

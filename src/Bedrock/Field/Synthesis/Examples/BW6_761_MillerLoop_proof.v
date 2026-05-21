@@ -222,9 +222,11 @@ Section BW6_MillerLoopProof.
     cbv [WeakestPrecondition.func].
     unfold bw6_761_Fp3_mul_fp. simpl snd. simpl fst. cbv match beta.
     eexists. split. 1: exact eq_refl.
-    cbv [AbstractField.bounded_by AbstractField.tight_bounds
-         bw6_Fp3_repr CE_field_representation] in Hbx.
-    destruct Hbx as [[Hbx0 Hbx1] Hbx2].
+    assert (Hbx_split : Fp_bounded Fp_tight (fp_c0 x) /\
+                        Fp_bounded Fp_tight (fp_c1 x) /\
+                        Fp_bounded Fp_tight (fp_c2 x)) by exact Hbx.
+    destruct Hbx_split as [Hbx0 [Hbx1 Hbx2]].
+    clear Hbx.
     (* Split output Fp3 into 3 Fp slots *)
     apply FElem_Fp3_split_in_sep in Hsep.
     (* Bring input Fp3 to front, split into 3 Fp slots *)
@@ -232,9 +234,94 @@ Section BW6_MillerLoopProof.
     { pose proof Hsep as H'. ecancel_assumption. }
     apply FElem_Fp3_split_in_sep in Hs_in.
     clear Hsep.
-    (* The body is 3 sequential Fp_mul calls on c0, c1, c2 slots.
-       Standard WP processing. *)
-  Admitted.
+    (* The body is 3 sequential Fp_mul calls on c0, c1, c2 slots. *)
+    unfold cmd_seq_list. simpl. repeat straightline.
+
+    Local Ltac dexprs_fast := solve [cbv [dexprs list_map list_map_body WeakestPrecondition.expr WeakestPrecondition.expr_body WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet Semantics.interp_binop]; repeat (first [exact eq_refl | eexists; split; [repeat first [rewrite map.get_put_same; exact eq_refl | rewrite map.get_put_diff by congruence]; exact eq_refl |] | eexists; split; [exact eq_refl |]])].
+
+    (* Call 1: out.c0 = x.c0 * s *)
+    eapply Semantics.weaken_call.
+    { eapply HFpmul. split; [exact Hbx0|]. split; [exact Hbs|].
+      split; [eexists; exact Hs_in|].
+      split; [eexists; SeparationLogic.ecancel_assumption_impl|].
+      SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros ? ? ? [? [? [fw0 [_ [Hb0 Hs0]]]]]. subst.
+    eexists. split. 1: exact eq_refl.
+    eexists. split. 1: dexprs_fast.
+    (* Call 2: out.c1 = x.c1 * s *)
+    eapply Semantics.weaken_call.
+    { eapply HFpmul. split; [exact Hbx1|]. split; [exact Hbs|].
+      split; [eexists; SeparationLogic.ecancel_assumption_impl|].
+      split; [eexists; SeparationLogic.ecancel_assumption_impl|].
+      SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros ? ? ? [? [? [fw1 [_ [Hb1 Hs1']]]]]. subst.
+    eexists. split. 1: exact eq_refl.
+    eexists. split. 1: dexprs_fast.
+    (* Call 3: out.c2 = x.c2 * s *)
+    eapply Semantics.weaken_call.
+    { eapply HFpmul. split; [exact Hbx2|]. split; [exact Hbs|].
+      split; [eexists; SeparationLogic.ecancel_assumption_impl|].
+      split; [eexists; SeparationLogic.ecancel_assumption_impl|].
+      SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros ? ? ? [? [? [fw2 [_ [Hb2 Hs2']]]]]. subst.
+    (* Postcondition: build the existential out := fw0 ++ fw1 ++ fw2 *)
+    eexists. split. 1: exact eq_refl. split. 1: exact eq_refl. split. 1: exact eq_refl.
+    (* Length derivation tactic *)
+    Local Ltac bw6_len_small H :=
+      let Hs := fresh in pose proof H as Hs;
+      cbv [AbstractField.bounded_by AbstractField.loose_bounds AbstractField.tight_bounds
+           bw6_Fp_repr Field.bounded_by Field.loose_bounds Field.tight_bounds
+           AbstractField.bin_outbounds AbstractField.bin_mul
+           BW6_761_Instances.bw6_frep field_representation
+           Signature.field_representation Representation.frep] in Hs;
+      destruct Hs as [Hs _];
+      apply WordByWordMontgomery.WordByWordMontgomery.length_small in Hs;
+      rewrite map_length in Hs; exact Hs.
+    (* Lengths of the 3 output Fp slots *)
+    assert (Hl0 : length fw0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hb0.
+    assert (Hl1 : length fw1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hb1.
+    assert (Hl2 : length fw2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hb2.
+    assert (Hlx0 : length (fp_c0 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hbx0.
+    assert (Hlx1 : length (fp_c1 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hbx1.
+    assert (Hlx2 : length (fp_c2 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by bw6_len_small Hbx2.
+    (* Witness the output Fp3 felem *)
+    exists (fw0 ++ fw1 ++ fw2).
+    (* Component-decomposition equalities. *)
+    assert (Hfc0 : fp_c0 (fw0 ++ fw1 ++ fw2) = fw0)
+      by (apply firstn_app_le; exact Hl0).
+    assert (Hfc1 : fp_c1 (fw0 ++ fw1 ++ fw2) = fw1).
+    { unfold fp_c1, ce_c1_felem.
+      rewrite (skipn_app_le _ _ _ Hl0). apply firstn_app_le. exact Hl1. }
+    assert (Hfc2 : fp_c2 (fw0 ++ fw1 ++ fw2) = fw2).
+    { unfold fp_c2, ce_c2_felem.
+      set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- List.skipn_skipn.
+      change (ListDef.skipn n (ListDef.skipn n (fw0 ++ fw1 ++ fw2)))
+        with (skipn n (skipn n (fw0 ++ fw1 ++ fw2))).
+      rewrite (skipn_app_le _ _ _ Hl0). apply skipn_app_le. exact Hl1. }
+    split.
+    { (* Bounds: Fp3_loose ↔ Fp_tight on each c_i of the joined list *)
+      setoid_rewrite Hfc0. setoid_rewrite Hfc1. setoid_rewrite Hfc2.
+      exact (conj Hb0 (conj Hb1 Hb2)). }
+    (* Sep: build joined output FElem_Fp3 + rejoin input FElem_Fp3 px x *)
+    eassert (Hj_out : (FElem_Fp pout fw0 *
+              (FElem_Fp (word.add pout fp_off) fw1 *
+               (FElem_Fp (word.add pout (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                  Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+                  fw2 * _)))%sep _).
+    { SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp_join3_in_sep in Hj_out; [| exact Hl0 | exact Hl1 | exact Hl2].
+    eassert (Hj_x : (FElem_Fp px (fp_c0 x) *
+              (FElem_Fp (word.add px fp_off) (fp_c1 x) *
+               (FElem_Fp (word.add px (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                  Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+                  (fp_c2 x) * _)))%sep _).
+    { SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp_join3_in_sep in Hj_x; [| exact Hlx0 | exact Hlx1 | exact Hlx2].
+    rewrite ce_list_decomp in Hj_x.
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
 
   (** ** Sub-lemma 2: make_line_ok.
       Mirrors [bls24_make_line_ok] (PairingHelpers.v line 1041+,

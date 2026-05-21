@@ -596,17 +596,396 @@ Section BW6_FinalExpProof.
       (HFp6powu    : spec_of_bw6_fp6_pow_u functions)
       (HFp6powu_ip : spec_of_bw6_fp6_pow_u_inplace functions),
     spec_of_bw6_final_exp_hard functions.
-    intros. unfold spec_of_bw6_final_exp_hard.
-    (* TODO(BW6 Frobenius spec strengthening, Phase 5):
-       Spec now requires Fp6_feval out = frobenius_fp6_gallina ... over the
-       2 (easy) / 5 (hard) / 5 (full) FElem_Fp3 sep hypotheses.  Remaining
-       work is purely WP threading (mirror bw6_fp6_pow_abs_u_ok) plus
-       one feval-equation chaining at each frob/conjugate/mul call, since
-       each callee's strengthened spec now exposes
-         feval result = (Gallina op) (feval inputs).
-       No new algebraic content; CHAIN.  See BW6_761_FrobModel.v for the
-       per-component algebra. *)
-  Admitted.
+  Proof.
+    intros functions EnvContains HFp6mul HFp6sqr HFp6conj HFp6frob
+      HFp6frob_p2 HFp6frob_p3 HFp6powu HFp6powu_ip.
+    unfold spec_of_bw6_final_exp_hard.
+    intros pout pf p_gfp3 p_gfp6 p_gfp3_p2 p_gfp6_p2 p_gfp6_p3
+      old_out f gfp3 gfp6 gfp3_p2 gfp6_p2 gfp6_p3 Rr tr mem0
+      [Hbf [Hbg3 [Hbg6 [Hbg3_p2 [Hbg6_p2 [Hbg6_p3 Hsep]]]]]].
+    eapply start_func; [exact EnvContains | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold BW6_761_FinalExp.bw6_final_exp_hard. simpl snd. simpl fst.
+    cbv match beta.
+    eexists. split. { exact eq_refl. }
+
+    (* Stackalloc 1: a (Fp6) *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_a mSa mCa HaSa HmSa.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_a mSa) HaSa) as [ai Hai].
+
+    (* Stackalloc 2: b (Fp6) *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_b mSb mCb HaSb HmSb.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_b mSb) HaSb) as [bi Hbi].
+
+    (* Stackalloc 3: c (Fp6) *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_c mSc mCc HaSc HmSc.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_c mSc) HaSc) as [ci Hci].
+
+    (* Stackalloc 4: d (Fp6) *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_d mSd mCd HaSd HmSd.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_d mSd) HaSd) as [di Hdi].
+
+    cbv [BW6_761_FinalExp.final_exp_hard_body
+         BW6_761_FinalExp.inline_pow_u
+         BW6_761_FinalExp.cmd_seq_list].
+
+    (* Build master sep from 4 stackalloc layers *)
+    pose proof (proj1 (map.split_comm mCa mem0 mSa) HmSa) as HmSa'.
+    assert (Hsep1 :
+      (FElem_Fp6 a_a ai *
+       (FElem_Fp6 pf f *
+        (FElem_Fp6 pout old_out *
+         (FElem_Fp3 p_gfp3 gfp3 *
+          (FElem_Fp3 p_gfp6 gfp6 *
+           (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+            (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+             (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))%sep mCa).
+    { exists mSa, mem0. exact (conj HmSa' (conj Hai Hsep)). }
+
+    pose proof (proj1 (map.split_comm mCb mCa mSb) HmSb) as HmSb'.
+    assert (Hsep2 :
+      (FElem_Fp6 a_b bi *
+       (FElem_Fp6 a_a ai *
+        (FElem_Fp6 pf f *
+         (FElem_Fp6 pout old_out *
+          (FElem_Fp3 p_gfp3 gfp3 *
+           (FElem_Fp3 p_gfp6 gfp6 *
+            (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+             (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+              (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))))%sep mCb).
+    { exists mSb, mCa. exact (conj HmSb' (conj Hbi Hsep1)). }
+
+    pose proof (proj1 (map.split_comm mCc mCb mSc) HmSc) as HmSc'.
+    assert (Hsep3 :
+      (FElem_Fp6 a_c ci *
+       (FElem_Fp6 a_b bi *
+        (FElem_Fp6 a_a ai *
+         (FElem_Fp6 pf f *
+          (FElem_Fp6 pout old_out *
+           (FElem_Fp3 p_gfp3 gfp3 *
+            (FElem_Fp3 p_gfp6 gfp6 *
+             (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+              (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+               (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))))%sep mCc).
+    { exists mSc, mCb. exact (conj HmSc' (conj Hci Hsep2)). }
+
+    pose proof (proj1 (map.split_comm mCd mCc mSd) HmSd) as HmSd'.
+    assert (Hsep_all :
+      (FElem_Fp6 a_d di *
+       (FElem_Fp6 a_c ci *
+        (FElem_Fp6 a_b bi *
+         (FElem_Fp6 a_a ai *
+          (FElem_Fp6 pf f *
+           (FElem_Fp6 pout old_out *
+            (FElem_Fp3 p_gfp3 gfp3 *
+             (FElem_Fp3 p_gfp6 gfp6 *
+              (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+               (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))))))%sep mCd).
+    { exists mSd, mCc. exact (conj HmSd' (conj Hdi Hsep3)). }
+
+    clear Hsep Hsep1 Hsep2 Hsep3 HaSa HmSa Hai HaSb HmSb Hbi
+          HaSc HmSc Hci HaSd HmSd Hdi HmSa' HmSb' HmSc' HmSd'.
+
+    (* Step 1: a = pow_u(f) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6powu.
+         split; [exact Hbf |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [a1_v [Hb_a1 Hsep_a1]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 2: b = a * f *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_a1 |].
+         split; [exact Hbf |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b2_v [_ [Hb_b2 Hsep_b2]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 3: a = pow_u(b) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6powu.
+         split; [exact Hb_b2 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [a3_v [Hb_a3 Hsep_a3]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 4: c = conj(b) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6conj.
+         split; [exact Hb_b2 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [c4_v [Hb_c4 Hsep_c4]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 5: b = a * c *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_a3 |].
+         split; [exact Hb_c4 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b5_v [_ [Hb_b5 Hsep_b5]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 6: c = frob(b, gfp3, gfp6) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6frob.
+         split; [exact Hb_b5 |].
+         split; [exact Hbg3 |].
+         split; [exact Hbg6 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [c6_v [Hb_c6 [_ Hsep_c6]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 7: d = b * c *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_b5 |].
+         split; [exact Hb_c6 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [d7_v [_ [Hb_d7 Hsep_d7]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 8: a = pow_u(d) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6powu.
+         split; [exact Hb_d7 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [a8_v [Hb_a8 Hsep_a8]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 9: b = pow_u(a) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6powu.
+         split; [exact Hb_a8 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b9_v [Hb_b9 Hsep_b9]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 10: c = frob_p2(d, gfp3_p2, gfp6_p2) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6frob_p2.
+         split; [exact Hb_d7 |].
+         split; [exact Hbg3_p2 |].
+         split; [exact Hbg6_p2 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [c10_v [Hb_c10 [_ Hsep_c10]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 11: a = a * c — INPLACE on pout=px=a *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_a8 |].
+         split; [exact Hb_c10 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [a11_v [_ [Hb_a11 Hsep_a11]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 12: b = pow_u(b) — IN-PLACE (pout=px=b) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6powu_ip; [exact Hb_b9 | ecancel_assumption]. }
+    intros ? ? ? [? [? [b12_v [Hb_b12 Hsep_b12]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 13: c = frob_p3(d, gfp6_p3) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6frob_p3.
+         split; [exact Hb_d7 |].
+         split; [exact Hbg6_p3 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [c13_v [Hb_c13 [_ Hsep_c13]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 14: b = b * c — INPLACE on pout=px=b *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_b12 |].
+         split; [exact Hb_c13 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b14_v [_ [Hb_b14 Hsep_b14]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 15: a = a * b — INPLACE on pout=px=a *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_a11 |].
+         split; [exact Hb_b14 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [a15_v [_ [Hb_a15 Hsep_a15]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 16: b = sqr(f) *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6sqr.
+         split; [exact Hbf |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b16_v [_ [Hb_b16 Hsep_b16]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 17: b = b * f — INPLACE on pout=px=b *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_b16 |].
+         split; [exact Hbf |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [b17_v [_ [Hb_b17 Hsep_b17]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 18: out = a * b *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6mul.
+         split; [exact Hb_a15 |].
+         split; [exact Hb_b17 |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         split; [eexists; ecancel_assumption_with_copy |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [out_v [_ [Hb_out Hsep_out]]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Stack deallocation: d, c, b, a (innermost first) *)
+
+    (* Dealloc d *)
+    match goal with Hc : (_ * _)%sep ?m |- _ =>
+      assert (Hsep_d_front :
+        (FElem_Fp6 a_d d7_v *
+         (FElem_Fp6 pout out_v *
+          (FElem_Fp6 a_c c13_v *
+           (FElem_Fp6 a_b b17_v *
+            (FElem_Fp6 a_a a15_v *
+             (FElem_Fp6 pf f *
+              (FElem_Fp3 p_gfp3 gfp3 *
+               (FElem_Fp3 p_gfp6 gfp6 *
+                (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+                 (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                  (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))))))%sep m);
+      [ecancel_assumption | clear Hc]
+    end.
+    destruct Hsep_d_front as [mStack_d [m_ad [Hsp_d [Hfe_d Hrest_d]]]].
+    assert (Hab_d : Memory.anybytes a_d
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack_d).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_d d7_v mStack_d Hfe_d). }
+    exists m_ad, mStack_d.
+    split. { exact Hab_d. }
+    split. { apply map.split_comm. exact Hsp_d. }
+
+    (* Dealloc c *)
+    assert (Hsep_c_front :
+      (FElem_Fp6 a_c c13_v *
+       (FElem_Fp6 pout out_v *
+        (FElem_Fp6 a_b b17_v *
+         (FElem_Fp6 a_a a15_v *
+          (FElem_Fp6 pf f *
+           (FElem_Fp3 p_gfp3 gfp3 *
+            (FElem_Fp3 p_gfp6 gfp6 *
+             (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+              (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+               (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))))%sep m_ad).
+    { ecancel_assumption. }
+    clear Hrest_d.
+    destruct Hsep_c_front as [mStack_c [m_ac [Hsp_c [Hfe_c Hrest_c]]]].
+    assert (Hab_c : Memory.anybytes a_c
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack_c).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_c c13_v mStack_c Hfe_c). }
+    exists m_ac, mStack_c.
+    split. { exact Hab_c. }
+    split. { apply map.split_comm. exact Hsp_c. }
+
+    (* Dealloc b *)
+    assert (Hsep_b_front :
+      (FElem_Fp6 a_b b17_v *
+       (FElem_Fp6 pout out_v *
+        (FElem_Fp6 a_a a15_v *
+         (FElem_Fp6 pf f *
+          (FElem_Fp3 p_gfp3 gfp3 *
+           (FElem_Fp3 p_gfp6 gfp6 *
+            (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+             (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+              (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))))%sep m_ac).
+    { ecancel_assumption. }
+    clear Hrest_c.
+    destruct Hsep_b_front as [mStack_b [m_ab [Hsp_b [Hfe_b Hrest_b]]]].
+    assert (Hab_b : Memory.anybytes a_b
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack_b).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_b b17_v mStack_b Hfe_b). }
+    exists m_ab, mStack_b.
+    split. { exact Hab_b. }
+    split. { apply map.split_comm. exact Hsp_b. }
+
+    (* Dealloc a *)
+    assert (Hsep_a_front :
+      (FElem_Fp6 a_a a15_v *
+       (FElem_Fp6 pout out_v *
+        (FElem_Fp6 pf f *
+         (FElem_Fp3 p_gfp3 gfp3 *
+          (FElem_Fp3 p_gfp6 gfp6 *
+           (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+            (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+             (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))%sep m_ab).
+    { ecancel_assumption. }
+    clear Hrest_b.
+    destruct Hsep_a_front as [mStack_a [m_final [Hsp_a [Hfe_a Hrest_final]]]].
+    assert (Hab_a : Memory.anybytes a_a
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack_a).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_a a15_v mStack_a Hfe_a). }
+    exists m_final, mStack_a.
+    split. { exact Hab_a. }
+    split. { apply map.split_comm. exact Hsp_a. }
+
+    (* Final postcondition *)
+    cbv [list_map list_map_body WeakestPrecondition.get].
+    split. { reflexivity. }
+    split. { reflexivity. }
+    exists out_v.
+    split. { apply AbstractField.relax_bounds. exact Hb_out. }
+    exact Hrest_final.
+  Qed.
 
   (* ============================================================ *)
   (* Lemma: bw6_final_exp_ok                                       *)

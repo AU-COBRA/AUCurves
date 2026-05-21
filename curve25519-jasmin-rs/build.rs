@@ -140,15 +140,28 @@ fn main() {
     objects.push(b2_obj);
     println!("cargo:rerun-if-changed={}", b2_src.display());
 
-    // Bedrock2 -> Jasmin-compiled field ops (partial: 7/11 functions that
-    // pass jasminc's register allocator + asmgen).  Each .s is the output
-    // of `x25519_64_main --func <name>` with our extraction pipeline:
-    //   bedrock2 cmd -> tr_cmd (Qed) -> polish_func (30 Qed) ->
-    //     to_jasmin_cmd (17 Qed, 2 ident axioms) ->
-    //     Jasmin Compile.compile (jasminc, Rocq-verified) -> x86-64
-    // Blocked on register pressure: fe25519_mul, fe25519_square,
-    //   fe25519_to_bytes, fe25519_from_bytes.
-    // Blocked on var-conflict: ladderstep, montladder, x25519, x25519_base.
+    // Bedrock2 -> Jasmin-compiled field ops.  Each .s is the output of
+    // the verified rust_cmd_ed → bedrock2 cmd → polished jasmin_func →
+    // jasminc → x86-64 pipeline.
+    //
+    // Two distinct sources contribute .s files in `asm/`:
+    //
+    //   - 5 leaves (fe25519_add/sub/scmula24/copy/from_word, felem_cswap,
+    //     clamp_64) emitted by `x25519_64_main` from
+    //     `Bedrock.End2End.X25519_64.MontgomeryLadder64.funcs`.
+    //
+    //   - 2 leaves (fe25519_mul, fe25519_square) emitted by
+    //     `fe25519_leaves_main` from
+    //     `Bedrock.End2End.Ed25519.Fe25519{Mul,Square}Body` via
+    //     `rust_cmd_ed → to_bedrock_cmd → tr_func_sized` (added 2026-05-21
+    //     after the ANF/JCstore patch in `Jasmin/Core.v` plus the stub-
+    //     predicate tightening in `ocaml/ocaml_compile.ml` together
+    //     unblocked the rust_cmd_ed pipeline; previously fe25519_mul +
+    //     fe25519_square were classified as register-pressure failures
+    //     in the MontgomeryLadder64 path).
+    //
+    // Still blocked: ladderstep, montladder, x25519, x25519_base
+    //   (var-conflict in MontgomeryLadder64 path).
     let asm_dir = Path::new("asm");
     // When `cryptopt_leaves` is active, the bedrock2-Jasmin 5×64
     // `fe25519_add` / `fe25519_sub` symbols collide with the 4×64
@@ -158,10 +171,12 @@ fn main() {
     // the cryptopt feature is on.
     let cryptopt_active = env::var("CARGO_FEATURE_CRYPTOPT_LEAVES").is_ok();
     let b2_jasmin_funcs: Vec<&str> = if cryptopt_active {
-        vec!["fe25519_scmula24", "felem_cswap", "fe25519_copy",
+        vec!["fe25519_mul", "fe25519_square",
+             "fe25519_scmula24", "felem_cswap", "fe25519_copy",
              "fe25519_from_word", "clamp_64"]
     } else {
-        vec!["fe25519_add", "fe25519_sub", "fe25519_scmula24",
+        vec!["fe25519_add", "fe25519_sub", "fe25519_mul", "fe25519_square",
+             "fe25519_scmula24",
              "felem_cswap", "fe25519_copy", "fe25519_from_word",
              "clamp_64"]
     };

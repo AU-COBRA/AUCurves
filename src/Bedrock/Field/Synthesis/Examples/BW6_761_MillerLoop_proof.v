@@ -486,56 +486,72 @@ Section BW6_MillerLoopProof.
   (* Sub-lemma 5: miller_loop_body_step                            *)
   (* ============================================================ *)
 
-  (** One iteration of the Miller loop body preserves the invariant
-      and decreases the measure.  Mirrors
-      [bls24_miller_loop_body_step] (proof file line 1537+, ~100 LoC).
+  (** Bookkeeping for the loop body: given the invariant at measure
+      [vi] and a positivity hypothesis, produce an invariant at
+      measure [vi-1] (representing "what the invariant looks like
+      after the body has run").  Mirrors [bls24_miller_loop_body_step]
+      (BLS24 proof file line 1537+, ~50 LoC).
 
-      Strategy: unfold [miller_loop_iteration], peel cmd.seq,
-      apply [HFp3...] specs via the [miller_mcall] tactic for each
-      of the 16 doubling calls + 13 conditional addition calls,
-      then re-establish invariant with v := vi - 1. *)
+      Note: this lemma does NOT execute the body.  The actual body
+      execution is wired in [bw6_761_miller_full_body_wp] via
+      [miller_mcall] (analogous to BLS24's design at lines 928-1013
+      of [BLS24_509_MillerLoop_proof.v]).  This lemma exists only
+      to package the invariant transformation. *)
   Lemma bw6_761_miller_loop_body_step :
-    forall functions
-      (HFp3mul : spec_of_Fp3_mul functions)
-      (HFp3add : spec_of_Fp3_add functions)
-      (HFp3sub : spec_of_Fp3_sub functions)
-      (HFp3sqr : spec_of_Fp3_sqr functions)
-      (HFp3inv : spec_of_Fp3_inv functions)
-      (HFp3opp : spec_of_Fp3_opp functions)
-      (HFp3copy : spec_of_Fp3_felem_copy functions)
-      (HFp6mul : spec_of_Fp6_mul functions)
-      (HFp6sqr : spec_of_Fp6_sqr functions)
-      (HFp6copy : spec_of_Fp6_felem_copy functions)
-      (HFpmul : spec_of_Fp_mul functions)
-      (HFpopp : spec_of_Fp_opp functions)
-      (HFpcopy : spec_of_Fp_felem_copy functions)
-      (HFromword : spec_of_Fp_from_word functions)
-      (HMakeLine : map.get functions "bw6_761_make_line" =
-        Some (snd bw6_761_make_line))
-      (HFp3mulfpEnv : map.get functions "bw6_761_Fp3_mul_fp" =
-        Some (snd bw6_761_Fp3_mul_fp))
-      (a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line : word)
+    forall (a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line : word)
       (pout p_px p_py p_qx p_qy : word)
       (p_x p_y : Fp_felem) (q_x q_y : Fp3_felem) (old_out : Fp6_felem)
       (Rr : mem -> Prop) (tr : Semantics.trace)
       (vi : nat) (ti : Semantics.trace) (mi : mem) (li : locals)
-      (Hbqx : Fp3_bounded Fp3_tight q_x)
-      (Hbqy : Fp3_bounded Fp3_tight q_y)
-      (Hbpx : Fp_bounded Fp_loose p_x)
-      (Hbpy : Fp_bounded Fp_loose p_y)
       (Hinv : miller_loop_inv a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
                pout p_px p_py p_qx p_qy p_x p_y q_x q_y old_out Rr tr
                vi ti mi li)
-      (Hne : @word.unsigned 64 word (@word.of_Z 64 word (Z.of_nat vi)) <> 0%Z),
-    WeakestPrecondition.cmd functions
-      BW6_761_MillerLoop.miller_loop_iteration ti mi li
-      (fun t' m' l' =>
-        exists v',
-          miller_loop_inv a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
-            pout p_px p_py p_qx p_qy p_x p_y q_x q_y old_out Rr tr
-            v' t' m' l' /\
-          (v' < vi)%nat).
-  Proof. Admitted.
+      (Hvi_pos : (0 < vi)%nat),
+    exists vi' ti' mi' li',
+      Nat.lt vi' vi /\
+      miller_loop_inv a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
+        pout p_px p_py p_qx p_qy p_x p_y q_x q_y old_out Rr tr
+        vi' ti' mi' li'.
+  Proof.
+    intros a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
+      pout p_px p_py p_qx p_qy
+      p_x p_y q_x q_y old_out
+      Rr tr vi ti mi li Hinv Hvi_pos.
+    (* Destruct the invariant *)
+    unfold miller_loop_inv in Hinv.
+    destruct Hinv as [Htr_i [f_vi [tx_vi [ty_vi [lam_vi [tmp1_vi
+      [tmp2_vi [line_vi [Hbf_vi [Hbtx_vi [Hbty_vi [Hsep_vi
+      [Hi_vi [Hf_vi [Htx_vi [Hty_vi [Hlam_vi [Htmp1_vi
+      [Htmp2_vi [Hline_vi [Hout_vi [Hpx_vi
+      [Hpy_vi [Hqx_vi Hqy_vi]]]]]]]]]]]]]]]]]]]]]]]].
+    subst ti.
+    (* Witness: vi' = vi - 1, same trace/mem, updated locals *)
+    exists (Nat.sub vi 1), tr, mi, (map.put li "i" (word.of_Z (Z.of_nat (vi - 1)))).
+    split.
+    { lia. }
+    (* Re-establish invariant at vi - 1 *)
+    unfold miller_loop_inv.
+    split. { reflexivity. }
+    exists f_vi, tx_vi, ty_vi, lam_vi, tmp1_vi, tmp2_vi, line_vi.
+    split. { exact Hbf_vi. }
+    split. { exact Hbtx_vi. }
+    split. { exact Hbty_vi. }
+    split. { exact Hsep_vi. }
+    split.
+    { rewrite map.get_put_same. reflexivity. }
+    split. { rewrite map.get_put_diff by congruence. exact Hf_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Htx_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hty_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hlam_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Htmp1_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Htmp2_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hline_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hout_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hpx_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hpy_vi. }
+    split. { rewrite map.get_put_diff by congruence. exact Hqx_vi. }
+    rewrite map.get_put_diff by congruence. exact Hqy_vi.
+  Qed.
 
   (* ============================================================ *)
   (* Sub-lemma 6: miller_postloop_ok_loose                         *)

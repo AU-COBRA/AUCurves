@@ -59,6 +59,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericCubic.
 Require Import Bedrock.Field.FieldExtensions.GenericSplitJoin.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
+Require Import Bedrock.Field.Synthesis.Examples.BW6_761_PairingHelpers.
 
 Import BinInt String List.ListNotations.
 
@@ -157,6 +158,11 @@ Section BW6_MillerLoopProof.
   Local Notation fp_off :=
     (word.of_Z (Memory.bytes_per_word 64 *
       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr))).
+
+  (* Fp3-level byte offset (for Fp6 = Fp3 × Fp3 quadratic split) *)
+  Local Notation fp3_off :=
+    (word.of_Z (Memory.bytes_per_word 64 *
+      Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))).
 
   Local Notation fp_c0 := (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr).
   Local Notation fp_c1 := (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr).
@@ -332,6 +338,16 @@ Section BW6_MillerLoopProof.
     SeparationLogic.ecancel_assumption_impl.
   Qed.
 
+  (** Helper used in make_line + miller_loop_ok stackalloc combinations. *)
+  Local Lemma sep_from_split {A B : mem -> Prop} {m mOld mNew : mem} :
+    map.split m mOld mNew -> A mOld -> B mNew -> (A * B)%sep m.
+  Proof.
+    intros [Heq Hd] HA HB. subst m.
+    exists mOld, mNew.
+    split. { split. { reflexivity. } exact Hd. }
+    split; assumption.
+  Qed.
+
   (** ** Sub-lemma 2: make_line_ok.
       Mirrors [bls24_make_line_ok] (PairingHelpers.v line 1041+,
       ~250 LoC).  Strategy: stackalloc tmp (Fp3), then 5 callee
@@ -354,7 +370,296 @@ Section BW6_MillerLoopProof.
       (HFpcopy : spec_of_Fp_felem_copy functions)
       (HFromword : spec_of_Fp_from_word functions),
     spec_of_bw6_761_make_line functions.
-  Proof. Admitted.
+  Proof.
+    intros functions EnvContains HFp3mul HFp3sub HFp3mulfp HFpopp HFpcopy HFromword.
+    unfold spec_of_bw6_761_make_line.
+    intros pout plam pxt pyt pxp pyp old_out lam xt yt xp yp Rr tr mem0
+      [Hblam [Hbxt [Hbyt [Hbxp [Hbyp Hsep]]]]].
+    eapply WeakestPreconditionProperties.start_func;
+      [exact EnvContains | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold bw6_761_make_line. simpl snd. simpl fst.
+    cbv match beta.
+    eexists. split. { exact eq_refl. }
+    repeat straightline.
+
+    (* === Stackalloc tmp (Fp3-sized) === *)
+    split. { apply Z_mod_mult. }
+    intros a_tmp mStack mCombined HstackTmp Hm_split.
+
+    (* Convert anybytes to FElem_Fp3 *)
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tmp) as Hfb_tmp.
+    unfold AbstractField.Placeholder in Hfb_tmp.
+    pose proof (proj1 (Hfb_tmp mStack) HstackTmp) as [tmp_val Htmp_felem].
+    clear Hfb_tmp.
+
+    (* Build combined sep on mCombined: inputs + tmp on stack *)
+    eassert (Hsep_all :
+      (FElem_Fp6 pout old_out *
+       (FElem_Fp3 plam lam *
+        (FElem_Fp3 pxt xt *
+         (FElem_Fp3 pyt yt *
+          (FElem_Fp pxp xp *
+           (FElem_Fp pyp yp *
+            (Rr * FElem_Fp3 a_tmp tmp_val)))))))%sep mCombined).
+    { pose proof (sep_from_split Hm_split Hsep Htmp_felem) as H'.
+      ecancel_assumption. }
+    clear Hsep Htmp_felem.
+
+    (* === Call 1: fp3_mul(a_tmp, plam, pxt) ===
+       Pre: lam ∈ Fp3_tight, xt ∈ Fp3_tight
+       Post: ∃ out1 ∈ Fp3_loose, FElem_Fp3 a_tmp out1 *)
+    unfold BW6_761_MillerLoop.cmd_seq_list.
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    { unfold spec_of_Fp3_mul, AbstractField.binop_spec in HFp3mul.
+      eapply (HFp3mul a_tmp plam pxt tmp_val lam xt _ tr).
+      split.
+      { cbv [AbstractField.bin_xbounds AbstractField.bin_mul].
+        apply (@AbstractField.relax_bounds _ bw6_Fp3_params _ _ _ _
+          bw6_Fp3_repr bw6_Fp3_repr_ok); exact Hblam. }
+      split.
+      { cbv [AbstractField.bin_ybounds AbstractField.bin_mul].
+        apply (@AbstractField.relax_bounds _ bw6_Fp3_params _ _ _ _
+          bw6_Fp3_repr bw6_Fp3_repr_ok); exact Hbxt. }
+      split; [eexists; pose proof Hsep_all as H'; SeparationLogic.ecancel_assumption_impl |].
+      split; [eexists; pose proof Hsep_all as H'; SeparationLogic.ecancel_assumption_impl |].
+      pose proof Hsep_all as H'; SeparationLogic.ecancel_assumption_impl. }
+    intros t1 m1 rets1 [Hrets1 [Htr1 [out1 [_ [Hbound1 Hsep1]]]]].
+    subst rets1. symmetry in Htr1. subst t1.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === Call 2: fp3_sub(out.c0, a_tmp, pyt) ===
+       out.c0 = pout (first half of Fp6). Need to split Fp6 → Fp3 c0 + Fp3 c1. *)
+    eassert (Hsplit6 : (FElem_Fp6 pout old_out * _)%sep m1).
+    { pose proof Hsep1 as H'. SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp6_split_in_sep in Hsplit6.
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    { unfold spec_of_Fp3_sub, AbstractField.binop_spec in HFp3sub.
+      eapply (HFp3sub pout a_tmp pyt
+        (qe_fst_felem (base_repr:=bw6_Fp3_repr) old_out) out1 yt _ tr).
+      split.
+      { cbv [AbstractField.bin_xbounds AbstractField.bin_sub]. exact Hbound1. }
+      split.
+      { cbv [AbstractField.bin_ybounds AbstractField.bin_sub].
+        apply (@AbstractField.relax_bounds _ bw6_Fp3_params _ _ _ _
+          bw6_Fp3_repr bw6_Fp3_repr_ok); exact Hbyt. }
+      split; [eexists; pose proof Hsplit6 as H'; SeparationLogic.ecancel_assumption_impl |].
+      split; [eexists; pose proof Hsplit6 as H'; SeparationLogic.ecancel_assumption_impl |].
+      pose proof Hsplit6 as H'; SeparationLogic.ecancel_assumption_impl. }
+    intros t2 m2 rets2 [Hrets2 [Htr2 [out2 [_ [Hbound2 Hsep2]]]]].
+    subst rets2. symmetry in Htr2. subst t2.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === Call 3: fp3_mul_fp(a_tmp, plam, pxp) === *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    { unfold spec_of_bw6_761_Fp3_mul_fp in HFp3mulfp.
+      eapply (HFp3mulfp a_tmp plam pxp out1 lam xp _ tr).
+      split; [exact Hblam |].
+      split; [exact Hbxp |].
+      pose proof Hsep2 as H'. SeparationLogic.ecancel_assumption_impl. }
+    intros t3 m3 rets3 [Hrets3 [Htr3 [out3 [Hbound3 Hsep3]]]].
+    subst rets3. symmetry in Htr3. subst t3.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === Call 4: fp_opp(out.c1.c0, a_tmp.c0) ===
+       out.c1 = pout + fp3_off (second half of Fp6).  We need to split
+       the c1 Fp3 into 3 Fp slots, target out.c1.c0.
+       Also split the tmp Fp3 into 3 slots to access tmp.c0. *)
+    eassert (Hc1_in_m3 : (FElem_Fp3 (word.add pout fp3_off)
+      (qe_snd_felem (base_repr:=bw6_Fp3_repr) old_out) * _)%sep m3).
+    { pose proof Hsep3 as H'. SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp3_split_in_sep in Hc1_in_m3.
+    eassert (Htmp_in_m3 : (FElem_Fp3 a_tmp out3 * _)%sep m3).
+    { pose proof Hsep3 as H'. SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp3_split_in_sep in Htmp_in_m3.
+    repeat straightline.
+    (* Pre: Fp_bounded Fp_loose for input (the .c0 of out3, derived from Hbound3) *)
+    assert (Hbout3_c0 : Fp_bounded Fp_loose (fp_c0 out3)).
+    { exact (proj1 Hbound3). }
+    eapply Semantics.weaken_call.
+    { unfold spec_of_Fp_opp, AbstractField.unop_spec in HFpopp.
+      subst args.
+      eapply (HFpopp (word.add pout fp3_off) a_tmp
+        (fp_c0 (qe_snd_felem (base_repr:=bw6_Fp3_repr) old_out)) (fp_c0 out3) _ tr).
+      split.
+      { cbv [AbstractField.un_xbounds AbstractField.un_opp]. exact Hbout3_c0. }
+      split; [eexists; pose proof Htmp_in_m3 as H'; SeparationLogic.ecancel_assumption_impl |].
+      pose proof Hc1_in_m3 as H'. SeparationLogic.ecancel_assumption_impl. }
+    intros t4 m4 rets4 [Hrets4 [Htr4 [out4 [_ [Hbound4 Hsep4]]]]].
+    subst rets4. symmetry in Htr4. subst t4.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === Call 5: fp_copy(out.c1.c1, pyp) === *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    { unfold spec_of_Fp_felem_copy, AbstractField.spec_of_felem_copy in HFpcopy.
+      subst args.
+      eapply (HFpcopy (word.add (word.add pout fp3_off) fp_off) pyp
+        (fp_c1 (qe_snd_felem (base_repr:=bw6_Fp3_repr) old_out)) yp _ _ tr).
+      split.
+      - (* (FElem px x * FElem pout out * R) — cross-disjoint *)
+        pose proof Hsep4 as H'. SeparationLogic.ecancel_assumption_impl.
+      - (* (FElem pout out * Rout) — output isolated *)
+        pose proof Hsep4 as H'. SeparationLogic.ecancel_assumption_impl. }
+    intros t5 m5 rets5 [Hrets5 [Htr5 Hsep5]].
+    subst rets5. symmetry in Htr5. subst t5.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === Call 6: from_word(out.c1.c2, 0) === *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    { eapply (HFromword _ _ _ _ _);
+      pose proof Hsep5 as H'. SeparationLogic.ecancel_assumption_impl. }
+    intros t6 m6 rets6 [Hrets6 [Htr6 [fw6 [_ [Hbound6 Hsep6]]]]].
+    subst rets6. symmetry in Htr6. subst t6.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* === cmd.skip at end of cmd_seq_list === *)
+    repeat straightline.
+
+    (* === Stack deallocation (tmp Fp3) === *)
+    eassert (Htmp_sep : (FElem_Fp3 a_tmp out3 * _)%sep m6).
+    { pose proof Hsep6 as H'. SeparationLogic.ecancel_assumption_impl. }
+    destruct Htmp_sep as [m_stk [m_rest [[Heq_stk Hd_stk] [Hftmp6 Hrest]]]].
+    exists m_rest, m_stk.
+    split. { exact (AbstractField.FElem_to_bytes a_tmp out3 m_stk Hftmp6). }
+    split.
+    { split.
+      { rewrite map.putmany_comm; [exact Heq_stk |
+          exact (proj1 (map.disjoint_comm _ _) Hd_stk)]. }
+      { exact (proj1 (map.disjoint_comm _ _) Hd_stk). } }
+
+    (* === Return list and trace === *)
+    cbv [list_map list_map_body].
+    split. { exact eq_refl. }
+    split. { exact eq_refl. }
+
+    (* === Join sub-components back into FElem_Fp6 ===
+
+       Final memory m_rest has:
+       - FElem_Fp3 pout out2                                  (c0 = lam*xt - yt)
+       - FElem_Fp (pout+fp3_off) out4                         (c1.c0 = -tmp.c0 = -lam.c0*xp)
+       - FElem_Fp (pout+fp3_off+fp_off) yp                    (c1.c1 = yp)
+       - FElem_Fp (pout+fp3_off+2*fp_off) fw6                 (c1.c2 = 0)
+       + FElem_Fp3 plam lam, FElem_Fp3 pxt xt, FElem_Fp3 pyt yt
+       + FElem_Fp pxp xp, FElem_Fp pyp yp, Rr  *)
+
+    Local Notation Fp_fsw  :=
+      (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    Local Notation Fp3_fsw :=
+      (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+
+    (* Length helpers from tight bounds *)
+    Local Ltac ml_len_from_tight H :=
+      let Hs := fresh in
+      pose proof H as Hs;
+      cbv [AbstractField.bounded_by AbstractField.tight_bounds
+           bw6_Fp_repr Field.bounded_by Field.tight_bounds
+           BW6_761_Instances.bw6_frep field_representation
+           Signature.field_representation Representation.frep] in Hs;
+      destruct Hs as [Hs _];
+      apply WordByWordMontgomery.WordByWordMontgomery.length_small in Hs;
+      rewrite map_length in Hs; exact Hs.
+
+    assert (Hlen_fw6 : length fw6 = Fp_fsw) by ml_len_from_tight Hbound6.
+    assert (Hlen_yp : length yp = Fp_fsw).
+    { eassert (Hsep_yp : (FElem_Fp pyp yp * _)%sep m_rest).
+      { pose proof Hrest as H'. SeparationLogic.ecancel_assumption_impl. }
+      destruct Hsep_yp as [m_yp2 [_ [_ [Hbare_yp _]]]].
+      exact (generic_FElem_length _ _ _ Hbare_yp). }
+    assert (Hlen_out4 : length out4 = Fp_fsw).
+    { eassert (Hsep_o4 : (FElem_Fp (word.add pout fp3_off) out4 * _)%sep m_rest).
+      { pose proof Hrest as H'. SeparationLogic.ecancel_assumption_impl. }
+      destruct Hsep_o4 as [m_o4 [_ [_ [Hbare_o4 _]]]].
+      exact (generic_FElem_length _ _ _ Hbare_o4). }
+    assert (Hlen_out2 : length out2 = Fp3_fsw).
+    { eassert (Hsep_o2 : (FElem_Fp3 pout out2 * _)%sep m_rest).
+      { pose proof Hrest as H'. SeparationLogic.ecancel_assumption_impl. }
+      destruct Hsep_o2 as [m_o2 [_ [_ [Hbare_o2 _]]]].
+      exact (generic_FElem_length _ _ _ Hbare_o2). }
+
+    (* Join 3 Fp → Fp3 for the c1 component: out4 ++ yp ++ fw6 *)
+    eassert (Hj_c1 : (FElem_Fp (word.add pout fp3_off) out4 *
+      (FElem_Fp (word.add (word.add pout fp3_off) fp_off) yp *
+       (FElem_Fp (word.add (word.add pout fp3_off)
+         (word.of_Z (2 * (Memory.bytes_per_word 64 *
+           Z.of_nat Fp_fsw)))) fw6 * _)))%sep m_rest).
+    { pose proof Hrest as H'. SeparationLogic.ecancel_assumption_impl. }
+    (* The join uses (pout + fp3_off) as the new base address.
+       Need the FElem_Fp at base + fp_off + ce_offset structure.
+       The CE join needs offsets: base, base+fp_off, base+2*fp_off. *)
+    pose proof (ce_raw_FElem_join_in_sep
+      BW6_761_Instances.bw6_Fp_mul_by_nr_model "bw6_761_Fp3_" BW6_761_Instances.Fp_eq_dec
+      (word.add pout fp3_off) out4 yp fw6 _ m_rest
+      Hlen_out4 Hlen_yp Hlen_fw6 Hj_c1) as Hjc1.
+
+    (* Now we have FElem_Fp3 (word.add pout fp3_off) (out4 ++ yp ++ fw6).
+       Join with FElem_Fp3 pout out2 via QE join to get FElem_Fp6. *)
+    eassert (Hjpre :
+      (FElem_Fp3 pout out2 *
+       (FElem_Fp3 (word.add pout fp3_off) (out4 ++ yp ++ fw6) * _))%sep m_rest).
+    { pose proof Hjc1 as H'. SeparationLogic.ecancel_assumption_impl. }
+    assert (Hlen_c1joined : length (out4 ++ yp ++ fw6) = Fp3_fsw).
+    { rewrite !app_length, Hlen_out4, Hlen_yp, Hlen_fw6.
+      change Fp3_fsw with (3 * Fp_fsw)%nat. lia. }
+    pose proof (qe_raw_FElem_join_in_sep
+      BW6_761_Instances.bw6_zeta_in_Fp3 "bw6_761_Fp6_" BW6_761_Instances.Fp3_eq_dec
+      pout out2 (out4 ++ yp ++ fw6) _ m_rest
+      Hlen_out2 Hlen_c1joined Hjpre) as Hfp6_sep.
+
+    (* Provide witness and prove Fp6_bounded Fp6_loose *)
+    set (the_out := out2 ++ (out4 ++ yp ++ fw6)).
+    exists the_out.
+    split.
+    { (* Fp6_bounded Fp6_loose the_out — show QE c0 (Fp3_loose) and c1 (Fp3_loose) *)
+      cut (Fp3_bounded Fp3_loose (qe_fst_felem (base_repr:=bw6_Fp3_repr) the_out) /\
+           Fp3_bounded Fp3_loose (qe_snd_felem (base_repr:=bw6_Fp3_repr) the_out)).
+      { intro H; exact H. }
+      (* the_out = out2 ++ (out4 ++ yp ++ fw6), so qe_fst = out2, qe_snd = (out4++yp++fw6) *)
+      assert (Hqe_fst : qe_fst_felem (base_repr:=bw6_Fp3_repr) the_out = out2).
+      { subst the_out. unfold qe_fst_felem. apply firstn_app_le. exact Hlen_out2. }
+      assert (Hqe_snd : qe_snd_felem (base_repr:=bw6_Fp3_repr) the_out = out4 ++ yp ++ fw6).
+      { subst the_out. unfold qe_snd_felem. apply skipn_app_le. exact Hlen_out2. }
+      rewrite Hqe_fst, Hqe_snd.
+      split.
+      { (* out2 = result of fp3_sub: Fp3_loose *)
+        exact Hbound2. }
+      { (* (out4 ++ yp ++ fw6) is the c1 Fp3, prove Fp3_loose via 3 Fp_loose components *)
+        cut (Fp_bounded Fp_loose (fp_c0 (out4 ++ yp ++ fw6)) /\
+             Fp_bounded Fp_loose (fp_c1 (out4 ++ yp ++ fw6)) /\
+             Fp_bounded Fp_loose (fp_c2 (out4 ++ yp ++ fw6))).
+        { intro H; exact H. }
+        assert (Hce0 : fp_c0 (out4 ++ yp ++ fw6) = out4).
+        { unfold fp_c0, ce_c0_felem. apply firstn_app_le. exact Hlen_out4. }
+        assert (Hce12 : skipn (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+            (out4 ++ yp ++ fw6) = yp ++ fw6).
+        { apply skipn_app_le. exact Hlen_out4. }
+        assert (Hce1 : fp_c1 (out4 ++ yp ++ fw6) = yp).
+        { unfold fp_c1, ce_c1_felem. rewrite Hce12. apply firstn_app_le. exact Hlen_yp. }
+        assert (Hce2 : fp_c2 (out4 ++ yp ++ fw6) = fw6).
+        { unfold fp_c2, ce_c2_felem.
+          set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+          replace (2 * n)%nat with (n + n)%nat by lia.
+          rewrite <- List.skipn_skipn.
+          change (ListDef.skipn n (ListDef.skipn n (out4 ++ yp ++ fw6)))
+            with (skipn n (skipn n (out4 ++ yp ++ fw6))).
+          rewrite (skipn_app_le _ _ _ Hlen_out4). apply skipn_app_le. exact Hlen_yp. }
+        rewrite Hce0, Hce1, Hce2.
+        split.
+        { (* out4 = result of fp_opp on Fp_tight = Fp_loose *)
+          exact Hbound4. }
+        split. { exact Hbyp. }
+        { (* fw6 = from_word 0, Fp_tight → relax to Fp_loose *)
+          exact (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp_repr bw6_Fp_repr_ok _ Hbound6). } } }
+    { (* Final sep: rebuild to expected sep shape *)
+      subst the_out.
+      pose proof Hfp6_sep as H'.
+      SeparationLogic.ecancel_assumption_impl. }
+  Qed.
 
   (** ** Sub-lemma 3: bw6_fp6_set_one_wp.
       Mirrors [bls24_fp24_set_one_wp] (PairingHelpers.v line 590+,
@@ -477,15 +782,6 @@ Section BW6_MillerLoopProof.
   (* ============================================================ *)
   (* Generic helpers (Qed)                                         *)
   (* ============================================================ *)
-
-  Local Lemma sep_from_split {A B : mem -> Prop} {m mOld mNew : mem} :
-    map.split m mOld mNew -> A mOld -> B mNew -> (A * B)%sep m.
-  Proof.
-    intros [Heq Hd] HA HB. subst m.
-    exists mOld, mNew.
-    split. { split. { reflexivity. } exact Hd. }
-    split; assumption.
-  Qed.
 
   Lemma word_nat_sub1 : forall n : nat, (0 < n)%nat ->
     @word.sub 64 word (word.of_Z (Z.of_nat n)) (word.of_Z 1) =

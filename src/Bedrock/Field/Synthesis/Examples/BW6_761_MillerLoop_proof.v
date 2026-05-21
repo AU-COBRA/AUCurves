@@ -19,16 +19,15 @@
     the field-tower decomposition lemmas differ (CE_field_representation
     Fp3-over-Fp instead of QE-Fp4-over-Fp2-over-Fp).
 
-    STATUS (this file): structurally complete proof skeleton.
-    The four sub-lemmas for the main theorem (init, body-step,
-    postloop, full-body) are stated and the top-level theorem is
-    discharged from them.  The sub-lemmas are presented in
-    "Admitted" form, each with a documented proof recipe that
-    transliterates BLS24's recipe to BW6's Fp3/Fp6 tower.  The
-    sole top-level theorem [bw6_761_miller_loop_ok] therefore
-    accepts these as hypotheses (its own proof is Qed-complete
-    given them).  See companion [BW6_761_PairingHelpers.v]
-    (to be written: ~1800 LoC) for the Admitted bodies. *)
+    STATUS (this file): structurally complete proof skeleton with
+    [bw6_761_Fp3_mul_fp_ok] Qed-complete.  The remaining four
+    sub-lemmas (make_line_ok, miller_loop_body_step,
+    miller_full_body_wp, miller_loop_ok) are stated and the
+    top-level theorem is discharged from them, in "Admitted"
+    form, each with a documented proof recipe that transliterates
+    BLS24's recipe to BW6's Fp3/Fp6 tower.  See companion
+    [BW6_761_PairingHelpers.v] (to be written: ~1800 LoC) for the
+    Admitted bodies. *)
 
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.

@@ -168,6 +168,101 @@ Section BW6_PairingHelpers.
   Qed.
 
   (* ============================================================ *)
+  (* Omnibus split/join: FElem_Fp6 ↔ 6 FElem_Fp slots              *)
+  (*                                                                *)
+  (* Used by [BW6_761_FrobLibBridge.v] to translate between BW6's   *)
+  (* cubic-quadratic [FElem_Fp6] layout and the library's per-Fp   *)
+  (* slot layout in [PairingFieldOpsCubicFirst.FElem_Fp6_slots].   *)
+  (*                                                                *)
+  (* Defined here (not in the bridge file) because the typeclass   *)
+  (* disambiguation between [bw6_Fp_repr] and [bw6_Fp3_repr] in     *)
+  (* sep tactics is straightforward in the helpers section's local *)
+  (* context but tricky in the bridge file.                         *)
+  (* ============================================================ *)
+
+  (** Split [FElem_Fp6 p x] into 6 [FElem_Fp] slots.  Slot values are
+      obtained by composing the Fp6 → Fp3 (qe_fst/snd) and Fp3 → Fp
+      (ce_c0/c1/c2) projections. *)
+  Lemma FElem_Fp6_split_to_6_slots p (x : list word) R m :
+    (FElem_Fp6 p x * R)%sep m ->
+    (FElem_Fp p (fp_c0 (fp3_fst x)) *
+     (FElem_Fp (word.add p fp_off) (fp_c1 (fp3_fst x)) *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         (fp_c2 (fp3_fst x)) *
+       (FElem_Fp (word.add p fp3_off) (fp_c0 (fp3_snd x)) *
+        (FElem_Fp (word.add (word.add p fp3_off) fp_off) (fp_c1 (fp3_snd x)) *
+         (FElem_Fp (word.add (word.add p fp3_off)
+              (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+            (fp_c2 (fp3_snd x)) * R))))))%sep m.
+  Proof.
+    intros H.
+    apply FElem_Fp6_split_in_sep in H.
+    apply FElem_Fp3_split_in_sep in H.
+    eassert (Hc1 : (FElem_Fp3 (word.add p fp3_off) (fp3_snd x) * _)%sep m)
+      by SeparationLogic.ecancel_assumption_impl.
+    apply FElem_Fp3_split_in_sep in Hc1.
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
+
+  (** Join 6 [FElem_Fp] slots into a single [FElem_Fp6].  The Fp6 felem
+      is the concatenation [(s0++s1++s2)++(s3++s4++s5)]. *)
+  Lemma FElem_Fp_join6_to_Fp6 p (s0 s1 s2 s3 s4 s5 : Fp_felem) R m :
+    length s0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length s1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length s2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length s3 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length s4 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length s5 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    (FElem_Fp p s0 *
+     (FElem_Fp (word.add p fp_off) s1 *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         s2 *
+       (FElem_Fp (word.add p fp3_off) s3 *
+        (FElem_Fp (word.add (word.add p fp3_off) fp_off) s4 *
+         (FElem_Fp (word.add (word.add p fp3_off)
+              (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+            s5 * R))))))%sep m ->
+    (FElem_Fp6 p ((s0 ++ s1 ++ s2) ++ (s3 ++ s4 ++ s5)) * R)%sep m.
+  Proof.
+    intros Hl0 Hl1 Hl2 Hl3 Hl4 Hl5 H.
+    eassert (Hc0 : (FElem_Fp p s0 *
+                   (FElem_Fp (word.add p fp_off) s1 *
+                    (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                        Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+                       s2 * _)))%sep m)
+      by SeparationLogic.ecancel_assumption_impl.
+    apply (FElem_Fp_join3_in_sep p s0 s1 s2 _ m Hl0 Hl1 Hl2) in Hc0.
+    eassert (Hc1 : (FElem_Fp (word.add p fp3_off) s3 *
+                   (FElem_Fp (word.add (word.add p fp3_off) fp_off) s4 *
+                    (FElem_Fp (word.add (word.add p fp3_off)
+                         (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                           Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+                       s5 * _)))%sep m)
+      by SeparationLogic.ecancel_assumption_impl.
+    apply (FElem_Fp_join3_in_sep (word.add p fp3_off) s3 s4 s5 _ m Hl3 Hl4 Hl5) in Hc1.
+    assert (Hlc0 : length (s0 ++ s1 ++ s2) =
+      @AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    { rewrite !app_length, Hl0, Hl1, Hl2.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+    assert (Hlc1 : length (s3 ++ s4 ++ s5) =
+      @AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    { rewrite !app_length, Hl3, Hl4, Hl5.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+    eassert (HFp6_pre : (FElem_Fp3 p (s0 ++ s1 ++ s2) *
+                        (FElem_Fp3 (word.add p fp3_off) (s3 ++ s4 ++ s5) * R))%sep m)
+      by SeparationLogic.ecancel_assumption_impl.
+    apply (FElem_Fp3_join_in_sep p (s0 ++ s1 ++ s2) (s3 ++ s4 ++ s5) R m Hlc0 Hlc1)
+      in HFp6_pre.
+    exact HFp6_pre.
+  Qed.
+
+  (* ============================================================ *)
   (* Callee spec instances                                         *)
   (* ============================================================ *)
 

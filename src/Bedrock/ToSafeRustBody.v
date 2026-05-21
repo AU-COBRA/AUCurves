@@ -582,7 +582,72 @@ Definition param_table : list (string * list string) := [
     ["Fp24";"Fp24";
      "Fp2";"Fp4";"Fp8";"Fp8";
      "Fp2";"Fp4";"Fp8";"Fp8";
-     "Fp2";"Fp4";"Fp8";"Fp8"])
+     "Fp2";"Fp4";"Fp8";"Fp8"]);
+
+  (* === BW6-761 tower entries.  Base Fp ops use the [bw6_761_*]
+     prefix.  Tower shape: Fp / Fp3 (cubic) / Fp6 (quad over Fp3),
+     so a 2-layer tower instead of BLS12's 3.  Fp prefix is the full
+     [bw6_761_] (no shorter alias). *)
+  ("bw6_761_add", ["Fp";"Fp";"Fp"]); ("bw6_761_sub", ["Fp";"Fp";"Fp"]);
+  ("bw6_761_mul", ["Fp";"Fp";"Fp"]); ("bw6_761_square", ["Fp";"Fp"]);
+  ("bw6_761_opp", ["Fp";"Fp"]); ("bw6_761_felem_copy", ["Fp";"Fp"]);
+  ("bw6_761_from_word", ["Fp";"Fp"]);
+  (* select_znz: out, mask:u64, x, y — mask is a one-word predicate. *)
+  ("bw6_761_select_znz", ["Fp";"u64";"Fp";"Fp"]);
+  ("bw6_761_inv", ["Fp";"Fp"]);
+  (* Fp-level mul-by-nonresidue: mul-by-(-4) helper used as the
+     [Mul_by_nr_func] slot of the cubic Fp3 emission. *)
+  ("bw6_761_mul_by_nr_n4", ["Fp";"Fp"]);
+
+  (* Fp3 tower (cubic-over-Fp).  Emitted by [GenericCubic.CE_funcs]. *)
+  ("bw6_761_Fp3_felem_copy", ["Fp3";"Fp3"]);
+  ("bw6_761_Fp3_zero", ["Fp3"]); ("bw6_761_Fp3_one", ["Fp3"]);
+  ("bw6_761_Fp3_add", ["Fp3";"Fp3";"Fp3"]);
+  ("bw6_761_Fp3_sub", ["Fp3";"Fp3";"Fp3"]);
+  ("bw6_761_Fp3_mul", ["Fp3";"Fp3";"Fp3"]);
+  ("bw6_761_Fp3_square", ["Fp3";"Fp3"]);
+  ("bw6_761_Fp3_opp", ["Fp3";"Fp3"]);
+  ("bw6_761_Fp3_select_znz", ["Fp3";"u64";"Fp3";"Fp3"]);
+  ("bw6_761_Fp3_inv", ["Fp3";"Fp3"]);
+  (* Fp3 mul-by-Fp scalar: (out:Fp3, x:Fp3, s:Fp). Used by make_line. *)
+  ("bw6_761_Fp3_mul_fp", ["Fp3";"Fp3";"Fp"]);
+  (* Fp3-level mul-by-zeta is the [Mul_by_nr_func] slot for the
+     quadratic Fp6 layer.  Operates on Fp3 inputs. *)
+  ("bw6_761_Fp3_mul_by_zeta", ["Fp3";"Fp3"]);
+
+  (* Fp6 tower (quad-over-Fp3).  Emitted by [GenericQuadratic.QE_funcs]. *)
+  ("bw6_761_Fp6_felem_copy", ["Fp6";"Fp6"]);
+  ("bw6_761_Fp6_zero", ["Fp6"]); ("bw6_761_Fp6_one", ["Fp6"]);
+  ("bw6_761_Fp6_add", ["Fp6";"Fp6";"Fp6"]);
+  ("bw6_761_Fp6_sub", ["Fp6";"Fp6";"Fp6"]);
+  ("bw6_761_Fp6_mul", ["Fp6";"Fp6";"Fp6"]);
+  ("bw6_761_Fp6_square", ["Fp6";"Fp6"]);
+  ("bw6_761_Fp6_opp", ["Fp6";"Fp6"]);
+  ("bw6_761_Fp6_select_znz", ["Fp6";"u64";"Fp6";"Fp6"]);
+
+  (* Miller loop helpers and entry.
+     make_line: out:Fp6, lam:Fp3, x_t:Fp3, y_t:Fp3, x_p:Fp, y_p:Fp.
+     miller_loop: out:Fp6, p_x:Fp, p_y:Fp, q_x:Fp3, q_y:Fp3. *)
+  ("bw6_761_make_line", ["Fp6";"Fp3";"Fp3";"Fp3";"Fp";"Fp"]);
+  ("bw6_761_miller_loop", ["Fp6";"Fp";"Fp";"Fp3";"Fp3"]);
+
+  (* Final exponentiation helpers.
+     Note: these use the lowercase [bw6_fp6_*] / [bw6_final_exp*]
+     prefixes (not [bw6_761_Fp6_*]) — see BW6_761_FinalExp.v Let bindings. *)
+  ("bw6_fp6_conjugate", ["Fp6";"Fp6"]);
+  ("bw6_fp6_pow_abs_u", ["Fp6";"Fp6"]);
+  ("bw6_fp6_pow_u", ["Fp6";"Fp6"]);
+  (* frob / frob_p2 / frob_p3 take Fp3 Frobenius constants
+     (gamma_fp3 and gamma_fp6 are both Fp3 elements). *)
+  ("bw6_fp6_frob", ["Fp6";"Fp6";"Fp3";"Fp3"]);
+  ("bw6_fp6_frob_p2", ["Fp6";"Fp6";"Fp3";"Fp3"]);
+  ("bw6_fp6_frob_p3", ["Fp6";"Fp6";"Fp3"]);
+  (* easy/hard/full final-exp take the same gamma_* Fp3 constants. *)
+  ("bw6_final_exp_easy", ["Fp6";"Fp6";"Fp3";"Fp3"]);
+  ("bw6_final_exp_hard",
+    ["Fp6";"Fp6";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3"]);
+  ("bw6_final_exp",
+    ["Fp6";"Fp6";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3"])
 ].
 
 (** Check whether [s] contains [needle] as a contiguous substring.

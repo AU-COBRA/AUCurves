@@ -127,6 +127,12 @@ rocq_mcp_cache_*.v
 # OCaml-extraction outputs from our pipeline (large .ml, .mli, executables)
 src/Bedrock/*.ml
 src/Bedrock/*.mli
+# Hand-written OCaml drivers (small wrappers around the extracted code) ARE
+# tracked — re-include each safe_tower_main.ml driver.  Pattern allows
+# bls12_/bn254_/bls24_/bls12_377_/bw6_761_ etc.
+!src/Bedrock/*_safe_tower_main.ml
+!src/Bedrock/*_safe_tower.ml
+!src/Bedrock/bn254_safe_tower_verified.ml
 src/Bedrock/bls12_*_main
 src/Bedrock/bn254_*_main
 src/Bedrock/bn254_*_verified
@@ -142,3 +148,5 @@ bn446-safe-rust/target/
 bn256-safe-rust/Cargo.lock
 bn446-safe-rust/Cargo.lock
 src/Bedrock/bls12_377_safe_tower
+src/Bedrock/bls24_509_safe_tower
+src/Bedrock/bw6_761_safe_tower

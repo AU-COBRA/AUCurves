@@ -1275,44 +1275,12 @@ Section BLS24_FinalExpProof.
 
   (* ============================================================ *)
   (* Strengthened frob body-correctness lemmas                     *)
-  (*                                                                *)
-  (* These claim that the bls24_fp24_frob / _p2 / _p4 bodies        *)
-  (* satisfy the strengthened spec [spec_of_bls24_fp24_frob_strong] *)
-  (* etc. — i.e. they preserve bounds AND compute the algebraic      *)
-  (* Frobenius via the Gallina model in BLS24_509_FrobModel.v.      *)
-  (*                                                                *)
-  (* Status (2026-05-21): The proofs are an [Admitted] gap.  The    *)
-  (* WP proof structure follows the BW6 template (see               *)
-  (* BW6_761_FinalExp_proof.bw6_fp6_frob_ok) but the 4-level tower  *)
-  (* (fp2_frob_inline → fp4_frob_inline → fp8_frob_inline →          *)
-  (* fp24_frob_body) requires a per-call ladder of                  *)
-  (* weaken_call + ecancel_assumption_with_copy through ~30 calls   *)
-  (* per spec.                                                       *)
-  (*                                                                *)
-  (* TODO: close these.  See BW6_761_FinalExp_proof.v for the       *)
-  (* analogous structure on Fp6 (~1000 LoC for 3 Frobenius level    *)
-  (* proofs).                                                        *)
-  (* ============================================================ *)
-
-  Lemma bls24_fp24_frob_strong_ok :
-    forall functions
-      (EnvContains : map.get functions "bls24_fp24_frob" =
-        Some (snd BLS24_509_FinalExp.bls24_fp24_frob)),
-    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_strong functions.
-  Proof. Admitted.
-
-  Lemma bls24_fp24_frob_p2_strong_ok :
-    forall functions
-      (EnvContains : map.get functions "bls24_fp24_frob_p2" =
-        Some (snd BLS24_509_FinalExp.bls24_fp24_frob_p2)),
-    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p2_strong functions.
-  Proof. Admitted.
-
-  Lemma bls24_fp24_frob_p4_strong_ok :
-    forall functions
-      (EnvContains : map.get functions "bls24_fp24_frob_p4" =
-        Some (snd BLS24_509_FinalExp.bls24_fp24_frob_p4)),
-    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p4_strong functions.
-  Proof. Admitted.
+  (* Body-correctness for the algebraic-strong Frob specs lived here
+     as 3 Admits.  Per 2026-05-21 cleanup, the strong specs themselves
+     are no longer declared (the BLS24-509 pow_z/easy/hard/final_exp
+     proofs use bound-only specs).  When body-correctness is later
+     proved (per docs/bw6-frob-body-correctness-plan.md), reintroduce
+     both the specs in BLS24_509_FinalExp.v and the body-correctness
+     lemmas here. *)
 
 End BLS24_FinalExpProof.

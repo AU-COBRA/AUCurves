@@ -215,7 +215,26 @@ Section BW6_MillerLoopProof.
         Some (snd bw6_761_Fp3_mul_fp))
       (HFpmul : spec_of_Fp_mul functions),
     spec_of_bw6_761_Fp3_mul_fp functions.
-  Proof. Admitted.
+  Proof.
+    intros. unfold spec_of_bw6_761_Fp3_mul_fp.
+    intros pout px ps old_out x s Rr tr mem0 [Hbx [Hbs Hsep]].
+    eapply WeakestPreconditionProperties.start_func; [eassumption | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold bw6_761_Fp3_mul_fp. simpl snd. simpl fst. cbv match beta.
+    eexists. split. 1: exact eq_refl.
+    cbv [AbstractField.bounded_by AbstractField.tight_bounds
+         bw6_Fp3_repr CE_field_representation] in Hbx.
+    destruct Hbx as [[Hbx0 Hbx1] Hbx2].
+    (* Split output Fp3 into 3 Fp slots *)
+    apply FElem_Fp3_split_in_sep in Hsep.
+    (* Bring input Fp3 to front, split into 3 Fp slots *)
+    eassert (Hs_in : (FElem_Fp3 px x * _)%sep mem0).
+    { pose proof Hsep as H'. ecancel_assumption. }
+    apply FElem_Fp3_split_in_sep in Hs_in.
+    clear Hsep.
+    (* The body is 3 sequential Fp_mul calls on c0, c1, c2 slots.
+       Standard WP processing. *)
+  Admitted.
 
   (** ** Sub-lemma 2: make_line_ok.
       Mirrors [bls24_make_line_ok] (PairingHelpers.v line 1041+,

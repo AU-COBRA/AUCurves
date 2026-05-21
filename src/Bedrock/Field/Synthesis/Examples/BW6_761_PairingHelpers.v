@@ -317,6 +317,191 @@ Section BW6_PairingHelpers.
       [BW6_761_MillerLoop_proof.v].  See sibling
       [bls24_fp24_set_one_wp] for the recipe. *)
 
+  (** Full WP for [fp6_set_one "f"]: 6 [from_word] calls write 1 into
+      slot c0.c0 and 0 into slots c0.c1, c0.c2, c1.c0, c1.c1, c1.c2 of
+      [FElem_Fp6 a_f].  After all calls the Fp6 is tight-bounded.
+
+      Strategy mirrors BLS24's [bls24_fp24_set_one_wp] but at half the
+      nesting (Fp6 has 2 Fp3 halves instead of Fp24's 3 Fp8 thirds).
+      We process the 6 calls in pairs, joining Fp→Fp3 in between, and
+      finally Fp3→Fp6 via [FElem_Fp3_join_in_sep]. *)
+  Lemma bw6_761_fp6_set_one_wp_body :
+    forall functions
+      (HFromword : spec_of_Fp_from_word functions)
+      (p : word) (old_val : Fp6_felem)
+      (R : mem -> Prop) (tr : Semantics.trace) (m : mem) (l : locals),
+      map.get l "f" = Some p ->
+      (FElem_Fp6 p old_val * R)%sep m ->
+      <{ Trace := tr; Memory := m; Locals := l; Functions := functions }>
+        BW6_761_MillerLoop.fp6_set_one "f"
+      <{ fun tr' m' l' =>
+          tr = tr' /\ l' = l /\
+          exists f_new : Fp6_felem,
+            Fp6_bounded Fp6_tight f_new /\
+            (FElem_Fp6 p f_new * R)%sep m' }>.
+  Proof.
+    intros functions HFromword p old_val R tr m l Hl Hsep.
+    unfold BW6_761_MillerLoop.fp6_set_one,
+           BW6_761_MillerLoop.cmd_seq_list.
+
+    (* Split FElem_Fp6 → 2 FElem_Fp3 → 6 FElem_Fp *)
+    apply FElem_Fp6_split_in_sep in Hsep.
+    apply FElem_Fp3_split_in_sep in Hsep.
+    eassert (Hsep_c1 : (FElem_Fp3 (word.add p fp3_off) _ * _)%sep m).
+    { SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp3_split_in_sep in Hsep_c1.
+
+    (* Local tactic: process one from_word call.
+       Hlf is the local hypothesis [map.get l "f" = Some p] in scope. *)
+    Local Ltac fw_step_body HFromword Hlf :=
+      unfold1_cmd_goal; cbv beta match delta [cmd_body];
+      letexists; split;
+      [ cbv [dexprs list_map list_map_body
+             WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet
+             Semantics.interp_binop
+             BW6_761_MillerLoop.expr_fp3_c0
+             BW6_761_MillerLoop.expr_fp3_c1
+             BW6_761_MillerLoop.expr_fp3_c2
+             BW6_761_MillerLoop.expr_fp6_c0
+             BW6_761_MillerLoop.expr_fp6_c1];
+        rewrite Hlf;
+        repeat (first [ exact eq_refl
+                      | eexists; split; [exact eq_refl |] ])
+      |];
+      eapply Semantics.weaken_call;
+      [ eapply (HFromword _ _ _ _ _);
+        SeparationLogic.ecancel_assumption_impl
+      | cbv beta; intros ? ? ? [? [? [? [_ [? ?]]]]]; subst;
+        cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl |] ].
+
+    (* Process 6 from_word calls *)
+    fw_step_body HFromword Hl.
+    fw_step_body HFromword Hl.
+    fw_step_body HFromword Hl.
+    fw_step_body HFromword Hl.
+    fw_step_body HFromword Hl.
+    fw_step_body HFromword Hl.
+
+    (* Postcondition components: tr=tr', l=l, then exists f_new *)
+    split. { exact eq_refl. }
+    split. { exact eq_refl. }
+
+    (* Each call introduced (xN : Fp_felem) with Fp_bounded Fp_tight xN
+       and sep H2..H12 (every other index is a sep, every other is bounds).
+       Names: x, x0, x1, x2, x3, x4 (Fp values).
+              H1, H3, H5, H7, H9, H11 (tight bounds).
+              H12 has the final sep with all 6 + R. *)
+    Local Ltac len_from_tight_local H :=
+      let Hs := fresh in
+      pose proof H as Hs;
+      cbv [AbstractField.bounded_by AbstractField.tight_bounds
+           bw6_Fp_repr Field.bounded_by Field.tight_bounds
+           BW6_761_Instances.bw6_frep field_representation
+           Signature.field_representation Representation.frep] in Hs;
+      destruct Hs as [Hs _];
+      apply WordByWordMontgomery.WordByWordMontgomery.length_small in Hs;
+      rewrite map_length in Hs; exact Hs.
+    assert (Hlen1 : length x = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H1.
+    assert (Hlen2 : length x0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H3.
+    assert (Hlen3 : length x1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H5.
+    assert (Hlen4 : length x2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H7.
+    assert (Hlen5 : length x3 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H9.
+    assert (Hlen6 : length x4 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) by len_from_tight_local H11.
+
+    (* Build c0 trio sep at p, join to FElem_Fp3 *)
+    eassert (HjC0 : (FElem_Fp p x *
+      (FElem_Fp (word.add p fp_off) x0 *
+       (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+           x1 * _)))%sep m'4).
+    { SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp_join3_in_sep in HjC0; [| exact Hlen1 | exact Hlen2 | exact Hlen3].
+
+    (* Build c1 trio sep at p + fp3_off, join to FElem_Fp3 *)
+    eassert (HjC1 : (FElem_Fp (word.add p fp3_off) x2 *
+      (FElem_Fp (word.add (word.add p fp3_off) fp_off) x3 *
+       (FElem_Fp (word.add (word.add p fp3_off)
+         (word.of_Z (2 * (Memory.bytes_per_word 64 *
+           Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+           x4 * _)))%sep m'4).
+    { SeparationLogic.ecancel_assumption_impl. }
+    apply FElem_Fp_join3_in_sep in HjC1; [| exact Hlen4 | exact Hlen5 | exact Hlen6].
+
+    (* Compute Fp3 lengths from app structure *)
+    assert (Hlc0 : length (x ++ x0 ++ x1) = @AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    { rewrite !app_length, Hlen1, Hlen2, Hlen3.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+    assert (Hlc1 : length (x2 ++ x3 ++ x4) = @AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    { rewrite !app_length, Hlen4, Hlen5, Hlen6.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+
+    (* Build (Fp3 c0 * (Fp3 c1 * R)) in canonical order and join to Fp6 *)
+    eassert (HjFp6 : (FElem_Fp3 p (x ++ x0 ++ x1) *
+      (FElem_Fp3 (word.add p fp3_off) (x2 ++ x3 ++ x4) * R))%sep m'4).
+    { SeparationLogic.ecancel_assumption_impl. }
+    pose proof (FElem_Fp3_join_in_sep p (x ++ x0 ++ x1) (x2 ++ x3 ++ x4) R m'4
+      Hlc0 Hlc1 HjFp6) as HFp6sep.
+
+    (* Provide witness *)
+    exists ((x ++ x0 ++ x1) ++ (x2 ++ x3 ++ x4)).
+    split; [| exact HFp6sep].
+
+    (* Fp6_bounded Fp6_tight (...) — decompose via fp3_fst/snd *)
+    cut (Fp3_bounded Fp3_tight (fp3_fst ((x ++ x0 ++ x1) ++ (x2 ++ x3 ++ x4))) /\
+         Fp3_bounded Fp3_tight (fp3_snd ((x ++ x0 ++ x1) ++ (x2 ++ x3 ++ x4)))).
+    { intro Hbb; exact Hbb. }
+    assert (Hqe0 : fp3_fst ((x ++ x0 ++ x1) ++ (x2 ++ x3 ++ x4)) = (x ++ x0 ++ x1))
+      by (unfold fp3_fst, qe_fst_felem; apply firstn_app_le; exact Hlc0).
+    assert (Hqe1 : fp3_snd ((x ++ x0 ++ x1) ++ (x2 ++ x3 ++ x4)) = (x2 ++ x3 ++ x4))
+      by (unfold fp3_snd, qe_snd_felem; apply skipn_app_le; exact Hlc0).
+    rewrite Hqe0, Hqe1.
+
+    split.
+    { (* c0 trio (x ++ x0 ++ x1) is Fp3_tight *)
+      cut (Fp_bounded Fp_tight (fp_c0 (x ++ x0 ++ x1)) /\
+           Fp_bounded Fp_tight (fp_c1 (x ++ x0 ++ x1)) /\
+           Fp_bounded Fp_tight (fp_c2 (x ++ x0 ++ x1))).
+      { intro Hb; exact Hb. }
+      assert (Hce0 : fp_c0 (x ++ x0 ++ x1) = x) by (apply firstn_app_le; exact Hlen1).
+      assert (Hce12 : skipn (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) (x ++ x0 ++ x1) = x0 ++ x1)
+        by (apply skipn_app_le; exact Hlen1).
+      assert (Hce1 : fp_c1 (x ++ x0 ++ x1) = x0).
+      { unfold fp_c1, ce_c1_felem. rewrite Hce12. apply firstn_app_le; exact Hlen2. }
+      assert (Hce2 : fp_c2 (x ++ x0 ++ x1) = x1).
+      { unfold fp_c2, ce_c2_felem.
+        set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+        replace (2 * n)%nat with (n + n)%nat by lia.
+        rewrite <- List.skipn_skipn.
+        change (ListDef.skipn n (ListDef.skipn n (x ++ x0 ++ x1)))
+          with (skipn n (skipn n (x ++ x0 ++ x1))).
+        rewrite (skipn_app_le _ _ _ Hlen1). apply skipn_app_le; exact Hlen2. }
+      rewrite Hce0, Hce1, Hce2.
+      exact (conj H1 (conj H3 H5)). }
+    { (* c1 trio (x2 ++ x3 ++ x4) is Fp3_tight *)
+      cut (Fp_bounded Fp_tight (fp_c0 (x2 ++ x3 ++ x4)) /\
+           Fp_bounded Fp_tight (fp_c1 (x2 ++ x3 ++ x4)) /\
+           Fp_bounded Fp_tight (fp_c2 (x2 ++ x3 ++ x4))).
+      { intro Hb; exact Hb. }
+      assert (Hce0 : fp_c0 (x2 ++ x3 ++ x4) = x2) by (apply firstn_app_le; exact Hlen4).
+      assert (Hce12 : skipn (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) (x2 ++ x3 ++ x4) = x3 ++ x4)
+        by (apply skipn_app_le; exact Hlen4).
+      assert (Hce1 : fp_c1 (x2 ++ x3 ++ x4) = x3).
+      { unfold fp_c1, ce_c1_felem. rewrite Hce12. apply firstn_app_le; exact Hlen5. }
+      assert (Hce2 : fp_c2 (x2 ++ x3 ++ x4) = x4).
+      { unfold fp_c2, ce_c2_felem.
+        set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+        replace (2 * n)%nat with (n + n)%nat by lia.
+        rewrite <- List.skipn_skipn.
+        change (ListDef.skipn n (ListDef.skipn n (x2 ++ x3 ++ x4)))
+          with (skipn n (skipn n (x2 ++ x3 ++ x4))).
+        rewrite (skipn_app_le _ _ _ Hlen4). apply skipn_app_le; exact Hlen5. }
+      rewrite Hce0, Hce1, Hce2.
+      exact (conj H7 (conj H9 H11)). }
+  Qed.
+
   (** Simplified wrapper used by [BW6_761_MillerLoop_proof.v]: returns
       a relaxed [True] obligation, matching the placeholder shape used
       in that file.  The full WP-level proof above is left for future

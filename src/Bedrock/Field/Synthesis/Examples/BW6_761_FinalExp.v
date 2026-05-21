@@ -139,6 +139,12 @@ Section BW6_FinalExp.
       (@AbstractField.loose_bounds _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr).
     Local Notation Fp6_felem :=
       (@AbstractField.felem _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr).
+    Local Notation Fp3_felem :=
+      (@AbstractField.felem _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    Local Notation Fp3_bounded :=
+      (@AbstractField.bounded_by _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+    Local Notation Fp3_tight :=
+      (@AbstractField.tight_bounds _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
 
     Local Typeclasses Opaque bw6_Fp6_params.
     Local Typeclasses Opaque bw6_Fp3_params.
@@ -265,37 +271,30 @@ Section BW6_FinalExp.
     (* ============================================================== *)
     (* Frobenius endomorphisms on the tower                            *)
     (*                                                                  *)
-    (* Fp6 = Fp3[w]/(w^2 - zeta).  Frobenius pi: x -> x^p:            *)
+    (* Following gnark-crypto/ecc/bw6-761/internal/fptower/frobenius:  *)
+    (* the Frobenius pi acts on Fp6 = Fp3[w]/(w^2 - zeta) by           *)
+    (* per-Fp-component scaling.  For B0 = (a0, a1, a2) and            *)
+    (* B1 = (b0, b1, b2):                                              *)
     (*                                                                  *)
-    (* fp3_frob is precomputed via mul-by-gamma per component (the      *)
-    (* zeta-powers in Fp3 are linear combinations over Fp).             *)
+    (*   pi(B0 + B1·w) = (a0,        alpha·a1,           alpha^2·a2)   *)
+    (*                 + (sa·b0,     sa·alpha·b1,        sa·alpha^2·b2)·w *)
     (*                                                                  *)
-    (* For BW6 we model fp3_frob abstractly via gamma constants:       *)
-    (*   p_gfp3 points to an Fp3 constant gamma_fp3 = zeta^{(p-1)/3}    *)
-    (* Then fp6_frob(c0, c1) = (fp3_frob(c0), gamma6_1 * fp3_frob(c1)) *)
+    (*  where alpha = (-4)^((p-1)/3) mod p is a primitive cube root    *)
+    (*  of 1 in Fp, and sa = sqrt(alpha) mod p.                        *)
     (*                                                                  *)
-    (* In simplified form we implement fp3_frob as a (placeholder)      *)
-    (* multiplication by gamma_fp3, and fp6_frob as the standard        *)
-    (* tower Frobenius pattern.                                         *)
+    (* Five Fp scalars per Frobenius level: (alpha, alpha^2) for c0    *)
+    (* and (sa, sa·alpha, sa·alpha^2) for c1.  pi^2 uses each scalar   *)
+    (* squared.  pi^3 acts trivially on Fp3 (alpha^3 = 1) and pi^3(w) *)
+    (* = -w, so only the c1 component is negated by mul-by-(-1).      *)
     (*                                                                  *)
-    (* Each Frobenius function takes the precomputed gamma constants   *)
-    (* as pointer parameters.                                          *)
+    (* Per-function calling convention:                                *)
+    (*  - [gamma_fp3]:  pointer to an Fp3-shaped blob storing          *)
+    (*                  [g_a0=ignored; alpha; alpha^2] (Fp slots 1,2).*)
+    (*  - [gamma_fp6]:  pointer to an Fp3-shaped blob storing          *)
+    (*                  [sa; sa·alpha; sa·alpha^2] (all three slots).  *)
+    (*  - [gamma_fp6_p3] (pi^3 only): pointer to an Fp3 blob whose    *)
+    (*                  c0 slot holds -1 (other slots ignored).        *)
     (* ============================================================== *)
-
-    (* -------------------------------------------------------------- *)
-    (* Inline fp3_frob (placeholder: full mul by 3x3 gamma)            *)
-    (* p_gamma_fp3 points to Fp3 constant gamma_fp3.                   *)
-    (* Component-wise mul models the linear action of pi on Fp3.       *)
-    (* In a verified deployment this would use the actual zeta-power   *)
-    (* automorphism; here we model it as fp3 mul by the gamma const,   *)
-    (* which gives the right *types* and *bounds* for the proof.       *)
-    (* -------------------------------------------------------------- *)
-
-    Local Definition fp3_frob_inline
-      (p_out p_in p_gamma_fp3 : Syntax.expr.expr) : Syntax.cmd.cmd :=
-      cmd_seq_list [
-        Syntax.cmd.call [] fp3_mul_name [p_out; p_in; p_gamma_fp3]
-      ].
 
     (* -------------------------------------------------------------- *)
     (* bw6_fp6_frob: Frobenius pi on Fp6                               *)
@@ -303,9 +302,12 @@ Section BW6_FinalExp.
     (* Parameters:                                                     *)
     (*   out:          output Fp6                                      *)
     (*   x:            input Fp6                                       *)
-    (*   gamma_fp3:    Fp3 constant for fp3_frob action                *)
-    (*   gamma_fp6:    Fp3 constant zeta^{(p-1)/2} for fp6 lift        *)
+    (*   gamma_fp3:    Fp3 blob holding [_; alpha; alpha^2]            *)
+    (*   gamma_fp6:    Fp3 blob holding [sa; sa·alpha; sa·alpha^2]     *)
     (* -------------------------------------------------------------- *)
+
+    Let fp_mul_name  : string := AbstractField.mul (F:=Fp).
+    Let fp_copy_name : string := AbstractField.felem_copy (F:=Fp).
 
     Let fp6_frob_name : string := "bw6_fp6_frob".
 
@@ -314,28 +316,44 @@ Section BW6_FinalExp.
        (["out"; "x"; "gamma_fp3"; "gamma_fp6"],
         []:list String.string,
         bedrock_func_body:(
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp3)) as tmp_fp3;
           coq:(cmd_seq_list [
-            (* out.c0 = fp3_frob(x.c0) *)
-            fp3_frob_inline
-              (expr_fp6_c0 (Syntax.expr.var "out"))
-              (expr_fp6_c0 (Syntax.expr.var "x"))
-              (Syntax.expr.var "gamma_fp3");
-            (* tmp_fp3 = fp3_frob(x.c1) *)
-            fp3_frob_inline
-              (Syntax.expr.var "tmp_fp3")
-              (expr_fp6_c1 (Syntax.expr.var "x"))
-              (Syntax.expr.var "gamma_fp3");
-            (* out.c1 = tmp_fp3 * gamma_fp6 *)
-            Syntax.cmd.call [] fp3_mul_name
-              [expr_fp6_c1 (Syntax.expr.var "out");
-               Syntax.expr.var "tmp_fp3";
-               Syntax.expr.var "gamma_fp6"]
+            (* c0 of Fp6 = Fp3 (a0, a1, a2): a0 identity, scale a1, a2 *)
+            (* out.c0.a0 = x.c0.a0 *)
+            Syntax.cmd.call [] fp_copy_name
+              [expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "x"))];
+            (* out.c0.a1 = x.c0.a1 * gamma_fp3.c1 (= alpha) *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "x"));
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp3")];
+            (* out.c0.a2 = x.c0.a2 * gamma_fp3.c2 (= alpha^2) *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "x"));
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp3")];
+            (* c1 of Fp6 = Fp3 (b0, b1, b2): scale each by gamma_fp6's slots *)
+            (* out.c1.b0 = x.c1.b0 * gamma_fp6.c0 (= sa) *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6")];
+            (* out.c1.b1 = x.c1.b1 * gamma_fp6.c1 (= sa·alpha) *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp6")];
+            (* out.c1.b2 = x.c1.b2 * gamma_fp6.c2 (= sa·alpha^2) *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp6")]
           ])
         ))).
 
     (* -------------------------------------------------------------- *)
     (* bw6_fp6_frob_p2: Frobenius pi^2 on Fp6                          *)
+    (* Same shape as pi, but with each gamma squared.                  *)
     (* -------------------------------------------------------------- *)
 
     Let fp6_frob_p2_name : string := "bw6_fp6_frob_p2".
@@ -345,30 +363,38 @@ Section BW6_FinalExp.
        (["out"; "x"; "gamma_fp3_p2"; "gamma_fp6_p2"],
         []:list String.string,
         bedrock_func_body:(
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp3)) as tmp_fp3;
           coq:(cmd_seq_list [
-            fp3_frob_inline
-              (expr_fp6_c0 (Syntax.expr.var "out"))
-              (expr_fp6_c0 (Syntax.expr.var "x"))
-              (Syntax.expr.var "gamma_fp3_p2");
-            fp3_frob_inline
-              (Syntax.expr.var "tmp_fp3")
-              (expr_fp6_c1 (Syntax.expr.var "x"))
-              (Syntax.expr.var "gamma_fp3_p2");
-            Syntax.cmd.call [] fp3_mul_name
-              [expr_fp6_c1 (Syntax.expr.var "out");
-               Syntax.expr.var "tmp_fp3";
-               Syntax.expr.var "gamma_fp6_p2"]
+            Syntax.cmd.call [] fp_copy_name
+              [expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "x"))];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "x"));
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp3_p2")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "x"));
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp3_p2")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p2")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp6_p2")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp6_p2")]
           ])
         ))).
 
     (* -------------------------------------------------------------- *)
     (* bw6_fp6_frob_p3: Frobenius pi^3 on Fp6                          *)
-    (* p^3 acts trivially on Fp3, so the c0 component is unchanged    *)
-    (* and the c1 component is multiplied by gamma_fp6_p3 = -1        *)
-    (* (this matches the "conjugate" operation up to an Fp3 mul       *)
-    (*  with the constant -1, but is kept separate so the algorithm   *)
-    (*  matches gnark's Frobenius pi^3 entry point).                  *)
+    (* p^3 acts trivially on Fp3, so the c0 component is COPIED and    *)
+    (* the c1 component is multiplied by -1 per Fp slot.               *)
+    (* gamma_fp6_p3 has its c0 slot = -1 (mod p); other slots ignored. *)
     (* -------------------------------------------------------------- *)
 
     Let fp6_frob_p3_name : string := "bw6_fp6_frob_p3".
@@ -379,15 +405,29 @@ Section BW6_FinalExp.
         []:list String.string,
         bedrock_func_body:(
           coq:(cmd_seq_list [
-            (* out.c0 = x.c0 (pi^3 trivial on Fp3) *)
-            Syntax.cmd.call [] fp3_copy_name
-              [expr_fp6_c0 (Syntax.expr.var "out");
-               expr_fp6_c0 (Syntax.expr.var "x")];
-            (* out.c1 = x.c1 * gamma_fp6_p3 *)
-            Syntax.cmd.call [] fp3_mul_name
-              [expr_fp6_c1 (Syntax.expr.var "out");
-               expr_fp6_c1 (Syntax.expr.var "x");
-               Syntax.expr.var "gamma_fp6_p3"]
+            (* Copy c0 (pi^3 trivial on Fp3) *)
+            Syntax.cmd.call [] fp_copy_name
+              [expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "x"))];
+            Syntax.cmd.call [] fp_copy_name
+              [expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "x"))];
+            Syntax.cmd.call [] fp_copy_name
+              [expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "x"))];
+            (* Negate c1 by mul-by-(-1), per Fp slot *)
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")];
+            Syntax.cmd.call [] fp_mul_name
+              [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
+               expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")]
           ])
         ))).
 
@@ -631,50 +671,79 @@ Section BW6_FinalExp.
     Instance spec_of_bw6_fp6_frob : spec_of fp6_frob_name :=
       fnspec! fp6_frob_name
         (pout px p_gfp3 p_gfp6 : word)
-        / (old_out x : Fp6_felem) Rr,
+        / (old_out x : Fp6_felem) (gfp3 gfp6 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight x /\
-          (FElem_Fp6 pout old_out * (FElem_Fp6 px x * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp3 /\
+          Fp3_bounded Fp3_tight gfp6 /\
+          (FElem_Fp6 pout old_out *
+           (FElem_Fp6 px x *
+            (FElem_Fp3 p_gfp3 gfp3 *
+             (FElem_Fp3 p_gfp6 gfp6 * Rr))))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 px x * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 px x *
+              (FElem_Fp3 p_gfp3 gfp3 *
+               (FElem_Fp3 p_gfp6 gfp6 * Rr))))%sep mem' }.
 
     Instance spec_of_bw6_fp6_frob_p2 : spec_of fp6_frob_p2_name :=
       fnspec! fp6_frob_p2_name
         (pout px p_gfp3_p2 p_gfp6_p2 : word)
-        / (old_out x : Fp6_felem) Rr,
+        / (old_out x : Fp6_felem) (gfp3 gfp6 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight x /\
-          (FElem_Fp6 pout old_out * (FElem_Fp6 px x * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp3 /\
+          Fp3_bounded Fp3_tight gfp6 /\
+          (FElem_Fp6 pout old_out *
+           (FElem_Fp6 px x *
+            (FElem_Fp3 p_gfp3_p2 gfp3 *
+             (FElem_Fp3 p_gfp6_p2 gfp6 * Rr))))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 px x * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 px x *
+              (FElem_Fp3 p_gfp3_p2 gfp3 *
+               (FElem_Fp3 p_gfp6_p2 gfp6 * Rr))))%sep mem' }.
 
     Instance spec_of_bw6_fp6_frob_p3 : spec_of fp6_frob_p3_name :=
       fnspec! fp6_frob_p3_name
         (pout px p_gfp6_p3 : word)
-        / (old_out x : Fp6_felem) Rr,
+        / (old_out x : Fp6_felem) (gfp6 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight x /\
-          (FElem_Fp6 pout old_out * (FElem_Fp6 px x * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp6 /\
+          (FElem_Fp6 pout old_out *
+           (FElem_Fp6 px x *
+            (FElem_Fp3 p_gfp6_p3 gfp6 * Rr)))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 px x * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 px x *
+              (FElem_Fp3 p_gfp6_p3 gfp6 * Rr)))%sep mem' }.
 
     Instance spec_of_bw6_final_exp_easy : spec_of final_exp_easy_name :=
       fnspec! final_exp_easy_name
         (pout pf p_gfp3 p_gfp6 : word)
-        / (old_out f : Fp6_felem) Rr,
+        / (old_out f : Fp6_felem) (gfp3 gfp6 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight f /\
-          (FElem_Fp6 pf f * (FElem_Fp6 pout old_out * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp3 /\
+          Fp3_bounded Fp3_tight gfp6 /\
+          (FElem_Fp6 pf f *
+           (FElem_Fp6 pout old_out *
+            (FElem_Fp3 p_gfp3 gfp3 *
+             (FElem_Fp3 p_gfp6 gfp6 * Rr))))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 pf f * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 pf f *
+              (FElem_Fp3 p_gfp3 gfp3 *
+               (FElem_Fp3 p_gfp6 gfp6 * Rr))))%sep mem' }.
 
     Instance spec_of_bw6_final_exp_hard : spec_of final_exp_hard_name :=
       fnspec! final_exp_hard_name
@@ -682,14 +751,32 @@ Section BW6_FinalExp.
          p_gfp3 p_gfp6
          p_gfp3_p2 p_gfp6_p2
          p_gfp6_p3 : word)
-        / (old_out f : Fp6_felem) Rr,
+        / (old_out f : Fp6_felem)
+          (gfp3 gfp6 gfp3_p2 gfp6_p2 gfp6_p3 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight f /\
-          (FElem_Fp6 pf f * (FElem_Fp6 pout old_out * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp3 /\
+          Fp3_bounded Fp3_tight gfp6 /\
+          Fp3_bounded Fp3_tight gfp3_p2 /\
+          Fp3_bounded Fp3_tight gfp6_p2 /\
+          Fp3_bounded Fp3_tight gfp6_p3 /\
+          (FElem_Fp6 pf f *
+           (FElem_Fp6 pout old_out *
+            (FElem_Fp3 p_gfp3 gfp3 *
+             (FElem_Fp3 p_gfp6 gfp6 *
+              (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+               (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 pf f * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 pf f *
+              (FElem_Fp3 p_gfp3 gfp3 *
+               (FElem_Fp3 p_gfp6 gfp6 *
+                (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+                 (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                  (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))%sep mem' }.
 
     Instance spec_of_bw6_final_exp : spec_of "bw6_final_exp" :=
       fnspec! "bw6_final_exp"
@@ -697,15 +784,33 @@ Section BW6_FinalExp.
          p_gfp3 p_gfp6
          p_gfp3_p2 p_gfp6_p2
          p_gfp6_p3 : word)
-        / (old_out f : Fp6_felem) Rr,
+        / (old_out f : Fp6_felem)
+          (gfp3 gfp6 gfp3_p2 gfp6_p2 gfp6_p3 : Fp3_felem) Rr,
       { requires tr mem :=
           Fp6_bounded Fp6_tight f /\
-          (FElem_Fp6 pf f * (FElem_Fp6 pout old_out * Rr))%sep mem;
+          Fp3_bounded Fp3_tight gfp3 /\
+          Fp3_bounded Fp3_tight gfp6 /\
+          Fp3_bounded Fp3_tight gfp3_p2 /\
+          Fp3_bounded Fp3_tight gfp6_p2 /\
+          Fp3_bounded Fp3_tight gfp6_p3 /\
+          (FElem_Fp6 pf f *
+           (FElem_Fp6 pout old_out *
+            (FElem_Fp3 p_gfp3 gfp3 *
+             (FElem_Fp3 p_gfp6 gfp6 *
+              (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+               (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))%sep mem;
         ensures tr' mem' :=
           tr = tr' /\
           exists out,
             Fp6_bounded Fp6_loose out /\
-            (FElem_Fp6 pout out * (FElem_Fp6 pf f * Rr))%sep mem' }.
+            (FElem_Fp6 pout out *
+             (FElem_Fp6 pf f *
+              (FElem_Fp3 p_gfp3 gfp3 *
+               (FElem_Fp3 p_gfp6 gfp6 *
+                (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+                 (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+                  (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr)))))))%sep mem' }.
 
     (* In-place pow_u spec: pout = px.  The function overwrites its input. *)
     Definition spec_of_bw6_fp6_pow_u_inplace

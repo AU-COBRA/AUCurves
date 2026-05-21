@@ -475,19 +475,50 @@ Section BLS12_377_FinalExpDSD.
     (* [PairingFieldOps.fp12_frobenius_p2_model], which has the same   *)
     (* shape as our [BLS12_377_FrobModel.fp12_frobenius_p2_gallina].    *)
     (*                                                                  *)
-    (* Status (2026-05-21): The bridge proof requires unifying the     *)
-    (* library's [Local Definition fp12_frobenius_p2_model] (in        *)
-    (* PairingFieldOps section) with our exposed                       *)
-    (* [fp12_frobenius_p2_gallina] (BLS12_377_FrobModel).  Both have   *)
-    (* the same Gallina shape; the unification is reflexivity modulo   *)
-    (* the typeclass instance choice.  Marked [Admitted] pending       *)
-    (* completion of the typeclass-resolution reduction.                *)
+    (* The hypothesis is the library's [PairingFieldOps.spec_of_       *)
+    (* Fp12_frobenius_p2] (which carries the algebraic clause),         *)
+    (* specialised to the BLS12-377 tower constants. The local         *)
+    (* [spec_of_Fp12_frobenius_p2] above is bounds-only and cannot     *)
+    (* derive the algebraic clause on its own.  The library's          *)
+    (* [fp12_frobenius_p2_model] and our [fp12_frobenius_p2_gallina]   *)
+    (* are definitionally equal: identical Gallina shape, same         *)
+    (* [AbstractField.Fmul] on equivalent Fp2 instances (both are      *)
+    (* [Fp2_field_parameters beta fp2_prefix]).                         *)
     (* ============================================================== *)
 
     Lemma spec_of_Fp12_frobenius_p2_strong_ok :
       forall functions
-        (HFp12frob_lib : spec_of_Fp12_frobenius_p2 functions),
+        (HFp12frob_lib :
+          PairingFieldOps.spec_of_Fp12_frobenius_p2
+            bls377_beta bls377_xi_re bls377_xi_im
+            fp12_prefix fp6_prefix fp2_prefix functions),
       spec_of_Fp12_frobenius_p2_strong functions.
-    Proof. Admitted.
+    Proof.
+      intros functions HFp12frob_lib.
+      unfold spec_of_Fp12_frobenius_p2_strong.
+      intros pout px pgamma1_p2 pgamma2_p2 pw_frob_p2_c1.
+      intros old_out x gamma1_p2 gamma2_p2 w_frob_p2_c1 Rr tr mem.
+      intros [Hbx [Hbg1 [Hbg2 [Hbw Hmem]]]].
+      unfold PairingFieldOps.spec_of_Fp12_frobenius_p2 in HFp12frob_lib.
+      specialize (HFp12frob_lib pout px pgamma1_p2 pgamma2_p2 pw_frob_p2_c1
+        old_out x gamma1_p2 gamma2_p2 w_frob_p2_c1 Rr tr mem).
+      unfold PairingFieldOps.fp12_frobenius_p2_name in HFp12frob_lib.
+      unfold fp12_frobenius_p2_name.
+      eapply Semantics.weaken_call.
+      1:{ eapply HFp12frob_lib. clear HFp12frob_lib.
+          split; [exact Hbx|].
+          split; [exact Hbg1|].
+          split; [exact Hbg2|].
+          split; [exact Hbw|].
+          ecancel_assumption. }
+      intros tr' mem' rets [Hrets [Htreq [out [Hfeval [Hbounded Hmem']]]]].
+      subst tr' rets.
+      split; [reflexivity|].
+      split; [reflexivity|].
+      exists out.
+      split; [exact Hbounded|].
+      split; [exact Hfeval|].
+      ecancel_assumption.
+    Qed.
 
 End BLS12_377_FinalExpDSD.

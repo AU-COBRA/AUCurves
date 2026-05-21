@@ -772,6 +772,273 @@ Section BW6_MillerLoopProof.
       (HFp3mulfpEnv : map.get functions "bw6_761_Fp3_mul_fp" =
         Some (snd bw6_761_Fp3_mul_fp)),
     spec_of_bw6_761_miller_loop functions.
-  Proof. Admitted.
+  Proof.
+    intros.
+    unfold spec_of_bw6_761_miller_loop.
+    intros pout p_px p_py p_qx p_qy old_out p_x p_y q_x q_y Rr tr mem0
+      [Hbqx [Hbqy [Hbpx [Hbpy Hsep]]]].
+
+    (* === Function entry === *)
+    eapply WeakestPreconditionProperties.start_func;
+      [exact EnvContains | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold bw6_761_miller_loop. simpl snd. simpl fst.
+    cbv match beta.
+    eexists. split. { exact eq_refl. }
+
+    (* === Process 7 stackallocs (f Fp6, t_x Fp3, t_y Fp3, lambda Fp3,
+           tmp1 Fp3, tmp2 Fp3, line Fp6) === *)
+    repeat straightline.
+
+    (* Stackalloc 1: f (Fp6-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_f mStack_f mComb_f HanyF HsplitF.
+    repeat straightline.
+
+    (* Stackalloc 2: t_x (Fp3-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_tx mStack_tx mComb_tx HanyTx HsplitTx.
+    repeat straightline.
+
+    (* Stackalloc 3: t_y (Fp3-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_ty mStack_ty mComb_ty HanyTy HsplitTy.
+    repeat straightline.
+
+    (* Stackalloc 4: lambda (Fp3-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_lam mStack_lam mComb_lam HanyLam HsplitLam.
+    repeat straightline.
+
+    (* Stackalloc 5: tmp1 (Fp3-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_tmp1 mStack_tmp1 mComb_tmp1 HanyTmp1 HsplitTmp1.
+    repeat straightline.
+
+    (* Stackalloc 6: tmp2 (Fp3-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_tmp2 mStack_tmp2 mComb_tmp2 HanyTmp2 HsplitTmp2.
+    repeat straightline.
+
+    (* Stackalloc 7: line (Fp6-sized) *)
+    split. { apply Z_mod_mult. }
+    intros a_line mStack_line mComb_line HanyLine HsplitLine.
+
+    (* === Convert anybytes to FElems for all stack-allocated buffers === *)
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr
+      wordok mapok a_f) as Hfb_f.
+    unfold AbstractField.Placeholder in Hfb_f.
+    pose proof (proj1 (Hfb_f mStack_f) HanyF) as [f_val Hfe_f]. clear Hfb_f.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tx) as Hfb_tx.
+    unfold AbstractField.Placeholder in Hfb_tx.
+    pose proof (proj1 (Hfb_tx mStack_tx) HanyTx) as [tx_val Hfe_tx]. clear Hfb_tx.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_ty) as Hfb_ty.
+    unfold AbstractField.Placeholder in Hfb_ty.
+    pose proof (proj1 (Hfb_ty mStack_ty) HanyTy) as [ty_val Hfe_ty]. clear Hfb_ty.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_lam) as Hfb_lam.
+    unfold AbstractField.Placeholder in Hfb_lam.
+    pose proof (proj1 (Hfb_lam mStack_lam) HanyLam) as [lam_val Hfe_lam]. clear Hfb_lam.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tmp1) as Hfb_tmp1.
+    unfold AbstractField.Placeholder in Hfb_tmp1.
+    pose proof (proj1 (Hfb_tmp1 mStack_tmp1) HanyTmp1) as [tmp1_val Hfe_tmp1]. clear Hfb_tmp1.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tmp2) as Hfb_tmp2.
+    unfold AbstractField.Placeholder in Hfb_tmp2.
+    pose proof (proj1 (Hfb_tmp2 mStack_tmp2) HanyTmp2) as [tmp2_val Hfe_tmp2]. clear Hfb_tmp2.
+
+    pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr
+      wordok mapok a_line) as Hfb_line.
+    unfold AbstractField.Placeholder in Hfb_line.
+    pose proof (proj1 (Hfb_line mStack_line) HanyLine) as [line_val Hfe_line]. clear Hfb_line.
+
+    (* === Phase 1: Build master sep on mComb_line ===
+       The sep hypothesis (on the intermediate memory before the last
+       stackalloc) contains array ptsto entries for buffers 1-6 and
+       FElem entries for the 5 input parameters.  The last stackalloc
+       (line) is separate in HsplitLine/Hfe_line.
+
+       Strategy: destruct Hsep to expose 11 sub-components, convert
+       array ptsto entries to FElems on those sub-maps, rebuild the
+       sep on mem0, then extend to mComb_line via sep_from_split. *)
+
+    (* Destruct Hsep to expose sub-components.  After repeat straightline
+       and 6 stackallocs the hypothesis Hsep contains 11 entries:
+       5 inputs + Rr + 6 stack arrays (the last 'line' is separate). *)
+    destruct Hsep as [m_s1 [mr1 [Hsplit1 [Hfe_out Hr1]]]].
+    destruct Hr1 as [m_s2 [mr2 [Hsplit2 [Hfe_px Hr2]]]].
+    destruct Hr2 as [m_s3 [mr3 [Hsplit3 [Hfe_py Hr3]]]].
+    destruct Hr3 as [m_s4 [mr4 [Hsplit4 [Hfe_qx Hr4]]]].
+    destruct Hr4 as [m_s5 [mr5 [Hsplit5 [Hfe_qy Hr5]]]].
+    destruct Hr5 as [m_s6 [mr6 [Hsplit6 [Hrr Hr6]]]].
+    destruct Hr6 as [m_s7 [mr7 [Hsplit7 [Harr_f Hr7]]]].
+    destruct Hr7 as [m_s8 [mr8 [Hsplit8 [Harr_tx Hr8]]]].
+    destruct Hr8 as [m_s9 [mr9 [Hsplit9 [Harr_ty Hr9]]]].
+    destruct Hr9 as [m_s10 [mr10 [Hsplit10 [Harr_lam Hr10]]]].
+    destruct Hr10 as [m_s11 [m_s12 [Hsplit11 [Harr_tmp1 Harr_tmp2]]]].
+
+    (* Convert array ptsto entries to anybytes then to FElem on sub-maps *)
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_f) as Hany_f'.
+    rewrite length_stack in Hany_f'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr
+      wordok mapok a_f m_s7) Hany_f') as [f_val' Hfe_f']. clear Hany_f'.
+
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_tx) as Hany_tx'.
+    rewrite length_stack0 in Hany_tx'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tx m_s8) Hany_tx') as [tx_val' Hfe_tx']. clear Hany_tx'.
+
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_ty) as Hany_ty'.
+    rewrite length_stack1 in Hany_ty'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_ty m_s9) Hany_ty') as [ty_val' Hfe_ty']. clear Hany_ty'.
+
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_lam) as Hany_lam'.
+    rewrite length_stack2 in Hany_lam'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_lam m_s10) Hany_lam') as [lam_val' Hfe_lam']. clear Hany_lam'.
+
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_tmp1) as Hany_tmp1'.
+    rewrite length_stack3 in Hany_tmp1'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tmp1 m_s11) Hany_tmp1') as [tmp1_val' Hfe_tmp1']. clear Hany_tmp1'.
+
+    pose proof (Array.array_1_to_anybytes _ _ _ Harr_tmp2) as Hany_tmp2'.
+    rewrite length_stack4 in Hany_tmp2'.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr
+      wordok mapok a_tmp2 m_s12) Hany_tmp2') as [tmp2_val' Hfe_tmp2']. clear Hany_tmp2'.
+
+    clear Harr_f Harr_tx Harr_ty Harr_lam Harr_tmp1 Harr_tmp2.
+
+    (* Rebuild sep on mem0 with FElem entries on the correct sub-maps *)
+    assert (Hsep_fe :
+      (FElem_Fp6 pout old_out *
+       (FElem_Fp p_px p_x *
+        (FElem_Fp p_py p_y *
+         (FElem_Fp3 p_qx q_x *
+          (FElem_Fp3 p_qy q_y *
+           (Rr *
+            (FElem_Fp6 a_f f_val' *
+             (FElem_Fp3 a_tx tx_val' *
+              (FElem_Fp3 a_ty ty_val' *
+               (FElem_Fp3 a_lam lam_val' *
+                (FElem_Fp3 a_tmp1 tmp1_val' *
+                 FElem_Fp3 a_tmp2 tmp2_val')))))))))))%sep mem0).
+    {
+      exists m_s1, mr1. split. { exact Hsplit1. }
+      split. { exact Hfe_out. }
+      exists m_s2, mr2. split. { exact Hsplit2. }
+      split. { exact Hfe_px. }
+      exists m_s3, mr3. split. { exact Hsplit3. }
+      split. { exact Hfe_py. }
+      exists m_s4, mr4. split. { exact Hsplit4. }
+      split. { exact Hfe_qx. }
+      exists m_s5, mr5. split. { exact Hsplit5. }
+      split. { exact Hfe_qy. }
+      exists m_s6, mr6. split. { exact Hsplit6. }
+      split. { exact Hrr. }
+      exists m_s7, mr7. split. { exact Hsplit7. }
+      split. { exact Hfe_f'. }
+      exists m_s8, mr8. split. { exact Hsplit8. }
+      split. { exact Hfe_tx'. }
+      exists m_s9, mr9. split. { exact Hsplit9. }
+      split. { exact Hfe_ty'. }
+      exists m_s10, mr10. split. { exact Hsplit10. }
+      split. { exact Hfe_lam'. }
+      exists m_s11, m_s12. split. { exact Hsplit11. }
+      split. { exact Hfe_tmp1'. }
+      exact Hfe_tmp2'.
+    }
+
+    (* Build master sep on mComb_line via sep_from_split + ecancel *)
+    pose proof (sep_from_split HsplitLine Hsep_fe Hfe_line) as Htmp.
+    eassert (Hmaster :
+      (FElem_Fp6 a_f f_val' *
+       (FElem_Fp3 a_tx tx_val' *
+        (FElem_Fp3 a_ty ty_val' *
+         (FElem_Fp3 a_lam lam_val' *
+          (FElem_Fp3 a_tmp1 tmp1_val' *
+           (FElem_Fp3 a_tmp2 tmp2_val' *
+            (FElem_Fp6 a_line line_val *
+             (FElem_Fp6 pout old_out *
+              (FElem_Fp p_px p_x *
+               (FElem_Fp p_py p_y *
+                (FElem_Fp3 p_qx q_x *
+                 (FElem_Fp3 p_qy q_y * Rr))))))))))))%sep mComb_line).
+    { pose proof Htmp as H'. ecancel_assumption. }
+    clear Htmp Hsep_fe.
+
+    (* === Phase 2: Function body via [bw6_761_miller_full_body_wp] === *)
+    unfold dlet.dlet; cbv beta.
+    eapply (bw6_761_miller_full_body_wp functions
+      HFp3mul HFp3add HFp3sub HFp3sqr HFp3inv HFp3opp HFp3copy
+      HFp6mul HFp6sqr HFp6copy HFpmul HFpopp HFpcopy HFromword
+      HMakeLine HFp3mulfpEnv
+      a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
+      pout p_px p_py p_qx p_qy
+      f_val' tx_val' ty_val' lam_val' tmp1_val' tmp2_val' line_val
+      old_out p_x p_y q_x q_y
+      Rr tr mComb_line _
+      _ Hbqx Hbqy Hbpx Hbpy Hmaster).
+    (* Resolve 12 map.get goals from the locals built up by stackalloc straightline *)
+    all: repeat (rewrite map.get_put_same || rewrite map.get_put_diff by congruence).
+    all: try exact eq_refl.
+
+    (* Remaining: callback — convert Placeholders to anybytes for dealloc *)
+    intros t' m' l' Htr [out [Hbnd Hsep_final]].
+    subst t'.
+    unfold AbstractField.Placeholder in Hsep_final.
+    (* Peel off each stack FElem as anybytes, innermost (a_line) first *)
+    eassert (Hline_sep : (_ * Memory.anybytes a_line
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr))%sep m').
+    { pose proof Hsep_final as H'. ecancel_assumption. }
+    destruct Hline_sep as [mrl [msl [Hsl [Hrl Hpl]]]].
+    exists mrl, msl. split. { exact Hpl. } split. { exact Hsl. }
+    eassert (Htmp2_sep : (_ * Memory.anybytes a_tmp2
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))%sep mrl).
+    { pose proof Hrl as H'. ecancel_assumption. }
+    destruct Htmp2_sep as [mrl2 [msl2 [Hsl2 [Hrl2 Hpl2]]]].
+    exists mrl2, msl2. split. { exact Hpl2. } split. { exact Hsl2. }
+    eassert (Htmp1_sep : (_ * Memory.anybytes a_tmp1
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))%sep mrl2).
+    { pose proof Hrl2 as H'. ecancel_assumption. }
+    destruct Htmp1_sep as [mrl3 [msl3 [Hsl3 [Hrl3 Hpl3]]]].
+    exists mrl3, msl3. split. { exact Hpl3. } split. { exact Hsl3. }
+    eassert (Hlam_sep : (_ * Memory.anybytes a_lam
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))%sep mrl3).
+    { pose proof Hrl3 as H'. ecancel_assumption. }
+    destruct Hlam_sep as [mrl4 [msl4 [Hsl4 [Hrl4 Hpl4]]]].
+    exists mrl4, msl4. split. { exact Hpl4. } split. { exact Hsl4. }
+    eassert (Hty_sep : (_ * Memory.anybytes a_ty
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))%sep mrl4).
+    { pose proof Hrl4 as H'. ecancel_assumption. }
+    destruct Hty_sep as [mrl5 [msl5 [Hsl5 [Hrl5 Hpl5]]]].
+    exists mrl5, msl5. split. { exact Hpl5. } split. { exact Hsl5. }
+    eassert (Htx_sep : (_ * Memory.anybytes a_tx
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))%sep mrl5).
+    { pose proof Hrl5 as H'. ecancel_assumption. }
+    destruct Htx_sep as [mrl6 [msl6 [Hsl6 [Hrl6 Hpl6]]]].
+    exists mrl6, msl6. split. { exact Hpl6. } split. { exact Hsl6. }
+    eassert (Hf_sep : (_ * Memory.anybytes a_f
+      (@AbstractField.felem_size_in_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr))%sep mrl6).
+    { pose proof Hrl6 as H'. ecancel_assumption. }
+    destruct Hf_sep as [mrl7 [msl7 [Hsl7 [Hrl7 Hpl7]]]].
+    exists mrl7, msl7. split. { exact Hpl7. } split. { exact Hsl7. }
+    (* Final: produce spec postcondition *)
+    cbv [list_map list_map_body].
+    split. { exact eq_refl. }
+    split. { exact eq_refl. }
+    exists out.
+    split. { exact Hbnd. }
+    exact Hrl7.
+  Qed.
 
 End BW6_MillerLoopProof.

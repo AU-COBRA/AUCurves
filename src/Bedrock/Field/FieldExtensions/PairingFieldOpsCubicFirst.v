@@ -575,17 +575,82 @@ Section CubicFirstPairingOps.
     cbv beta; intros ? ? ? [? [? [O5 [Hfev5 [HbO5 H6]]]]]; subst.
 
     (* ---------- Final postcondition ---------- *)
-    (* The 6 calls have produced O1..O5 (slot 1..5 outputs) plus x0'
-       at slot 0 (via copy).  The remaining work is to package the
-       6 witnesses, prove their bounds, that their fevals match the
-       algebraic [cubic_first_fp6_frob_model], and re-fold the per-
-       slot seps into [FElem_Fp6_slots] / [FElem_Fp3_slots].
-       The sep re-fold step needs to invert the [slot_addr p 0]
-       and [slot_addr p 4/5] flatten rewrites we did at the start.
-       Mechanically this is ~30-40 LoC of [split / exists / replace /
-       ecancel] in the post; this final assembly is the only piece
-       still open and is documented for follow-up. *)
-  Admitted.
+    (* Package the 6 output witnesses (x0' at slot 0 via copy, O1..O5
+       at slots 1..5 via mul), prove their loose bounds (relaxing
+       tight outputs), match feval against
+       [cubic_first_fp6_frob_model], and re-fold the per-slot seps
+       into [FElem_Fp6_slots] / [FElem_Fp3_slots] by inverting the
+       [slot_addr p 0] and [slot_addr p 4/5] flatten rewrites done
+       at the top of the proof. *)
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+    cbv [list_map list_map_body].
+    split; [exact eq_refl | split; [exact eq_refl|]].
+    exists x0', O1, O2, O3, O4, O5.
+    (* Bounds: relax tight outputs to loose. *)
+    split;
+    [ (unfold Fp6_slots_loose;
+      cbn [bin_outbounds bin_mul] in *;
+      split; [| split; [| split; [| split; [| split]]]];
+      [ exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ Hbx0)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO1)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO2)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO3)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO4)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO5) ])
+    | idtac ].
+    (* feval matches the algebraic model after unfolding both sides
+       and rewriting with the per-call Hfev hypotheses. *)
+    split;
+    [ (cbn [bin_model bin_mul] in *;
+      unfold feval_Fp6_slots, cubic_first_fp6_frob_model,
+        cubic_first_frob_fp3_c0, cubic_first_frob_fp3_c1,
+        feval_Fp3_slots, fp6_mk, fp6_c0, fp6_c1,
+        fp3_mk, fp3_a0, fp3_a1, fp3_a2;
+      cbn;
+      rewrite Hfev1, Hfev2, Hfev3, Hfev4, Hfev5;
+      reflexivity)
+    | idtac ].
+    (* sep predicate: unfold FElem_Fp6/3_slots, then invert the
+       slot_addr p 0 and slot_addr p 4/5 flattening to match H6's
+       nested binop form. *)
+    unfold FElem_Fp6_slots, FElem_Fp3_slots.
+    replace (slot_addr pout 0) with pout
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    replace (slot_addr px 0) with px
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    replace (slot_addr pgfp3 0) with pgfp3
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    replace (slot_addr pgfp6 0) with pgfp6
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    rewrite ?Z.mul_1_l.
+    replace (slot_addr pout 4)
+       with (word.add (slot_addr pout 3) (word.of_Z fp_felem_offset))
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr pout 5)
+       with (slot_addr (slot_addr pout 3) 2)
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 4)
+       with (word.add (slot_addr px 3) (word.of_Z fp_felem_offset))
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 5)
+       with (slot_addr (slot_addr px 3) 2)
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
 
   (* ================================================================ *)
   (* Exports                                                            *)

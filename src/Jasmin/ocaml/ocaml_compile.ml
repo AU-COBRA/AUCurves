@@ -1421,6 +1421,15 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
      clamp_64_body]) is detected as a stub leaf.  JCsets emit
      scalar Cassgns; they cannot escape the stub leaf's frame so
      they are safe to inline. *)
+  (* Stub detection per documented intent (header above): only accept the
+     identity-write-through-param pattern and the constant-load pattern.
+     Earlier impl accepted ANY [JCstore base 0 _] and ANY [JCset _ _],
+     which silently classifies fe25519_mul / Fp2_mul / etc. as stubs and
+     drops their bodies.  Tighten so a real bedrock2 body — which after
+     ANF (lower_binop_assigns' JCstore extension, AUCurves commit
+     b6dbb29) emits [JCset tmp_i (JEadd|JEsub|JEmul ...)] chains
+     terminating in [JCstore base off (JEvar tmp_n)] — is NOT classified
+     as a stub. *)
   let rec is_identity_store_chain (b : Bls12_jasmin_extracted.jasmin_cmd) : bool =
     let is_store_with_var_base e =
       match e with
@@ -1429,10 +1438,31 @@ let compile_funcs ~outfile ~func_filter ~verbose ~funcs =
                                        Bls12_jasmin_extracted.JElit _) -> true
       | _ -> false
     in
+    (* JCstore is a stub leaf only if its value is an atomic [JEload _ _]
+       (identity write-through-param), not a computed [JEvar tmp]. *)
+    let is_stub_store_value v =
+      match v with
+      | Bls12_jasmin_extracted.JEload _ -> true
+      | _ -> false
+    in
+    (* JCset is a stub leaf only if its value is a constant/load — the
+       clamp body's pre-loaded constants.  An [JEadd|JEsub|JEmul ...]
+       (the ANF temp assignments emitted by fe25519 leaves) is NOT a
+       stub. *)
+    let is_stub_set_value v =
+      match v with
+      | Bls12_jasmin_extracted.JEvar _
+      | Bls12_jasmin_extracted.JElit _
+      | Bls12_jasmin_extracted.JEload _ -> true
+      | Bls12_jasmin_extracted.JEand _ -> true
+      | Bls12_jasmin_extracted.JEor  _ -> true
+      | _ -> false
+    in
     match b with
     | Bls12_jasmin_extracted.JCskip -> true
-    | Bls12_jasmin_extracted.JCstore (base, _, _) -> is_store_with_var_base base
-    | Bls12_jasmin_extracted.JCset (_, _) -> true
+    | Bls12_jasmin_extracted.JCstore (base, _, v) ->
+      is_store_with_var_base base && is_stub_store_value v
+    | Bls12_jasmin_extracted.JCset (_, v) -> is_stub_set_value v
     | Bls12_jasmin_extracted.JCseq (c1, c2) ->
       is_identity_store_chain c1 && is_identity_store_chain c2
     | _ -> false

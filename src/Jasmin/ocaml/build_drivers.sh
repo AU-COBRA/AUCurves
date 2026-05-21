@@ -62,6 +62,14 @@ build_one () {
       # Lizard extract (32B Ristretto -> 16B plaintext): inverse-direction.
       extracted_ml="lizard_extract_jasmin_extracted.ml"
       ;;
+    fe25519_leaves)
+      # 5 fe25519 leaves (mul/add/sub/square/scmula24) via rust_cmd_ed
+      # -> to_bedrock_cmd -> tr_func_sized 5 + polish_func.  After
+      # commit b6dbb29 (ANF JCstore values in lower_binop_assigns)
+      # the polished bodies should clear jasminc's linearization +
+      # asmgen.  Same BLS12 alias trick as ed25519_sign.
+      extracted_ml="fe25519_leaves_jasmin_extracted.ml"
+      ;;
     *) echo "unknown curve: $curve"; exit 2 ;;
   esac
 
@@ -128,6 +136,15 @@ build_one () {
     deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
           "$EXTRACTED_DIR/$extracted_ml"
           "$EXTRACTED_DIR/lizard_stubs_jasmin_extracted.ml")
+  fi
+  if [ "$curve" = "fe25519_leaves" ]; then
+    # Same BLS12 alias trick as ed25519_sign for Obj.magic source-type.
+    if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
+      cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+      cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
+    fi
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+          "$EXTRACTED_DIR/$extracted_ml")
   fi
 
   # Stage all .ml/.mli into a temp dir so ocamlfind can compile .mli first.

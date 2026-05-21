@@ -19,15 +19,25 @@
     the field-tower decomposition lemmas differ (CE_field_representation
     Fp3-over-Fp instead of QE-Fp4-over-Fp2-over-Fp).
 
-    STATUS (this file): structurally complete proof skeleton with
-    [bw6_761_Fp3_mul_fp_ok] Qed-complete.  The remaining four
-    sub-lemmas (make_line_ok, miller_loop_body_step,
-    miller_full_body_wp, miller_loop_ok) are stated and the
-    top-level theorem is discharged from them, in "Admitted"
-    form, each with a documented proof recipe that transliterates
-    BLS24's recipe to BW6's Fp3/Fp6 tower.  See companion
-    [BW6_761_PairingHelpers.v] (to be written: ~1800 LoC) for the
-    Admitted bodies. *)
+    STATUS (this file): Qed-complete for [bw6_761_Fp3_mul_fp_ok],
+    [bw6_761_fp6_conj_wp], [bw6_761_fp6_set_one_wp],
+    [bw6_761_miller_loop_body_step] (BLS24-style invariant
+    bookkeeping), [bw6_761_miller_postloop_ok_loose], and the
+    top-level [bw6_761_miller_loop_ok] (which composes the
+    stackalloc-7 + master-sep construction over the Admitted
+    [bw6_761_miller_full_body_wp]).
+
+    Two Admits remain:
+      - [bw6_761_make_line_ok] (~250 LoC body, 6-call WP)
+      - [bw6_761_miller_full_body_wp] (~400 LoC body, while_localsmap
+        + 28 miller_mcall + post-loop)
+
+    The companion file [BW6_761_PairingHelpers.v] provides the
+    split/join helpers and a full body-level WP for [fp6_conj_body];
+    a body-level WP for [fp6_set_one] would close the
+    [miller_full_body_wp] gap in conjunction with a 28-call
+    [miller_mcall] sequence per BLS24's recipe at lines 928-1013 of
+    [BLS24_509_MillerLoop_proof.v]. *)
 
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.

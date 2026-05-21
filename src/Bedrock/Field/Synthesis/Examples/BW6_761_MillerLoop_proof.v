@@ -47,6 +47,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericQuadraticSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericQuadratic.
 Require Import Bedrock.Field.FieldExtensions.GenericCubicSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericCubic.
+Require Import Bedrock.Field.FieldExtensions.GenericSplitJoin.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
 
@@ -138,6 +139,53 @@ Section BW6_MillerLoopProof.
     AbstractField.spec_of_felem_copy (F:=Fp) (field_representation:=bw6_Fp_repr).
   Instance spec_of_Fp_from_word : spec_of PrimeField.from_word :=
     PrimeField.spec_of_from_word (field_representation:=bw6_Fp_repr).
+
+  (* ============================================================ *)
+  (* BW6-specific FElem_Fp3 split/join (Qed)                       *)
+  (* ============================================================ *)
+
+  (* Fp-level byte offset *)
+  Local Notation fp_off :=
+    (word.of_Z (Memory.bytes_per_word 64 *
+      Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr))).
+
+  Local Notation fp_c0 := (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr).
+  Local Notation fp_c1 := (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr).
+  Local Notation fp_c2 := (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr).
+
+  (** Split [FElem_Fp3 p x] into 3 [FElem_Fp] entries.  Direct
+      instantiation of [ce_raw_FElem_split_in_sep] from
+      [GenericSplitJoin]. *)
+  Lemma FElem_Fp3_split_in_sep p (x : list word) R m :
+    (FElem_Fp3 p x * R)%sep m ->
+    (FElem_Fp p (fp_c0 x) *
+     (FElem_Fp (word.add p fp_off) (fp_c1 x) *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         (fp_c2 x) * R)))%sep m.
+  Proof.
+    exact (ce_raw_FElem_split_in_sep
+      BW6_761_Instances.bw6_Fp_mul_by_nr_model "bw6_761_Fp3_" BW6_761_Instances.Fp_eq_dec
+      p x R m).
+  Qed.
+
+  (** Join 3 [FElem_Fp] entries back into [FElem_Fp3]. *)
+  Lemma FElem_Fp_join3_in_sep p (a b c : list word) R m :
+    length a = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length b = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    length c = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr ->
+    (FElem_Fp p a *
+     (FElem_Fp (word.add p fp_off) b *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         c * R)))%sep m ->
+    (FElem_Fp3 p (a ++ b ++ c) * R)%sep m.
+  Proof.
+    intros Hla Hlb Hlc.
+    exact (ce_raw_FElem_join_in_sep
+      BW6_761_Instances.bw6_Fp_mul_by_nr_model "bw6_761_Fp3_" BW6_761_Instances.Fp_eq_dec
+      p a b c R m Hla Hlb Hlc).
+  Qed.
 
   (* ============================================================ *)
   (* Sub-lemmas (proof-recipe placeholders)                        *)

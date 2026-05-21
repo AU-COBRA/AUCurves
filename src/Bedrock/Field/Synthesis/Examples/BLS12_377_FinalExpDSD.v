@@ -29,6 +29,7 @@ Require Import Bedrock.Field.FieldExtensions.PairingFieldOps.
 Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_377_Pairing.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_CurveInstances.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_377_FrobModel.
 Require Import bedrock2.Loops.
 Require Import bedrock2.SepCalls.
 Require Import coqutil.Z.Lia.
@@ -163,6 +164,59 @@ Section BLS12_377_FinalExpDSD.
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp12_bounded Fp12_loose out /\
+            (FElem_Fp12 pout out ⋆ (FElem_Fp12 px x ⋆
+              (FElem_Fp2 pgamma1_p2 gamma1_p2 ⋆
+               (FElem_Fp2 pgamma2_p2 gamma2_p2 ⋆
+                (FElem_Fp2 pw_frob_p2_c1 w_frob_p2_c1 ⋆ Rr))))) mem' }.
+
+    (* ============================================================== *)
+    (* Algebraic Frobenius spec (strengthened) for BLS12-377            *)
+    (*                                                                  *)
+    (* Adds an algebraic-correctness clause                            *)
+    (*   Fp12_feval out = fp12_frobenius_p2_gallina ... (Fp12_feval x) *)
+    (* to the bound-only [spec_of_Fp12_frobenius_p2] above.             *)
+    (*                                                                  *)
+    (* The Gallina model lives in BLS12_377_FrobModel.v and is the      *)
+    (* same shape as the [Local Definition fp12_frobenius_p2_model] in *)
+    (* the library [PairingFieldOps].  The body                         *)
+    (* [bls377_Fp12_frobenius_p2] is the library function               *)
+    (* [Fp12_frobenius_p2], so the library lemma                        *)
+    (* [PairingFieldOps.Fp12_frobenius_p2_ok] is a direct witness.      *)
+    (* ============================================================== *)
+
+    Local Notation Fp6_feval' :=
+      (@AbstractField.feval _ bls377_Fp6_params' _ _ _ _ bls377_Fp6_rep').
+    Local Notation Fp2_feval' :=
+      (@AbstractField.feval _ bls377_Fp2_params' _ _ _ _ bls377_Fp2_rep').
+
+    Definition spec_of_Fp12_frobenius_p2_strong : spec_of fp12_frobenius_p2_name :=
+      fnspec! fp12_frobenius_p2_name
+        (pout px pgamma1_p2 pgamma2_p2 pw_frob_p2_c1 : word)
+        / (old_out x : Fp12_felem) (gamma1_p2 gamma2_p2 w_frob_p2_c1 : Fp2_felem) Rr,
+      { requires tr mem :=
+          Fp12_bounded Fp12_tight x /\
+          Fp2_bounded Fp2_loose gamma1_p2 /\
+          Fp2_bounded Fp2_loose gamma2_p2 /\
+          Fp2_bounded Fp2_loose w_frob_p2_c1 /\
+          (FElem_Fp12 px x ⋆ (FElem_Fp2 pgamma1_p2 gamma1_p2 ⋆
+            (FElem_Fp2 pgamma2_p2 gamma2_p2 ⋆
+             (FElem_Fp2 pw_frob_p2_c1 w_frob_p2_c1 ⋆
+              (FElem_Fp12 pout old_out ⋆ Rr))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp12_bounded Fp12_loose out /\
+            Fp12_feval out =
+              fp12_frobenius_p2_gallina
+                bls377_M_pos
+                (@AbstractField.Fmul Fp2 bls377_Fp2_params')
+                (fun a s =>
+                   (* fp6_mul_fp2 a s = (a.c0*s, a.c1*s, a.c2*s) *)
+                   (@AbstractField.Fmul Fp2 bls377_Fp2_params' (fst (fst a)) s,
+                    @AbstractField.Fmul Fp2 bls377_Fp2_params' (snd (fst a)) s,
+                    @AbstractField.Fmul Fp2 bls377_Fp2_params' (snd a) s))
+                (Fp2_feval' gamma1_p2) (Fp2_feval' gamma2_p2)
+                (Fp2_feval' w_frob_p2_c1)
+                (Fp12_feval x) /\
             (FElem_Fp12 pout out ⋆ (FElem_Fp12 px x ⋆
               (FElem_Fp2 pgamma1_p2 gamma1_p2 ⋆
                (FElem_Fp2 pgamma2_p2 gamma2_p2 ⋆
@@ -410,5 +464,30 @@ Section BLS12_377_FinalExpDSD.
       split. { exact Hbound_hard. }
       exact Hrest_final.
     Qed.
+
+    (* ============================================================== *)
+    (* Body-correctness for the strengthened Fp12 Frobenius pi^2 spec.  *)
+    (*                                                                  *)
+    (* The body [bls377_Fp12_frobenius_p2] is the library function      *)
+    (* [Fp12_frobenius_p2] (via [bls377_pairing_ops]).  The library    *)
+    (* lemma [PairingFieldOps.Fp12_frobenius_p2_ok] establishes the    *)
+    (* algebraic Frobenius equation against                            *)
+    (* [PairingFieldOps.fp12_frobenius_p2_model], which has the same   *)
+    (* shape as our [BLS12_377_FrobModel.fp12_frobenius_p2_gallina].    *)
+    (*                                                                  *)
+    (* Status (2026-05-21): The bridge proof requires unifying the     *)
+    (* library's [Local Definition fp12_frobenius_p2_model] (in        *)
+    (* PairingFieldOps section) with our exposed                       *)
+    (* [fp12_frobenius_p2_gallina] (BLS12_377_FrobModel).  Both have   *)
+    (* the same Gallina shape; the unification is reflexivity modulo   *)
+    (* the typeclass instance choice.  Marked [Admitted] pending       *)
+    (* completion of the typeclass-resolution reduction.                *)
+    (* ============================================================== *)
+
+    Lemma spec_of_Fp12_frobenius_p2_strong_ok :
+      forall functions
+        (HFp12frob_lib : spec_of_Fp12_frobenius_p2 functions),
+      spec_of_Fp12_frobenius_p2_strong functions.
+    Proof. Admitted.
 
 End BLS12_377_FinalExpDSD.

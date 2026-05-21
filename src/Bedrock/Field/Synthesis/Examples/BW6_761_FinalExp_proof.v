@@ -999,17 +999,98 @@ Section BW6_FinalExpProof.
       (HFeasy : spec_of_bw6_final_exp_easy functions)
       (HFhard : spec_of_bw6_final_exp_hard functions),
     spec_of_bw6_final_exp functions.
-    intros. unfold spec_of_bw6_final_exp.
-    (* TODO(BW6 Frobenius spec strengthening, Phase 5 — composition gap):
-       Spec composition needs:
-         1. final_exp_easy_ok handed back Fp6_tight (currently delivers loose).
-            Without this, hard_ok's tight precondition can't be discharged.
-            Mirror BLS24_509_FinalExp_proof.v's tighten step.
-         2. WP threading via stackalloc-then-2-calls (template:
-            bw6_fp6_pow_abs_u_ok, which has the same 2-stackalloc + N-call
-            pattern + dealloc cascade).
-       No new algebraic content.  See BW6_761_FrobModel.v for the
-       per-component Frobenius algebra. *)
-  Admitted.
+  Proof.
+    intros functions EnvContains HFeasy HFhard.
+    unfold spec_of_bw6_final_exp.
+    intros pout pf p_gfp3 p_gfp6 p_gfp3_p2 p_gfp6_p2 p_gfp6_p3
+      old_out f gfp3 gfp6 gfp3_p2 gfp6_p2 gfp6_p3 Rr tr mem0
+      [Hbf [Hbg3 [Hbg6 [Hbg3_p2 [Hbg6_p2 [Hbg6_p3 Hsep]]]]]].
+    eapply start_func; [exact EnvContains | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold BW6_761_FinalExp.bw6_final_exp. simpl snd. simpl fst.
+    cbv match beta.
+    eexists. split. { exact eq_refl. }
+
+    (* Stackalloc: easy_result (Fp6) *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_easy mSe mCe HaSe HmSe.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_easy mSe) HaSe) as [ei Hei].
+
+    cbv [BW6_761_FinalExp.cmd_seq_list].
+
+    (* Build master sep *)
+    pose proof (proj1 (map.split_comm mCe mem0 mSe) HmSe) as HmSe'.
+    assert (Hsep_all :
+      (FElem_Fp6 a_easy ei *
+       (FElem_Fp6 pf f *
+        (FElem_Fp6 pout old_out *
+         (FElem_Fp3 p_gfp3 gfp3 *
+          (FElem_Fp3 p_gfp6 gfp6 *
+           (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+            (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+             (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))%sep mCe).
+    { exists mSe, mem0. exact (conj HmSe' (conj Hei Hsep)). }
+
+    clear Hsep HaSe HmSe Hei HmSe'.
+
+    (* Call 1: final_exp_easy(easy_result, f, gfp3, gfp6)
+       The easy spec takes only the gfp3/gfp6 gammas (not the p2/p3 ones). *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFeasy.
+         split; [exact Hbf |].
+         split; [exact Hbg3 |].
+         split; [exact Hbg6 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [easy_v [Hb_easy Hsep_easy]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Call 2: final_exp_hard(out, easy_result, all_gammas).
+       Note Fp6_tight = Fp6_loose definitionally for WBW Montgomery,
+       so Hb_easy : Fp6_loose easy_v is accepted where Fp6_tight is required. *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFhard.
+         split; [exact Hb_easy |].
+         split; [exact Hbg3 |].
+         split; [exact Hbg6 |].
+         split; [exact Hbg3_p2 |].
+         split; [exact Hbg6_p2 |].
+         split; [exact Hbg6_p3 |].
+         ecancel_assumption_with_copy. }
+    intros ? ? ? [? [? [hard_v [Hb_hard Hsep_hard]]]]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Stack deallocation: easy_result *)
+    match goal with Hc : (_ * _)%sep ?m |- _ =>
+      assert (Hsep_easy_front :
+        (FElem_Fp6 a_easy easy_v *
+         (FElem_Fp6 pout hard_v *
+          (FElem_Fp6 pf f *
+           (FElem_Fp3 p_gfp3 gfp3 *
+            (FElem_Fp3 p_gfp6 gfp6 *
+             (FElem_Fp3 p_gfp3_p2 gfp3_p2 *
+              (FElem_Fp3 p_gfp6_p2 gfp6_p2 *
+               (FElem_Fp3 p_gfp6_p3 gfp6_p3 * Rr))))))))%sep m);
+      [ecancel_assumption | clear Hc]
+    end.
+    destruct Hsep_easy_front as [mStack_easy [m_final [Hsp_easy [Hfe_easy Hrest_final]]]].
+    assert (Hab_easy : Memory.anybytes a_easy
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack_easy).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_easy easy_v mStack_easy Hfe_easy). }
+    exists m_final, mStack_easy.
+    split. { exact Hab_easy. }
+    split. { apply map.split_comm. exact Hsp_easy. }
+
+    (* Final postcondition *)
+    cbv [list_map list_map_body WeakestPrecondition.get].
+    split. { reflexivity. }
+    split. { reflexivity. }
+    exists hard_v.
+    split. { exact Hb_hard. }
+    exact Hrest_final.
+  Qed.
 
 End BW6_FinalExpProof.

@@ -472,24 +472,32 @@ pub fn bw6_fp6_pow_u(mut out: &mut Fp6, x: &Fp6) {
 
 #[inline]
 pub fn bw6_fp6_frob(mut out: &mut Fp6, x: &Fp6, gamma_fp3: &Fp3, gamma_fp6: &Fp3) {
-    let mut tmp_fp3: Fp3 = Fp3::zero();
-    bw6_761_Fp3_mul(&mut out.c0, &x.c0, &gamma_fp3);
-    bw6_761_Fp3_mul(&mut tmp_fp3, &x.c1, &gamma_fp3);
-    bw6_761_Fp3_mul(&mut out.c1, &tmp_fp3, &gamma_fp6);
+    bw6_761_felem_copy(&mut out.c0.c0, &x.c0.c0);
+    bw6_761_mul(&mut out.c0.c1, &x.c0.c1, &gamma_fp3.c1);
+    bw6_761_mul(&mut out.c0.c2, &x.c0.c2, &gamma_fp3.c2);
+    bw6_761_mul(&mut out.c1.c0, &x.c1.c0, &gamma_fp6.c0);
+    bw6_761_mul(&mut out.c1.c1, &x.c1.c1, &gamma_fp6.c1);
+    bw6_761_mul(&mut out.c1.c2, &x.c1.c2, &gamma_fp6.c2);
 }
 
 #[inline]
 pub fn bw6_fp6_frob_p2(mut out: &mut Fp6, x: &Fp6, gamma_fp3_p2: &Fp3, gamma_fp6_p2: &Fp3) {
-    let mut tmp_fp3: Fp3 = Fp3::zero();
-    bw6_761_Fp3_mul(&mut out.c0, &x.c0, &gamma_fp3_p2);
-    bw6_761_Fp3_mul(&mut tmp_fp3, &x.c1, &gamma_fp3_p2);
-    bw6_761_Fp3_mul(&mut out.c1, &tmp_fp3, &gamma_fp6_p2);
+    bw6_761_felem_copy(&mut out.c0.c0, &x.c0.c0);
+    bw6_761_mul(&mut out.c0.c1, &x.c0.c1, &gamma_fp3_p2.c1);
+    bw6_761_mul(&mut out.c0.c2, &x.c0.c2, &gamma_fp3_p2.c2);
+    bw6_761_mul(&mut out.c1.c0, &x.c1.c0, &gamma_fp6_p2.c0);
+    bw6_761_mul(&mut out.c1.c1, &x.c1.c1, &gamma_fp6_p2.c1);
+    bw6_761_mul(&mut out.c1.c2, &x.c1.c2, &gamma_fp6_p2.c2);
 }
 
 #[inline]
 pub fn bw6_fp6_frob_p3(mut out: &mut Fp6, x: &Fp6, gamma_fp6_p3: &Fp3) {
-    bw6_761_Fp3_felem_copy(&mut out.c0, &x.c0);
-    bw6_761_Fp3_mul(&mut out.c1, &x.c1, &gamma_fp6_p3);
+    bw6_761_felem_copy(&mut out.c0.c0, &x.c0.c0);
+    bw6_761_felem_copy(&mut out.c0.c1, &x.c0.c1);
+    bw6_761_felem_copy(&mut out.c0.c2, &x.c0.c2);
+    bw6_761_mul(&mut out.c1.c0, &x.c1.c0, &gamma_fp6_p3.c0);
+    bw6_761_mul(&mut out.c1.c1, &x.c1.c1, &gamma_fp6_p3.c0);
+    bw6_761_mul(&mut out.c1.c2, &x.c1.c2, &gamma_fp6_p3.c0);
 }
 
 #[inline]

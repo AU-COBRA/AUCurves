@@ -196,12 +196,78 @@ fn tower_fp6_inv_roundtrip() {
 // constants land.
 // =====================================================================
 
+// ====== Real Frobenius constants for BW6-761 (Phase 1, computed
+//        via /tmp/bw6_frob_compute.py — matches gnark-crypto/ecc/
+//        bw6-761/internal/fptower/frobenius.go) ======
+//
+//   alpha           = (-4)^((p-1)/3) mod p      (cube root of 1)
+//   sqrt(alpha)     = (Tonelli-Shanks branch — happens to equal alpha^2)
+//   gamma_fp3 pi    = [_,  alpha,    alpha^2]
+//   gamma_fp6 pi    = [sa, sa·alpha, sa·alpha^2]
+//   gamma_fp3 pi^2  = squared componentwise
+//   gamma_fp6 pi^2  = squared componentwise
+//   gamma_fp6 pi^3  = [-1; _; _]  (c0 slot used by per-Fp mul)
+
+fn alpha_raw() -> FpRaw {
+    FpRaw([
+        0x5e7bc00000000060, 0x214983de30000053, 0x5fe3f89c11811c1e, 0xa5b093ed79b1c57b,
+        0xab8579e02ed3cddc, 0xf87fa59308c07a8f, 0x5870636cb60d217f, 0x823132b971cdefc6,
+        0x256ab7ae14297a1a, 0x4d06e68545f7e64c, 0x27035cdf02acb274, 0x00cfca638f1500e3,
+    ])
+}
+fn alpha_sq_raw() -> FpRaw {
+    FpRaw([
+        0x962140000000002a, 0xc547ba8a4000002f, 0xb6290012d96f8819, 0xf2f082d4dcb5e37c,
+        0xc65759fc45183151, 0x8e0a235a0a398300, 0xab5e57926fa70184, 0xee4a737f73b6f952,
+        0x2d17be416c5e4426, 0x6c1f31e53bd9603c, 0xaa846c61024e4cca, 0x00531dc16c6ecd27,
+    ])
+}
+fn minus_one_raw() -> FpRaw {
+    FpRaw([
+        0xf49d00000000008a, 0xe6913e6870000082, 0x160cf8aeeaf0a437, 0x98a116c25667a8f8,
+        0x71dcd3dc73ebff2e, 0x8689c8ed12f9fd90, 0x03cebaff25b42304, 0x707ba638e584e919,
+        0x528275ef8087be41, 0xb926186a81d14688, 0xd187c94004faff3e, 0x0122e824fb83ce0a,
+    ])
+}
+
+fn fp_from_raw(r: &FpRaw) -> tower::Fp {
+    let mut out = zero();
+    fp_to_montgomery(&mut out, r);
+    tower::Fp(out.0)
+}
+
+/// Build the 5 BW6-761 Frobenius gamma constants in Montgomery form,
+/// laid out as Fp3 blobs (since the bedrock2 spec passes them as
+/// Fp3 pointers):
+///   gamma_fp3      = (_,  alpha,    alpha^2)   — c0 ignored
+///   gamma_fp6      = (sa, sa·alpha, sa·alpha^2)
+///   gamma_fp3_p2   = squared
+///   gamma_fp6_p2   = squared
+///   gamma_fp6_p3   = (-1, _, _)                — c1, c2 ignored
+fn real_frob_consts() -> (tower::Fp3, tower::Fp3, tower::Fp3, tower::Fp3, tower::Fp3) {
+    use tower::Fp3;
+    let alpha = fp_from_raw(&alpha_raw());
+    let alpha_sq = fp_from_raw(&alpha_sq_raw());
+    let one_mont = tower_one_mont();
+    let minus_one = fp_from_raw(&minus_one_raw());
+    // For this prime sqrt(alpha) = alpha^2 (Tonelli-Shanks branch),
+    // so b0 = alpha^2, b1 = alpha^2 * alpha = alpha^3 = 1,
+    // b2 = alpha^2 * alpha^2 = alpha^4 = alpha.
+    let gamma_fp3    = Fp3 { c0: tower_zero_fp(), c1: alpha,    c2: alpha_sq };
+    let gamma_fp6    = Fp3 { c0: alpha_sq,        c1: one_mont, c2: alpha    };
+    // Squared: a1^2 = alpha^2, a2^2 = alpha^4 = alpha;
+    //          b0^2 = alpha,   b1^2 = 1,        b2^2 = alpha^2.
+    let gamma_fp3_p2 = Fp3 { c0: tower_zero_fp(), c1: alpha_sq, c2: alpha    };
+    let gamma_fp6_p2 = Fp3 { c0: alpha,           c1: one_mont, c2: alpha_sq };
+    let gamma_fp6_p3 = Fp3 { c0: minus_one,       c1: tower_zero_fp(), c2: tower_zero_fp() };
+    (gamma_fp3, gamma_fp6, gamma_fp3_p2, gamma_fp6_p2, gamma_fp6_p3)
+}
+
 /// Smoke test: the pairing function runs end-to-end without
-/// panicking on (1, 1), (1, 1)-style inputs.  Doesn't assert the
-/// algebraic value (placeholder Frob consts) but confirms the
-/// `miller_loop -> final_exp` wiring links and the inner sequence
-/// of ~9 final-exp helpers (conjugate / pow_u / frob / frob_p2 /
-/// frob_p3 / mul / inv chain) all resolve.
+/// panicking on (1, 1), (1, 1)-style inputs with REAL Frobenius
+/// constants.  Doesn't assert the algebraic value (no gnark
+/// reference vector available) but confirms the per-Fp-component
+/// Frobenius bodies execute against real alpha = (-4)^((p-1)/3).
 #[test]
 fn pairing_runs_without_panic() {
     use tower::{Fp3 as TFp3, Fp6 as TFp6};
@@ -214,14 +280,8 @@ fn pairing_runs_without_panic() {
     let p = G1 { x: tower_one_mont(), y: tower_one_mont() };
     let q = G2 { x: one_fp3, y: one_fp3 };
 
-    // Placeholder Frobenius constants (= one_fp3).  In a real
-    // deployment these come from BW6_761_FrobConsts.v's SageMath-
-    // computed values.
-    let gamma_fp3 = one_fp3;
-    let gamma_fp6 = one_fp3;
-    let gamma_fp3_p2 = one_fp3;
-    let gamma_fp6_p2 = one_fp3;
-    let gamma_fp6_p3 = one_fp3;
+    let (gamma_fp3, gamma_fp6, gamma_fp3_p2, gamma_fp6_p2, gamma_fp6_p3) =
+        real_frob_consts();
 
     let mut out = TFp6 { c0: zero_fp3, c1: zero_fp3 };
     pairing(&mut out, &p, &q,
@@ -232,25 +292,61 @@ fn pairing_runs_without_panic() {
     // surface as a panic via fiat-rust's invariants.)
 }
 
-/// gnark-crypto cross-check.  IGNORED pending real Frobenius
-/// constants.
-///
-/// When `BW6_761_FrobConsts.v` is updated with SageMath-computed
-/// values for the BW6-761 prime (gamma_fp3 = zeta^{(p-1)/3} etc.),
-/// remove the `#[ignore]` and assert against gnark-crypto's
-/// canonical `e(g1Gen, g2Gen)` value.  As of 2026-05-21,
-/// gnark-crypto's `ecc/bw6-761/pairing_test.go` ships no hardcoded
-/// vector — the canonical reference value would need to be
-/// extracted by running gnark's `Pair(g1Gen, g2Gen)` and dumping
-/// the 6×Fp Montgomery-form limbs.
+/// Algebraic sanity: bw6_fp6_frob_p3 on a pure-c1 input should
+/// negate every Fp slot (since gamma_fp6_p3.c0 = -1 and pi^3 acts
+/// trivially on c0).  Cross-checks the new per-Fp-component body
+/// against an explicit Gallina-level expectation.
 #[test]
-#[ignore = "requires SageMath-computed Frobenius constants (BW6_761_FrobConsts.v ships placeholders)"]
+fn fp6_frob_p3_negates_c1() {
+    use tower::{bw6_fp6_frob_p3, bw6_761_sub, Fp3 as TFp3, Fp6 as TFp6};
+    let (_g3, _g6, _g3p2, _g6p2, gamma_fp6_p3) = real_frob_consts();
+    // Input: c0 = (1,0,0), c1 = (1,1,1) — three 1's so the per-slot
+    // negation is observable.
+    let zero_fp3 = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let one_fp3  = TFp3 { c0: tower_one_mont(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let ones_fp3 = TFp3 { c0: tower_one_mont(), c1: tower_one_mont(), c2: tower_one_mont() };
+    let x = TFp6 { c0: one_fp3, c1: ones_fp3 };
+    let mut out = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    bw6_fp6_frob_p3(&mut out, &x, &gamma_fp6_p3);
+    // out.c0 must equal x.c0 (copy)
+    assert_eq!(out.c0.c0.0, tower_one_mont().0, "frob_p3.c0.c0 = x.c0.c0");
+    assert_eq!(out.c0.c1.0, tower_zero_fp().0);
+    assert_eq!(out.c0.c2.0, tower_zero_fp().0);
+    // out.c1 must equal -x.c1 (all three slots).  Compute reference
+    // by subtracting x.c1 from 0.
+    let mut neg = tower_zero_fp();
+    bw6_761_sub(&mut neg, &tower_zero_fp(), &tower_one_mont());
+    assert_eq!(out.c1.c0.0, neg.0, "frob_p3.c1.c0 = -x.c1.c0");
+    assert_eq!(out.c1.c1.0, neg.0, "frob_p3.c1.c1 = -x.c1.c1");
+    assert_eq!(out.c1.c2.0, neg.0, "frob_p3.c1.c2 = -x.c1.c2");
+}
+
+/// gnark-crypto cross-check.  IGNORED pending an extracted
+/// reference vector.
+///
+/// Status update (Phase 1 of the Frobenius math-fix, 2026-05-21):
+/// the real Frobenius constants ARE now in place
+/// (`BW6_761_FrobConsts.v` ships `alpha = (-4)^((p-1)/3)` and the
+/// 11 derived scalars), the bedrock2 body has been switched to a
+/// per-Fp-component implementation matching gnark's
+/// `internal/fptower/frobenius.go`, and the algebraic
+/// sanity check `fp6_frob_p3_negates_c1` above passes.
+///
+/// What remains for this KAT: gnark-crypto's
+/// `ecc/bw6-761/pairing_test.go` ships no hardcoded `e(g1Gen,
+/// g2Gen)` vector, so the canonical reference value would need to
+/// be extracted by running gnark's `Pair(g1Gen, g2Gen)` once and
+/// dumping the 6×Fp Montgomery-form limbs.  That extraction is
+/// out of scope for the bedrock2/Coq work here.
+#[test]
+#[ignore = "needs an extracted gnark reference vector for e(g1Gen, g2Gen)"]
 fn pairing_kat_gnark_generator() {
-    // TODO(post-Frob-consts):
-    //   1. Replace BW6_761_FrobConsts.v with real values
-    //   2. Regenerate bw6_761_safe_tower.rs
-    //   3. Hard-code gnark's `e(g1Gen, g2Gen)` Fp6 limbs as
-    //      EXPECTED_E_G_G.
-    //   4. Assert pairing(g1Gen, g2Gen, ...) == EXPECTED_E_G_G.
-    unimplemented!("waiting on Frobenius constants");
+    // TODO(post-gnark-extraction):
+    //   1. Run gnark's `Pair(g1Gen, g2Gen)` and dump the 6×12 u64
+    //      Montgomery-form limbs into `EXPECTED_E_G_G`.
+    //   2. Assert pairing(g1Gen, g2Gen, gammas...) == EXPECTED_E_G_G
+    //      using the `real_frob_consts()` helper above.
+    // (The bedrock2 Frobenius bodies + spec are now math-correct;
+    //  this is purely a fixture-data task.)
+    unimplemented!("needs gnark reference vector");
 }

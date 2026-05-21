@@ -20,3 +20,11 @@ fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }
 
 [dev-dependencies]
+
+[features]
+default = []
+# Use Jasmin-emitted .s files (verified rust_cmd_ed -> bedrock2 ->
+# Jasmin pipeline) for the Fp leaves that jasminc accepts.
+# Currently: add/sub/select_znz only — mul/square hit jasminc's
+# register-allocation ceiling (same blocker BLS12-381 hits).
+jasmin_leaves = []

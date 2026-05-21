@@ -69,11 +69,17 @@ mod extern_shim {
         unsafe { copy_nonoverlapping(a.as_ptr(), p, 6) }
     }
 
+    // When the `jasmin_leaves` feature is on, `_bls377_add` and
+    // `_bls377_sub` are provided by the assembled Jasmin .s in
+    // asm/ (see ../build.rs).  Otherwise they fall back to the
+    // fiat-rust Rust shim below.
+    #[cfg(not(feature = "jasmin_leaves"))]
     #[no_mangle] pub unsafe extern "C" fn _bls377_add(o: *mut u64, x: *const u64, y: *const u64) {
         let mut out = Fp([0u64; 6]);
         fp_add(&mut out, &Fp(rd6(x)), &Fp(rd6(y)));
         wr6(o, &out.0);
     }
+    #[cfg(not(feature = "jasmin_leaves"))]
     #[no_mangle] pub unsafe extern "C" fn _bls377_sub(o: *mut u64, x: *const u64, y: *const u64) {
         let mut out = Fp([0u64; 6]);
         fp_sub(&mut out, &Fp(rd6(x)), &Fp(rd6(y)));
@@ -105,6 +111,7 @@ mod extern_shim {
         fp_to_montgomery(&mut out, &raw);
         wr6(o, &out.0);
     }
+    #[cfg(not(feature = "jasmin_leaves"))]
     #[no_mangle] pub unsafe extern "C" fn _bls377_select_znz(
         o: *mut u64, c: u64, x: *const u64, y: *const u64,
     ) {

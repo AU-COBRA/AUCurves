@@ -70,6 +70,18 @@ build_one () {
       # asmgen.  Same BLS12 alias trick as ed25519_sign.
       extracted_ml="fe25519_leaves_jasmin_extracted.ml"
       ;;
+    bls377)
+      # BLS12-377 Fp leaves (add/sub/mul/square/select_znz/felem_copy)
+      # via Derive ... + tr_func_sized 6 + polish_func.  Same 6-limb
+      # wordsize as BLS12-381.  Uses BLS12 alias trick for Obj.magic.
+      extracted_ml="bls377_jasmin_extracted.ml"
+      ;;
+    bw6_761)
+      # BW6-761 Fp leaves (add/sub/mul/square/select_znz/felem_copy)
+      # — 12 × 64-bit limb base field of the BW6-761 outer curve.
+      # Same Derive + tr_func_sized 12 + polish_func recipe as bls377.
+      extracted_ml="bw6_761_jasmin_extracted.ml"
+      ;;
     *) echo "unknown curve: $curve"; exit 2 ;;
   esac
 
@@ -139,6 +151,19 @@ build_one () {
   fi
   if [ "$curve" = "fe25519_leaves" ]; then
     # Same BLS12 alias trick as ed25519_sign for Obj.magic source-type.
+    if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
+      cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+      cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"
+    fi
+    deps=("$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
+          "$EXTRACTED_DIR/$extracted_ml")
+  fi
+  if [ "$curve" = "bls377" ] || [ "$curve" = "bw6_761" ]; then
+    # Same BLS12 alias trick: ocaml_compile.ml's typed pipeline
+    # references Bls12_jasmin_extracted.{jasmin_func,...} so we need
+    # the real BLS12-381 extraction present.  If it's already there
+    # (built by an earlier `bls12` driver build), reuse it; otherwise
+    # alias from our own extraction.
     if [ ! -f "$EXTRACTED_DIR/bls12_jasmin_extracted.ml" ]; then
       cp "$EXTRACTED_DIR/$extracted_ml" "$EXTRACTED_DIR/bls12_jasmin_extracted.ml"
       cp "$EXTRACTED_DIR/${extracted_ml%.ml}.mli" "$EXTRACTED_DIR/bls12_jasmin_extracted.mli"

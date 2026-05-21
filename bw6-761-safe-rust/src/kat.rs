@@ -321,34 +321,126 @@ fn fp6_frob_p3_negates_c1() {
     assert_eq!(out.c1.c2.0, neg.0, "frob_p3.c1.c2 = -x.c1.c2");
 }
 
-/// gnark-crypto cross-check.  IGNORED pending an extracted
-/// reference vector.
+// ====== gnark-crypto reference vector (extracted 2026-05-21 via
+//        Docker golang:1.25 + gnark-crypto v0.20.1).
+//
+// G1 generator (affine, Montgomery-form Fp limbs little-endian u64):
+const G1_GEN_X: [u64; 12] = [
+    0xd6e42d7614c2d770, 0x4bb886eddbc3fc21, 0x64648b044098b4d2, 0x1a585c895a422985,
+    0xf1a9ac17cf8685c9, 0x352785830727aea5, 0xddf8cb12306266fe, 0x6913b4bfbc9e949a,
+    0x3a4b78d67ba5f6ab, 0x0f481c06a8d02a04, 0x91d4e7365c43edac, 0x00f4d17cd48beca5,
+];
+const G1_GEN_Y: [u64; 12] = [
+    0x97e805c4bd16411f, 0x870d844e1ee6dd08, 0x1eba7a37cb9eab4d, 0xd544c4df10b9889a,
+    0x8fe37f21a33897be, 0xe9bf99a43a0885d2, 0xd7ee0c9e273de139, 0xaa6a9ec7a38dd791,
+    0x8f95d3fcf765da8e, 0x42326e7db7357c99, 0xe217e407e218695f, 0x009d1eb23b7cf684,
+];
+// G2 generator: gnark stores g2Gen.X and .Y as plain `fp.Element` (Fp,
+// NOT Fp3) — BW6-761 places G2 over the base field Fp.  Our bedrock
+// Miller-loop body takes G2 coords as `Fp3`, so we embed the Fp
+// coordinate into the c0 slot of a degenerate Fp3 with c1 = c2 = 0.
+const G2_GEN_X: [u64; 12] = [
+    0x3d902a84cd9f4f78, 0x864e451b8a9c05dd, 0xc2b3c0d6646c5673, 0x17a7682def1ecb9d,
+    0xbe31a1e0fb768fe3, 0x4df125e09b92d1a6, 0x0943fce635b02ee9, 0xffc8e7ad0605e780,
+    0x8165c00a39341e95, 0x8ccc2ae90a0f094f, 0x73a8b8cc0ad09e0c, 0x011027e203edd9f4,
+];
+const G2_GEN_Y: [u64; 12] = [
+    0x9a159be4e773f67c, 0x6b957244aa8f4e6b, 0xa27b70c9c945a38c, 0xacb6a09fda11d0ab,
+    0x3abbdaa9bb6b1291, 0xdbdf642af5694c36, 0xb6360bb9560b369f, 0xac0bd1e822b8d6da,
+    0xfa355d17afe6945f, 0x8d6a0fc1fbcad35e, 0x72a63c7874409840, 0x0114976e5b0db280,
+];
+
+// e(g1Gen, g2Gen) — Fp6 = Fp3[w]/(w^2 − v) over Fp3 = Fp[u]/(u^3 − nr).
+// Layout: [B0.A0, B0.A1, B0.A2, B1.A0, B1.A1, B1.A2], each Fp in
+// Montgomery little-endian u64 limbs.  Cross-checked against
+// gnark-crypto's R = 2^768 mod p (Mont(1) limbs identical to
+// fiat-rust's fiat_bw6_761_set_one).
+const EXPECTED_E_G_G: [[u64; 12]; 6] = [
+    // B0.A0
+    [0xda51326b6fa8e240, 0xdd7db828ed3de6e6, 0x94ea9aec011ebbcc, 0xf67647a828e9badb,
+     0xe75d2138fe0d93b0, 0xb9eaf32a785c376d, 0x7b06980c79024b43, 0x05d6dc3e38c57d11,
+     0xfc6b96fed138a2fb, 0x5115d0534afe2b16, 0x5c65118ec3473b96, 0x011b3a30623f9a42],
+    // B0.A1
+    [0x4c0692e5020858ff, 0x8b6c29755a5640bb, 0x3cb595c5d085734f, 0x88ee6eb4cbaefc1d,
+     0x260f17fa99e0a117, 0xab72ee4400287fc3, 0x1c83f7e1f1975c17, 0xc4282ac34174807c,
+     0x09a9a715c595397a, 0x9314c8719434fee8, 0x027ac209570f6bb9, 0x00ec4f37fb4d2659],
+    // B0.A2
+    [0xa7ae5aab6fe33c25, 0xfe7ab0e37b26649b, 0x4c1292960de81e5a, 0xba88a980549b1565,
+     0xfda13b7c9fc4bf85, 0xef24725be0be887b, 0xad5d72e68c8f5219, 0xfb0e2241f26fd755,
+     0x291fed7a530a1aed, 0x051e6df82d43afd1, 0xdcf4c7deee6afc10, 0x00428a4150b9b367],
+    // B1.A0
+    [0x8be5ef98b1592033, 0xd0be811aa2adca7c, 0xbff996396a818832, 0xa8327bdcfdf6613a,
+     0x2396125fcfc55400, 0x97c87b57ece24176, 0xf041251b50c1e480, 0xe029f1a50a6783af,
+     0x514cacf665706a77, 0xf3a689a5e2014904, 0x606842d11a886c7e, 0x00147b66f40bd446],
+    // B1.A1
+    [0xee8368caaf4231de, 0xd9082150fe5d99c4, 0x773d13e02a992aa5, 0xb7a1f406948d5bf6,
+     0xbbc8d519aaaa889e, 0xbf0ab277a54844fa, 0x6811c936a76d06f5, 0xe5d2f875746f940a,
+     0x9f00454249049970, 0xf232b1e330965b1e, 0xf09015c606488b93, 0x00e4c4d2bd430393],
+    // B1.A2
+    [0xdc38bfe1f0553469, 0xc4bdf705ee7c7041, 0x35e41da6adbc20e6, 0x86d8017a12f6a876,
+     0x71d4701e3b4504ba, 0xd92add80f3a8f2dd, 0xe3bb42ef14e544e3, 0x7a6fe26d963c2cd7,
+     0xa92079b23e782482, 0xb3c00e82e789516d, 0x11d64586abdfc4df, 0x0094e2eadc90c9ff],
+];
+
+/// gnark-crypto cross-check on `e(g1Gen, g2Gen)` for BW6-761.
 ///
-/// Status update (Phase 1 of the Frobenius math-fix, 2026-05-21):
-/// the real Frobenius constants ARE now in place
-/// (`BW6_761_FrobConsts.v` ships `alpha = (-4)^((p-1)/3)` and the
-/// 11 derived scalars), the bedrock2 body has been switched to a
-/// per-Fp-component implementation matching gnark's
-/// `internal/fptower/frobenius.go`, and the algebraic
-/// sanity check `fp6_frob_p3_negates_c1` above passes.
+/// The G1/G2 generators and reference Fp6 value above come from
+/// running `bw6761.Pair([]G1Affine{g1Gen}, []G2Affine{g2Gen})`
+/// against gnark-crypto v0.20.1 (extracted 2026-05-21 via Docker
+/// golang:1.25).  Both gnark and our fiat-rust backend use
+/// Montgomery form with R = 2^768 mod p and little-endian u64 limbs,
+/// so the limbs can be compared bit-for-bit with no re-encoding.
+/// (Cross-checked: gnark's `Mont(1)` matches `fiat_bw6_761_set_one`
+/// exactly.)
 ///
-/// What remains for this KAT: gnark-crypto's
-/// `ecc/bw6-761/pairing_test.go` ships no hardcoded `e(g1Gen,
-/// g2Gen)` vector, so the canonical reference value would need to
-/// be extracted by running gnark's `Pair(g1Gen, g2Gen)` once and
-/// dumping the 6×Fp Montgomery-form limbs.  That extraction is
-/// out of scope for the bedrock2/Coq work here.
+/// Currently `#[ignore]`'d: while the fixture data is now in place
+/// and the test runs end-to-end without panicking, the value
+/// produced by our `pairing(...)` does NOT match the gnark reference.
+/// Per `PENDING.md` items 2+4: BW6-761 is a Brezing-Weng curve over
+/// BLS12-377 whose canonical optimal-ate pairing needs *two* Miller
+/// loops over two different seeds plus a per-curve final adjustment
+/// (not expressible by the current `CurveParams` record's
+/// `optimal_ate_extras := []`).  The currently-extracted bedrock2
+/// `bw6_761_miller_loop` runs a single 64-bit loop over the
+/// BLS12-377 seed `0x8508c00000000001`, which is the *wrong* loop
+/// structure for BW6-761.  Unblocking this KAT requires the new
+/// `BW6_761_MillerLoop.v` / `BW6_761_FinalExp.v` (~1500 LoC of new
+/// Rocq proof work) called out in `PENDING.md`.
+///
+/// Once those land, removing `#[ignore]` below should be the only
+/// change needed in this file — the gnark fixture is already
+/// frozen in `EXPECTED_E_G_G`.
 #[test]
-#[ignore = "needs an extracted gnark reference vector for e(g1Gen, g2Gen)"]
+#[ignore = "gnark fixture in place, but bedrock2 Miller body uses single BLS12-377-seed loop; needs proper two-loop BW6 optimal-ate (PENDING.md items 2+4). Run with --ignored to see exact mismatch."]
 fn pairing_kat_gnark_generator() {
-    // TODO(post-gnark-extraction):
-    //   1. Run gnark's `Pair(g1Gen, g2Gen)` and dump the 6×12 u64
-    //      Montgomery-form limbs into `EXPECTED_E_G_G`.
-    //   2. Assert pairing(g1Gen, g2Gen, gammas...) == EXPECTED_E_G_G
-    //      using the `real_frob_consts()` helper above.
-    // (The bedrock2 Frobenius bodies + spec are now math-correct;
-    //  this is purely a fixture-data task.)
-    unimplemented!("needs gnark reference vector");
+    use tower::{Fp3 as TFp3, Fp6 as TFp6};
+
+    let g1 = G1 {
+        x: tower::Fp(G1_GEN_X),
+        y: tower::Fp(G1_GEN_Y),
+    };
+    // BW6-761 G2 lives over Fp (not Fp3); embed gnark's Fp coords in
+    // the c0 slot of a degenerate Fp3 with c1 = c2 = 0.
+    let g2 = G2 {
+        x: TFp3 { c0: tower::Fp(G2_GEN_X), c1: tower_zero_fp(), c2: tower_zero_fp() },
+        y: TFp3 { c0: tower::Fp(G2_GEN_Y), c1: tower_zero_fp(), c2: tower_zero_fp() },
+    };
+
+    let (gamma_fp3, gamma_fp6, gamma_fp3_p2, gamma_fp6_p2, gamma_fp6_p3) =
+        real_frob_consts();
+
+    let zero_fp3 = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut out = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    pairing(&mut out, &g1, &g2,
+            &gamma_fp3, &gamma_fp6,
+            &gamma_fp3_p2, &gamma_fp6_p2, &gamma_fp6_p3);
+
+    assert_eq!(out.c0.c0.0, EXPECTED_E_G_G[0], "e(g1,g2).B0.A0 mismatch");
+    assert_eq!(out.c0.c1.0, EXPECTED_E_G_G[1], "e(g1,g2).B0.A1 mismatch");
+    assert_eq!(out.c0.c2.0, EXPECTED_E_G_G[2], "e(g1,g2).B0.A2 mismatch");
+    assert_eq!(out.c1.c0.0, EXPECTED_E_G_G[3], "e(g1,g2).B1.A0 mismatch");
+    assert_eq!(out.c1.c1.0, EXPECTED_E_G_G[4], "e(g1,g2).B1.A1 mismatch");
+    assert_eq!(out.c1.c2.0, EXPECTED_E_G_G[5], "e(g1,g2).B1.A2 mismatch");
 }
 
 // =====================================================================

@@ -72,7 +72,29 @@ Section Field.
     end;
     native_compute; reflexivity.
   Instance bw6_761_ops : @word_by_word_Montgomery_ops from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _ (WordByWordMontgomery.n m machine_wordsize) m.
-  Proof using Type. Time constructor; make_computed_op_native. Defined.
+  Proof using Type.
+    (* Split the record-build into one `Time make_computed_op_native`
+       per field, so `-time` reports per-op wall (otherwise the entire
+       9-op chain is one Vernac sentence and Coq prints nothing until
+       the whole Defined finishes -- which on a 12-limb prime can be
+       hours). *)
+    Time constructor.
+    (* word_by_word_Montgomery_ops has 11 fields: mul_op, add_op,
+       sub_op, opp_op, square_op, felem_copy_op, from_bytes_op,
+       to_bytes_op, from_mont_op, to_mont_op, select_znz_op.  One
+       Time per field gives per-op wall via `-time`. *)
+    Time make_computed_op_native.  (* op 1  / 11 *)
+    Time make_computed_op_native.  (* op 2  / 11 *)
+    Time make_computed_op_native.  (* op 3  / 11 *)
+    Time make_computed_op_native.  (* op 4  / 11 *)
+    Time make_computed_op_native.  (* op 5  / 11 *)
+    Time make_computed_op_native.  (* op 6  / 11 *)
+    Time make_computed_op_native.  (* op 7  / 11 *)
+    Time make_computed_op_native.  (* op 8  / 11 *)
+    Time make_computed_op_native.  (* op 9  / 11 *)
+    Time make_computed_op_native.  (* op 10 / 11 *)
+    Time make_computed_op_native.  (* op 11 / 11 *)
+  Defined.
 
   Instance bw6_761_frep : FieldRepresentation := field_representation m.
   Instance bw6_761_frep_raw : FieldRepresentation := field_representation_raw m.

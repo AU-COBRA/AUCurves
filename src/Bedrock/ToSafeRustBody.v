@@ -52,6 +52,9 @@ Definition bls24_509_tower : tower_shape :=
   mk_tower [("Fp2","Fp",2); ("Fp4","Fp2",2);
             ("Fp8","Fp4",2); ("Fp24","Fp8",3)].
 
+Definition bw6_761_tower : tower_shape :=
+  mk_tower [("Fp3","Fp",3); ("Fp6","Fp3",2)].
+
 (** All sizes in bytes, parameterized by Fp limb count [n]. *)
 Definition fp_sz  (n : Z) := n * 8.
 Definition fp2_sz (n : Z) := 2 * n * 8.

@@ -92,7 +92,8 @@ Section CubicFirstPairingOps.
   Context {F_representation : AbstractField.FieldRepresentation (F:=Fp)}
           {F_representation_ok : AbstractField.FieldRepresentation_ok (F:=Fp)}.
 
-  Context {bounds_equiv : forall x, bounded_by loose_bounds x -> bounded_by tight_bounds x}.
+  (* Note: [F_representation_ok] suffices for relaxing
+     [tight_bounds -> loose_bounds]; no extra context needed. *)
 
   (* ================================================================ *)
   (* Fp3 base layer — abstracted                                        *)
@@ -371,6 +372,19 @@ Section CubicFirstPairingOps.
   (* library shape.                                                     *)
   (* ================================================================ *)
 
+  (* Local tactic: process the dexprs for a call.  All argument exprs
+     after [cbv] reduce to a sequence of [expr.var "..."] lookups. *)
+  Local Ltac eval_dexprs :=
+    cbv [dexprs list_map list_map_body WeakestPrecondition.expr
+         WeakestPrecondition.expr_body
+         WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet
+         Semantics.interp_binop
+         expr_fp3_c0 expr_fp3_c1 expr_fp3_c2 expr_fp6_c0 expr_fp6_c1];
+    repeat (first [ exact eq_refl
+                  | eexists; split;
+                    [ solve [ rewrite ?map.get_put_diff by congruence;
+                              apply map.get_put_same ] |] ]).
+
   Lemma cubic_first_fp6_frob_ok :
     forall functions
       (EnvContains :
@@ -379,23 +393,198 @@ Section CubicFirstPairingOps.
       (HFmul  : spec_of_Fp_mul functions),
     spec_of_cubic_first_fp6_frob functions.
   Proof.
-    (* Structural proof outline:
-       1. unfold spec; intros; destruct requires.
-       2. eapply start_func with EnvContains; clear EnvContains.
-       3. cbv match beta delta [WeakestPrecondition.func cubic_first_fp6_frob].
-       4. Decompose [FElem_Fp6_slots pout *] and friends via the
-          per-slot sep definitions (already in slot form — no split needed).
-       5. Six sequential weaken_call dispatches:
-            - call 1: fp_copy  out[0] <- x[0]
-            - call 2: fp_mul   out[1] <- x[1] * g3[1]
-            - call 3: fp_mul   out[2] <- x[2] * g3[2]
-            - call 4: fp_mul   out[3] <- x[3] * g6[0]
-            - call 5: fp_mul   out[4] <- x[4] * g6[1]
-            - call 6: fp_mul   out[5] <- x[5] * g6[2]
-            (matches the 7-step ast of [cubic_first_fp6_frob])
-       6. Postcondition: assemble the 6 new Fp slots; unfold
-          [cubic_first_fp6_frob_model], [feval_Fp6_slots],
-          [feval_Fp3_slots]; verify per-slot fevals match the model. *)
+    intros functions EnvContains HFcopy HFmul.
+    unfold spec_of_cubic_first_fp6_frob.
+    intros pout px pgfp3 pgfp6
+           o0 o1 o2 o3 o4 o5
+           x0' x1' x2' x3' x4' x5'
+           g3_0 g3_1 g3_2 g6_0 g6_1 g6_2
+           Rr tr mem0 [Hbx [Hbg3 [Hbg6 Hmem]]].
+    eapply start_func; [exact EnvContains | clear EnvContains].
+    cbv match beta delta [WeakestPrecondition.func cubic_first_fp6_frob].
+    eexists; split; [exact eq_refl|].
+    unfold cmd_seq_list.
+    unfold FElem_Fp6_slots, FElem_Fp3_slots in Hmem.
+    unfold fp_copy_name, fp_mul_name in *.
+    (* Normalize all slot_addr's in Hmem to the form produced by [dexprs]
+       of the [literal] in the bedrock2 body.  After this, every
+       FElem_Fp address in Hmem matches the args produced by call
+       dispatch — no further per-call rewrites needed. *)
+    replace (slot_addr px 0)    with px    in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    replace (slot_addr pout 0)  with pout  in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    replace (slot_addr pgfp3 0) with pgfp3 in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    replace (slot_addr pgfp6 0) with pgfp6 in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    rewrite ?Z.mul_1_l in Hmem.
+    (* For slot 4 = 3+1 and slot 5 = 3+2 in the c1 half, dexprs
+       produces nested adds (outer +off, inner +3*off).  Rewrite
+       Hmem's flat [slot_addr p 4/5] = p + (4 or 5)*off into the
+       nested form so the per-call eapply unifies. *)
+    replace (slot_addr pout 4)
+       with (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z fp_felem_offset)) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr pout 5)
+       with (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z (2 * fp_felem_offset))) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 4)
+       with (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z fp_felem_offset)) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 5)
+       with (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z (2 * fp_felem_offset))) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    (* Decompose bounds. *)
+    destruct Hbx  as [Hbx0 [Hbx1 [Hbx2 [Hbx3 [Hbx4 Hbx5]]]]].
+    destruct Hbg3 as [Hbg30 [Hbg31 Hbg32]].
+    destruct Hbg6 as [Hbg60 [Hbg61 Hbg62]].
+    (* Relax all tight bounds we need at fp_mul callsites. *)
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx1) as Hbx1L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx2) as Hbx2L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx3) as Hbx3L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx4) as Hbx4L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx5) as Hbx5L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg31) as Hbg31L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg32) as Hbg32L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg60) as Hbg60L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg61) as Hbg61L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg62) as Hbg62L.
+
+    (* ---------- Call 1: fp_copy  out[0] := x[0] ---------- *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFcopy pout px o0 x0'); split; SeparationLogic.ecancel_assumption_impl |].
+    cbv beta; intros ? ? ? [? [? H1]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* ---------- Call 2: fp_mul  out[1] := x[1] * g3_1 ---------- *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add pout (word.of_Z fp_felem_offset))
+                       (word.add px (word.of_Z fp_felem_offset))
+                       (word.add pgfp3 (word.of_Z fp_felem_offset))
+                       o1 x1' g3_1);
+        split; [exact Hbx1L
+               | split; [exact Hbg31L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O1 [Hfev1 [HbO1 H2]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* ---------- Call 3: fp_mul  out[2] := x[2] * g3_2 ---------- *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add pout (word.of_Z (2 * fp_felem_offset)))
+                       (word.add px (word.of_Z (2 * fp_felem_offset)))
+                       (word.add pgfp3 (word.of_Z (2 * fp_felem_offset)))
+                       o2 x2' g3_2);
+        split; [exact Hbx2L
+               | split; [exact Hbg32L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O2 [Hfev2 [HbO2 H3]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* ---------- Call 4: fp_mul  out[3] := x[3] * g6_0 ---------- *)
+    (* The c1 component of Fp6 starts at offset 3 * fp_felem_offset.
+       expr_fp6_c1 emits [3 * fp_felem_offset] (notation
+       [fp3_felem_offset] in this file), matching [slot_addr p 3]
+       up to literal evaluation. *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                       (word.add px (word.of_Z (3 * fp_felem_offset)))
+                       pgfp6
+                       o3 x3' g6_0);
+        split; [exact Hbx3L
+               | split; [exact Hbg60L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O3 [Hfev3 [HbO3 H4]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* ---------- Call 5: fp_mul  out[4] := x[4] * g6_1 ---------- *)
+    (* For slot 4 = 3+1, the c1 part already has +3*off; the inner c1
+       adds another +1*off, so the goal arg has the binop form
+       [word.add (word.add p (word.of_Z fp3_felem_offset))
+                 (word.of_Z fp_felem_offset)] — which is structurally
+       different from [slot_addr p 4 = word.add p (word.of_Z (4*off))].
+       We must dispatch with that exact composite form. *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z fp_felem_offset))
+                       (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                                 (word.of_Z fp_felem_offset))
+                       (word.add pgfp6 (word.of_Z fp_felem_offset))
+                       o4 x4' g6_1);
+        split; [exact Hbx4L
+               | split; [exact Hbg61L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O4 [Hfev4 [HbO4 H5]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* ---------- Call 6: fp_mul  out[5] := x[5] * g6_2 ---------- *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z (2 * fp_felem_offset)))
+                       (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                                 (word.of_Z (2 * fp_felem_offset)))
+                       (word.add pgfp6 (word.of_Z (2 * fp_felem_offset)))
+                       o5 x5' g6_2);
+        split; [exact Hbx5L
+               | split; [exact Hbg62L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O5 [Hfev5 [HbO5 H6]]]]]; subst.
+
+    (* ---------- Final postcondition ---------- *)
+    (* The 6 calls have produced O1..O5 (slot 1..5 outputs) plus x0'
+       at slot 0 (via copy).  The remaining work is to package the
+       6 witnesses, prove their bounds, that their fevals match the
+       algebraic [cubic_first_fp6_frob_model], and re-fold the per-
+       slot seps into [FElem_Fp6_slots] / [FElem_Fp3_slots].
+       The sep re-fold step needs to invert the [slot_addr p 0]
+       and [slot_addr p 4/5] flatten rewrites we did at the start.
+       Mechanically this is ~30-40 LoC of [split / exists / replace /
+       ecancel] in the post; this final assembly is the only piece
+       still open and is documented for follow-up. *)
   Admitted.
 
   (* ================================================================ *)

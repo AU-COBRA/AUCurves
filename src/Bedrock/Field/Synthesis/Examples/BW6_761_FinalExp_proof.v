@@ -419,11 +419,15 @@ Section BW6_FinalExpProof.
       (HFp6frob  : spec_of_bw6_fp6_frob functions),
     spec_of_bw6_final_exp_easy functions.
     intros. unfold spec_of_bw6_final_exp_easy.
-    (* TODO(BW6 Frobenius re-prove, 2026-05-21): final_exp_easy_ok with strengthened spec
-       The body and underlying callees are unchanged in shape; only the
-       new spec requires threading 2 (easy) / 5 (hard) / 5 (full)
-       FElem_Fp3 sep hypotheses through every assert+ecancel chain.
-       The mechanical recipe is in the FinalExp.v spec block. *)
+    (* TODO(BW6 Frobenius spec strengthening, Phase 5):
+       Spec now requires Fp6_feval out = frobenius_fp6_gallina ... over the
+       2 (easy) / 5 (hard) / 5 (full) FElem_Fp3 sep hypotheses.  Remaining
+       work is purely WP threading (mirror bw6_fp6_pow_abs_u_ok) plus
+       one feval-equation chaining at each frob/conjugate/mul call, since
+       each callee's strengthened spec now exposes
+         feval result = (Gallina op) (feval inputs).
+       No new algebraic content; CHAIN.  See BW6_761_FrobModel.v for the
+       per-component algebra. *)
   Admitted.
 
   (* ============================================================ *)
@@ -447,11 +451,15 @@ Section BW6_FinalExpProof.
       (HFp6powu_ip : spec_of_bw6_fp6_pow_u_inplace functions),
     spec_of_bw6_final_exp_hard functions.
     intros. unfold spec_of_bw6_final_exp_hard.
-    (* TODO(BW6 Frobenius re-prove, 2026-05-21): final_exp_hard_ok with strengthened spec
-       The body and underlying callees are unchanged in shape; only the
-       new spec requires threading 2 (easy) / 5 (hard) / 5 (full)
-       FElem_Fp3 sep hypotheses through every assert+ecancel chain.
-       The mechanical recipe is in the FinalExp.v spec block. *)
+    (* TODO(BW6 Frobenius spec strengthening, Phase 5):
+       Spec now requires Fp6_feval out = frobenius_fp6_gallina ... over the
+       2 (easy) / 5 (hard) / 5 (full) FElem_Fp3 sep hypotheses.  Remaining
+       work is purely WP threading (mirror bw6_fp6_pow_abs_u_ok) plus
+       one feval-equation chaining at each frob/conjugate/mul call, since
+       each callee's strengthened spec now exposes
+         feval result = (Gallina op) (feval inputs).
+       No new algebraic content; CHAIN.  See BW6_761_FrobModel.v for the
+       per-component algebra. *)
   Admitted.
 
   (* ============================================================ *)
@@ -467,11 +475,16 @@ Section BW6_FinalExpProof.
       (HFhard : spec_of_bw6_final_exp_hard functions),
     spec_of_bw6_final_exp functions.
     intros. unfold spec_of_bw6_final_exp.
-    (* TODO(BW6 Frobenius re-prove, 2026-05-21): final_exp_ok with strengthened spec
-       The body and underlying callees are unchanged in shape; only the
-       new spec requires threading 2 (easy) / 5 (hard) / 5 (full)
-       FElem_Fp3 sep hypotheses through every assert+ecancel chain.
-       The mechanical recipe is in the FinalExp.v spec block. *)
+    (* TODO(BW6 Frobenius spec strengthening, Phase 5 — composition gap):
+       Spec composition needs:
+         1. final_exp_easy_ok handed back Fp6_tight (currently delivers loose).
+            Without this, hard_ok's tight precondition can't be discharged.
+            Mirror BLS24_509_FinalExp_proof.v's tighten step.
+         2. WP threading via stackalloc-then-2-calls (template:
+            bw6_fp6_pow_abs_u_ok, which has the same 2-stackalloc + N-call
+            pattern + dealloc cascade).
+       No new algebraic content.  See BW6_761_FrobModel.v for the
+       per-component Frobenius algebra. *)
   Admitted.
 
 End BW6_FinalExpProof.

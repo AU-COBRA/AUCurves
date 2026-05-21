@@ -51,6 +51,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericQuadratic.
 Require Import Bedrock.Field.FieldExtensions.GenericCubicSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericCubic.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
+Require Import Bedrock.Field.Synthesis.Examples.BW6_761_FrobModel.
 
 Import BinInt String List.ListNotations.
 
@@ -145,6 +146,16 @@ Section BW6_FinalExp.
       (@AbstractField.bounded_by _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
     Local Notation Fp3_tight :=
       (@AbstractField.tight_bounds _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+
+    Local Notation Fp6_feval :=
+      (@AbstractField.feval _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr).
+    Local Notation Fp3_feval :=
+      (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+
+    (** Gallina Frobenius model, instantiated at BW6's modulus. *)
+    Local Notation FrobModelFp6     := (frobenius_fp6_gallina    PrimeField.M_pos).
+    Local Notation FrobModelFp6_p2  := (frobenius_fp6_p2_gallina PrimeField.M_pos).
+    Local Notation FrobModelFp6_p3  := (frobenius_fp6_p3_gallina PrimeField.M_pos).
 
     Local Typeclasses Opaque bw6_Fp6_params.
     Local Typeclasses Opaque bw6_Fp3_params.
@@ -683,6 +694,8 @@ Section BW6_FinalExp.
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
+            Fp6_feval out =
+              FrobModelFp6 (Fp6_feval x) (Fp3_feval gfp3) (Fp3_feval gfp6) /\
             (FElem_Fp6 pout out *
              (FElem_Fp6 px x *
               (FElem_Fp3 p_gfp3 gfp3 *
@@ -703,6 +716,8 @@ Section BW6_FinalExp.
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
+            Fp6_feval out =
+              FrobModelFp6_p2 (Fp6_feval x) (Fp3_feval gfp3) (Fp3_feval gfp6) /\
             (FElem_Fp6 pout out *
              (FElem_Fp6 px x *
               (FElem_Fp3 p_gfp3_p2 gfp3 *
@@ -721,6 +736,9 @@ Section BW6_FinalExp.
         ensures tr' mem' :=
           tr = tr' /\ exists out,
             Fp6_bounded Fp6_loose out /\
+            Fp6_feval out =
+              FrobModelFp6_p3 (Fp6_feval x)
+                              (fp3_a0 PrimeField.M_pos (Fp3_feval gfp6)) /\
             (FElem_Fp6 pout out *
              (FElem_Fp6 px x *
               (FElem_Fp3 p_gfp6_p3 gfp6 * Rr)))%sep mem' }.

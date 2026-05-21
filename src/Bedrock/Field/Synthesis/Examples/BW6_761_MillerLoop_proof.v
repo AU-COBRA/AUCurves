@@ -19,8 +19,7 @@
     the field-tower decomposition lemmas differ (CE_field_representation
     Fp3-over-Fp instead of QE-Fp4-over-Fp2-over-Fp).
 
-    STATUS (this file): Qed-complete for all sub-lemmas except
-    [bw6_761_miller_full_body_wp].  Specifically:
+    STATUS (this file): Qed-complete, 0 Admits.  All sub-lemmas:
       - [bw6_761_Fp3_mul_fp_ok] (Qed)
       - [bw6_761_make_line_ok] (Qed, ~300 LoC, 6 callee calls + Fp6
         split/join via PairingHelpers)
@@ -29,19 +28,16 @@
       - [bw6_761_miller_loop_body_step] (Qed, BLS24-style invariant
         bookkeeping)
       - [bw6_761_miller_postloop_ok_loose] (Qed, 7-level sep dealloc)
+      - [bw6_761_miller_full_body_wp] (Qed, ~280 LoC:
+        [bw6_761_fp6_set_one_wp_body] init, 2× fp3_copy, set i=64,
+        [while_localsmap] with the [miller_loop_inv] invariant + 16
+        doubling [miller_mcall]s + 13 addition [miller_mcall]s + skip
+        branch, final [fp6_copy out;f] post-loop, dealloc via
+        [bw6_761_miller_postloop_ok_loose])
       - [bw6_761_miller_loop_ok] (Qed, composes stackalloc-7 +
         master-sep + full_body_wp + 7-level dealloc cascade)
 
-    One Admit remains:
-      - [bw6_761_miller_full_body_wp] (~400 LoC body, while_localsmap
-        + 28 miller_mcall per iteration + post-loop fp3_opp/fp6_conj/fp6_copy)
-
-    The companion file [BW6_761_PairingHelpers.v] provides the
-    split/join helpers and a full body-level WP for [fp6_conj_body];
-    a body-level WP for [fp6_set_one] would close the
-    [miller_full_body_wp] gap in conjunction with a 28-call
-    [miller_mcall] sequence per BLS24's recipe at lines 928-1013 of
-    [BLS24_509_MillerLoop_proof.v]. *)
+    All theorems Closed under the global context. *)
 
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
@@ -64,6 +60,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericSplitJoin.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_PairingHelpers.
+Require Import Bedrock.Field.Synthesis.Examples.BLS12_MillerGeneric.
 
 Import BinInt String List.ListNotations.
 
@@ -1048,7 +1045,278 @@ Section BW6_MillerLoopProof.
       <{ Trace := tr; Memory := m; Locals := l; Functions := functions }>
         BW6_761_MillerLoop.miller_loop_full_body
       <{ post }>.
-  Proof. Admitted.
+  Proof.
+    intros functions
+      HFp3mul HFp3add HFp3sub HFp3sqr HFp3inv HFp3opp HFp3copy
+      HFp6mul HFp6sqr HFp6copy HFpmul HFpopp HFpcopy HFromword
+      HMakeLine HFp3mulfpEnv
+      a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
+      pout p_px p_py p_qx p_qy
+      f_val tx_val ty_val lam_val tmp1_val tmp2_val line_val old_out
+      p_x p_y q_x q_y
+      Rr tr m l post
+      Hbqx Hbqy Hbpx Hbpy Hsep
+      Hlf Hltx Hlty Hllam Hltmp1 Hltmp2 Hlline Hlout Hlpx Hlpy Hlqx Hlqy
+      Hpost.
+    unfold BW6_761_MillerLoop.miller_loop_full_body.
+    unfold BW6_761_MillerLoop.cmd_seq_list.
+
+    (* Step 1: fp6_set_one "f" via bw6_761_fp6_set_one_wp_body *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    eapply WeakestPreconditionProperties.Proper_cmd.
+    2: { eapply bw6_761_fp6_set_one_wp_body.
+         { exact HFromword. }
+         { exact Hlf. }
+         { ecancel_assumption. } }
+    intros tr1 m1 l1 [Htr1 [Hl1_eq [f_new [Hbf_new Hsep1]]]].
+    subst tr1. subst l1.
+
+    (* Step 2: fp3_copy [t_x; q_x] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split.
+    { cbv [dexprs list_map list_map_body
+           WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet].
+      rewrite Hltx. rewrite Hlqx.
+      eexists. split; [exact eq_refl |].
+      eexists. split; [exact eq_refl |].
+      exact eq_refl. }
+    eapply Semantics.weaken_call.
+    { eapply HFp3copy.
+      split; ecancel_assumption. }
+    intros t2 m2 rets2 [Hrets2 [Htr2 Hsep2]].
+    subst rets2. symmetry in Htr2. subst t2.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 3: fp3_copy [t_y; q_y] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split.
+    { cbv [dexprs list_map list_map_body
+           WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet].
+      rewrite Hlty. rewrite Hlqy.
+      eexists. split; [exact eq_refl |].
+      eexists. split; [exact eq_refl |].
+      exact eq_refl. }
+    eapply Semantics.weaken_call.
+    { eapply HFp3copy.
+      split; ecancel_assumption. }
+    intros t3 m3 rets3 [Hrets3 [Htr3 Hsep3]].
+    subst rets3. symmetry in Htr3. subst t3.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+
+    (* Step 4: set i = 64 *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    exists (word.of_Z 64).
+    split.
+    { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal]. exact eq_refl. }
+    unfold dlet.dlet; cbv beta.
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+
+    (* Step 5: while loop with miller_loop_inv *)
+    eapply Loops.while_localsmap
+      with (v0 := 64%nat)
+           (lt := Nat.lt)
+           (invariant := miller_loop_inv a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line
+                    pout p_px p_py p_qx p_qy p_x p_y q_x q_y old_out Rr tr).
+
+    (* Well-founded *)
+    { exact Wf_nat.lt_wf. }
+
+    (* Initial invariant at v = 64 *)
+    { unfold miller_loop_inv.
+      split. { reflexivity. }
+      exists f_new, q_x, q_y, lam_val, tmp1_val, tmp2_val, line_val.
+      split. { exact Hbf_new. }
+      split. { exact Hbqx. }
+      split. { exact Hbqy. }
+      split. { ecancel_assumption. }
+      split. { rewrite map.get_put_same. reflexivity. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlf. }
+      split. { rewrite map.get_put_diff by congruence. exact Hltx. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlty. }
+      split. { rewrite map.get_put_diff by congruence. exact Hllam. }
+      split. { rewrite map.get_put_diff by congruence. exact Hltmp1. }
+      split. { rewrite map.get_put_diff by congruence. exact Hltmp2. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlline. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlout. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlpx. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlpy. }
+      split. { rewrite map.get_put_diff by congruence. exact Hlqx. }
+      rewrite map.get_put_diff by congruence. exact Hlqy. }
+
+    (* Loop body forall + TRUE/FALSE branches *)
+    { intros vi ti mi li Hinv.
+      unfold miller_loop_inv in Hinv.
+      destruct Hinv as [Htr_i [f_vi [tx_vi [ty_vi [lam_vi [tmp1_vi
+        [tmp2_vi [line_vi [Hbf_vi [Hbtx_vi [Hbty_vi [Hsep_vi
+        [Hi_vi [Hf_vi [Htx_vi [Hty_vi [Hlam_vi [Htmp1_vi
+        [Htmp2_vi [Hline_vi [Hout_vi [Hpx_vi
+        [Hpy_vi [Hqx_vi Hqy_vi]]]]]]]]]]]]]]]]]]]]]]]].
+      subst ti.
+
+      (* Branch condition: expr.var "i" *)
+      exists (word.of_Z (Z.of_nat vi)).
+      split.
+      { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body
+             WeakestPrecondition.get].
+        rewrite Hi_vi. eexists. split; exact eq_refl. }
+
+      split.
+      { (* TRUE branch *)
+        intro Hne.
+        unfold BW6_761_MillerLoop.miller_loop_iteration.
+        unfold BW6_761_MillerLoop.cmd_seq_list.
+        miller_straightline.
+        miller_straightline.
+        unfold dlet.dlet; cbv beta.
+
+        (* Build make_line spec for use in miller_mcall *)
+        assert (HMakeLineSpec : spec_of_bw6_761_make_line functions).
+        { unfold spec_of_bw6_761_make_line.
+          intros pout' plam' pxt' pyt' pxp' pyp'
+            old_out' lam' xt' yt' xp' yp' Rr' tr'_ml mem'_ml
+            [Hblam' [Hbxt' [Hbyt' [Hbxp' [Hbyp' Hsep'_ml]]]]].
+          eapply Semantics.weaken_call.
+          { eapply (bw6_761_make_line_ok functions HMakeLine).
+            { exact HFp3mul. }
+            { exact HFp3sub. }
+            { exact (bw6_761_Fp3_mul_fp_ok functions HFp3mulfpEnv HFpmul). }
+            { exact HFpopp. }
+            { exact HFpcopy. }
+            { exact HFromword. }
+            split; [exact Hblam' |].
+            split; [exact Hbxt' |].
+            split; [exact Hbyt' |].
+            split; [exact Hbxp' |].
+            split; [exact Hbyp' |].
+            exact Hsep'_ml. }
+          cbv beta. intros t' m' rets [Hrets [Htr' [out' [Hb' Hs']]]].
+          subst. exact (conj eq_refl (conj eq_refl (ex_intro _ out' (conj Hb' Hs')))). }
+
+        (* === Doubling step: 16 calls === *)
+        miller_mcall HFp3sqr.   (* D1: fp3_sqr(tmp1, t_x) *)
+        miller_mcall HFp3add.   (* D2: fp3_add(lambda, tmp1, tmp1) *)
+        miller_mcall HFp3add.   (* D3: fp3_add(lambda, lambda, tmp1) *)
+        miller_mcall HFp3add.   (* D4: fp3_add(tmp1, t_y, t_y) *)
+        miller_mcall HFp3inv.   (* D5: fp3_inv(tmp1, tmp1) *)
+        miller_mcall HFp3mul.   (* D6: fp3_mul(lambda, lambda, tmp1) *)
+        miller_mcall HMakeLineSpec. (* D7: make_line *)
+        miller_mcall HFp6sqr.   (* D8: fp6_sqr(f, f) *)
+        miller_mcall HFp6mul.   (* D9: fp6_mul(f, f, line) *)
+        miller_mcall HFp3sqr.   (* D10: fp3_sqr(tmp1, lambda) *)
+        miller_mcall HFp3sub.   (* D11: fp3_sub(tmp1, tmp1, t_x) *)
+        miller_mcall HFp3sub.   (* D12: fp3_sub(tmp2, tmp1, t_x) *)
+        miller_mcall HFp3sub.   (* D13: fp3_sub(tmp1, t_x, tmp2) *)
+        miller_mcall HFp3mul.   (* D14: fp3_mul(tmp1, lambda, tmp1) *)
+        miller_mcall HFp3sub.   (* D15: fp3_sub(t_y, tmp1, t_y) *)
+        miller_mcall HFp3copy.  (* D16: fp3_copy(t_x, tmp2) *)
+
+        (* === Conditional addition step === *)
+        miller_straightline.   (* cmd.set "bit" *)
+        miller_straightline.   (* cmd.set "bit" expr eval *)
+        unfold dlet.dlet; cbv beta.
+        miller_straightline.   (* cmd.cond *)
+        split.
+
+        { (* Bit = 1: addition step (13 calls) *)
+          intro Hbit_ne.
+          unfold BW6_761_MillerLoop.cmd_seq_list.
+          miller_mcall HFp3sub.     (* A1: fp3_sub(tmp1, q_y, t_y) *)
+          miller_mcall HFp3sub.     (* A2: fp3_sub(tmp2, q_x, t_x) *)
+          miller_mcall HFp3inv.     (* A3: fp3_inv(tmp2, tmp2) *)
+          miller_mcall HFp3mul.     (* A4: fp3_mul(lambda, tmp1, tmp2) *)
+          miller_mcall HMakeLineSpec. (* A5: make_line *)
+          miller_mcall HFp6mul.     (* A6: fp6_mul(f, f, line) *)
+          miller_mcall HFp3sqr.     (* A7: fp3_sqr(tmp1, lambda) *)
+          miller_mcall HFp3sub.     (* A8: fp3_sub(tmp1, tmp1, t_x) *)
+          miller_mcall HFp3sub.     (* A9: fp3_sub(tmp2, tmp1, q_x) *)
+          miller_mcall HFp3sub.     (* A10: fp3_sub(tmp1, t_x, tmp2) *)
+          miller_mcall HFp3mul.     (* A11: fp3_mul(tmp1, lambda, tmp1) *)
+          miller_mcall HFp3sub.     (* A12: fp3_sub(t_y, tmp1, t_y) *)
+          miller_mcall HFp3copy.    (* A13: fp3_copy(t_x, tmp2) *)
+
+          (* Re-establish invariant (addition branch) *)
+          assert (Hvi_pos : (0 < vi)%nat).
+          { destruct vi; [exfalso; apply Hne; reflexivity | lia]. }
+          exists (Nat.sub vi 1).
+          split; [| lia].
+          unfold miller_loop_inv.
+          split. { reflexivity. }
+          do 7 eexists.
+          split; [| split; [| split; [| split]]].
+          4: { miller_normalize_pairing_instances. ecancel_assumption. }
+          { miller_solve_bounds. }
+          { miller_solve_bounds. }
+          { miller_solve_bounds. }
+          split.
+          { (* i = vi - 1 *)
+            rewrite map.get_put_diff by congruence. rewrite map.get_put_same.
+            f_equal. replace v with (@word.sub 64 word (word.of_Z (Z.of_nat vi)) (word.of_Z 1))
+              by (unfold v; reflexivity).
+            exact (word_nat_sub1 vi Hvi_pos). }
+          miller_solve_precond. }
+
+        { (* Bit = 0: skip *)
+          intro Hbit_eq.
+          miller_straightline.
+          assert (Hvi_pos : (0 < vi)%nat).
+          { destruct vi; [exfalso; apply Hne; reflexivity | lia]. }
+          exists (Nat.sub vi 1).
+          split; [| lia].
+          unfold miller_loop_inv.
+          split. { reflexivity. }
+          do 7 eexists.
+          split; [| split; [| split; [| split]]].
+          4: { miller_normalize_pairing_instances. ecancel_assumption. }
+          - miller_solve_bounds.
+          - miller_solve_bounds.
+          - miller_solve_bounds.
+          - split.
+            + rewrite map.get_put_diff by congruence. rewrite map.get_put_same.
+              f_equal. replace v with (@word.sub 64 word (word.of_Z (Z.of_nat vi)) (word.of_Z 1))
+                by (unfold v; reflexivity).
+              exact (word_nat_sub1 vi Hvi_pos).
+            + repeat (split; [miller_solve_leaf |]). miller_solve_leaf. } }
+
+      { (* FALSE branch (i = 0): post-loop = fp6_copy [out; f] *)
+        intro Heq0.
+        unfold1_cmd_goal; cbv beta match delta [cmd_body].
+        letexists; split.
+        { cbv [dexprs list_map list_map_body
+               WeakestPrecondition.expr WeakestPrecondition.expr_body
+               WeakestPrecondition.get].
+          rewrite Hout_vi. eexists. split. { exact eq_refl. }
+          rewrite Hf_vi. eexists. split. { exact eq_refl. }
+          exact eq_refl. }
+        eapply Semantics.weaken_call.
+        { eapply HFp6copy.
+          split; ecancel_assumption. }
+        cbv beta.
+        intros t_copy m_copy rets_copy Hpost_copy.
+        destruct Hpost_copy as [Hrets_copy [Htr_copy Hs_copy]].
+        subst rets_copy. symmetry in Htr_copy. subst t_copy.
+        cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+        (* Hs_copy : (FElem_Fp6 pout f_vi * R) m_copy *)
+
+        (* Apply Hpost via miller_postloop_ok_loose *)
+        apply Hpost.
+        { reflexivity. }
+        { apply bw6_761_miller_postloop_ok_loose with
+            (f_result := f_vi)
+            (tx_val := tx_vi)
+            (ty_val := ty_vi)
+            (lam_val := lam_vi)
+            (tmp1_val := tmp1_vi)
+            (tmp2_val := tmp2_vi)
+            (line_val := line_vi)
+            (f_leftover := f_vi).
+          { (* Fp6_bounded Fp6_loose f_vi — relax tight to loose *)
+            apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hbf_vi). }
+          { ecancel_assumption. } } } }
+  Qed.
 
   (* ============================================================ *)
   (* Main theorem (Qed-complete given the 7 sub-lemmas above)      *)

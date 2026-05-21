@@ -350,3 +350,100 @@ fn pairing_kat_gnark_generator() {
     //  this is purely a fixture-data task.)
     unimplemented!("needs gnark reference vector");
 }
+
+// =====================================================================
+// G1/G2 group ops smoke tests (reference Rust over verified tower)
+// =====================================================================
+
+#[test]
+fn g1_neg_of_inf_is_inf() {
+    use crate::group::*;
+    let inf = G1Aff::inf();
+    assert_eq!(g1_neg(&inf), G1Aff::Inf);
+}
+
+#[test]
+fn g1_double_of_inf_is_inf() {
+    use crate::group::*;
+    let inf = G1Aff::inf();
+    assert_eq!(g1_double(&inf), G1Aff::Inf);
+}
+
+#[test]
+fn g1_add_inf_is_identity() {
+    use crate::group::*;
+    let inf = G1Aff::inf();
+    let one_pt = G1Aff::pt(tower_one_mont(), tower_one_mont());
+    assert_eq!(g1_add(&inf, &one_pt), one_pt);
+    assert_eq!(g1_add(&one_pt, &inf), one_pt);
+}
+
+#[test]
+fn g1_scalar_mul_zero_gives_inf() {
+    use crate::group::*;
+    let p = G1Aff::pt(tower_one_mont(), tower_one_mont());
+    assert_eq!(g1_scalar_mul(&[0u8; 4], &p), G1Aff::Inf);
+}
+
+#[test]
+fn g1_scalar_mul_one_returns_point() {
+    use crate::group::*;
+    let p = G1Aff::pt(tower_one_mont(), tower_one_mont());
+    // scalar = 1 (last bit set) → result = p
+    assert_eq!(g1_scalar_mul(&[1u8], &p), p);
+}
+
+#[test]
+fn g2_neg_of_inf_is_inf() {
+    use crate::group::*;
+    let inf = G2Aff::inf();
+    assert_eq!(g2_neg(&inf), G2Aff::Inf);
+}
+
+#[test]
+fn g2_double_of_inf_is_inf() {
+    use crate::group::*;
+    let inf = G2Aff::inf();
+    assert_eq!(g2_double(&inf), G2Aff::Inf);
+}
+
+#[test]
+fn g2_add_inf_is_identity() {
+    use crate::group::*;
+    use tower::Fp3;
+    let inf = G2Aff::inf();
+    let one_fp3 = Fp3 { c0: tower_one_mont(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let p = G2Aff::pt(one_fp3, one_fp3);
+    assert_eq!(g2_add(&inf, &p), p);
+    assert_eq!(g2_add(&p, &inf), p);
+}
+
+#[test]
+fn g2_scalar_mul_zero_gives_inf() {
+    use crate::group::*;
+    use tower::Fp3;
+    let one_fp3 = Fp3 { c0: tower_one_mont(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let p = G2Aff::pt(one_fp3, one_fp3);
+    assert_eq!(g2_scalar_mul(&[0u8; 4], &p), G2Aff::Inf);
+}
+
+#[test]
+fn g2_scalar_mul_one_returns_point() {
+    use crate::group::*;
+    use tower::Fp3;
+    let one_fp3 = Fp3 { c0: tower_one_mont(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let p = G2Aff::pt(one_fp3, one_fp3);
+    assert_eq!(g2_scalar_mul(&[1u8], &p), p);
+}
+
+#[test]
+fn hash_to_g1_stub_returns_none() {
+    use crate::group::*;
+    assert!(hash_to_g1(b"hello", b"BW6-761-DST").is_none());
+}
+
+#[test]
+fn hash_to_g2_stub_returns_none() {
+    use crate::group::*;
+    assert!(hash_to_g2(b"hello", b"BW6-761-DST").is_none());
+}

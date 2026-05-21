@@ -19,18 +19,22 @@
     the field-tower decomposition lemmas differ (CE_field_representation
     Fp3-over-Fp instead of QE-Fp4-over-Fp2-over-Fp).
 
-    STATUS (this file): Qed-complete for [bw6_761_Fp3_mul_fp_ok],
-    [bw6_761_fp6_conj_wp], [bw6_761_fp6_set_one_wp],
-    [bw6_761_miller_loop_body_step] (BLS24-style invariant
-    bookkeeping), [bw6_761_miller_postloop_ok_loose], and the
-    top-level [bw6_761_miller_loop_ok] (which composes the
-    stackalloc-7 + master-sep construction over the Admitted
-    [bw6_761_miller_full_body_wp]).
+    STATUS (this file): Qed-complete for all sub-lemmas except
+    [bw6_761_miller_full_body_wp].  Specifically:
+      - [bw6_761_Fp3_mul_fp_ok] (Qed)
+      - [bw6_761_make_line_ok] (Qed, ~300 LoC, 6 callee calls + Fp6
+        split/join via PairingHelpers)
+      - [bw6_761_fp6_set_one_wp] / [bw6_761_fp6_conj_wp] (Qed,
+        memory-safety variants)
+      - [bw6_761_miller_loop_body_step] (Qed, BLS24-style invariant
+        bookkeeping)
+      - [bw6_761_miller_postloop_ok_loose] (Qed, 7-level sep dealloc)
+      - [bw6_761_miller_loop_ok] (Qed, composes stackalloc-7 +
+        master-sep + full_body_wp + 7-level dealloc cascade)
 
-    Two Admits remain:
-      - [bw6_761_make_line_ok] (~250 LoC body, 6-call WP)
+    One Admit remains:
       - [bw6_761_miller_full_body_wp] (~400 LoC body, while_localsmap
-        + 28 miller_mcall + post-loop)
+        + 28 miller_mcall per iteration + post-loop fp3_opp/fp6_conj/fp6_copy)
 
     The companion file [BW6_761_PairingHelpers.v] provides the
     split/join helpers and a full body-level WP for [fp6_conj_body];

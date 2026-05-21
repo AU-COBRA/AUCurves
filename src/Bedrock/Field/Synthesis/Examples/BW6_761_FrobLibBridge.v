@@ -179,6 +179,121 @@ Section BW6_FrobLibBridge.
     AbstractField.binop_spec (F:=Fp) (field_representation:=bw6_Fp_repr)
       AbstractField.bin_mul.
 
+  (* ================================================================ *)
+  (* BW6 sep <-> library sep conversion helpers                       *)
+  (*                                                                  *)
+  (* The library spec [spec_of_cubic_first_fp6_frob] expects memory   *)
+  (* shaped as [FElem_Fp6_slots] + [FElem_Fp3_slots] at flat          *)
+  (* [slot_addr p k] addresses.  The BW6 spec expects                 *)
+  (* [FElem_Fp6] / [FElem_Fp3] (cubic-quadratic nested).              *)
+  (*                                                                  *)
+  (* These three helpers translate.  They use the existing            *)
+  (* [FElem_Fp6_split_to_6_slots] / [FElem_Fp_join6_to_Fp6] in        *)
+  (* [BW6_761_PairingHelpers] plus the                                *)
+  (* [word.add_assoc + word.ring_morph_add + lia] address-equality   *)
+  (* recipe from the library's own normalization at lines 426-449.   *)
+  (* ================================================================ *)
+
+  Lemma BW6_Fp6_to_lib_slots :
+    forall p (x : Fp6_felem) R m,
+      (FElem_Fp6 p x * R)%sep m ->
+      (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) p
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+       * R)%sep m.
+  Proof.
+    intros p x R m H.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots.
+    pose proof (FElem_Fp6_split_to_6_slots p x R m H) as Hsplit.
+    rewrite (Z.mul_0_l _), word.add_0_r.
+    rewrite (Z.mul_1_l _).
+    replace (word.add p (word.of_Z (3 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+      by reflexivity.
+    replace (word.add p (word.of_Z (4 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+                    (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr))))
+      by (rewrite <- word.add_assoc by assumption; f_equal).
+    replace (word.add p (word.of_Z (5 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+                    (word.of_Z (2 * (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      by (rewrite <- word.add_assoc by assumption; f_equal).
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
+
+  Lemma BW6_Fp3_to_lib_slots :
+    forall p (x : Fp3_felem) R m,
+      (FElem_Fp3 p x * R)%sep m ->
+      (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr x)
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr x)
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr x)
+       * R)%sep m.
+  Proof.
+    intros p x R m H.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp3_slots.
+    pose proof (FElem_Fp3_split_in_sep p x R m H) as Hsplit.
+    rewrite (Z.mul_0_l _), word.add_0_r, (Z.mul_1_l _).
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
+
+  Lemma BW6_Fp6_join_from_lib_slots :
+    forall p (s0 s1 s2 s3 s4 s5 : @AbstractField.felem _ _ _ _ _ _ bw6_Fp_repr) R m,
+      length s0 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      length s1 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      length s2 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      length s3 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      length s4 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      length s5 = (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) ->
+      (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) p
+          s0 s1 s2 s3 s4 s5 * R)%sep m ->
+      (FElem_Fp6 p ((s0 ++ s1 ++ s2) ++ (s3 ++ s4 ++ s5)) * R)%sep m.
+  Proof.
+    intros p s0 s1 s2 s3 s4 s5 R m Hl0 Hl1 Hl2 Hl3 Hl4 Hl5 H.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in H.
+    rewrite (Z.mul_0_l _), word.add_0_r in H.
+    rewrite (Z.mul_1_l _) in H.
+    replace (word.add p (word.of_Z (3 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+      in H by reflexivity.
+    replace (word.add p (word.of_Z (4 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+                    (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr))))
+      in H by (rewrite <- word.add_assoc by assumption; f_equal).
+    replace (word.add p (word.of_Z (5 *
+      (Memory.bytes_per_word 64 *
+       Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      with (word.add (word.add p (word.of_Z (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr))))
+                    (word.of_Z (2 * (Memory.bytes_per_word 64 *
+         Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+      in H by (rewrite <- word.add_assoc by assumption; f_equal).
+    apply (FElem_Fp_join6_to_Fp6 p s0 s1 s2 s3 s4 s5 R m Hl0 Hl1 Hl2 Hl3 Hl4 Hl5).
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
+
   Theorem bw6_fp6_frob_ok :
     forall functions
       (EnvContains :
@@ -189,7 +304,7 @@ Section BW6_FrobLibBridge.
   Proof.
     intros functions EnvContains HFcopy HFmul.
     (* The library lemma [PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok]
-       is now closed (Print Assumptions: Closed under the global context),
+       is closed (Print Assumptions: Closed under the global context),
        so the body-level WP for 6 sequential fp_copy + fp_mul calls is
        fully discharged at the library level.
 
@@ -203,35 +318,53 @@ Section BW6_FrobLibBridge.
        holds by [eq_refl] (see Print bw6_fp6_frob; both reduce to the
        same 7-step [cmd_seq_list] of fp_copy + 6×fp_mul).
 
+       The structural conversion is now mechanically supported by the
+       three helpers above:
+         - [BW6_Fp6_to_lib_slots] : converts a [FElem_Fp6] sep entry to
+           the library's [FElem_Fp6_slots] shape, with all 6 slot
+           addresses rewritten from BW6 nested form to the library's
+           flat [slot_addr p k] form via the [word.add_assoc +
+           word.ring_morph_add] address recipe.
+         - [BW6_Fp3_to_lib_slots] : same for [FElem_Fp3] -> 3-slot.
+         - [BW6_Fp6_join_from_lib_slots] : reverse direction for
+           rebuilding the output [FElem_Fp6] from the library's 6
+           output slots.
+
        Wrapper translation steps:
-       1. Apply [FElem_Fp6_split_to_6_slots] (in [BW6_761_PairingHelpers])
-          to expose the 6 Fp slots of [old_out], the 6 Fp slots of [x],
-          and (via [FElem_Fp3_split_in_sep]) the 3+3 slots of [gfp3]/[gfp6]
-          — 18 Fp slots total at canonically-offset addresses.
+       1. Use [BW6_Fp6_to_lib_slots] / [BW6_Fp3_to_lib_slots] on Hmem
+          to expose the library's per-Fp-slot precondition shape.
        2. Specialize [PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok]
           at [cubic_first_prefix := "bw6_"] (so the library function name
-          [bw6_fp6_frob] matches our [EnvContains]) and apply it via
-          [Semantics.weaken_call].
-       3. Rejoin the 6 output Fp slots back into [FElem_Fp6 pout out]
-          via [FElem_Fp_join6_to_Fp6] (in [BW6_761_PairingHelpers]).
+          [bw6_fp6_frob] matches our [EnvContains]) and apply.
+       3. From the library postcondition (6 output Fp slots O0..O5 with
+          loose bounds), rejoin via [BW6_Fp6_join_from_lib_slots] to get
+          [FElem_Fp6 pout ((O0++O1++O2)++(O3++O4++O5))].
        4. Match [FrobModelFp6] against [cubic_first_fp6_frob_model]:
           both unfold to identical per-Fp-slot products with the same
           field operations on the same selectors.
 
-       The split/join helpers ([FElem_Fp6_split_to_6_slots] and
-       [FElem_Fp_join6_to_Fp6]) are now in place; what remains is the
-       inline sep-logic discharge of the library precondition (chains of
-       [ecancel_assumption_impl] over an 18-slot sep predicate) and
-       the symbolic equivalence between [feval_Fp6_slots] composed with
-       slot concatenation and [Fp6_feval] of the BW6 felem.
+       Remaining blockers in the inline composition:
+         (a) Bound-type unification: the BW6 [Fp6_bounded Fp6_tight x]
+             destructures into 6 [Fp_bounded Fp_tight] components.
+             The library expects [bounded_by tight_bounds] where
+             [tight_bounds] is from [F_representation := bw6_Fp_repr]
+             but our destructured terms have [bounded_by Fp6_tight]
+             which is the BW6 notation for the *Fp6*-level tight
+             (recursively all 6 sub-slots tight).  After full unfold
+             both are propositionally equal but Coq's [change] reports
+             "Not convertible" without explicit unfolding hints.
+         (b) Model equality: [FrobModelFp6 (Fp6_feval x) ... ] vs
+             [cubic_first_fp6_frob_model (feval_Fp6_slots ...) ...]
+             unfold to identical per-Fp-slot products on identical
+             selectors, but [Fp6_feval x = feval_Fp6_slots (slots of x)]
+             requires the slot decomposition / length argument.
 
-       NB: a partial-proof skeleton attempting Steps 1–3 inline runs
-       cleanly through bounds destruction and the per-slot library call,
-       but the final inner [ecancel_assumption_impl] against the 18-slot
-       Hmem becomes a multi-minute search that we elide here to keep
-       compile-time predictable.  The body-correctness chain is closed at
-       the library; this bridge is purely a structural re-shaping that
-       does NOT block extraction. *)
+       The three helpers above remove the address-shape blocker (which
+       was the major obstruction in the prior retry attempt).  Closing
+       (a) and (b) is a few hours of careful unfolding work and is
+       deferred — the body-correctness chain is closed at the library;
+       this bridge is purely a structural re-shaping that does NOT
+       block extraction. *)
   Admitted.
 
 End BW6_FrobLibBridge.

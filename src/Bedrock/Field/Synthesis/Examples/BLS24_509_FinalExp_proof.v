@@ -1275,12 +1275,120 @@ Section BLS24_FinalExpProof.
 
   (* ============================================================ *)
   (* Strengthened frob body-correctness lemmas                     *)
-  (* Body-correctness for the algebraic-strong Frob specs lived here
-     as 3 Admits.  Per 2026-05-21 cleanup, the strong specs themselves
-     are no longer declared (the BLS24-509 pow_z/easy/hard/final_exp
-     proofs use bound-only specs).  When body-correctness is later
-     proved (per docs/bw6-frob-body-correctness-plan.md), reintroduce
-     both the specs in BLS24_509_FinalExp.v and the body-correctness
-     lemmas here. *)
+  (*                                                                *)
+  (* Each strong-spec lemma closes the algebraic Frobenius           *)
+  (* equation [Fp24_feval out = FrobModelFp24 ... (Fp24_feval x) ...] *)
+  (* via a library bridge analogous to BLS12-377's                   *)
+  (* [spec_of_Fp12_frobenius_p2_strong_ok] (commit a6f5044).         *)
+  (*                                                                *)
+  (* Pattern: take the library-shape spec                            *)
+  (*   [BLS24_509_FinalExp.spec_of_bls24_fp24_frob_lib functions]    *)
+  (* as a hypothesis (Hlib).  The lib spec carries the same algebraic *)
+  (* clause and bounds, but uses a different sep-ordering convention *)
+  (* (px first, then gammas in call-arg order, then pout last with   *)
+  (* Rr) — matching PairingFieldOps.spec_of_Fp12_frobenius_p2.       *)
+  (*                                                                *)
+  (* The bridge proof uses [Semantics.weaken_call] +                 *)
+  (* [ecancel_assumption] to translate from the strong sep shape     *)
+  (* (pout first, then px, then gammas, then Rr) to the lib shape.   *)
+  (*                                                                *)
+  (* The body-correctness of the library spec itself is deferred to  *)
+  (* a future Fp24 extension of PairingFieldOps.v (BLS24-509's       *)
+  (* quadratic-first tower has no current library coverage; BLS12's  *)
+  (* cubic-then-quadratic Fp12 lemmas don't directly apply).         *)
+  (* ============================================================ *)
+
+  Lemma bls24_fp24_frob_strong_ok :
+    forall functions
+      (Hlib : BLS24_509_FinalExp.spec_of_bls24_fp24_frob_lib functions),
+    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_strong functions.
+  Proof.
+    intros functions Hlib.
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_strong.
+    intros pout px p_gfp4 p_gfp8 p_gfp24_1 p_gfp24_2.
+    intros old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem.
+    intros [Hbx [Hbg4 [Hbg8 [Hbg24_1 [Hbg24_2 Hmem]]]]].
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_lib in Hlib.
+    specialize (Hlib pout px p_gfp4 p_gfp8 p_gfp24_1 p_gfp24_2
+                     old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem).
+    eapply Semantics.weaken_call.
+    1:{ eapply Hlib. clear Hlib.
+        split; [exact Hbx|].
+        split; [exact Hbg4|].
+        split; [exact Hbg8|].
+        split; [exact Hbg24_1|].
+        split; [exact Hbg24_2|].
+        ecancel_assumption. }
+    intros tr' mem' rets [Hrets [Htreq [out [Hbounded [Hfeval Hmem']]]]].
+    subst tr' rets.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists out.
+    split; [exact Hbounded|].
+    split; [exact Hfeval|].
+    ecancel_assumption.
+  Qed.
+
+  Lemma bls24_fp24_frob_p2_strong_ok :
+    forall functions
+      (Hlib : BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p2_lib functions),
+    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p2_strong functions.
+  Proof.
+    intros functions Hlib.
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p2_strong.
+    intros pout px p_gfp4_p2 p_gfp8_p2 p_gfp24_p2_1 p_gfp24_p2_2.
+    intros old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem.
+    intros [Hbx [Hbg4 [Hbg8 [Hbg24_1 [Hbg24_2 Hmem]]]]].
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p2_lib in Hlib.
+    specialize (Hlib pout px p_gfp4_p2 p_gfp8_p2 p_gfp24_p2_1 p_gfp24_p2_2
+                     old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem).
+    eapply Semantics.weaken_call.
+    1:{ eapply Hlib. clear Hlib.
+        split; [exact Hbx|].
+        split; [exact Hbg4|].
+        split; [exact Hbg8|].
+        split; [exact Hbg24_1|].
+        split; [exact Hbg24_2|].
+        ecancel_assumption. }
+    intros tr' mem' rets [Hrets [Htreq [out [Hbounded [Hfeval Hmem']]]]].
+    subst tr' rets.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists out.
+    split; [exact Hbounded|].
+    split; [exact Hfeval|].
+    ecancel_assumption.
+  Qed.
+
+  Lemma bls24_fp24_frob_p4_strong_ok :
+    forall functions
+      (Hlib : BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p4_lib functions),
+    BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p4_strong functions.
+  Proof.
+    intros functions Hlib.
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p4_strong.
+    intros pout px p_gfp4_p4 p_gfp8_p4 p_gfp24_p4_1 p_gfp24_p4_2.
+    intros old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem.
+    intros [Hbx [Hbg4 [Hbg8 [Hbg24_1 [Hbg24_2 Hmem]]]]].
+    unfold BLS24_509_FinalExp.spec_of_bls24_fp24_frob_p4_lib in Hlib.
+    specialize (Hlib pout px p_gfp4_p4 p_gfp8_p4 p_gfp24_p4_1 p_gfp24_p4_2
+                     old_out x gfp4 gfp8 gfp24_1 gfp24_2 Rr tr mem).
+    eapply Semantics.weaken_call.
+    1:{ eapply Hlib. clear Hlib.
+        split; [exact Hbx|].
+        split; [exact Hbg4|].
+        split; [exact Hbg8|].
+        split; [exact Hbg24_1|].
+        split; [exact Hbg24_2|].
+        ecancel_assumption. }
+    intros tr' mem' rets [Hrets [Htreq [out [Hbounded [Hfeval Hmem']]]]].
+    subst tr' rets.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists out.
+    split; [exact Hbounded|].
+    split; [exact Hfeval|].
+    ecancel_assumption.
+  Qed.
 
 End BLS24_FinalExpProof.

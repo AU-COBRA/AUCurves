@@ -44,14 +44,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericQuadratic.
 Require Import Bedrock.Field.FieldExtensions.GenericCubicSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericCubic.
 Require Import Bedrock.Field.Synthesis.Examples.BLS24_509_Instances.
-(* BLS24_509_FrobModel.v defines the Gallina algebraic Frobenius model.
-   It was previously imported here to state strong "algebraic" specs for
-   bls24_fp24_frob/_p2/_p4, but the body-correctness theorems for those
-   specs are not yet proved (4-level tower → ~30 calls per spec).  The
-   strong specs were never consumed downstream — pow_z/easy/hard/final_exp
-   all use the bound-only basic specs.  The strong-spec block was removed
-   2026-05-21.  See docs/bw6-frob-body-correctness-plan.md for the
-   proof strategy when body-correctness is later proved. *)
+Require Import Bedrock.Field.Synthesis.Examples.BLS24_509_FrobModel.
 
 Import BinInt String List.ListNotations.
 
@@ -825,6 +818,248 @@ Section BLS24_FinalExp.
           exists out,
             Fp24_bounded Fp24_loose out /\
             (FElem_Fp24 pout out ⋆ (FElem_Fp24 pf f ⋆ Rr)) mem' }.
+
+    (* ============================================================== *)
+    (* Algebraic Frobenius specs (strengthened)                        *)
+    (*                                                                  *)
+    (* These add an algebraic-correctness clause                       *)
+    (*   Fp24_feval out = FrobModelFp24 (Fp24_feval x) gammas          *)
+    (* to the basic bound-preservation spec.  The Gallina model lives  *)
+    (* in BLS24_509_FrobModel.v and is parameterised over the tower    *)
+    (* multiplication operations.                                       *)
+    (*                                                                  *)
+    (* Unlike the bound-only basic specs above (which hide the gamma   *)
+    (* FElems inside Rr), the strong specs expose the gamma FElems     *)
+    (* explicitly in the separation predicate — this is what makes      *)
+    (* them provable, since the bedrock2 body actually dereferences    *)
+    (* gamma pointers.  The sep ordering chosen here matches the BLS24 *)
+    (* in-file convention: pout first, then px, then the gammas in     *)
+    (* call-argument order, with Rr last.                               *)
+    (*                                                                  *)
+    (* These specs are NOT used in the existing pow_z, easy, hard, or  *)
+    (* final_exp proofs (which use the bound-only original specs).     *)
+    (* They are exposed for clients that need algebraic correctness    *)
+    (* of the Frobenius endomorphisms.  The body-correctness lemmas    *)
+    (* in BLS24_509_FinalExp_proof.v close them via a library bridge:  *)
+    (* the strong spec is derived from a library-shape spec (taken as  *)
+    (* hypothesis) whose body-correctness itself is provided by future *)
+    (* PairingFieldOps Fp24 lemmas.                                     *)
+    (* ============================================================== *)
+
+    Local Notation Fp_feval :=
+      (@AbstractField.feval _ prime_field_parameters _ _ _ _ bls24_Fp_repr).
+    Local Notation Fp2_feval :=
+      (@AbstractField.feval _ bls24_Fp2_params _ _ _ _ bls24_Fp2_repr).
+    Local Notation Fp4_feval :=
+      (@AbstractField.feval _ bls24_Fp4_params _ _ _ _ bls24_Fp4_repr).
+    Local Notation Fp8_feval :=
+      (@AbstractField.feval _ bls24_Fp8_params _ _ _ _ bls24_Fp8_repr).
+    Local Notation Fp24_feval :=
+      (@AbstractField.feval _ bls24_Fp24_params _ _ _ _ bls24_Fp24_repr).
+
+    Local Notation Fp2_bounded := (@AbstractField.bounded_by _ bls24_Fp2_params _ _ _ _ bls24_Fp2_repr).
+    Local Notation Fp4_bounded := (@AbstractField.bounded_by _ bls24_Fp4_params _ _ _ _ bls24_Fp4_repr).
+    Local Notation Fp2_loose := (@AbstractField.loose_bounds _ bls24_Fp2_params _ _ _ _ bls24_Fp2_repr).
+    Local Notation Fp4_loose := (@AbstractField.loose_bounds _ bls24_Fp4_params _ _ _ _ bls24_Fp4_repr).
+    Local Notation Fp8_loose := (@AbstractField.loose_bounds _ bls24_Fp8_params _ _ _ _ bls24_Fp8_repr).
+
+    (** Gallina-level Frobenius model on the BLS24-509 modulus, with
+        the tower multiplications instantiated to the field-class
+        operations on each level. *)
+    Local Notation FrobModelFp24 :=
+      (frobenius_fp24_gallina
+         PrimeField.M_pos
+         (@AbstractField.Fmul Fp2 bls24_Fp2_params)
+         (@AbstractField.Fmul Fp4 bls24_Fp4_params)
+         (@AbstractField.Fmul Fp8 bls24_Fp8_params)).
+    Local Notation FrobModelFp24_p2 :=
+      (frobenius_fp24_p2_gallina
+         PrimeField.M_pos
+         (@AbstractField.Fmul Fp2 bls24_Fp2_params)
+         (@AbstractField.Fmul Fp4 bls24_Fp4_params)
+         (@AbstractField.Fmul Fp8 bls24_Fp8_params)).
+    Local Notation FrobModelFp24_p4 :=
+      (frobenius_fp24_p4_gallina
+         PrimeField.M_pos
+         (@AbstractField.Fmul Fp2 bls24_Fp2_params)
+         (@AbstractField.Fmul Fp4 bls24_Fp4_params)
+         (@AbstractField.Fmul Fp8 bls24_Fp8_params)).
+
+    (** Strengthened spec for bls24_fp24_frob: bound preservation +
+        algebraic Frobenius equation. *)
+    Definition spec_of_bls24_fp24_frob_strong : spec_of fp24_frob_name :=
+      fnspec! fp24_frob_name
+        (pout px p_gfp4 p_gfp8 p_gfp24_1 p_gfp24_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 pout old_out ⋆ (FElem_Fp24 px x ⋆
+            (FElem_Fp2 p_gfp4 gfp4 ⋆ (FElem_Fp4 p_gfp8 gfp8 ⋆
+             (FElem_Fp8 p_gfp24_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_2 gfp24_2 ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24 (Fp24_feval x)
+                            (Fp2_feval gfp4) (Fp4_feval gfp8)
+                            (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4 gfp4 ⋆ (FElem_Fp4 p_gfp8 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_2 gfp24_2 ⋆ Rr)))))) mem' }.
+
+    Definition spec_of_bls24_fp24_frob_p2_strong : spec_of fp24_frob_p2_name :=
+      fnspec! fp24_frob_p2_name
+        (pout px p_gfp4_p2 p_gfp8_p2 p_gfp24_p2_1 p_gfp24_p2_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 pout old_out ⋆ (FElem_Fp24 px x ⋆
+            (FElem_Fp2 p_gfp4_p2 gfp4 ⋆ (FElem_Fp4 p_gfp8_p2 gfp8 ⋆
+             (FElem_Fp8 p_gfp24_p2_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p2_2 gfp24_2 ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24_p2 (Fp24_feval x)
+                               (Fp2_feval gfp4) (Fp4_feval gfp8)
+                               (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4_p2 gfp4 ⋆ (FElem_Fp4 p_gfp8_p2 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_p2_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p2_2 gfp24_2 ⋆ Rr)))))) mem' }.
+
+    Definition spec_of_bls24_fp24_frob_p4_strong : spec_of fp24_frob_p4_name :=
+      fnspec! fp24_frob_p4_name
+        (pout px p_gfp4_p4 p_gfp8_p4 p_gfp24_p4_1 p_gfp24_p4_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 pout old_out ⋆ (FElem_Fp24 px x ⋆
+            (FElem_Fp2 p_gfp4_p4 gfp4 ⋆ (FElem_Fp4 p_gfp8_p4 gfp8 ⋆
+             (FElem_Fp8 p_gfp24_p4_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p4_2 gfp24_2 ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24_p4 (Fp24_feval x)
+                               (Fp2_feval gfp4) (Fp4_feval gfp8)
+                               (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4_p4 gfp4 ⋆ (FElem_Fp4 p_gfp8_p4 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_p4_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p4_2 gfp24_2 ⋆ Rr)))))) mem' }.
+
+    (* ============================================================== *)
+    (* Library-shape Frobenius specs (Fp24 algebraic — bridge source). *)
+    (*                                                                  *)
+    (* These are the analogue of PairingFieldOps.spec_of_Fp12_         *)
+    (* frobenius_p2 for the BLS24-509 quadratic-first tower             *)
+    (* (Fp -> Fp2 -> Fp4 -> Fp8 -> Fp24).  They carry the same         *)
+    (* algebraic clause as the _strong specs but use a different sep    *)
+    (* ordering (px first, then gammas in call-arg order, then pout    *)
+    (* last with Rr) — matching the PairingFieldOps convention.        *)
+    (*                                                                  *)
+    (* These are taken as hypotheses by the strong-spec body-           *)
+    (* correctness lemmas in BLS24_509_FinalExp_proof.v.  Their own    *)
+    (* body-correctness proofs are deferred to future PairingFieldOps  *)
+    (* extensions (no library Fp24 frob lemma exists yet — the BLS12   *)
+    (* tower is cubic-then-quadratic, BLS24 is purely quadratic, so    *)
+    (* extending PairingFieldOps.v is left as follow-up work).         *)
+    (* ============================================================== *)
+
+    Definition spec_of_bls24_fp24_frob_lib : spec_of fp24_frob_name :=
+      fnspec! fp24_frob_name
+        (pout px p_gfp4 p_gfp8 p_gfp24_1 p_gfp24_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 px x ⋆ (FElem_Fp2 p_gfp4 gfp4 ⋆
+            (FElem_Fp4 p_gfp8 gfp8 ⋆ (FElem_Fp8 p_gfp24_1 gfp24_1 ⋆
+             (FElem_Fp8 p_gfp24_2 gfp24_2 ⋆ (FElem_Fp24 pout old_out ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24 (Fp24_feval x)
+                            (Fp2_feval gfp4) (Fp4_feval gfp8)
+                            (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4 gfp4 ⋆ (FElem_Fp4 p_gfp8 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_2 gfp24_2 ⋆ Rr)))))) mem' }.
+
+    Definition spec_of_bls24_fp24_frob_p2_lib : spec_of fp24_frob_p2_name :=
+      fnspec! fp24_frob_p2_name
+        (pout px p_gfp4_p2 p_gfp8_p2 p_gfp24_p2_1 p_gfp24_p2_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 px x ⋆ (FElem_Fp2 p_gfp4_p2 gfp4 ⋆
+            (FElem_Fp4 p_gfp8_p2 gfp8 ⋆ (FElem_Fp8 p_gfp24_p2_1 gfp24_1 ⋆
+             (FElem_Fp8 p_gfp24_p2_2 gfp24_2 ⋆ (FElem_Fp24 pout old_out ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24_p2 (Fp24_feval x)
+                               (Fp2_feval gfp4) (Fp4_feval gfp8)
+                               (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4_p2 gfp4 ⋆ (FElem_Fp4 p_gfp8_p2 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_p2_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p2_2 gfp24_2 ⋆ Rr)))))) mem' }.
+
+    Definition spec_of_bls24_fp24_frob_p4_lib : spec_of fp24_frob_p4_name :=
+      fnspec! fp24_frob_p4_name
+        (pout px p_gfp4_p4 p_gfp8_p4 p_gfp24_p4_1 p_gfp24_p4_2 : word)
+        / (old_out x : Fp24_felem)
+          (gfp4 : Fp2_felem) (gfp8 : Fp4_felem)
+          (gfp24_1 gfp24_2 : Fp8_felem) Rr,
+      { requires tr mem :=
+          Fp24_bounded Fp24_tight x /\
+          Fp2_bounded Fp2_loose gfp4 /\
+          Fp4_bounded Fp4_loose gfp8 /\
+          Fp8_bounded Fp8_loose gfp24_1 /\
+          Fp8_bounded Fp8_loose gfp24_2 /\
+          (FElem_Fp24 px x ⋆ (FElem_Fp2 p_gfp4_p4 gfp4 ⋆
+            (FElem_Fp4 p_gfp8_p4 gfp8 ⋆ (FElem_Fp8 p_gfp24_p4_1 gfp24_1 ⋆
+             (FElem_Fp8 p_gfp24_p4_2 gfp24_2 ⋆ (FElem_Fp24 pout old_out ⋆ Rr)))))) mem;
+        ensures tr' mem' :=
+          tr = tr' /\ exists out,
+            Fp24_bounded Fp24_loose out /\
+            Fp24_feval out =
+              FrobModelFp24_p4 (Fp24_feval x)
+                               (Fp2_feval gfp4) (Fp4_feval gfp8)
+                               (Fp8_feval gfp24_1) (Fp8_feval gfp24_2) /\
+            (FElem_Fp24 pout out ⋆ (FElem_Fp24 px x ⋆
+              (FElem_Fp2 p_gfp4_p4 gfp4 ⋆ (FElem_Fp4 p_gfp8_p4 gfp8 ⋆
+               (FElem_Fp8 p_gfp24_p4_1 gfp24_1 ⋆ (FElem_Fp8 p_gfp24_p4_2 gfp24_2 ⋆ Rr)))))) mem' }.
 
     (* ============================================================== *)
     (* Collected function list                                         *)

@@ -91,27 +91,31 @@ Definition bytes_to_canonical_F (bs : list Byte.byte) : option Fp :=
       Line 1  : s = LE-decode(bs)             — bytes_to_canonical_F.
       Line 2  : reject if non-canonical.       — handled in (1).
       Line 3  : reject if is_negative(s).
-      Line 4  : ss     = s^2
-      Line 5  : u      = 1 - ss
-      Line 6  : v      = a*d*ss - 1   (RFC 9496 writes "v = -1 - a*d*ss";
-                                       with a = -1 this becomes
-                                       v = -1 + d*ss = d*ss - 1, which
-                                       we write directly here.)
-      Line 7  : (was_square, invsqrt) = SQRT_RATIO_M1(1, u^2 * v)
-                                          where the convention used by
-                                          libsignal / dalek (and by
-                                          A.1's [sqrt_ratio_m1]) is
-                                          r^2 * (u^2 v) = 1.
-      Line 8  : den_x  = invsqrt * u
-      Line 9  : den_y  = invsqrt * den_x * v
-      Line 10 : x      = abs(2 * s * den_x)
-      Line 11 : y      = u * den_y
-      Line 12 : t      = x * y
-      Line 13 : reject if (not was_square) OR is_negative(t) OR y = 0.
-      Line 14 : return (x, y).  The full extended-Edwards form is
+      Line 4  : ss      = s^2
+      Line 5  : u1      = 1 - ss
+      Line 6  : u2      = 1 + ss
+      Line 7  : u2_sqr  = u2^2
+      Line 8  : v       = -d*u1^2 - u2_sqr
+      Line 9  : (was_square, I) = SQRT_RATIO_M1(1, v * u2_sqr)
+                                  where the convention is r^2*(v*u2^2) = 1
+                                  (or = SQRT_M1 in the non-square branch).
+      Line 10 : D_x    = I * u2
+      Line 11 : D_y    = I * D_x * v
+      Line 12 : x      = abs(2 * s * D_x)
+      Line 13 : y      = u1 * D_y
+      Line 14 : t      = x * y
+      Line 15 : reject if (not was_square) OR is_negative(t) OR y = 0.
+      Line 16 : return (x, y).  The full extended-Edwards form is
                   (x, y, 1, x*y); we expose only the affine pair so
                   callers don't need to deal with projective
                   representatives.
+
+    Bug fix 2026-05-22 (B.5a agent finding): the original A.2 draft used
+    a simplified [v = d*ss - 1, den = u^2*v] form taken from a different
+    decoder variant; algebraic tracing showed it always produced [y = ±1]
+    instead of the Edwards y-coordinate.  Replaced with the verbatim
+    RFC 9496 §4.3.1 algorithm, matching the Z-mirror in
+    [Bedrock.End2End.Lizard.RistrettoDecode.ristretto_decode_gallina].
 
     The [edwards25519_point] sigma type ([Curve25519.E.point]) requires
     proving the on-curve equation; we obtain that in Phase B via
@@ -125,19 +129,20 @@ Definition ristretto_decode_coords (bs : list Byte.byte)
   | Some s =>
     if is_negative s then None
     else
-      let ss := s * s in
-      let u  := Fone - ss in
-      (* a = -1, d = Curve25519.E.d ; v = a*d*ss - 1 = d*ss - 1 *)
-      let v  := Curve25519.E.d * ss - Fone in
-      let u_sq := u * u in
-      let den  := u_sq * v in
+      let ss     := s * s in
+      let u1     := Fone - ss in
+      let u2     := Fone + ss in
+      let u2_sqr := u2 * u2 in
+      let u1_sq  := u1 * u1 in
+      let v      := F.opp (Curve25519.E.d * u1_sq) - u2_sqr in
+      let den    := v * u2_sqr in
       let '(was_square, invsqrt) := sqrt_ratio_m1 Fone den in
-      let den_x := invsqrt * u in
-      let den_y := invsqrt * den_x * v in
-      let x_raw := F.of_Z _ 2 * s * den_x in
-      let x := abs x_raw in
-      let y := u * den_y in
-      let t := x * y in
+      let Dx     := invsqrt * u2 in
+      let Dy     := invsqrt * Dx * v in
+      let x_raw  := F.of_Z _ 2 * s * Dx in
+      let x      := abs x_raw in
+      let y      := u1 * Dy in
+      let t      := x * y in
       let y_is_zero : bool := Z.eqb (F.to_Z y) 0 in
       if orb (negb was_square) (orb (is_negative t) y_is_zero)
       then None

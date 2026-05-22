@@ -105,7 +105,10 @@ Definition sqrt_ratio_m1 (u v : Fp) : bool * Fp :=
     else if flipped_sign_sqrt_i then r0 * SQRT_M1
     else r0 in
   let r := abs r1 in
-  let was_square := orb correct_sign_sqrt flipped_sign_sqrt_i in
+  (* Per RFC 9496 §3.1.3: was_square := correct_sign_sqrt | flipped_sign_sqrt.
+     Both branches give v * r^2 = u (case 1 directly, case 2 because
+     multiplying r0 by SQRT_M1 yields r1 with v * r1^2 = -check = u). *)
+  let was_square := orb correct_sign_sqrt flipped_sign_sqrt in
   (was_square, r).
 
 (** ** §4.3.2 lines 1-13: extended-Edwards → canonical field element [s].

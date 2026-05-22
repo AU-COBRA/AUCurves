@@ -191,15 +191,195 @@ Definition on_main_subgroup (P : Curve25519.E.point) : Prop :=
     This lemma is the SOLE blocker for the encode-then-decode and
     decode-then-encode theorems below; with it the rest of the file
     discharges. *)
+(* ------------------------------------------------------------------------
+   Section 2a: 4-torsion case decomposition.
+
+   The ristretto-equivalence relation [P ~ Q ↔ P - Q ∈ E[4]] yields four
+   geometrically-distinct cases corresponding to the four 4-torsion
+   elements.  Each case forces an explicit relation between [(Px, Py)]
+   and [(Qx, Qy)] which in turn dictates a specific way the encoder
+   absorbs the difference (RFC 9496 §4.3.2 [rotate] branch + [Y → -Y]
+   branch).
+
+   We expose these four cases as named lemmas so that future agents can
+   discharge them independently using the Jacobi-quartic detour
+   (Hamburg, Decaf §5) or by direct calculation through
+   [ristretto_encode_aux].  The dispatcher proof
+   [canonical_rep_selection] is then a structural [destruct] over the
+   four cases of [is_4torsion_affine].
+   ------------------------------------------------------------------------ *)
+
+(** The Edwards-difference [(Px, Py) - (Qx, Qy)] in [sub_affine] form.  We
+    repeatedly need to refer to the two coordinates separately. *)
+Definition sub_affine_x (P Q : Fp * Fp) : Fp :=
+  let '(x1, y1) := P in
+  let '(x2, y2) := opp_affine Q in
+  ((x1 * y2 + y1 * x2) / (Fone + Curve25519.E.d * x1 * x2 * y1 * y2))%F.
+
+Definition sub_affine_y (P Q : Fp * Fp) : Fp :=
+  let '(x1, y1) := P in
+  let '(x2, y2) := opp_affine Q in
+  ((y1 * y2 - Curve25519.E.a * x1 * x2) / (Fone - Curve25519.E.d * x1 * x2 * y1 * y2))%F.
+
+Lemma sub_affine_eq_pair :
+  forall P Q,
+    sub_affine P Q = (sub_affine_x P Q, sub_affine_y P Q).
+Proof.
+  intros [x1 y1] [x2 y2]. reflexivity.
+Qed.
+
+(** ** Case (0,1) — identity 4-torsion element.
+
+    [sub_affine P Q = (0, 1)] is the identity of the Edwards group,
+    i.e. [P = Q].  Hence the encoder gives the same byte string by
+    [eq_refl] under the trivial substitution.
+
+    Proof depth: shallow — reduces to [Px = Qx /\ Py = Qy] by Edwards
+    completeness (denominators nonzero), plus on-curve [HP, HQ].  The
+    field arithmetic is principled but voluminous (~50 LoC).
+
+    Status: ADMITTED.  Estimated 50 LoC. *)
+Lemma canonical_rep_case_identity :
+  forall (Px Py Qx Qy : Fp),
+    (Curve25519.E.a * (Px * Px) + Py * Py =
+     Fone + Curve25519.E.d * (Px * Px) * (Py * Py))%F ->
+    (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+     Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+    sub_affine_x (Px, Py) (Qx, Qy) = Fzero ->
+    sub_affine_y (Px, Py) (Qx, Qy) = Fone ->
+    ristretto_encode_bytes (to_extended (Px, Py))
+    = ristretto_encode_bytes (to_extended (Qx, Qy)).
+Proof.
+  (* Geometric content: identity element of the 4-torsion means P = Q.
+     Hence the equality is by congruence after Px = Qx, Py = Qy.
+
+     The algebraic content factors as:
+       1. From sub_affine_x = 0: [Px * Qy = Py * Qx] (cross-multiply
+          after Edwards-completeness of the denominator).
+       2. From sub_affine_y = 1: [Py * Qy + Px * Qx = 1 - d*Px*Qx*Py*Qy].
+       3. Combine with on-curve HP, HQ to get [Px = Qx /\ Py = Qy].
+       4. Conclude by [f_equal]. *)
+Admitted.
+
+(** ** Case (0,-1) — order-2 4-torsion element.
+
+    [sub_affine P Q = (0, -1)] is the point of order 2.  Edwards group
+    arithmetic gives [Q = -P + T_{(0,-1)} = (-Px, -Py)].  The encoder
+    is invariant under [(x, y) → (-x, -y)] because [s = abs(...)]
+    folds in any [F.opp] applied symmetrically.
+
+    Proof depth: shallow — once [(Qx, Qy) = (F.opp Px, F.opp Py)] is
+    extracted, the encoder body reduces by [F.opp_opp] and [abs] to
+    the same byte string.
+
+    Status: ADMITTED.  Estimated 80 LoC. *)
+Lemma canonical_rep_case_order2 :
+  forall (Px Py Qx Qy : Fp),
+    (Curve25519.E.a * (Px * Px) + Py * Py =
+     Fone + Curve25519.E.d * (Px * Px) * (Py * Py))%F ->
+    (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+     Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+    sub_affine_x (Px, Py) (Qx, Qy) = Fzero ->
+    sub_affine_y (Px, Py) (Qx, Qy) = F.opp Fone ->
+    ristretto_encode_bytes (to_extended (Px, Py))
+    = ristretto_encode_bytes (to_extended (Qx, Qy)).
+Proof.
+  (* Geometric content: order-2 4-torsion means Q = -P (componentwise:
+     Qx = -Px, Qy = -Py).  The encoder body ristretto_encode_aux is
+     invariant under (X, Y, Z, T) ↦ (-X, -Y, Z, X*Y) because:
+       - u1 = (Z + Y)*(Z - Y) is unchanged (Y appears quadratically).
+       - u2 = X*Y has both signs flipped, so it changes sign.
+       - The [rotate] branch dispatches on [is_negative(T * z_inv)]
+         where T = X*Y; flipping the sign of X*Y flips [rotate].
+       - In each sub-case the [Y ↦ -Y] branch absorbs the residual
+         sign, and the final [abs] kills it. *)
+Admitted.
+
+(** ** Case (SQRT_M1, 0) — order-4 4-torsion element (positive root).
+
+    [sub_affine P Q = (SQRT_M1, 0)] forces
+    [Q = i·P = (SQRT_M1·Py, SQRT_M1·Px)] up to sign (the "rotation"
+    on the Jacobi quartic side).  The encoder absorbs this via the
+    [rotate := is_negative(T * z_inv)] branch, which swaps X and Y
+    after multiplying by SQRT_M1 — exactly the action of [i] on
+    [(X, Y)].
+
+    Proof depth: medium — the encoder's [rotate] branch IS the
+    canonical-rep selection for this case.  The algebraic identity is
+    the "Hamburg flip" of Decaf §5.
+
+    Status: ADMITTED.  Estimated 100 LoC. *)
+Lemma canonical_rep_case_order4_pos :
+  forall (Px Py Qx Qy : Fp),
+    (Curve25519.E.a * (Px * Px) + Py * Py =
+     Fone + Curve25519.E.d * (Px * Px) * (Py * Py))%F ->
+    (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+     Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+    sub_affine_x (Px, Py) (Qx, Qy) = SQRT_M1 ->
+    sub_affine_y (Px, Py) (Qx, Qy) = Fzero ->
+    ristretto_encode_bytes (to_extended (Px, Py))
+    = ristretto_encode_bytes (to_extended (Qx, Qy)).
+Proof.
+  (* Geometric content: Q is the i-rotation of P on the elliptic curve.
+     Hamburg, Decaf §5, equation (4) gives the explicit formulas:
+       Qx = (Py / SQRT_M1) = SQRT_M1 * Py * (-1)  -- since SQRT_M1^2 = -1
+       Qy = Px * SQRT_M1   (modulo signs of the form chosen by the
+                             representative).
+     The encoder's [rotate] branch swaps to [iy0, ix0] precisely when
+     the input was on the wrong side of this rotation; the post-rotate
+     point compresses to the same [s] as the un-rotated one. *)
+Admitted.
+
+(** ** Case (-SQRT_M1, 0) — order-4 4-torsion element (negative root).
+
+    Symmetric to [canonical_rep_case_order4_pos] with the opposite
+    sign of SQRT_M1.  Same proof pattern (Hamburg's flip with the
+    negative root) — the encoder's combined [rotate] and [Y → -Y]
+    branches absorb both order-4 elements.
+
+    Status: ADMITTED.  Estimated 100 LoC. *)
+Lemma canonical_rep_case_order4_neg :
+  forall (Px Py Qx Qy : Fp),
+    (Curve25519.E.a * (Px * Px) + Py * Py =
+     Fone + Curve25519.E.d * (Px * Px) * (Py * Py))%F ->
+    (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+     Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+    sub_affine_x (Px, Py) (Qx, Qy) = F.opp SQRT_M1 ->
+    sub_affine_y (Px, Py) (Qx, Qy) = Fzero ->
+    ristretto_encode_bytes (to_extended (Px, Py))
+    = ristretto_encode_bytes (to_extended (Qx, Qy)).
+Proof.
+  (* Mirror of canonical_rep_case_order4_pos with [SQRT_M1 ↦ -SQRT_M1].
+     The encoder's [Y ↦ -Y] branch (line 9 of §4.3.2) absorbs the
+     additional sign relative to the positive-root case. *)
+Admitted.
+
+(** ** Canonical-representative selection via 4-torsion dispatch.
+
+    This is the proof of the original [canonical_rep_selection]
+    statement, factored through the four case lemmas above.  The body
+    is a clean structural [destruct] over [is_4torsion_affine]: NO
+    algebraic admit lives in this Qed.  All algebraic content is
+    isolated in the four [canonical_rep_case_*] lemmas. *)
 Lemma canonical_rep_selection :
   forall (P Q : Curve25519.E.point),
     ristretto_equiv P Q ->
     ristretto_encode_bytes (to_extended (point_coords P))
     = ristretto_encode_bytes (to_extended (point_coords Q)).
 Proof.
-  (* TODO Phase B (200-400 LoC):  Jacobi-quartic detour.  See the
-     [canonical_rep_selection] docstring for the proof plan. *)
-Admitted.
+  intros P Q Hequiv.
+  unfold ristretto_equiv in Hequiv.
+  destruct P as [[Px Py] HP].
+  destruct Q as [[Qx Qy] HQ].
+  unfold point_coords in *. simpl proj1_sig in *.
+  rewrite sub_affine_eq_pair in Hequiv.
+  unfold is_4torsion_affine in Hequiv.
+  destruct Hequiv as [[Hx Hy] | [[Hx Hy] | [[Hx Hy] | [Hx Hy]]]].
+  - eapply canonical_rep_case_identity; eauto.
+  - eapply canonical_rep_case_order2;   eauto.
+  - eapply canonical_rep_case_order4_pos; eauto.
+  - eapply canonical_rep_case_order4_neg; eauto.
+Qed.
 
 (* ========================================================================
    Section 3: [sqrt_ratio_m1] correctness.
@@ -244,26 +424,28 @@ Proof.
   (* TODO Phase B (100-200 LoC).  See docstring. *)
 Admitted.
 
-(** Corollary: when [sqrt_ratio_m1 1 (u^2 * v)] reports a square, the
-    invsqrt satisfies [(u^2 * v) * invsqrt^2 = 1] (used in the decoder
-    body to argue [den_x * u^2 * v = u^2]).  The hypothesis [Hnz : u*u*v
-    <> 0] is exposed because [sqrt_ratio_m1_correct] requires the
-    denominator to be nonzero; in the decoder this is provided by the
-    [was_square = true] branch already failing fast on the rejection
-    side. *)
+(** Corollary: when [sqrt_ratio_m1 1 (v * u2^2)] reports a square, the
+    invsqrt satisfies [(v * u2^2) * invsqrt^2 = 1] (used in the decoder
+    body to argue [Dx * v * u2^2 = u2^2]).  The hypothesis [Hnz :
+    v*u2^2 <> 0] is exposed because [sqrt_ratio_m1_correct] requires
+    the denominator to be nonzero; in the decoder this is provided by
+    the [was_square = true] branch already failing fast on the
+    rejection side. *)
 Lemma sqrt_ratio_m1_decode_invariant :
   forall (s : Fp),
-    let ss := (s * s)%F in
-    let u  := (Fone - ss)%F in
-    let v  := (Curve25519.E.d * ss - Fone)%F in
-    (u * u * v)%F <> Fzero ->
+    let ss     := (s * s)%F in
+    let u1     := (Fone - ss)%F in
+    let u2     := (Fone + ss)%F in
+    let u2_sqr := (u2 * u2)%F in
+    let v      := (F.opp (Curve25519.E.d * (u1 * u1)) - u2_sqr)%F in
+    (v * u2_sqr)%F <> Fzero ->
     forall ws iv,
-      sqrt_ratio_m1 Fone (u * u * v)%F = (ws, iv) ->
+      sqrt_ratio_m1 Fone (v * u2_sqr)%F = (ws, iv) ->
       ws = true ->
-      ((u * u * v) * iv * iv)%F = Fone.
+      ((v * u2_sqr) * iv * iv)%F = Fone.
 Proof.
-  intros s ss u v Hnz ws iv Hcall Hws.
-  pose proof (sqrt_ratio_m1_correct Fone (u * u * v)%F Hnz) as Hcorrect.
+  intros s ss u1 u2 u2_sqr v Hnz ws iv Hcall Hws.
+  pose proof (sqrt_ratio_m1_correct Fone (v * u2_sqr)%F Hnz) as Hcorrect.
   rewrite Hcall in Hcorrect.
   destruct Hcorrect as [Hdisj _].
   destruct Hdisj as [[_ Heqq]|[Hwsf _]]; [exact Heqq | congruence].

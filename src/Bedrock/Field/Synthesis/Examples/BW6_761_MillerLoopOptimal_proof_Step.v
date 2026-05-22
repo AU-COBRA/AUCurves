@@ -19,13 +19,35 @@
     [multibase_iter_step_j0] / [_j1] / [_jm1] / [_j3] / [_jm3] as
     applicable.
 
-    Currently [Admitted] (Phase 2 Step 5).  Sister agent
-    (a1444e31d54a30e0c) is fixing the Rust extraction path that
-    feeds the per-call WP bridging lemmas — once that lands, the
-    per-call WP discharges should be drop-in.
+    Status note (2026-05-22).  Empirical build measurement of the
+    sister file [BW6_761_MillerLoopOptimal_proof_Common.v] shows
+    11+ minutes of cold-build library-load time before any tactic
+    sentence executes (704 s wall, per-sentence times all 0.0 s
+    via `-time`).  The bottleneck is [Rupicola.Lib.Api] (which
+    transitively pulls in 10 sub-files of Rupicola plus bedrock2
+    weakest-precondition machinery), NOT the [AffineMultibase]
+    Gallina model (a 384-LoC Qed-clean reference theory).  A
+    Module-Type refactor over [AffineMultibase] therefore cannot
+    reduce the build budget, because the refactor only abstracts
+    the small Gallina component — the heavy bedrock2/Rupicola
+    chain is still required for [fnspec!] in the strengthened
+    spec and for [WeakestPrecondition.cmd] in this Step lemma.
 
-    Split out of [BW6_761_MillerLoopOptimal_proof.v] for build-time
-    budget (see [_proof_Common.v] header). *)
+    Consequence: this file remains build-excluded in
+    [src/Bedrock/dune].  Phase 2 ships as a planning artifact
+    (Gallina-only reference + invariant scaffolding in Common,
+    [Admitted] Step lemma here, [Admitted] main theorem in
+    [BW6_761_MillerLoopOptimal_proof.v]).
+
+    Currently [Admitted] (Phase 2 Step 5).  Closing requires:
+      (i)  the per-call WP bridging lemmas for [g2_double_step],
+           [g2_add_step], [g2_line_compute], [sparse_line_eval]
+           (Phase 2 Step 4, sister-agent territory), AND
+      (ii) the Gallina-counter bump via
+           [multibase_iter_step_jX] (5-way symbol dispatch).
+
+    Split out of [BW6_761_MillerLoopOptimal_proof.v] for
+    build-time budget (see [_proof_Common.v] header). *)
 
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Common.
 
@@ -113,7 +135,12 @@ Section BW6_761_MillerLoopOptimal_Step.
     (* TODO Phase 2 Step 5.  Walk the per-iteration WP through the
        dbl_step + sparse_line + fp6_mul (+ optional add_step branch)
        and use multibase_iter_step_jX consistency lemmas from
-       AffineMultibase to bump the Gallina counter. *)
+       AffineMultibase to bump the Gallina counter.
+
+       Sister agent (a1444e31d54a30e0c) is fixing the Rust
+       extraction path that feeds the per-call WP bridging lemmas
+       — once that lands, the per-call WP discharges should be
+       drop-in. *)
   Admitted.
 
 End BW6_761_MillerLoopOptimal_Step.

@@ -14,6 +14,18 @@
     the same import hit ONCE and downstream Init/Step/Exit/main
     files only need to load Common.
 
+    Build-time finding (2026-05-22): empirical cold-build wall
+    time of this file is 704 s, with every per-sentence tactic
+    measuring 0.0 s under `-time`.  The entire wall budget is
+    spent loading [Rupicola.Lib.Api] + bedrock2 + the
+    [PrimeFieldTheorems] ring machinery.  Removing the
+    [AffineMultibase] import alone (the planned Module-Type
+    refactor) would NOT bring this under the 5-min CLAUDE.md
+    budget — [AffineMultibase] is only 384 LoC of Gallina, and
+    none of the heavy load is attributable to it.  The Common
+    header therefore stays as-is; downstream Step/main files
+    remain build-excluded.
+
     STATUS: scaffolding only — see the [_proof.v] file for the main
     theorem statement and Phase-2 Step-5 TODO documentation. *)
 

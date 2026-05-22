@@ -29,16 +29,19 @@
      ; BW6_761_MillerLoopOptimal_proof and its split sub-files
      ; (_Common, _Step) — excluded because cold-build of the
      ; transitive Rupicola + AffineMultibase + bedrock2 chain
-     ; alone takes >7 min before the first Vernacular sentence
-     ; even executes, exceeding the 5-min CLAUDE.md budget per file.
+     ; alone takes >11 min before the first Vernacular sentence
+     ; even executes (empirical 704s cold-build of Common.v on
+     ; 2026-05-22, with every per-sentence tactic at 0.0s),
+     ; exceeding the 5-min CLAUDE.md budget per file.
      ; Splitting the file into 3 pieces (Common with Init+Exit
      ; folded; Step Admitted; top-level main Admitted) did NOT
      ; reduce the per-file cold-build cost — each child re-loads
-     ; the same .vo chain.
-     ; Recommended next fix: parametric-over-body refactor (drop
-     ; the AffineMultibase + BW6_761_MillerLoopOptimal imports from
-     ; Common by parametrising over the Gallina model record and
-     ; the bedrock2 function name as opaque inputs).
+     ; the same Rupicola.Lib.Api chain which is the actual root
+     ; bottleneck (NOT AffineMultibase — that's only 384 LoC).
+     ; A Module-Type refactor over AffineMultibase therefore does
+     ; not help; the only realistic fix is to drop Rupicola.Lib.Api
+     ; itself, which is incompatible with [fnspec!] (Rupicola
+     ; construct used by the strengthened spec).
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Common
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))

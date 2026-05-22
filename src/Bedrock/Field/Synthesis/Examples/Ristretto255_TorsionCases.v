@@ -47,8 +47,10 @@ Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Algebra.Field.
 Require Import Crypto.Algebra.Hierarchy.
+Require Import Crypto.Algebra.Group.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
+Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
 Import ListNotations.
 Local Open Scope F_scope.

@@ -26,11 +26,20 @@
      End2End.Ristretto.ScalarMult
      End2End.XEdDSA.Sign
      End2End.XEdDSA.Verify
-     ; Excluded due to 8+ min import-load time (heavy Rupicola +
-     ; BW6_761_MillerLoopOptimal 882-LoC + AffineMultibase 375-LoC).
-     ; Per CLAUDE.md 5-min threshold.  Fix: split file into smaller
-     ; proof units with lighter imports (BLS24_509_MillerLoop pattern,
-     ; per reference_qed_iso_kernel_oom.md / reference_mcp_timeout_
-     ; heavy_imports.md).  Ships as planning scaffold for now.
-     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof))
+     ; BW6_761_MillerLoopOptimal_proof and its split sub-files
+     ; (_Common, _Step) — excluded because cold-build of the
+     ; transitive Rupicola + AffineMultibase + bedrock2 chain
+     ; alone takes >7 min before the first Vernacular sentence
+     ; even executes, exceeding the 5-min CLAUDE.md budget per file.
+     ; Splitting the file into 3 pieces (Common with Init+Exit
+     ; folded; Step Admitted; top-level main Admitted) did NOT
+     ; reduce the per-file cold-build cost — each child re-loads
+     ; the same .vo chain.
+     ; Recommended next fix: parametric-over-body refactor (drop
+     ; the AffineMultibase + BW6_761_MillerLoopOptimal imports from
+     ; Common by parametrising over the Gallina model record and
+     ; the bedrock2 function name as opaque inputs).
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Common
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

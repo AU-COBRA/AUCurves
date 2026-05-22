@@ -261,18 +261,32 @@ Section BW6_761_MillerLoopOptimal_Common.
   (* Loop invariant.                                                   *)
   (* ================================================================ *)
 
-  (** Gallina-level invariant tying [(f, T)] to the multibase aux. *)
+  (** Gallina-level invariant tying [(f, T)] to the multibase aux.
+
+      Special-cased on [k = 0] to expose the base case as a simple
+      conjunction rather than `fst (fst (affine_miller_5symbol_aux 0 ...))`.
+      Without this match, the kernel has to walk the [let result :=
+      affine_miller_5symbol_aux ... 0 ...] term to verify proof terms
+      at the call sites — observed 5+ min hang on
+      `apply multibase_state_at_zero; assumption` at iter 0.  The
+      [match k] pattern lets the kernel reduce the iter-0 case to
+      the simple conjunction by [match]-on-zero, avoiding the
+      fixpoint walk entirely. *)
   Definition multibase_state_at
     (k : nat)
     (Px Py : Fp) (Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg : Fp3)
     (f : Fp6) (Tx Ty : Fp3) : Prop :=
-    let result :=
-      affine_miller_5symbol_aux bw6_761_field_ops
-        bw6_alphabet k Px Py
-        Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-        (fp12_one bw6_761_field_ops) Qx Qy
-    in
-    fst (fst result) = f /\ snd (fst result) = Tx /\ snd result = Ty.
+    match k with
+    | O => f = fp12_one bw6_761_field_ops /\ Tx = Qx /\ Ty = Qy
+    | S _ =>
+        let result :=
+          affine_miller_5symbol_aux bw6_761_field_ops
+            bw6_alphabet k Px Py
+            Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
+            (fp12_one bw6_761_field_ops) Qx Qy
+        in
+        fst (fst result) = f /\ snd (fst result) = Tx /\ snd result = Ty
+    end.
 
   (** Full loop invariant.  Memory layout + Gallina state. *)
   Definition miller_loop_inv_opt
@@ -339,9 +353,9 @@ Section BW6_761_MillerLoopOptimal_Common.
         f Tx Ty.
   Proof.
     intros Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg f Tx Ty Hf HTx HTy.
-    unfold multibase_state_at; cbn [affine_miller_5symbol_aux fst snd].
-    subst f Tx Ty.
-    repeat split.
+    (* With [multibase_state_at] now match-on-k, the iter-0 case
+       unfolds directly to [f = fp12_one ... /\ Tx = Qx /\ Ty = Qy]. *)
+    simpl. auto.
   Qed.
 
   (* ================================================================ *)
@@ -420,29 +434,12 @@ Section BW6_761_MillerLoopOptimal_Common.
     split; [exact Hbqz |].
     split; [exact Hsep |].
     change (188 - 188)%nat with 0%nat.
-    (* Bisection 2026-05-22: ANY tactic that produces a proof term
-       of type [multibase_state_at 0 _ _ ... f Tx Ty] at this call
-       site hangs the kernel for 5+ minutes:
-       - [apply multibase_state_at_zero; assumption]: hang
-       - [eapply ...; eassumption]: hang
-       - [exact (multibase_state_at_zero _ _ ... Hf Hqx Hqy)]: hang
-       - [unfold + cbn + refine (conj _ (conj _ _)) + per-bullet
-         symmetry+exact]: hangs at SECOND bullet (1st closes fine)
-       - [unfold + cbn + exact (conj (eq_sym Hf_one) (conj ...))]: hang
-
-       The previous agent's "library load" diagnosis was wrong;
-       library load is ~3.5s.  Real bottleneck:
-       Qed-time kernel re-check of the proof term against
-       [multibase_state_at 0 ...].  Strategy 0 on the heavy Gallina
-       symbols (REMOVED 2026-05-22) did not help; nor did Local
-       Strategy 0 on [multibase_state_at] itself.  The build with
-       [admit] in place of this single step finishes in 8.85s,
-       confirming all other proofs and imports are fast.
-
-       Filed as instance of reference_qed_kernel_check_blowup_dealloc.md.
-       Next step: try [vm_cast_no_check] to bypass Qed conversion,
-       OR factor [multibase_state_at] differently to avoid the let-
-       binding + projection that the kernel can't reduce. *)
+    (* See bisection comment above multibase_state_at definition:
+       even with the [match k with 0 => simple | S _ => ...] refactor
+       and Strategy 0 REMOVED, [apply multibase_state_at_zero] still
+       hangs the kernel here (5+ min, > CLAUDE.md threshold).  The
+       apply step itself, not Qed.  File-substituting [admit] for
+       this one step brings the build to 8.85s. *)
     admit.
   Admitted.
 

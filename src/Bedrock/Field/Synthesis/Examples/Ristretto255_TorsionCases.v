@@ -86,7 +86,14 @@ Definition sub_affine_y (P Q : Fp * Fp) : Fp :=
 
 (* === case lemmas === *)
 
-(** ** Identity case — sub_affine P Q = (0, 1) ⇒ Px = Qx ∧ Py = Qy. *)
+(** ** Identity case — sub_affine P Q = (0, 1) ⇒ Px = Qx ∧ Py = Qy.
+
+    Proof strategy: lift (Px, Py) and (Qx, Qy) to typed E.point values
+    [Pt] and [Qt].  Form [D := Pt + (-Qt)] via [Curve25519.E.add].  The
+    hypotheses give [coordinates D = (0, 1) = coordinates E.zero], so
+    [E.eq D E.zero].  By group cancellation ([inv_unique] + [inv_inv]),
+    [Pt = Qt] as [E.eq] (= coordinate-wise on Curve25519), so
+    [Px = Qx /\ Py = Qy], and the encoder agrees by [reflexivity]. *)
 Lemma canonical_rep_case_identity :
   forall (Px Py Qx Qy : Fp),
     (Curve25519.E.a * (Px * Px) + Py * Py =
@@ -98,7 +105,44 @@ Lemma canonical_rep_case_identity :
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
 Proof.
-Admitted.
+  intros Px Py Qx Qy HP HQ Hx Hy.
+  pose (Pt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Px, Py) HP : Curve25519.E.point).
+  pose (Qt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Qx, Qy) HQ : Curve25519.E.point).
+  pose (Qopp := @AffineProofs.E.opp _ _ _ _ F.opp F.add F.sub F.mul _ _
+    Curve25519.field _ Curve25519.E.a Curve25519.E.d
+    Curve25519.E.nonzero_a Qt).
+  pose (D := Curve25519.E.add Pt Qopp).
+  assert (Hcoord_D : E.coordinates D
+                     = (sub_affine_x (Px, Py) (Qx, Qy),
+                        sub_affine_y (Px, Py) (Qx, Qy)))
+    by reflexivity.
+  rewrite Hx, Hy in Hcoord_D.
+  assert (HD_zero : E.eq D Curve25519.E.zero)
+    by (unfold E.eq, Curve25519.E.zero, E.zero;
+        rewrite Hcoord_D; simpl; split; reflexivity).
+  pose proof (@AffineProofs.E.edwards_curve_commutative_group _ _ _ _
+                F.opp F.add F.sub F.mul _ _
+                Curve25519.field Curve25519.char_ge_3 _
+                Curve25519.E.a Curve25519.E.d
+                Curve25519.E.nonzero_a
+                Curve25519.E.square_a
+                Curve25519.E.nonsquare_d) as Hgrp.
+  destruct Hgrp as [Hgrp_group _].
+  pose proof (@inv_unique _ _ _ _ _ Hgrp_group Qopp Pt HD_zero) as Hinv1.
+  pose proof (@Group.inv_inv _ _ _ _ _ Hgrp_group Qt) as Hinvinv.
+  assert (HPt_Qt : E.eq Pt Qt)
+    by (etransitivity; [exact Hinv1 | exact Hinvinv]).
+  assert (Hcoords : E.coordinates Pt = E.coordinates Qt)
+    by (unfold Pt, Qt, E.coordinates;
+        destruct HPt_Qt as [Hx' Hy']; simpl in *; congruence).
+  unfold Pt, Qt, E.coordinates in Hcoords.
+  inversion Hcoords; subst.
+  reflexivity.
+Qed.
 
 Lemma canonical_rep_case_order2 :
   forall (Px Py Qx Qy : Fp),

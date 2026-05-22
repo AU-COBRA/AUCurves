@@ -26,14 +26,7 @@
      End2End.Ristretto.ScalarMult
      End2End.XEdDSA.Sign
      End2End.XEdDSA.Verify
-     ; BW6_761_MillerLoopOptimal_proof_Common.v now builds in ~25s
-     ; (Strategy 0 + apply hung 5+ min; admit in miller_loop_inv_opt_init
-     ; documented bisection - was misattributed to "library load" by
-     ; a prior agent; actual culprit is Qed-time kernel re-check of
-     ; multibase_state_at 0 ...).  Re-enabled 2026-05-22.
-     ;
-     ; Step and main remain excluded - step's WP plumbing isn't
-     ; written yet (just an Admit + recipe TODO).
+     ; Step and main excluded — Step lemma not written yet.
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

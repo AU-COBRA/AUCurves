@@ -112,14 +112,6 @@ Definition bw6_alphabet (i : nat) : Z :=
 Lemma bw6_j_seq_length : length bw6_j_seq_loc = 189%nat.
 Proof. reflexivity. Qed.
 
-(* Strategy 0 on the heavy Gallina symbols was REMOVED 2026-05-22.
-   Bisection showed it caused [apply multibase_state_at_zero] in
-   miller_loop_inv_opt_init to hang the kernel for 5+ minutes —
-   the iter-0 base case needs [affine_miller_5symbol_aux] to be
-   reducible by cbn, but Strategy 0 blocked the unfold.  The exit
-   lemma's [remember + destruct] pattern provides per-use opacity
-   for the 188-iter case without needing Strategy 0 globally. *)
-
 Section BW6_761_MillerLoopOptimal_Common.
 
   Existing Instances
@@ -262,16 +254,9 @@ Section BW6_761_MillerLoopOptimal_Common.
   (* ================================================================ *)
 
   (** Gallina-level invariant tying [(f, T)] to the multibase aux.
-
-      Special-cased on [k = 0] to expose the base case as a simple
-      conjunction rather than `fst (fst (affine_miller_5symbol_aux 0 ...))`.
-      Without this match, the kernel has to walk the [let result :=
-      affine_miller_5symbol_aux ... 0 ...] term to verify proof terms
-      at the call sites — observed 5+ min hang on
-      `apply multibase_state_at_zero; assumption` at iter 0.  The
-      [match k] pattern lets the kernel reduce the iter-0 case to
-      the simple conjunction by [match]-on-zero, avoiding the
-      fixpoint walk entirely. *)
+      Match-on-[k] so the [k = 0] base case reduces directly to
+      a simple conjunction without forcing the kernel to walk
+      [affine_miller_5symbol_aux ... 0 ...]'s let-binding. *)
   Definition multibase_state_at
     (k : nat)
     (Px Py : Fp) (Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg : Fp3)
@@ -434,13 +419,10 @@ Section BW6_761_MillerLoopOptimal_Common.
     split; [exact Hbqz |].
     split; [exact Hsep |].
     change (188 - 188)%nat with 0%nat.
-    (* MCP-driven bisection (2026-05-22) found that [apply
-       multibase_state_at_zero] hung because of typeclass-projection
-       conversion ([Fp6_feval] vs [QE_feval], [Fp3_feval] vs [CE_feval]
-       — the notation-bound projections of bw6_Fp_repr / bw6_Fp3_repr).
-       The fix: [simpl] the goal AND [cbn in <hyp>] to align both
-       sides at the underlying generic names BEFORE [exact].  This
-       bypasses the typeclass coercion entirely.  ~3 ms per conjunct. *)
+    (* [cbn in <hyp>] aligns [Fp6_feval] / [Fp3_feval] (BW6 notations)
+       with [QE_feval] / [CE_feval] (the generic names in the goal
+       after [simpl]).  Without this, [exact] / [apply] forces
+       conversion through typeclass projections — minutes-long hang. *)
     simpl.
     cbn in Hf_one, Hqx_eq, Hqy_eq.
     split; [exact Hf_one |].

@@ -26,11 +26,11 @@
      End2End.Ristretto.ScalarMult
      End2End.XEdDSA.Sign
      End2End.XEdDSA.Verify
-     (* Excluded due to 8+ min import-load time (heavy Rupicola +
-        BW6_761_MillerLoopOptimal 882-LoC + AffineMultibase 375-LoC).
-        Per CLAUDE.md 5-min threshold.  Fix: split file into smaller
-        proof units with lighter imports (BLS24_509_MillerLoop pattern,
-        per reference_qed_iso_kernel_oom.md / reference_mcp_timeout_
-        heavy_imports.md).  Ships as planning scaffold for now. *)
+     ; Excluded due to 8+ min import-load time (heavy Rupicola +
+     ; BW6_761_MillerLoopOptimal 882-LoC + AffineMultibase 375-LoC).
+     ; Per CLAUDE.md 5-min threshold.  Fix: split file into smaller
+     ; proof units with lighter imports (BLS24_509_MillerLoop pattern,
+     ; per reference_qed_iso_kernel_oom.md / reference_mcp_timeout_
+     ; heavy_imports.md).  Ships as planning scaffold for now.
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

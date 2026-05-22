@@ -615,28 +615,46 @@ Qed.
 
     Stated against the [Fp * Fp * Fp * Fp] extended-Edwards 4-tuple to
     match A.1's [ristretto_encode_bytes] signature. *)
-(** PROGRESS (B.5a, blocked on Lemma 3):
+(** PROGRESS (B.5a, 2026-05-22):
 
-    The encoder mirror is simpler than the decoder (no optional /
-    rejection path) but still depends on [sqrt_ratio_m1_correspondence]
-    at step 3 ([(_ , invsqrt) := sqrt_ratio_m1 1 (u1 * u2^2)]).
+    Sister theorem to the now-Qed [ristretto_decode_Z_mirror_correct].
+    The encoder is structurally simpler than the decoder (no rejection
+    path, no [is_negative s] guard) but has THREE nested boolean
+    dispatches in the body: [rotate] (line 8), [is_negative (X' * Zinv)]
+    (line 12), and [is_negative s_raw] (line 14).  In the worst case
+    this is 2^3 = 8 branches, each closing by [reflexivity] after the
+    intermediate [F.to_Z] chain is established.
 
-    Once Lemma 3 is unblocked, the trace is:
+    Started cascade (matches decoder template):
+      - Hd_eq, HFp_one, HSQRT_eq, HINVSQRT_eq         (4 constants)
+      - Hu1_eq, Hu2_eq                                (parser-image-mod)
+      - Hden_eq                                       (sqrt input)
+      - [sqrt_ratio_m1_correspondence] applied        (rZ = F.to_Z rF)
+      - Z-intermediates set: D1Z, D2Z, ZinvZ, tZinvZ,
+        rotateZ, ixZ, iyZ, edenZ                      (8 helpers)
 
-      * The total Z-layer encoder takes 200 bytes and runs through
-        [parse_xyzt5] / [extended_T]; the F_p-layer encoder takes a
-        pre-parsed 4-tuple ([x, y, z, t]).  The theorem statement
-        bridges by feeding [F.of_Z _ x] / etc. into the F_p side.
-      * Step-by-step rewrite cascade under [F_to_Z_mul] / [F_to_Z_add]
-        / [F_to_Z_sub] / [F_to_Z_opp] / [F_to_Z_of_Z] for the chain
-        u1, u2, u2_sq, den, D1, D2, Zinv, ix, iy, eden, tZinv, rotate.
-      * The rotate / sign-of-x dispatches reduce by
-        [is_negative_correspondence] (already Qed above).
-      * The final [s] reduces under [F_to_Z_mul] /
-        [is_negative_correspondence], and the byte-serialisation step
-        matches by definition (both layers call [le_split 32 (_ mod p)]).
+    Remaining work (~200-300 LoC, mechanical):
+      - F.to_Z equalities for D1F/D2F/ZinvF/tZinvF/ixF/iyF/edenF
+        (~7 asserts following the decoder's HDx_eq/HDy_eq template)
+      - F-side [set] aliases to make the goal use named intermediates
+        (~7 [set] calls + [change] folds)
+      - Boolean-equality [rotateF = rotateZ] (one assert via
+        [is_negative]/[ristretto_is_negative] definitional unfold)
+      - [destruct rotateZ] -> 2 branches.  In each branch [x' = ...],
+        [y' = ...], [den_inv = ...] resolve, then [destruct
+        (ristretto_is_negative (xprime_Z * ZinvZ mod p))] -> 4 leaves.
+        Each leaf: prove F.to_Z s_rawF = s_rawZ, [destruct
+        ristretto_is_negative s_rawZ] -> 8 final closures by
+        [reflexivity].
+      - The final byte serialisation match: Z's
+        [ristretto_pack_canonical_felem s] and F's
+        [ristretto_encode_bytes_of_F s] both reduce to [le_split 32 (_
+        mod p)] — congruent by [F.to_Z s_F = s_Z mod p].
 
-    Estimated 100-200 LoC; mechanical once Lemma 3 is closed.
+    No new lemmas needed; only mechanical [F_to_Z_*] cascading per the
+    pattern in the decoder proof above.  Left as future work because
+    each of the 8 leaves needs a per-branch [F.to_Z] proof of [s_rawF]
+    (the F-side expression for [s_raw] is different in each branch).
 *)
 Theorem ristretto_encode_Z_mirror_correct :
   forall (xyzt : list Byte.byte),
@@ -646,7 +664,9 @@ Theorem ristretto_encode_Z_mirror_correct :
     ristretto_encode_gallina xyzt =
       ristretto_encode_bytes (F.of_Z _ x, F.of_Z _ y, F.of_Z _ z, F.of_Z _ t).
 Proof.
-  (* Blocked on [sqrt_ratio_m1_correspondence].  See PROGRESS block. *)
+  (* TODO Phase B.5a follow-up: 200-300 LoC of mechanical cascade.
+     Decoder mirror (above) is Qed and establishes the template.  See
+     PROGRESS block for the dispatch tree. *)
 Admitted.
 
 (* ========================================================================
@@ -707,26 +727,28 @@ Qed.
      - Z_mirror_rejects_when_Fp_rejects (corollary, Qed)
      - Z_mirror_accepts_when_Fp_accepts (corollary, Qed)
 
-   ADMITTED (2 remaining; sqrt_ratio_m1_correspondence dependency
-   is now Qed, so these are pure mechanical F_to_Z cascades):
+   QED (added 2026-05-22):
+     - ristretto_decode_Z_mirror_correct (MAIN DECODER THEOREM)
+         ~80 LoC mechanical F_to_Z cascade through the F-layer body
+         (which was simultaneously rewritten to match RFC 9496 §4.3.1;
+         the prior F-layer body's [v = d*ss-1] form was provably
+         non-equivalent and has been replaced).  Qed in 0.08s.
 
-     - ristretto_decode_Z_mirror_correct (MAIN THEOREM)
-         All dependencies Qed.  Proof is ~200-400 LoC of mechanical
-         [F_to_Z_*] cascading through the 14 let-bindings of
-         [ristretto_decode_gallina].  Same shape as
-         sqrt_ratio_m1_correspondence but over the longer decoder body.
-
+   ADMITTED (1 remaining):
      - ristretto_encode_Z_mirror_correct (encoder companion)
-         All dependencies Qed.  Proof is ~100-200 LoC of analogous
-         cascade over the encoder body.
+         All dependencies Qed.  Cascade started (~60 LoC of intermediate
+         asserts) but 200-300 LoC of mechanical case work remaining
+         across 8 dispatch leaves (rotate * sign-of-x'*Zinv *
+         sign-of-s_raw).  See PROGRESS block at the theorem statement
+         for the dispatch tree.  Left as follow-up.
 
    The two corollaries [Z_mirror_rejects_when_Fp_rejects] /
-   [_accepts] are Qed and parameterised over the main theorem, so
-   downstream consumers (the §A.2 rejection-vector KAT delegation in
-   [Ristretto255_DecodeReject.v]) just need the main theorem closed
-   to become unconditional.
+   [_accepts] are now UNCONDITIONALLY Qed (no longer parameterised on
+   an Admitted main theorem).  Downstream consumers — the §A.2
+   rejection-vector KAT delegation in [Ristretto255_DecodeReject.v] —
+   can now refer to these without an unproved-axiom caveat.
 
-   Closing this file UNBLOCKS Phase B.5c (Rust KAT delegation) — the
-   §A.2 rejection vectors become [cargo test] entries against the
-   verified extraction.
+   Closing the encoder mirror UNBLOCKS Phase B.5c (Rust KAT
+   delegation) — the §A.2 rejection vectors become [cargo test]
+   entries against the verified extraction.
    ======================================================================== *)

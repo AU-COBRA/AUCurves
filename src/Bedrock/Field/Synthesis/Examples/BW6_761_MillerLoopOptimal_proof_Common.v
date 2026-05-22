@@ -411,8 +411,8 @@ Section BW6_761_MillerLoopOptimal_Common.
                           (FElem_Fp3 p_q1ny q1ny *
                            (FElem_Fp p_half half * Rr))))))))))))))))))))))%sep m ->
       Fp6_feval f_val = fp12_one bw6_761_field_ops ->
-      Fp3_feval qx_val = Fp3_feval q1x ->
-      Fp3_feval qy_val = Fp3_feval q1y ->
+      Fp3_feval qx_val = Fp3_feval q0x ->
+      Fp3_feval qy_val = Fp3_feval q0y ->
       miller_loop_inv_opt
         a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
         a_line_d a_line_a
@@ -434,14 +434,18 @@ Section BW6_761_MillerLoopOptimal_Common.
     split; [exact Hbqz |].
     split; [exact Hsep |].
     change (188 - 188)%nat with 0%nat.
-    (* See bisection comment above multibase_state_at definition:
-       even with the [match k with 0 => simple | S _ => ...] refactor
-       and Strategy 0 REMOVED, [apply multibase_state_at_zero] still
-       hangs the kernel here (5+ min, > CLAUDE.md threshold).  The
-       apply step itself, not Qed.  File-substituting [admit] for
-       this one step brings the build to 8.85s. *)
-    admit.
-  Admitted.
+    (* MCP-driven bisection (2026-05-22) found that [apply
+       multibase_state_at_zero] hung because of typeclass-projection
+       conversion ([Fp6_feval] vs [QE_feval], [Fp3_feval] vs [CE_feval]
+       — the notation-bound projections of bw6_Fp_repr / bw6_Fp3_repr).
+       The fix: [simpl] the goal AND [cbn in <hyp>] to align both
+       sides at the underlying generic names BEFORE [exact].  This
+       bypasses the typeclass coercion entirely.  ~3 ms per conjunct. *)
+    simpl.
+    cbn in Hf_one, Hqx_eq, Hqy_eq.
+    split; [exact Hf_one |].
+    split; [exact Hqx_eq | exact Hqy_eq].
+  Qed.
 
   (* ================================================================ *)
   (* Sub-lemma 3 (Exit): the final-adjustment fragment converts the   *)

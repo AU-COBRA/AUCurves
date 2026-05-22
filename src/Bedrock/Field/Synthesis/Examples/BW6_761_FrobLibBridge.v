@@ -294,15 +294,36 @@ Section BW6_FrobLibBridge.
     SeparationLogic.ecancel_assumption_impl.
   Qed.
 
+  (* ============================================================== *)
+  (* Bridge theorem (BLS12-377-style: take library spec as hypothesis) *)
+  (*                                                                  *)
+  (* Caller workflow:                                                  *)
+  (*   pose proof (PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok  *)
+  (*     (F_representation := bw6_Fp_repr)                            *)
+  (*     (F_representation_ok := bw6_Fp_repr_ok)                       *)
+  (*     "bw6_" functions EnvContains HFcopy HFmul) as Hlib.            *)
+  (*   apply (bw6_fp6_frob_ok functions Hlib).                         *)
+  (*                                                                  *)
+  (* Structural progress (foreground MCP session 2026-05-22):         *)
+  (*   - eapply Hlib closes Goal 1's call target cleanly               *)
+  (*     (after specialising the 18 felem args to ce_c*_felem of       *)
+  (*     qe_*_felem of x/old_out and ce_c*_felem of gfp3/gfp6).        *)
+  (*   - Remaining work: 3-way sep translation                        *)
+  (*     (FElem_Fp6 px x + 2× FElem_Fp3 → _slots form via sep_comm    *)
+  (*     rotations + the existing BW6_Fp6_to_lib_slots /              *)
+  (*     BW6_Fp3_to_lib_slots helpers), + 6-way Fp_bounded unfold of  *)
+  (*     Fp6_bounded Fp6_tight x, + post translation (existential     *)
+  (*     packing via BW6_Fp6_join_from_lib_slots).                    *)
+  (* ============================================================== *)
+
   Theorem bw6_fp6_frob_ok :
     forall functions
-      (EnvContains :
-         map.get functions "bw6_fp6_frob" = Some (snd bw6_fp6_frob))
-      (HFcopy : bw6_spec_of_Fp_felem_copy functions)
-      (HFmul  : bw6_spec_of_Fp_mul functions),
+      (Hlib :
+         PairingFieldOpsCubicFirst.spec_of_cubic_first_fp6_frob
+           (F_representation := bw6_Fp_repr) "bw6_" functions),
     spec_of_bw6_fp6_frob functions.
   Proof.
-    intros functions EnvContains HFcopy HFmul.
+    intros functions Hlib.
     (* The library lemma [PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok]
        is closed (Print Assumptions: Closed under the global context),
        so the body-level WP for 6 sequential fp_copy + fp_mul calls is

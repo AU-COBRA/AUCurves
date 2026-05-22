@@ -207,6 +207,177 @@ End GenericMillerLoop.
     [*_MillerLoop_proof.v] file, parametric in the generic body
     defined here.
 
-    Note: this scaffold does NOT cover BW6's 5-symbol
-    {-3,-1,0,1,3} double-base alphabet; that requires a parallel
-    [GenericMillerLoopMultibase] file with a richer iteration body. *)
+    Note: the binary scaffold above does NOT cover BW6's 5-symbol
+    {-3,-1,0,1,3} double-base alphabet; the
+    [GenericMillerLoopMultibase] section below extends it to that
+    case. *)
+
+(** * GenericMillerLoopMultibase — N-symbol parametric Miller-loop scaffold.
+
+    Extends [GenericMillerLoop] above with a non-binary step
+    alphabet.  Motivating instance: BW6-761's optimised Miller
+    loop, which evaluates the seed as a base-3 / signed-binary
+    composite digit at each step (symbols [-3,-1,0,1,3]) rather
+    than {0,1}.
+
+    The dispatch shape: at each iteration index [i], the user
+    supplies an [Syntax.expr] [decode_symbol i] that loads (e.g.)
+    two precomputed bit-arrays [L1[i]] and [L0[i]] and returns a
+    [Z] symbol matching one of the supported alphabet entries.
+    The iteration then selects one of five sub-bodies via nested
+    [cmd.cond] comparing the decoded value against literal
+    constants in the order
+        [0 -> -1 -> +1 -> -3 -> +3]
+    (most-common-first cheap path; final else is unreachable but
+    set to [cmd.skip]).
+
+    This file declares only the dispatch skeleton — the per-symbol
+    sub-bodies (the actual doubling and signed-multi-addition
+    formulas) are passed as [Variable]s by the caller, just like
+    the binary case parameterised on the field-op names.
+
+    STATUS (this turn): scaffold only.  Correctness is left to
+    each per-curve [*_MillerLoop_proof.v] (BW6-761 first), which
+    will discharge the loop invariant against a 5-symbol Gallina
+    model living in [PairingTheory/AffineMultibase.v]. *)
+
+Section GenericMillerLoopMultibase.
+
+  Existing Instances
+    Bitwidth64.BW64.
+
+  (** *** Twist field op names (same as binary scaffold). *)
+  Variable twist_mul_name : string.
+  Variable twist_sqr_name : string.
+  Variable twist_add_name : string.
+  Variable twist_sub_name : string.
+  Variable twist_inv_name : string.
+  Variable twist_copy_name : string.
+
+  (** *** Top field op names (same as binary scaffold). *)
+  Variable top_mul_name : string.
+  Variable top_sqr_name : string.
+
+  (** *** Curve-specific helper: [make_line]. *)
+  Variable make_line_name : string.
+
+  (** *** Per-iteration symbol decoder ***
+
+      Given an expression denoting the current loop index [i],
+      produces a bedrock2 expression whose evaluated value is the
+      decoded symbol from the loop alphabet.  For BW6 with
+      precomputed twin-bit arrays this is typically something like
+      [L1[i] * 3 + L0[i] - bias].  The caller chooses the encoding;
+      this scaffold is generic in it. *)
+  Variable decode_symbol : Syntax.expr -> Syntax.expr.
+
+  (** *** Per-symbol sub-bodies ***
+
+      Sub-bodies are passed in as arbitrary [cmd.cmd]s so each
+      curve can wire them to its own twist/top-field calls.  The
+      typical content:
+
+      - [body_zero]: doubling-only step (T := 2T; f := f^2 * l).
+      - [body_pos1]: doubling + addition of Q with sign +1.
+      - [body_neg1]: doubling + addition of (-Q).
+      - [body_pos3]: doubling + addition of (3Q) with sign +1.
+      - [body_neg3]: doubling + addition of (-3Q).
+
+      For BW6 specifically, the precomputed [3*Q] point is stored
+      alongside [Q] so the [+/-3] branches reuse the
+      single-addition formula against [3*Q] rather than chaining
+      three additions. *)
+  Variable body_zero : Syntax.cmd.cmd.
+  Variable body_pos1 : Syntax.cmd.cmd.
+  Variable body_neg1 : Syntax.cmd.cmd.
+  Variable body_pos3 : Syntax.cmd.cmd.
+  Variable body_neg3 : Syntax.cmd.cmd.
+
+  (** *** Loop length ***
+      Number of iterations from MSB downward to bit 0 (inclusive
+      of the MSB itself; the caller is responsible for the initial
+      T := Q (or T := MSB-symbol-Q) seeding). *)
+  Variable n_iters_msb : Z.
+
+  (** *** 5-way dispatch ***
+      Compares [decode_symbol (expr.var "i")] against each
+      supported alphabet entry in turn; the matching sub-body
+      runs.  Implemented as nested [cmd.cond] (Coq's bedrock2 has
+      no [cmd.match]).  Order is most-common-first
+      (0 dominates the BW6 NAF).
+
+      The fall-through [else] branch is [cmd.skip], which is sound
+      as long as [decode_symbol] really does take values in
+      [{-3,-1,0,1,3}] — the per-curve correctness proof carries
+      that as an invariant. *)
+  Definition multibase_dispatch : Syntax.cmd.cmd :=
+    cmd.seq
+      (cmd.set "sym" (decode_symbol (expr.var "i")))
+      (cmd.cond
+         (expr.op bopname.eq (expr.var "sym") (expr.literal 0))
+         body_zero
+         (cmd.cond
+            (expr.op bopname.eq (expr.var "sym") (expr.literal (-1)))
+            body_neg1
+            (cmd.cond
+               (expr.op bopname.eq (expr.var "sym") (expr.literal 1))
+               body_pos1
+               (cmd.cond
+                  (expr.op bopname.eq (expr.var "sym") (expr.literal (-3)))
+                  body_neg3
+                  (cmd.cond
+                     (expr.op bopname.eq (expr.var "sym") (expr.literal 3))
+                     body_pos3
+                     cmd.skip))))).
+
+  (** *** One multibase iteration ***
+      Decrement [i] (so the loop runs from [n_iters_msb] down to
+      [0] inclusive), then dispatch to the per-symbol sub-body. *)
+  Definition multibase_miller_iteration : Syntax.cmd.cmd :=
+    cmd_seq_list [
+      cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
+      multibase_dispatch
+    ].
+
+  (** *** Full multibase loop body. *)
+  Definition multibase_miller_loop_body : Syntax.cmd.cmd :=
+    cmd_seq_list [
+      cmd.set "i" (expr.literal n_iters_msb);
+      cmd.while (expr.var "i") multibase_miller_iteration
+    ].
+
+  (** *** Function record ***
+      Same calling convention as the binary scaffold —
+      [pout; p_px; p_py; p_qx; p_qy] in, no return.  The per-curve
+      wrapper is responsible for stackallocating temporaries (incl.
+      a [sym] slot) and for seeding [f := 1; T := Q] (or the
+      multibase-aware MSB-symbol-Q initial value) before the loop. *)
+  Definition multibase_miller_loop_func (name : string) : function_t :=
+    (name,
+     (["pout"; "p_px"; "p_py"; "p_qx"; "p_qy"],
+      [] : list String.string,
+      multibase_miller_loop_body)).
+
+End GenericMillerLoopMultibase.
+
+(** *** Multibase correctness theorem template ***
+
+    The per-curve statement parallels the binary case:
+
+      [Theorem bw6_761_miller_loop_ok :
+        program_logic_goal_for_function!
+          (multibase_miller_loop_func
+             BW6.twist_mul_name ... BW6.make_line_name
+             BW6.decode_symbol
+             BW6.body_zero BW6.body_pos1 BW6.body_neg1
+             BW6.body_pos3 BW6.body_neg3
+             BW6.n_iters_msb
+             "bw6_761_miller_loop").]
+
+    The proof discharges the loop invariant against a 5-symbol
+    Gallina model in [PairingTheory/AffineMultibase.v], adding one
+    extra obligation per dispatch arm (5 vs the binary scaffold's
+    2).  Each arm reduces to either the doubling-only lemma
+    [doubling_step_correct] (symbol 0) or the addition lemma
+    [addition_step_correct] (symbols +/-1, +/-3, using precomputed
+    [Q] resp. [3Q]). *)

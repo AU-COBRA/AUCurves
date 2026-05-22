@@ -631,6 +631,23 @@ Definition param_table : list (string * list string) := [
   ("bw6_761_make_line", ["Fp6";"Fp3";"Fp3";"Fp3";"Fp";"Fp"]);
   ("bw6_761_miller_loop", ["Fp6";"Fp";"Fp";"Fp3";"Fp3"]);
 
+  (* Optimal-ate Miller-loop helpers + entry (Phase-1 canonical body). *)
+  (* g2_double_step: x,y,z (Fp3 mut) + r0,r1,r2 (Fp3 mut) + half_fp (Fp) *)
+  ("bw6_761_g2_double_step",
+    ["Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp"]);
+  (* g2_add_step:    x,y,z (Fp3 mut) + r0,r1,r2 (Fp3 mut) + ax,ay (Fp3) *)
+  ("bw6_761_g2_add_step",
+    ["Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3"]);
+  ("bw6_761_g2_line_compute",
+    ["Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3"]);
+  (* sparse_line_eval: out:Fp6, r0,r1,r2:Fp3, p_x,p_y:Fp. *)
+  ("bw6_761_sparse_line_eval",
+    ["Fp6";"Fp3";"Fp3";"Fp3";"Fp";"Fp"]);
+  (* miller_loop_optimal: out:Fp6, p_x,p_y:Fp, q0x,q0y,q1x,q1y,q0ny,q1ny:Fp3,
+     half_fp:Fp. *)
+  ("bw6_761_miller_loop_optimal",
+    ["Fp6";"Fp";"Fp";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3";"Fp"]);
+
   (* Final exponentiation helpers.
      Note: these use the lowercase [bw6_fp6_*] / [bw6_final_exp*]
      prefixes (not [bw6_761_Fp6_*]) — see BW6_761_FinalExp.v Let bindings. *)

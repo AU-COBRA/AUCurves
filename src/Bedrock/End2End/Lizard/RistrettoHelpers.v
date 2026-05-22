@@ -91,7 +91,18 @@ Definition ristretto_sqrt_ratio_m1 (u v : Z) : bool * Z :=
   let r := if ristretto_is_negative r1
            then ristretto_canonical_negate r1
            else r1 in
-  let was_square := orb correct_sign_sqrt flipped_sign_sqrt_i in
+  (* Per RFC 9496 §3.1.3: was_square := correct_sign_sqrt | flipped_sign_sqrt.
+     Both branches give v * r^2 = u (case 1 directly, case 2 because
+     multiplying r0 by SQRT_M1 yields r1 with v * r1^2 = -check = u).
+     The flipped_sign_sqrt_i branch corresponds to u/v being NON-square
+     (check = -i*u, r1 satisfies v*r1^2 = SQRT_M1*u — not a square root
+     of u), so was_square must remain false there.
+     Bug fix 2026-05-22 (B.5a agent finding): was previously
+     [orb correct_sign_sqrt flipped_sign_sqrt_i], which incorrectly
+     reported was_square=true for non-residues.  Matches the F-level
+     specification in [Field/Synthesis/Examples/Ristretto255_Encode.v]
+     line 111 and the comment there citing the RFC. *)
+  let was_square := orb correct_sign_sqrt flipped_sign_sqrt in
   (was_square, r).
 
 (** ** Parse 32-byte little-endian encoding.

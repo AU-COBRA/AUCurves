@@ -262,6 +262,126 @@ Section BW6_PairingHelpers.
     exact HFp6_pre.
   Qed.
 
+  (** Inverse of [FElem_Fp6_split_to_6_slots]: concatenating the 6 Fp slot
+      projections of an Fp6 felem [x] recovers [x] (modulo length).
+
+      The Fp6 felem layout is
+        [x = (c0.c0 ++ c0.c1 ++ c0.c2) ++ (c1.c0 ++ c1.c1 ++ c1.c2)]
+      so the projections [ce_c0 (qe_fst x)] etc. simply slice x. *)
+  Lemma Fp3_concat_proj_eq (x : list word.rep) :
+    length x = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+    (fp_c0 x ++ fp_c1 x ++ fp_c2 x) = x.
+  Proof.
+    intros Hl.
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    unfold fp_c0, ce_c0_felem, fp_c1, ce_c1_felem, fp_c2, ce_c2_felem.
+    (* Step: x = firstn n x ++ skipn n x. *)
+    transitivity (firstn n x ++ skipn n x).
+    2: { apply firstn_skipn. }
+    f_equal.
+    (* Now show: firstn n (skipn n x) ++ skipn (2*n) x = skipn n x. *)
+    transitivity (firstn n (skipn n x) ++ skipn n (skipn n x)).
+    2: { apply firstn_skipn. }
+    f_equal.
+    replace (2 * n)%nat with (n + n)%nat by lia.
+    rewrite skipn_skipn. reflexivity.
+  Qed.
+
+  Lemma Fp6_concat_proj_eq (x : list word.rep) :
+    length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+    ((fp_c0 (fp3_fst x) ++ fp_c1 (fp3_fst x) ++ fp_c2 (fp3_fst x)) ++
+     (fp_c0 (fp3_snd x) ++ fp_c1 (fp3_snd x) ++ fp_c2 (fp3_snd x))) = x.
+  Proof.
+    intros Hl.
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    (* Use Fp3_concat_proj_eq twice on fp3_fst x and fp3_snd x. *)
+    assert (HlFst : length (fp3_fst x) = (3 * n)%nat).
+    { unfold fp3_fst, qe_fst_felem.
+      rewrite firstn_length.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat. lia. }
+    assert (HlSnd : length (fp3_snd x) = (3 * n)%nat).
+    { unfold fp3_snd, qe_snd_felem.
+      rewrite skipn_length.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat. lia. }
+    rewrite (Fp3_concat_proj_eq _ HlFst).
+    rewrite (Fp3_concat_proj_eq _ HlSnd).
+    unfold fp3_fst, qe_fst_felem, fp3_snd, qe_snd_felem.
+    change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+      with (3 * n)%nat.
+    apply firstn_skipn.
+  Qed.
+
+  (** Reverse of [FElem_Fp6_split_to_6_slots]: given the 6-slot layout
+      with slot values that ARE the projections of an Fp6 felem [x],
+      and a length witness for [x], recover [FElem_Fp6 p x]. *)
+  Lemma FElem_Fp6_join_from_proj_slots p (x : Fp6_felem) R m :
+    length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+    (FElem_Fp p (fp_c0 (fp3_fst x)) *
+     (FElem_Fp (word.add p fp_off) (fp_c1 (fp3_fst x)) *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         (fp_c2 (fp3_fst x)) *
+       (FElem_Fp (word.add p fp3_off) (fp_c0 (fp3_snd x)) *
+        (FElem_Fp (word.add (word.add p fp3_off) fp_off) (fp_c1 (fp3_snd x)) *
+         (FElem_Fp (word.add (word.add p fp3_off)
+              (word.of_Z (2 * (Memory.bytes_per_word 64 *
+                Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+            (fp_c2 (fp3_snd x)) * R))))))%sep m ->
+    (FElem_Fp6 p x * R)%sep m.
+  Proof.
+    intros Hlx H.
+    (* lengths of c0..c2 slots *)
+    pose proof Hlx as Hlx'.
+    assert (Hl_fst : length (fp3_fst x) = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { unfold fp3_fst, qe_fst_felem. rewrite firstn_length.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+    assert (Hl_snd : length (fp3_snd x) = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { unfold fp3_snd, qe_snd_felem. rewrite skipn_length.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat. lia. }
+    assert (Hl_c0_fst : length (fp_c0 (fp3_fst x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c0, ce_c0_felem. rewrite firstn_length. lia. }
+    assert (Hl_c1_fst : length (fp_c1 (fp3_fst x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c1, ce_c1_felem. rewrite firstn_length, skipn_length. lia. }
+    assert (Hl_c2_fst : length (fp_c2 (fp3_fst x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c2, ce_c2_felem. rewrite skipn_length. lia. }
+    assert (Hl_c0_snd : length (fp_c0 (fp3_snd x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c0, ce_c0_felem. rewrite firstn_length. lia. }
+    assert (Hl_c1_snd : length (fp_c1 (fp3_snd x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c1, ce_c1_felem. rewrite firstn_length, skipn_length. lia. }
+    assert (Hl_c2_snd : length (fp_c2 (fp3_snd x)) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c2, ce_c2_felem. rewrite skipn_length. lia. }
+    pose proof (FElem_Fp_join6_to_Fp6 p _ _ _ _ _ _ R m
+                  Hl_c0_fst Hl_c1_fst Hl_c2_fst Hl_c0_snd Hl_c1_snd Hl_c2_snd H) as Hjoin.
+    rewrite (Fp6_concat_proj_eq _ Hlx') in Hjoin.
+    exact Hjoin.
+  Qed.
+
+  (** Reverse of [FElem_Fp3_split_in_sep]: same idea for Fp3. *)
+  Lemma FElem_Fp3_join_from_proj_slots p (x : Fp3_felem) R m :
+    length x = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+    (FElem_Fp p (fp_c0 x) *
+     (FElem_Fp (word.add p fp_off) (fp_c1 x) *
+      (FElem_Fp (word.add p (word.of_Z (2 * (Memory.bytes_per_word 64 *
+          Z.of_nat (@AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)))))
+         (fp_c2 x) * R)))%sep m ->
+    (FElem_Fp3 p x * R)%sep m.
+  Proof.
+    intros Hlx H.
+    assert (Hl_c0 : length (fp_c0 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c0, ce_c0_felem. rewrite firstn_length. lia. }
+    assert (Hl_c1 : length (fp_c1 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c1, ce_c1_felem. rewrite firstn_length, skipn_length. lia. }
+    assert (Hl_c2 : length (fp_c2 x) = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr).
+    { unfold fp_c2, ce_c2_felem. rewrite skipn_length. lia. }
+    pose proof (FElem_Fp_join3_in_sep p _ _ _ R m Hl_c0 Hl_c1 Hl_c2 H) as Hjoin.
+    rewrite (Fp3_concat_proj_eq _ Hlx) in Hjoin.
+    exact Hjoin.
+  Qed.
+
   (* ============================================================ *)
   (* Callee spec instances                                         *)
   (* ============================================================ *)

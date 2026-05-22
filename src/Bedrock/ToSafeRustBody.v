@@ -667,6 +667,27 @@ Definition param_table : list (string * list string) := [
     ["Fp6";"Fp6";"Fp3";"Fp3";"Fp3";"Fp3";"Fp3"])
 ].
 
+(** Per-function leading-mutable-parameter count.  Default convention:
+    only the first arg is treated as the output ([&mut T]) and the rest
+    are read-only inputs ([&T]).  Functions with multiple in-out
+    parameters (Phase 1 BW6-761 optimal Miller-loop helpers, where
+    `g2_double_step` mutates 6 leading Fp3 args) need an explicit
+    over-ride here.  The remaining (trailing) args are still printed
+    as inputs. *)
+Definition mut_arity_table : list (string * nat) := [
+  (* g2_double_step: mutates x,y,z,r0,r1,r2 (6 leading Fp3); half_fp is input. *)
+  ("bw6_761_g2_double_step", 6%nat);
+  (* g2_add_step / g2_line_compute: mutate x,y,z,r0,r1,r2 (6 leading); ax,ay are inputs. *)
+  ("bw6_761_g2_add_step", 6%nat);
+  ("bw6_761_g2_line_compute", 6%nat)
+].
+
+Definition lookup_mut_arity (f : string) : nat :=
+  match List.find (fun '(k,_) => seq k f) mut_arity_table with
+  | Some (_, k) => k
+  | None => 1%nat
+  end.
+
 (** Check whether [s] contains [needle] as a contiguous substring.
     Walks every starting position; for small strings this is fine. *)
 Fixpoint contains_at (s needle : string) (start : nat) : bool :=
@@ -838,6 +859,12 @@ Fixpoint safe_cmd_ts (ts : tower_shape) (ind : string) (n : Z)
       let fname := f in
       let nargs := List.length args in
       let cts := callee_types_ts ts fname nargs in
+      (* Multi-mut callees: leading [k_callee - 1] source slots must be
+         passed as [&mut path] rather than [&path].  [k_callee] is the
+         number of leading mutable params on the callee; the first is
+         handled by the [dest_e] dispatch, so the source-side mut count
+         is [k_callee - 1]. *)
+      let k_callee := lookup_mut_arity fname in
       match args, cts with
       | dest_e :: src_es, dest_ct :: src_cts =>
         let '(dpath, drt) := resolve_ts ts n c dest_e in
@@ -848,17 +875,25 @@ Fixpoint safe_cmd_ts (ts : tower_shape) (ind : string) (n : Z)
           (* In-place aliasing: clone the dest *)
           let cn := "__ac" ++ z_str (Z.of_nat ci) in
           let copy := ind ++ "let " ++ cn ++ " = " ++ dest_full ++ ".clone();" ++ LF in
-          let fix fmt_srcs (cts : list string) (es : list expr.expr) : list string :=
+          let fix fmt_srcs_aliased (mleft : nat) (cts : list string) (es : list expr.expr)
+              : list string :=
             match cts, es with
             | ct :: cts', e :: es' =>
                 let '(sp, srt) := resolve_ts ts n c e in
-                let s := if seq (sp ++ ts_drill ts srt ct) dest_full
-                         then "&" ++ cn
-                         else fmt_src_ts ts n c ct e in
-                s :: fmt_srcs cts' es'
+                let full := sp ++ ts_drill ts srt ct in
+                let s :=
+                  if seq full dest_full then "&" ++ cn
+                  else match mleft with
+                       | O => fmt_src_ts ts n c ct e
+                       | S _ =>
+                           if seq ct "u64" then full
+                           else "&mut " ++ full
+                       end in
+                let mleft' := match mleft with O => O | S k => k end in
+                s :: fmt_srcs_aliased mleft' cts' es'
             | _, _ => nil
             end in
-          let srcs := fmt_srcs src_cts src_es in
+          let srcs := fmt_srcs_aliased (Nat.pred k_callee) src_cts src_es in
           (* B-3 copy elimination: when we already cloned dest, the aliasing
              concern (out vs inx/iny) inside the leaf is no longer needed
              because __ac is a fresh buffer.  If the leaf has a _nocopy
@@ -872,8 +907,24 @@ Fixpoint safe_cmd_ts (ts : tower_shape) (ind : string) (n : Z)
                       join ", " srcs ++ ");" ++ LF in
           (copy ++ call, c, S ci)
         else
-          let srcs := List.map (fun '(ct, e) => fmt_src_ts ts n c ct e)
-                       (List.combine src_cts src_es) in
+          let fix fmt_srcs_plain (mleft : nat) (cts : list string) (es : list expr.expr)
+              : list string :=
+            match cts, es with
+            | ct :: cts', e :: es' =>
+                let s :=
+                  match mleft with
+                  | O => fmt_src_ts ts n c ct e
+                  | S _ =>
+                      if seq ct "u64" then fmt_src_ts ts n c ct e
+                      else
+                        let '(sp, srt) := resolve_ts ts n c e in
+                        "&mut " ++ sp ++ ts_drill ts srt ct
+                  end in
+                let mleft' := match mleft with O => O | S k => k end in
+                s :: fmt_srcs_plain mleft' cts' es'
+            | _, _ => nil
+            end in
+          let srcs := fmt_srcs_plain (Nat.pred k_callee) src_cts src_es in
           (* B-3 copy elimination: even when there is no caller-side aliasing,
              the regular leaf wraps inputs in allocx/allocy felem_copies for
              defensive aliasing handling.  When dest provably differs from
@@ -949,16 +1000,33 @@ Definition fmt_input_param (a t : string) : string :=
   if seq t "u64" then esc a ++ ": u64"
   else esc a ++ ": &" ++ t.
 
+(** Print one parameter as a mutable output (`mut a: &mut T`). *)
+Definition fmt_mut_param (a t : string) : string :=
+  "mut " ++ esc a ++ ": &mut " ++ t.
+
+(** Build the parameter list. The first [k] non-u64 parameters are
+    emitted as [&mut T]; the rest follow the input convention.  A [k]
+    of 0 is treated as 1 (every function has at least one output). *)
+Fixpoint fmt_param_strs (k : nat) (params : list (string * string))
+    : list string :=
+  match params with
+  | nil => nil
+  | (a, t) :: rest =>
+      match k with
+      | O => fmt_input_param a t :: fmt_param_strs O rest
+      | S k' =>
+          if seq t "u64"
+          then fmt_input_param a t :: fmt_param_strs k rest
+          else fmt_mut_param a t :: fmt_param_strs k' rest
+      end
+  end.
+
 Definition safe_rust_fn_ts (ts : tower_shape) (n : Z) (ptypes : list string)
     (func : string * (list string * list string * Syntax.cmd.cmd)) : string :=
   let '(name, (args, _, body)) := func in
   let params := List.combine args ptypes in
-  let param_strs := match params with
-    | (a, t) :: rest =>
-        ("mut " ++ esc a ++ ": &mut " ++ t) ::
-        List.map (fun '(a, t) => fmt_input_param a t) rest
-    | nil => nil
-    end in
+  let k := lookup_mut_arity name in
+  let param_strs := fmt_param_strs k params in
   let init_ctx : ctx := List.map (fun '(a, t) => (esc a, t)) params in
   let '(body_s, _, _) := safe_cmd_ts ts "    " n init_ctx 0 body in
   "#[inline]" ++ LF ++

@@ -28,6 +28,7 @@ Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
+Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoopOptimal.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_FinalExp.
 Require Import Bedrock.Field.FieldExtensions.GenericQuadratic.
 Require Import Bedrock.Field.FieldExtensions.GenericCubic.
@@ -94,6 +95,7 @@ Section Extract.
     bw6_Fp6_funcs ++
     [ bw6_Fp3_mul_by_zeta_func ] ++ (* bw6_761_Fp3_mul_by_zeta = Fp6 nr *)
     bw6_761_miller_loop_funcs ++
+    bw6_761_miller_loop_optimal_funcs ++
     bw6_final_exp_funcs.
 
 End Extract.

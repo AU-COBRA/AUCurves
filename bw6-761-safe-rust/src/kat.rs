@@ -230,36 +230,76 @@ fn minus_one_raw() -> FpRaw {
     ])
 }
 
+// gnark-crypto's `thirdRootOneG1` in Montgomery form (LE u64).  Cube
+// root of unity over Fp used to build the G2 endomorphism image
+// q1.X = thirdRootOneG1 · q0.X in the optimal-ate Miller loop.
+// (Cross-checked 2026-05-22 against gnark-crypto v0.20.1's
+// `bw6-761.go::thirdRootOneG1.SetString(...)`.)
+const THIRD_ROOT_ONE_G1_MONT: [u64; 12] = [
+    0x67a04ae427bfb5f8, 0x9d32d491eb6a5cff, 0x43d03c1cb68051d4, 0x0b75ca96f69859a5,
+    0x0763497f5325ec60, 0x48076b5c278dd94d, 0x8ca3965ff91efd06, 0x1e6077657ea02f5d,
+    0xcdd6c153a8c37724, 0x28b5b634e5c22ea4, 0x9e01e3efd42e902c, 0x00e3d6815769a804,
+];
+
+// half_fp = (p+1)/2 mod p in Montgomery form (LE u64).  Multiplied
+// by Fp elements inside `bw6_761_g2_double_step` to perform the halve
+// step (avoids needing a runtime Fp inversion per iteration).
+const HALF_FP_MONT: [u64; 12] = [
+    0xfb4fffffffffc330, 0x2074b24effffc6b4, 0x5a53337936b8278b, 0x39860afa32a61376,
+    0x2f634f8d48c05b9d, 0x23b81847b2a110ce, 0x558e305f8130ae05, 0xc9e7471b95da050e,
+    0xe6ec6737c49cc35e, 0xff5551673471245b, 0x5497f3fdd230548e, 0x00ba6fd1f655db44,
+];
+
 fn fp_from_raw(r: &FpRaw) -> tower::Fp {
     let mut out = zero();
     fp_to_montgomery(&mut out, r);
     tower::Fp(out.0)
 }
 
+// sqrt(alpha) = (-4)^((p-1)/6) mod p, computed via Tonelli-Shanks
+// (the branch picked by gnark-crypto's `Frobenius`); cross-checked
+// 2026-05-22 against gnark v0.20.1 via `Frob(v).B1.A0`.  In Mont
+// limbs (LE u64).
+fn sa_raw() -> FpRaw {
+    // canonical (non-Mont) value: (-4)^((p-1)/6) mod p
+    // = alpha + 1 (since alpha's last byte is 0x60 and sa's is 0x61).
+    let mut a = alpha_raw().0;
+    a[0] = a[0].wrapping_add(1);
+    FpRaw(a)
+}
+
 /// Build the 5 BW6-761 Frobenius gamma constants in Montgomery form,
-/// laid out as Fp3 blobs (since the bedrock2 spec passes them as
-/// Fp3 pointers):
-///   gamma_fp3      = (_,  alpha,    alpha^2)   — c0 ignored
-///   gamma_fp6      = (sa, sa·alpha, sa·alpha^2)
-///   gamma_fp3_p2   = squared
-///   gamma_fp6_p2   = squared
-///   gamma_fp6_p3   = (-1, _, _)                — c1, c2 ignored
+/// laid out as Fp3 blobs (cross-checked 2026-05-22 against gnark's
+/// `Frobenius` on basis vectors u, u², v, v·u, v·u² in `internal/
+/// fptower`):
+///
+///   gamma_fp3 (pi)   = (_, α, α²)
+///   gamma_fp6 (pi)   = (sa, sa·α, sa·α²) = (sa, −1, −α)
+///   gamma_fp3_p2     = (_, α², α)
+///   gamma_fp6_p2     = (α, α², 1)
+///   gamma_fp6_p3     = (−1, −α, −α²)
+///
+/// where α = (−4)^((p−1)/3), sa = (−4)^((p−1)/6), and the Fp identities
+/// `sa² = α`, `α³ = 1`, `sa³ = −1`, `sa·α = −1`, `sa·α² = −α` hold.
 fn real_frob_consts() -> (tower::Fp3, tower::Fp3, tower::Fp3, tower::Fp3, tower::Fp3) {
     use tower::Fp3;
     let alpha = fp_from_raw(&alpha_raw());
     let alpha_sq = fp_from_raw(&alpha_sq_raw());
+    let sa = fp_from_raw(&sa_raw());
     let one_mont = tower_one_mont();
     let minus_one = fp_from_raw(&minus_one_raw());
-    // For this prime sqrt(alpha) = alpha^2 (Tonelli-Shanks branch),
-    // so b0 = alpha^2, b1 = alpha^2 * alpha = alpha^3 = 1,
-    // b2 = alpha^2 * alpha^2 = alpha^4 = alpha.
-    let gamma_fp3    = Fp3 { c0: tower_zero_fp(), c1: alpha,    c2: alpha_sq };
-    let gamma_fp6    = Fp3 { c0: alpha_sq,        c1: one_mont, c2: alpha    };
-    // Squared: a1^2 = alpha^2, a2^2 = alpha^4 = alpha;
-    //          b0^2 = alpha,   b1^2 = 1,        b2^2 = alpha^2.
-    let gamma_fp3_p2 = Fp3 { c0: tower_zero_fp(), c1: alpha_sq, c2: alpha    };
-    let gamma_fp6_p2 = Fp3 { c0: alpha,           c1: one_mont, c2: alpha_sq };
-    let gamma_fp6_p3 = Fp3 { c0: minus_one,       c1: tower_zero_fp(), c2: tower_zero_fp() };
+    // Compute −α, −α² in Mont.
+    let mut neg_alpha = tower::Fp::zero();
+    let mut neg_alpha_sq = tower::Fp::zero();
+    let zero_fp = tower_zero_fp();
+    tower::bw6_761_sub(&mut neg_alpha, &zero_fp, &alpha);
+    tower::bw6_761_sub(&mut neg_alpha_sq, &zero_fp, &alpha_sq);
+
+    let gamma_fp3    = Fp3 { c0: zero_fp, c1: alpha,        c2: alpha_sq    };
+    let gamma_fp6    = Fp3 { c0: sa,      c1: minus_one,    c2: neg_alpha   };
+    let gamma_fp3_p2 = Fp3 { c0: zero_fp, c1: alpha_sq,     c2: alpha       };
+    let gamma_fp6_p2 = Fp3 { c0: alpha,   c1: alpha_sq,     c2: one_mont    };
+    let gamma_fp6_p3 = Fp3 { c0: minus_one, c1: neg_alpha,  c2: neg_alpha_sq };
     (gamma_fp3, gamma_fp6, gamma_fp3_p2, gamma_fp6_p2, gamma_fp6_p3)
 }
 
@@ -284,9 +324,12 @@ fn pairing_runs_without_panic() {
         real_frob_consts();
 
     let mut out = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    let trog1 = tower::Fp(THIRD_ROOT_ONE_G1_MONT);
+    let halff = tower::Fp(HALF_FP_MONT);
     pairing(&mut out, &p, &q,
             &gamma_fp3, &gamma_fp6,
-            &gamma_fp3_p2, &gamma_fp6_p2, &gamma_fp6_p3);
+            &gamma_fp3_p2, &gamma_fp6_p2, &gamma_fp6_p3,
+            &trog1, &halff);
     // No assertion: this test passes iff pairing returns at all.
     // (A divide-by-zero in Fp3_inv during the easy part would
     // surface as a panic via fiat-rust's invariants.)
@@ -410,8 +453,130 @@ const EXPECTED_E_G_G: [[u64; 12]; 6] = [
 /// Once those land, removing `#[ignore]` below should be the only
 /// change needed in this file — the gnark fixture is already
 /// frozen in `EXPECTED_E_G_G`.
+// gnark MillerLoop (no final exp) on (g1Gen, g2Gen).  Used to
+// validate the Miller loop wiring independently of the final
+// exponentiation.  Extracted 2026-05-22 from gnark-crypto v0.20.1.
+const EXPECTED_MILLER_NO_FINEXP: [[u64; 12]; 6] = [
+    [0x1fbfed9d99f36d94, 0xcae699fb8e03a388, 0x2a9685e28b2ebfcd, 0x7749dd7d3146f60d,
+     0x99a85250cb88ec63, 0x9bb285813a6bcf26, 0x89230deab7f930a5, 0x7732a7b3eaa86eef,
+     0xaf3d98c1c9af6bca, 0xfb1342b6f164a729, 0x1683da66d213f591, 0x00619d8e2a563d8c],
+    [0xd46699f6d5483424, 0x8ae8909c8818ab8c, 0x15b9197ec42a3f2f, 0x1774cdbb6bc1bade,
+     0xf7ca9deb0bcf0559, 0x0b4fc78712b59ebb, 0x80cd331637f47416, 0x86dc3ad12cf4d982,
+     0x718dcebdfeb1f607, 0x5e2a0bd67cbb6357, 0xab34e56a24c9e8c4, 0x00d1b86fffc53d17],
+    [0xe62c6b34e40c99fe, 0x4558b170cc57f005, 0xee28d41b57df87ea, 0x1e01ef638ed9692a,
+     0x93ee057ad0e0b2ec, 0xb6c9afdae1a00299, 0x75a92fb8d1ec21d6, 0x9a7754481709b92c,
+     0x05d1286982923de0, 0xbf06fafd5f257729, 0xac938fdd41a822e5, 0x003e9864d35feba6],
+    [0x7f6a5350754f8026, 0x318602dc3b413207, 0x653382163e6f5d1d, 0x234108fb2aef6d6a,
+     0x6c8a96f3d2233ea6, 0x87dc776fcade057c, 0x4d9563ce7f31cb8f, 0x8842da432dd2b31f,
+     0x5c7c2aaa9fd0d71e, 0x5c525bf3b071af88, 0xf2e4daa18a0376b4, 0x004894f0fe845fb9],
+    [0xaff9847ba19eba31, 0xd89ba6390a620db1, 0xd50a95ddabe4fda2, 0x6bde5f1e2be3669b,
+     0x813bb79d46c2ebae, 0x2d06b7884cbfdf3c, 0xa7c4a815ed9632f1, 0xefe9099aa0b731d0,
+     0x80c605b5edcecdc6, 0xb7a1ae27f41a599b, 0x1bd2414fe996a297, 0x011d97e1aace77d8],
+    [0x707e10739b6eeef8, 0x82f0cfde2593193d, 0xef660b2ec9baaf9c, 0x1b37adc2f23b408e,
+     0x437bcb9596e84c03, 0xe22ef4e9b7c94fec, 0xff5b96e01661dad5, 0xc993578d379857c7,
+     0x55ff245cd7f8e42b, 0xf4fa100fa6d6f345, 0xf78918fa2c238b4d, 0x004368cdd4a0c110],
+];
+
+// gnark's "after easy" Fp6 value: r = f^((p^3-1)(p+1)) where
+// f = MillerLoop(g1Gen, g2Gen).  Used to validate the easy part of
+// our final-exp in isolation from the hard-part chain.
+const EXPECTED_AFTER_EASY_B0_A0: [u64; 12] = [
+    0x57b2c24e0bb1bbc5, 0xa6cbdb2c6911617d, 0xa6def870b7f25063, 0x265d4851e7ecf0d5,
+    0x4be47834eb848906, 0xb9ca660b74e840a8, 0x30217705c11abb49, 0xdc7d6040240b111b,
+    0xa33c2d889b4a098f, 0xd36e3a50cb350524, 0x76a2acf53544b439, 0x01169f63ca3fa64e,
+];
+
+/// Diagnostic: extract our final-exp easy-part output and compare
+/// against gnark's reference value on (g1Gen, g2Gen).
 #[test]
-#[ignore = "gnark fixture in place, but bedrock2 Miller body uses single BLS12-377-seed loop; needs proper two-loop BW6 optimal-ate (PENDING.md items 2+4). Run with --ignored to see exact mismatch."]
+fn final_exp_easy_kat() {
+    use tower::{Fp3 as TFp3, Fp6 as TFp6,
+                bw6_761_miller_loop_optimal, bw6_final_exp_easy,
+                bw6_761_Fp3_mul_fp, bw6_761_Fp3_opp,
+                bw6_761_Fp3_felem_copy};
+    // Reuse the miller-only setup.
+    let qx = TFp3 { c0: tower::Fp(G2_GEN_X), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let qy = TFp3 { c0: tower::Fp(G2_GEN_Y), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let trog1 = tower::Fp(THIRD_ROOT_ONE_G1_MONT);
+    let halff = tower::Fp(HALF_FP_MONT);
+    let mut q1x = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q1y = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q0ny = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q1ny = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    bw6_761_Fp3_mul_fp(&mut q1x, &qx, &trog1);
+    bw6_761_Fp3_opp(&mut q1y, &qy);
+    bw6_761_Fp3_opp(&mut q0ny, &qy);
+    bw6_761_Fp3_felem_copy(&mut q1ny, &qy);
+    let p_x = tower::Fp(G1_GEN_X);
+    let p_y = tower::Fp(G1_GEN_Y);
+    let zero_fp3 = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut f = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    bw6_761_miller_loop_optimal(
+        &mut f, &p_x, &p_y, &qx, &qy, &q1x, &q1y, &q0ny, &q1ny, &halff,
+    );
+    let (gamma_fp3, gamma_fp6, _g3p2, _g6p2, _g6p3) = real_frob_consts();
+    let mut r = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    bw6_final_exp_easy(&mut r, &f, &gamma_fp3, &gamma_fp6);
+    eprintln!("our after-easy B0.A0 = {:016x?}", r.c0.c0.0);
+    eprintln!("gnark after-easy B0.A0 = {:016x?}", EXPECTED_AFTER_EASY_B0_A0);
+    assert_eq!(r.c0.c0.0, EXPECTED_AFTER_EASY_B0_A0,
+               "final-exp easy part B0.A0 mismatch");
+}
+
+/// Independent check that just our Miller-loop body (without final
+/// exponentiation) matches gnark's reference.  Validates the
+/// q1 = (thirdRootOneG1·q0.X, −q0.Y) wiring + half_fp constant
+/// independently from the final-exp / Frobenius issues.
+#[test]
+fn miller_loop_only_kat() {
+    use tower::{Fp3 as TFp3, Fp6 as TFp6,
+                bw6_761_miller_loop_optimal,
+                bw6_761_Fp3_mul_fp, bw6_761_Fp3_opp,
+                bw6_761_Fp3_felem_copy};
+
+    let qx = TFp3 { c0: tower::Fp(G2_GEN_X), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let qy = TFp3 { c0: tower::Fp(G2_GEN_Y), c1: tower_zero_fp(), c2: tower_zero_fp() };
+
+    let trog1 = tower::Fp(THIRD_ROOT_ONE_G1_MONT);
+    let halff = tower::Fp(HALF_FP_MONT);
+
+    let mut q1x = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q1y = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q0ny = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut q1ny = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    bw6_761_Fp3_mul_fp(&mut q1x, &qx, &trog1);
+    bw6_761_Fp3_opp(&mut q1y, &qy);
+    bw6_761_Fp3_opp(&mut q0ny, &qy);
+    bw6_761_Fp3_felem_copy(&mut q1ny, &qy);
+
+    let p_x = tower::Fp(G1_GEN_X);
+    let p_y = tower::Fp(G1_GEN_Y);
+
+    let zero_fp3 = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
+    let mut f = TFp6 { c0: zero_fp3, c1: zero_fp3 };
+    bw6_761_miller_loop_optimal(
+        &mut f,
+        &p_x, &p_y,
+        &qx, &qy,
+        &q1x, &q1y,
+        &q0ny, &q1ny,
+        &halff,
+    );
+
+    let label = ["B0.A0", "B0.A1", "B0.A2", "B1.A0", "B1.A1", "B1.A2"];
+    let got = [f.c0.c0.0, f.c0.c1.0, f.c0.c2.0, f.c1.c0.0, f.c1.c1.0, f.c1.c2.0];
+    for k in 0..6 {
+        if got[k] != EXPECTED_MILLER_NO_FINEXP[k] {
+            eprintln!("Miller mismatch at {}", label[k]);
+            eprintln!("got    : {:016x?}", got[k]);
+            eprintln!("expect : {:016x?}", EXPECTED_MILLER_NO_FINEXP[k]);
+        }
+        assert_eq!(got[k], EXPECTED_MILLER_NO_FINEXP[k],
+                   "miller loop {} mismatch", label[k]);
+    }
+}
+
+#[test]
 fn pairing_kat_gnark_generator() {
     use tower::{Fp3 as TFp3, Fp6 as TFp6};
 
@@ -428,12 +593,15 @@ fn pairing_kat_gnark_generator() {
 
     let (gamma_fp3, gamma_fp6, gamma_fp3_p2, gamma_fp6_p2, gamma_fp6_p3) =
         real_frob_consts();
+    let trog1 = tower::Fp(THIRD_ROOT_ONE_G1_MONT);
+    let halff = tower::Fp(HALF_FP_MONT);
 
     let zero_fp3 = TFp3 { c0: tower_zero_fp(), c1: tower_zero_fp(), c2: tower_zero_fp() };
     let mut out = TFp6 { c0: zero_fp3, c1: zero_fp3 };
     pairing(&mut out, &g1, &g2,
             &gamma_fp3, &gamma_fp6,
-            &gamma_fp3_p2, &gamma_fp6_p2, &gamma_fp6_p3);
+            &gamma_fp3_p2, &gamma_fp6_p2, &gamma_fp6_p3,
+            &trog1, &halff);
 
     assert_eq!(out.c0.c0.0, EXPECTED_E_G_G[0], "e(g1,g2).B0.A0 mismatch");
     assert_eq!(out.c0.c1.0, EXPECTED_E_G_G[1], "e(g1,g2).B0.A1 mismatch");

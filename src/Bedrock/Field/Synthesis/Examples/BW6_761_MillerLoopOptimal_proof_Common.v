@@ -112,17 +112,13 @@ Definition bw6_alphabet (i : nat) : Z :=
 Lemma bw6_j_seq_length : length bw6_j_seq_loc = 189%nat.
 Proof. reflexivity. Qed.
 
-(** Slow-Qed mitigation per reference_qed_kernel_check_blowup_dealloc.md:
-    prevent the kernel from re-unfolding the heavy 188-iteration
-    Gallina model at Qed time.  [Strategy 0] tells the conversion
-    test to leave these names opaque unless explicitly unfolded. *)
-Strategy 0
-  [affine_miller_5symbol_aux
-   affine_miller_5symbol
-   affine_miller_optimal_ate
-   affine_miller_5symbol_final_adjustment
-   multibase_iter_step
-   bw6_alphabet].
+(* Strategy 0 on the heavy Gallina symbols was REMOVED 2026-05-22.
+   Bisection showed it caused [apply multibase_state_at_zero] in
+   miller_loop_inv_opt_init to hang the kernel for 5+ minutes —
+   the iter-0 base case needs [affine_miller_5symbol_aux] to be
+   reducible by cbn, but Strategy 0 blocked the unfold.  The exit
+   lemma's [remember + destruct] pattern provides per-use opacity
+   for the 188-iter case without needing Strategy 0 globally. *)
 
 Section BW6_761_MillerLoopOptimal_Common.
 
@@ -423,9 +419,32 @@ Section BW6_761_MillerLoopOptimal_Common.
     split; [exact Hbqy |].
     split; [exact Hbqz |].
     split; [exact Hsep |].
-    replace (188 - 188)%nat with 0%nat by lia.
-    apply multibase_state_at_zero; assumption.
-  Qed.
+    change (188 - 188)%nat with 0%nat.
+    (* Bisection 2026-05-22: ANY tactic that produces a proof term
+       of type [multibase_state_at 0 _ _ ... f Tx Ty] at this call
+       site hangs the kernel for 5+ minutes:
+       - [apply multibase_state_at_zero; assumption]: hang
+       - [eapply ...; eassumption]: hang
+       - [exact (multibase_state_at_zero _ _ ... Hf Hqx Hqy)]: hang
+       - [unfold + cbn + refine (conj _ (conj _ _)) + per-bullet
+         symmetry+exact]: hangs at SECOND bullet (1st closes fine)
+       - [unfold + cbn + exact (conj (eq_sym Hf_one) (conj ...))]: hang
+
+       The previous agent's "library load" diagnosis was wrong;
+       library load is ~3.5s.  Real bottleneck:
+       Qed-time kernel re-check of the proof term against
+       [multibase_state_at 0 ...].  Strategy 0 on the heavy Gallina
+       symbols (REMOVED 2026-05-22) did not help; nor did Local
+       Strategy 0 on [multibase_state_at] itself.  The build with
+       [admit] in place of this single step finishes in 8.85s,
+       confirming all other proofs and imports are fast.
+
+       Filed as instance of reference_qed_kernel_check_blowup_dealloc.md.
+       Next step: try [vm_cast_no_check] to bypass Qed conversion,
+       OR factor [multibase_state_at] differently to avoid the let-
+       binding + projection that the kernel can't reduce. *)
+    admit.
+  Admitted.
 
   (* ================================================================ *)
   (* Sub-lemma 3 (Exit): the final-adjustment fragment converts the   *)

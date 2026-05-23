@@ -248,27 +248,18 @@ Admitted.
     Same algebraic-cancellation/encoder-invariance split as order2.
     [T4 := (SQRT_M1, 0)] is on the curve because [a*SQRT_M1^2 = 1]
     (a = -1 and SQRT_M1^2 = -1).  The coordinate computation gives
-    the "Hamburg flip" formulas (Decaf §5 eq (4)).  The encoder's
-    [rotate] branch absorbs the i-rotation.
+    the "Hamburg flip" formulas (Decaf §5 eq (4)).
 
-    Status: ADMITTED.  The algebraic-cancellation half (showing
-    [(Px, Py) = (SQRT_M1*Qy, SQRT_M1*Qx)] via the typed E.point lift)
-    follows the same blueprint as [canonical_rep_case_order2].  The
-    only obstruction is that [field; Decidable.vm_decide] (the
-    workhorse of order2) hangs >500s when the goal contains [SQRT_M1]
-    (a ~256-bit literal) on both sides — [field]'s morphism step
-    tries to reduce SQRT_M1 to canonical form.  Generalising [SQRT_M1]
-    (and [Curve25519.E.d, Curve25519.E.a]) to opaque variables before
-    [field] is the obvious fix but loses the [Decidable.vm_decide]
-    discharge of [a <> 0].  Two viable completion paths:
-      (a)  Manual ring rewriting: [rewrite F.mul_0_l, F.add_0_l,
-           F.mul_0_r, F.div_1_r] etc, avoiding [field] entirely.
-      (b)  Add [Strategy 0 [SQRT_M1 Curve25519.E.d Curve25519.E.a]]
-           hints, then call [field].
-    The encoder-invariance half (after the coord substitution) needs
-    a [rotate]-branch case analysis identical to order2's structure.
-    See the order2 proof and header note for the helper-lemma
-    decomposition. *)
+    Algebraic-cancellation half (PROVEN below): same E.point lift +
+    group cancellation as [canonical_rep_case_order2], but with
+    [SQRT_M1] and [Curve25519.E.d] declared [Opaque] so [field] does
+    not try to reduce the 256-bit literals.
+
+    Encoder-invariance half (ADMITTED): after substituting [Px =
+    SQRT_M1*Qy], [Py = SQRT_M1*Qx], the residual goal reduces to the
+    encoder's [rotate] branch absorbing the i-rotation.  Same
+    completion pattern as order2 but with the Hamburg flip instead of
+    sign negation. *)
 Lemma canonical_rep_case_order4_pos :
   forall (Px Py Qx Qy : Fp),
     (Curve25519.E.a * (Px * Px) + Py * Py =
@@ -280,13 +271,70 @@ Lemma canonical_rep_case_order4_pos :
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
 Proof.
+  Opaque SQRT_M1 Curve25519.E.d.
+  intros Px Py Qx Qy HP HQ Hx Hy.
+  (* Algebraic-cancellation half (PROVEN). *)
+  pose (Pt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Px, Py) HP : Curve25519.E.point).
+  pose (Qt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Qx, Qy) HQ : Curve25519.E.point).
+  pose (Qopp := @AffineProofs.E.opp _ _ _ _ F.opp F.add F.sub F.mul _ _
+    Curve25519.field _ Curve25519.E.a Curve25519.E.d
+    Curve25519.E.nonzero_a Qt).
+  pose (D := Curve25519.E.add Pt Qopp).
+  assert (Hcoord_D : E.coordinates D
+                     = (sub_affine_x (Px, Py) (Qx, Qy),
+                        sub_affine_y (Px, Py) (Qx, Qy)))
+    by reflexivity.
+  rewrite Hx, Hy in Hcoord_D.
+  assert (HT4 : (Curve25519.E.a * (SQRT_M1 * SQRT_M1) + Fzero * Fzero
+                 = Fone + Curve25519.E.d * (SQRT_M1 * SQRT_M1)
+                          * (Fzero * Fzero))%F).
+  { Transparent SQRT_M1 Curve25519.E.d.
+    unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; Decidable.vm_decide. }
+  Opaque SQRT_M1 Curve25519.E.d.
+  pose (T4 := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (SQRT_M1, Fzero) HT4 : Curve25519.E.point).
+  assert (HD_T4 : E.eq D T4).
+  1:unfold E.eq, T4; rewrite Hcoord_D; simpl; split; reflexivity.
+  pose proof (@AffineProofs.E.edwards_curve_commutative_group _ _ _ _
+                F.opp F.add F.sub F.mul _ _
+                Curve25519.field Curve25519.char_ge_3 _
+                Curve25519.E.a Curve25519.E.d
+                Curve25519.E.nonzero_a
+                Curve25519.E.square_a
+                Curve25519.E.nonsquare_d) as Hgrp.
+  assert (HPt_eq : E.eq Pt (Curve25519.E.add T4 Qt)).
+  1:rewrite <- HD_T4; unfold D, Qopp;
+    rewrite <- (associative Pt (E.opp Qt) Qt);
+    rewrite (left_inverse Qt); rewrite (right_identity Pt); reflexivity.
+  assert (HT4Qt_coord : E.coordinates (Curve25519.E.add T4 Qt)
+                       = (SQRT_M1 * Qy, SQRT_M1 * Qx)%F).
+  { unfold Curve25519.E.add, E.add, T4, Qt, E.coordinates; cbv [fst snd].
+    apply pair_equal_spec. split.
+    - field. Decidable.vm_decide.
+    - unfold Curve25519.E.a. field. Decidable.vm_decide. }
+  assert (HPxy : (Px, Py) = (SQRT_M1 * Qy, SQRT_M1 * Qx)%F).
+  1:rewrite <- HT4Qt_coord;
+    destruct HPt_eq as [Hx' Hy'];
+    unfold Pt, E.coordinates in Hx', Hy';
+    destruct (E.coordinates (Curve25519.E.add T4 Qt)) as [x2 y2] eqn:E;
+    injection (eq_sym (E : E.coordinates _ = _)) as Hcx Hcy;
+    subst x2 y2; cbn in Hx', Hy'; subst; reflexivity.
+  inversion HPxy as [[HPx HPy]]. subst Px Py.
+  Transparent SQRT_M1 Curve25519.E.d.
+  (* Encoder-invariance half (ADMITTED) — Hamburg-rotate branch case
+     analysis on encoder body.  See header note. *)
 Admitted.
 
 (** ** Order-4 negative case — sub_affine P Q = (-SQRT_M1, 0) ⇒
     Px = -SQRT_M1*Qy, Py = -SQRT_M1*Qx.
 
-    Mirror of order4_pos with [SQRT_M1 ↦ -SQRT_M1].  Same status and
-    blocker as [canonical_rep_case_order4_pos]; see that lemma's note. *)
+    Mirror of order4_pos with [SQRT_M1 ↦ -SQRT_M1].  Algebraic-
+    cancellation half proven; encoder-invariance half admitted. *)
 Lemma canonical_rep_case_order4_neg :
   forall (Px Py Qx Qy : Fp),
     (Curve25519.E.a * (Px * Px) + Py * Py =
@@ -298,4 +346,61 @@ Lemma canonical_rep_case_order4_neg :
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
 Proof.
+  Opaque SQRT_M1 Curve25519.E.d.
+  intros Px Py Qx Qy HP HQ Hx Hy.
+  (* Algebraic-cancellation half (PROVEN). *)
+  pose (Pt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Px, Py) HP : Curve25519.E.point).
+  pose (Qt := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Qx, Qy) HQ : Curve25519.E.point).
+  pose (Qopp := @AffineProofs.E.opp _ _ _ _ F.opp F.add F.sub F.mul _ _
+    Curve25519.field _ Curve25519.E.a Curve25519.E.d
+    Curve25519.E.nonzero_a Qt).
+  pose (D := Curve25519.E.add Pt Qopp).
+  assert (Hcoord_D : E.coordinates D
+                     = (sub_affine_x (Px, Py) (Qx, Qy),
+                        sub_affine_y (Px, Py) (Qx, Qy)))
+    by reflexivity.
+  rewrite Hx, Hy in Hcoord_D.
+  assert (HT4n : (Curve25519.E.a * (F.opp SQRT_M1 * F.opp SQRT_M1) + Fzero * Fzero
+                  = Fone + Curve25519.E.d * (F.opp SQRT_M1 * F.opp SQRT_M1)
+                           * (Fzero * Fzero))%F).
+  { Transparent SQRT_M1 Curve25519.E.d.
+    unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; Decidable.vm_decide. }
+  Opaque SQRT_M1 Curve25519.E.d.
+  pose (T4n := exist (fun xy => let '(x, y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (F.opp SQRT_M1, Fzero) HT4n : Curve25519.E.point).
+  assert (HD_T4n : E.eq D T4n).
+  1:unfold E.eq, T4n; rewrite Hcoord_D; simpl; split; reflexivity.
+  pose proof (@AffineProofs.E.edwards_curve_commutative_group _ _ _ _
+                F.opp F.add F.sub F.mul _ _
+                Curve25519.field Curve25519.char_ge_3 _
+                Curve25519.E.a Curve25519.E.d
+                Curve25519.E.nonzero_a
+                Curve25519.E.square_a
+                Curve25519.E.nonsquare_d) as Hgrp.
+  assert (HPt_eq : E.eq Pt (Curve25519.E.add T4n Qt)).
+  1:rewrite <- HD_T4n; unfold D, Qopp;
+    rewrite <- (associative Pt (E.opp Qt) Qt);
+    rewrite (left_inverse Qt); rewrite (right_identity Pt); reflexivity.
+  assert (HT4nQt_coord : E.coordinates (Curve25519.E.add T4n Qt)
+                       = (F.opp SQRT_M1 * Qy, F.opp SQRT_M1 * Qx)%F).
+  { unfold Curve25519.E.add, E.add, T4n, Qt, E.coordinates; cbv [fst snd].
+    apply pair_equal_spec. split.
+    - field. Decidable.vm_decide.
+    - unfold Curve25519.E.a. field. Decidable.vm_decide. }
+  assert (HPxy : (Px, Py) = (F.opp SQRT_M1 * Qy, F.opp SQRT_M1 * Qx)%F).
+  1:rewrite <- HT4nQt_coord;
+    destruct HPt_eq as [Hx' Hy'];
+    unfold Pt, E.coordinates in Hx', Hy';
+    destruct (E.coordinates (Curve25519.E.add T4n Qt)) as [x2 y2] eqn:E;
+    injection (eq_sym (E : E.coordinates _ = _)) as Hcx Hcy;
+    subst x2 y2; cbn in Hx', Hy'; subst; reflexivity.
+  inversion HPxy as [[HPx HPy]]. subst Px Py.
+  Transparent SQRT_M1 Curve25519.E.d.
+  (* Encoder-invariance half (ADMITTED) — Hamburg-rotate branch case
+     analysis on encoder body.  See order4_pos and header note. *)
 Admitted.

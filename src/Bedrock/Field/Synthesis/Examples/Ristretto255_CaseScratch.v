@@ -15,6 +15,7 @@ Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
 Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
+Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Sqrt.
 Import ListNotations.
 Local Open Scope F_scope.
 Local Notation Fp := (F.F (2^255 - 19)).
@@ -326,6 +327,132 @@ Qed.
 
 (* === order-4 encoder-invariance scaffolding === *)
 
+(* abs collapses sign: equal squares -> equal abs. *)
+Lemma abs_eq_of_sq : forall (a b : Fp), (a * a)%F = (b * b)%F -> abs a = abs b.
+Proof.
+  intros a b H.
+  assert (Hfac : ((a - b) * (a + b))%F = Fzero)
+    by (assert (Hr : ((a - b) * (a + b))%F = (a*a - b*b)%F) by field;
+        rewrite Hr, H; field).
+  apply mul_zero_factor in Hfac. destruct Hfac as [Hd | Hd].
+  - assert (a = b) by (apply sub_eq_zero; exact Hd). subst. reflexivity.
+  - assert (a = F.opp b) by (apply add_eq_zero; exact Hd). subst. apply abs_opp.
+Qed.
+
+(** ** The "Hamburg flip" rotation invariance, parameterised by a square
+    root of [-1] (so it covers BOTH order-4 cosets via [c = SQRT_M1] and
+    [c = -SQRT_M1]).  For [(x,y)] on the curve, the rotated representative
+    [(c*y, c*x)] (with [c^2 = -1]) encodes to the same field element [s].
+
+    KEY STRUCTURE (documented for the reader):
+      LHS sqrt_ratio argument  uL := (1 + c*x)(1 - c*x) * (c*y*(c*x))^2
+                                   = (1 + x^2) * (x*y)^2     [since c^2=-1]
+      RHS sqrt_ratio argument  uR := (1 + y)(1 - y) * (x*y)^2
+                                   = (1 - y^2) * (x*y)^2
+    These differ by the factor (1+x^2)/(1-y^2); on the curve (a=-1)
+      1+x^2 = y^2(1 - d x^2),  1-y^2 = -x^2(1 + d y^2).
+    The two [invsqrt] values are genuinely different, but the encoder's
+    [rotate] branch + the [INVSQRT_A_MINUS_D] constant select the same [s].
+    We close it by reducing [s] to [abs] of a value whose SQUARE matches on
+    both sides (via [abs_eq_of_sq]) after resolving the rotate/sign branches
+    with [sqrt_ratio_m1_correct]. *)
+
+Lemma mul_cancel_l : forall (a x y : Fp), a <> Fzero -> (a * x)%F = (a * y)%F -> x = y.
+Proof.
+  intros a x y Ha H.
+  assert (Hd : (a * (x - y))%F = Fzero)
+    by (replace (a * (x - y))%F with ((a * x) - (a * y))%F by field; rewrite H; field).
+  apply mul_zero_factor in Hd. destruct Hd as [Hd | Hd].
+  - exfalso. apply Ha. exact Hd.
+  - apply sub_eq_zero. exact Hd.
+Qed.
+
+(* On the curve, 1 + Qx^2 = Qy^2 (1 - d Qx^2) is nonzero: if it were 0 then
+   d would be a square (= 1/Qx^2), contradicting nonsquare_d. *)
+Lemma PL_nonzero : forall (Qx Qy : Fp),
+  (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+   Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+  Qx <> Fzero -> Qy <> Fzero ->
+  (Fone + Qx * Qx)%F <> Fzero.
+Proof.
+  intros Qx Qy HQ HQxnz HQynz.
+  Opaque Curve25519.E.d.
+  assert (Ha : (Curve25519.E.a : Fp) = F.opp Fone)
+    by (unfold Curve25519.E.a; apply ModularArithmeticTheorems.F.eq_to_Z_iff;
+        vm_compute; reflexivity).
+  assert (Hd : (Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F = (Qy*Qy - Qx*Qx - Fone)%F)
+    by (assert (Hr : (Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F
+               = ((Fone + Curve25519.E.d*(Qx*Qx)*(Qy*Qy)) - Fone)%F) by field;
+        rewrite Hr; rewrite Ha in HQ;
+        assert (HQc : (Qy*Qy - Qx*Qx)%F = (Fone + Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F)
+          by (assert (Hr2 : (Qy*Qy - Qx*Qx)%F = (F.opp Fone*(Qx*Qx) + Qy*Qy)%F) by field;
+              rewrite Hr2; exact HQ);
+        rewrite <- HQc; field).
+  assert (HPLfac : (Fone + Qx*Qx)%F = (Qy*Qy*(Fone - Curve25519.E.d*(Qx*Qx)))%F)
+    by (assert (Hr : (Qy*Qy*(Fone - Curve25519.E.d*(Qx*Qx)))%F
+               = (Qy*Qy - Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F) by field;
+        rewrite Hr, Hd; field).
+  rewrite HPLfac. intro Hc. apply mul_zero_factor in Hc. destruct Hc as [Hc | Hc].
+  - apply mul_zero_factor in Hc. destruct Hc; apply HQynz; assumption.
+  - apply (Curve25519.E.nonsquare_d (F.inv Qx)).
+    assert (Hdq : (Curve25519.E.d * (Qx*Qx))%F = Fone)
+      by (symmetry; apply sub_eq_zero; exact Hc).
+    apply (mul_cancel_l (Qx*Qx)%F);
+      [ intro Hqq; apply mul_zero_factor in Hqq; destruct Hqq; apply HQxnz; assumption | ].
+    transitivity (Fone:Fp); [ field; exact HQxnz | rewrite <- Hdq; field ].
+Qed.
+
+(* Symmetric: 1 - Qy^2 = -Qx^2 (1 + d Qy^2) is nonzero: if 0 then d = -1/Qy^2,
+   so (i/Qy)^2 = d, contradicting nonsquare_d. *)
+Lemma vR_nonzero : forall (Qx Qy : Fp),
+  (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+   Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+  Qx <> Fzero -> Qy <> Fzero ->
+  ((Fone + Qy) * (Fone - Qy))%F <> Fzero.
+Proof.
+  intros Qx Qy HQ HQxnz HQynz.
+  Opaque Curve25519.E.d.
+  assert (Ha : (Curve25519.E.a : Fp) = F.opp Fone)
+    by (unfold Curve25519.E.a; apply ModularArithmeticTheorems.F.eq_to_Z_iff;
+        vm_compute; reflexivity).
+  assert (Hd : (Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F = (Qy*Qy - Qx*Qx - Fone)%F)
+    by (assert (Hr : (Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F
+               = ((Fone + Curve25519.E.d*(Qx*Qx)*(Qy*Qy)) - Fone)%F) by field;
+        rewrite Hr; rewrite Ha in HQ;
+        assert (HQc : (Qy*Qy - Qx*Qx)%F = (Fone + Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F)
+          by (assert (Hr2 : (Qy*Qy - Qx*Qx)%F = (F.opp Fone*(Qx*Qx) + Qy*Qy)%F) by field;
+              rewrite Hr2; exact HQ);
+        rewrite <- HQc; field).
+  assert (HvRfac : ((Fone + Qy) * (Fone - Qy))%F
+                 = (F.opp (Qx*Qx) * (Fone + Curve25519.E.d*(Qy*Qy)))%F)
+    by (assert (Hr : ((Fone + Qy) * (Fone - Qy))%F = (Fone - Qy*Qy)%F) by field;
+        rewrite Hr;
+        assert (Hr2 : (F.opp (Qx*Qx) * (Fone + Curve25519.E.d*(Qy*Qy)))%F
+               = (F.opp (Qx*Qx) - Curve25519.E.d*(Qx*Qx)*(Qy*Qy))%F) by field;
+        rewrite Hr2, Hd; field).
+  rewrite HvRfac. intro Hc. apply mul_zero_factor in Hc. destruct Hc as [Hc | Hc].
+  - assert (Hqq : (Qx*Qx)%F = Fzero)
+      by (assert (Hr : (Qx*Qx)%F = F.opp (F.opp (Qx*Qx))) by field; rewrite Hr, Hc; field).
+    apply mul_zero_factor in Hqq; destruct Hqq; apply HQxnz; assumption.
+  - apply (Curve25519.E.nonsquare_d (F.inv Qy * SQRT_M1)).
+    assert (Hdq : (Curve25519.E.d * (Qy*Qy))%F = F.opp Fone)
+      by (transitivity ((Fone + Curve25519.E.d*(Qy*Qy)) - Fone)%F; [ field | rewrite Hc; field ]).
+    apply (mul_cancel_l (Qy*Qy)%F);
+      [ intro Hqq; apply mul_zero_factor in Hqq; destruct Hqq; apply HQynz; assumption | ].
+    transitivity (F.opp Fone : Fp);
+      [ transitivity (SQRT_M1 * SQRT_M1)%F; [ field; exact HQynz | exact SQRT_M1_sq ]
+      | rewrite <- Hdq; field ].
+Qed.
+
+Lemma encode_aux_rotate : forall (c Qx Qy : Fp),
+  (c * c)%F = F.opp Fone ->
+  (Curve25519.E.a * (Qx * Qx) + Qy * Qy =
+   Fone + Curve25519.E.d * (Qx * Qx) * (Qy * Qy))%F ->
+  ristretto_encode_aux (c * Qy) (c * Qx) Fone (c * Qy * (c * Qx))
+  = ristretto_encode_aux Qx Qy Fone (Qx * Qy).
+Proof.
+Admitted.
+
 Lemma canonical_rep_case_order4_pos :
   forall (Px Py Qx Qy : Fp),
     (Curve25519.E.a * (Px * Px) + Py * Py =
@@ -393,18 +520,10 @@ Proof.
   Transparent SQRT_M1 Curve25519.E.d.
   unfold ristretto_encode_bytes, ristretto_encode, to_extended.
   f_equal.
-  (* Remaining encoder-invariance goal (the "Hamburg flip"):
-       ristretto_encode_aux (SQRT_M1*Qy) (SQRT_M1*Qx) Fone (SQRT_M1*Qy*(SQRT_M1*Qx))
-       = ristretto_encode_aux Qx Qy Fone (Qx*Qy)
-     The two sqrt_ratio_m1 arguments are
-       LHS = (Fone + Qx^2) * (Qx*Qy)^2   [since (1+i*Qx)(1-i*Qx) = 1 - i^2 Qx^2]
-       RHS = (Fone - Qy^2) * (Qx*Qy)^2
-     which are NOT a clean scalar multiple of one another; the relation
-     between (1+Qx^2) and (1-Qy^2) goes through the curve equation HQ and
-     the constant INVSQRT_A_MINUS_D = 1/sqrt(a-d).  Closing this requires
-     [sqrt_ratio_m1_correct] (PROVEN in Ristretto255_Sqrt.v) plus a full
-     rotate-branch case analysis.  Left ADMITTED. *)
-Admitted.
+  (* The remaining encoder-invariance goal is exactly the "Hamburg flip"
+     [encode_aux_rotate] with [c := SQRT_M1] (so [c^2 = -1] is [SQRT_M1_sq]). *)
+  apply (encode_aux_rotate SQRT_M1 Qx Qy SQRT_M1_sq HQ).
+Qed.
 
 Lemma canonical_rep_case_order4_neg :
   forall (Px Py Qx Qy : Fp),
@@ -473,7 +592,10 @@ Proof.
   Transparent SQRT_M1 Curve25519.E.d.
   unfold ristretto_encode_bytes, ristretto_encode, to_extended.
   f_equal.
-  (* Mirror of order4_pos with SQRT_M1 -> -SQRT_M1.  Same Hamburg-flip
-     encoder-invariance goal; relies on [sqrt_ratio_m1_correct] and the
-     rotate/Y-negate branch analysis.  Left ADMITTED. *)
-Admitted.
+  (* Mirror of order4_pos: the Hamburg flip [encode_aux_rotate] with
+     [c := -SQRT_M1].  The hypothesis [c^2 = -1] holds because
+     [(-i)*(-i) = i*i = -1]. *)
+  assert (Hcc : (F.opp SQRT_M1 * F.opp SQRT_M1)%F = F.opp Fone)
+    by (rewrite opp_mul_opp; exact SQRT_M1_sq).
+  apply (encode_aux_rotate (F.opp SQRT_M1) Qx Qy Hcc HQ).
+Qed.

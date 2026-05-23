@@ -57,6 +57,7 @@ Require Import Bedrock.Field.FieldExtensions.GenericCubicSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericCubic.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
+Require Import Bedrock.Field.Synthesis.Examples.BW6_761_ProjOps.
 
 Import BinInt String List.ListNotations.
 
@@ -147,6 +148,10 @@ Section BW6_MillerLoopOptimal.
   Local Notation Fp_felem  := (@AbstractField.felem _ _ _ _ _ _ bw6_Fp_repr).
   Local Notation Fp3_felem := (@AbstractField.felem _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
   Local Notation Fp6_felem := (@AbstractField.felem _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr).
+
+  Local Notation Fp_feval  := (@AbstractField.feval _ _ _ _ _ _ bw6_Fp_repr).
+  Local Notation Fp3_feval := (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr).
+  Local Notation Fp6_feval := (@AbstractField.feval _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr).
 
   Local Typeclasses Opaque bw6_Fp6_params.
   Local Typeclasses Opaque bw6_Fp3_params.
@@ -726,7 +731,12 @@ Section BW6_MillerLoopOptimal.
              (FElem_Fp3 pr0 r0' *
               (FElem_Fp3 pr1 r1' *
                (FElem_Fp3 pr2 r2' *
-                (FElem_Fp phalf half * Rr)))))))%sep mem' }.
+                (FElem_Fp phalf half * Rr)))))))%sep mem' /\
+          (let '((nx, ny, nz), (c0, c1, c2)) :=
+             bw6_proj_double_step
+               (Fp3_feval x) (Fp3_feval y) (Fp3_feval z) (Fp_feval half) in
+           Fp3_feval x' = nx /\ Fp3_feval y' = ny /\ Fp3_feval z' = nz /\
+           Fp3_feval r0' = c0 /\ Fp3_feval r1' = c1 /\ Fp3_feval r2' = c2) }.
 
   Instance spec_of_bw6_761_g2_add_step : spec_of "bw6_761_g2_add_step" :=
     fnspec! "bw6_761_g2_add_step"
@@ -762,7 +772,13 @@ Section BW6_MillerLoopOptimal.
               (FElem_Fp3 pr1 r1' *
                (FElem_Fp3 pr2 r2' *
                 (FElem_Fp3 pax ax *
-                 (FElem_Fp3 pay ay * Rr))))))))%sep mem' }.
+                 (FElem_Fp3 pay ay * Rr))))))))%sep mem' /\
+          (let '((nx, ny, nz), (c0, c1, c2)) :=
+             bw6_proj_add_step
+               (Fp3_feval x) (Fp3_feval y) (Fp3_feval z)
+               (Fp3_feval ax) (Fp3_feval ay) in
+           Fp3_feval x' = nx /\ Fp3_feval y' = ny /\ Fp3_feval z' = nz /\
+           Fp3_feval r0' = c0 /\ Fp3_feval r1' = c1 /\ Fp3_feval r2' = c2) }.
 
   Instance spec_of_bw6_761_g2_line_compute : spec_of "bw6_761_g2_line_compute" :=
     fnspec! "bw6_761_g2_line_compute"
@@ -795,7 +811,12 @@ Section BW6_MillerLoopOptimal.
               (FElem_Fp3 pr1 r1' *
                (FElem_Fp3 pr2 r2' *
                 (FElem_Fp3 pax ax *
-                 (FElem_Fp3 pay ay * Rr))))))))%sep mem' }.
+                 (FElem_Fp3 pay ay * Rr))))))))%sep mem' /\
+          (let '(c0, c1, c2) :=
+             bw6_proj_line_compute
+               (Fp3_feval x) (Fp3_feval y) (Fp3_feval z)
+               (Fp3_feval ax) (Fp3_feval ay) in
+           Fp3_feval r0' = c0 /\ Fp3_feval r1' = c1 /\ Fp3_feval r2' = c2) }.
 
   Instance spec_of_bw6_761_sparse_line_eval : spec_of "bw6_761_sparse_line_eval" :=
     fnspec! "bw6_761_sparse_line_eval"
@@ -822,7 +843,11 @@ Section BW6_MillerLoopOptimal.
             (FElem_Fp3 pr1 r1 *
              (FElem_Fp3 pr2 r2 *
               (FElem_Fp ppx px *
-               (FElem_Fp ppy py * Rr))))))%sep mem' }.
+               (FElem_Fp ppy py * Rr))))))%sep mem' /\
+          Fp6_feval out =
+            bw6_proj_sparse_line
+              (Fp3_feval r0) (Fp3_feval r1) (Fp3_feval r2)
+              (Fp_feval px) (Fp_feval py) }.
 
   Instance spec_of_bw6_761_miller_loop_optimal :
       spec_of "bw6_761_miller_loop_optimal" :=

@@ -129,13 +129,8 @@ Proof.
   destruct HD0 as [Hx Hy]. split; assumption.
 Qed.
 
-Lemma ristretto_equiv_sym :
-  forall P Q : Curve25519.E.point,
-    ristretto_equiv P Q -> ristretto_equiv Q P.
-Proof.
-  (* TODO: 4-way case analysis on [is_4torsion_affine].  Each case is a
-     ~5-line Edwards negation calculation. *)
-Admitted.
+(* [ristretto_equiv_sym] is proved below (after the [E4]/[Eopp] helpers
+   it depends on), via [E4_opp] + the group identity Q - P = -(P - Q). *)
 
 (** ** [ristretto_equiv_add_compat] — equivalence respects Edwards addition.
 
@@ -150,14 +145,206 @@ Admitted.
          a finite group of size 4 under E.add; closure is a 4x4 table).
       4. Hence (P + Q) - (P' + Q') ∈ E[4], i.e. equivalent.
 *)
+(* ---- helpers for [ristretto_equiv_add_compat] ------------------------ *)
+
+(** Typed Edwards opposite specialised to Curve25519. *)
+Local Notation Eopp :=
+  (@AffineProofs.E.opp _ _ _ _ F.opp F.add F.sub F.mul _ _
+     Curve25519.field _ Curve25519.E.a Curve25519.E.d Curve25519.E.nonzero_a).
+
+(** [E4 R] — [R]'s affine coordinates lie in the 4-torsion set. *)
+Definition E4 (R : Curve25519.E.point) : Prop :=
+  is_4torsion_affine (E.coordinates R).
+
+(** Bridge: [ristretto_equiv A B] iff the typed difference [A + (-B)]
+    has 4-torsion coordinates.  Holds because the [sub_affine] formula
+    is, by reflexivity, the [E.add]/[E.opp] coordinate computation. *)
+Lemma equiv_iff_E4 :
+  forall A B : Curve25519.E.point,
+    ristretto_equiv A B <-> E4 (Curve25519.E.add A (Eopp B)).
+Proof.
+  intros A B. unfold ristretto_equiv, E4.
+  assert (Hco : E.coordinates (Curve25519.E.add A (Eopp B))
+                = sub_affine (point_coords A) (point_coords B)).
+  { destruct A as [[xa ya] Ha]; destruct B as [[xb yb] Hb]. reflexivity. }
+  rewrite Hco. reflexivity.
+Qed.
+
+(** The commutative-group structure on Curve25519 points. *)
+Lemma curve25519_comm_group :
+  @commutative_group Curve25519.E.point CompleteEdwardsCurve.E.eq
+    Curve25519.E.add Curve25519.E.zero Eopp.
+Proof.
+  exact (@AffineProofs.E.edwards_curve_commutative_group _ _ _ _
+           F.opp F.add F.sub F.mul _ _
+           Curve25519.field Curve25519.char_ge_3 _
+           Curve25519.E.a Curve25519.E.d
+           Curve25519.E.nonzero_a Curve25519.E.square_a
+           Curve25519.E.nonsquare_d).
+Qed.
+
+(** The four typed 4-torsion points. *)
+Definition Oc : Curve25519.E.point := Curve25519.E.zero.
+
+Lemma onc_T1 : (Curve25519.E.a*(Fzero*Fzero) + F.opp Fone * F.opp Fone
+                = Fone + Curve25519.E.d*(Fzero*Fzero)*(F.opp Fone*F.opp Fone))%F.
+Proof. unfold Curve25519.E.a, Curve25519.E.d; Decidable.vm_decide. Qed.
+Definition T1c : Curve25519.E.point :=
+  exist (fun xy => let '(x,y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (Fzero, F.opp Fone) onc_T1.
+
+Lemma onc_T2 : (Curve25519.E.a*(SQRT_M1*SQRT_M1) + Fzero*Fzero
+                = Fone + Curve25519.E.d*(SQRT_M1*SQRT_M1)*(Fzero*Fzero))%F.
+Proof. unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; Decidable.vm_decide. Qed.
+Definition T2c : Curve25519.E.point :=
+  exist (fun xy => let '(x,y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (SQRT_M1, Fzero) onc_T2.
+
+Lemma onc_T3 : (Curve25519.E.a*(F.opp SQRT_M1*F.opp SQRT_M1) + Fzero*Fzero
+                = Fone + Curve25519.E.d*(F.opp SQRT_M1*F.opp SQRT_M1)*(Fzero*Fzero))%F.
+Proof. unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; Decidable.vm_decide. Qed.
+Definition T3c : Curve25519.E.point :=
+  exist (fun xy => let '(x,y) := xy in
+    (Curve25519.E.a*(x*x) + y*y = Fone + Curve25519.E.d*(x*x)*(y*y))%F)
+    (F.opp SQRT_M1, Fzero) onc_T3.
+
+(** A 4-torsion point is [E.eq] one of the four canonical points. *)
+Lemma E4_eq_one_of :
+  forall R, E4 R -> E.eq R Oc \/ E.eq R T1c \/ E.eq R T2c \/ E.eq R T3c.
+Proof.
+  intros R HR. unfold E4, is_4torsion_affine in HR.
+  destruct (E.coordinates R) as [x y] eqn:HRc.
+  destruct HR as [[Hx Hy]|[[Hx Hy]|[[Hx Hy]|[Hx Hy]]]].
+  - left.  unfold E.eq, Oc, Curve25519.E.zero, E.zero. rewrite HRc.
+    split; [exact Hx | exact Hy].
+  - right; left.  unfold E.eq, T1c. rewrite HRc. cbn [E.coordinates proj1_sig].
+    split; [exact Hx | exact Hy].
+  - right; right; left.  unfold E.eq, T2c. rewrite HRc.
+    cbn [E.coordinates proj1_sig]. split; [exact Hx | exact Hy].
+  - right; right; right.  unfold E.eq, T3c. rewrite HRc.
+    cbn [E.coordinates proj1_sig]. split; [exact Hx | exact Hy].
+Qed.
+
+(** [E4] is invariant under [E.eq] (it depends only on coordinates). *)
+Lemma E4_Proper : forall R S, E.eq R S -> E4 R -> E4 S.
+Proof.
+  intros R S Heq HR. unfold E4 in *.
+  destruct (E.coordinates R) as [xr yr] eqn:HRc.
+  destruct (E.coordinates S) as [xs ys] eqn:HSc.
+  unfold E.eq in Heq. rewrite HRc, HSc in Heq. destruct Heq as [Hxx Hyy].
+  unfold is_4torsion_affine in *. rewrite <- Hxx, <- Hyy. exact HR.
+Qed.
+
+(** The 16-entry closure table on the explicit torsion points. *)
+Lemma E4_closed_table :
+  forall i j, In i (Oc::T1c::T2c::T3c::nil) -> In j (Oc::T1c::T2c::T3c::nil) ->
+    E4 (Curve25519.E.add i j).
+Proof.
+  intros i j Hi Hj. cbn [In] in Hi, Hj.
+  unfold E4, is_4torsion_affine.
+  destruct Hi as [<-|[<-|[<-|[<-|[]]]]];
+    destruct Hj as [<-|[<-|[<-|[<-|[]]]]];
+    unfold Oc, T1c, T2c, T3c, Curve25519.E.zero, Curve25519.E.add, E.add,
+      E.zero, E.coordinates;
+    cbn [fst snd proj1_sig];
+    [ left | right;left | right;right;left | right;right;right
+    | right;left | left | right;right;right | right;right;left
+    | right;right;left | right;right;right | right;left | left
+    | right;right;right | right;right;left | left | right;left ];
+    (split;
+      [ unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; field;
+        Decidable.vm_decide
+      | unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; field;
+        Decidable.vm_decide ]).
+Qed.
+
+(** Closure of [E4] under [E.add]. *)
+Lemma E4_closed :
+  forall R S, E4 R -> E4 S -> E4 (Curve25519.E.add R S).
+Proof.
+  intros R S HR HS.
+  pose proof curve25519_comm_group as Hcg. destruct Hcg as [Hgrp Hcomm].
+  apply E4_eq_one_of in HR. apply E4_eq_one_of in HS.
+  pose proof (@monoid_op_Proper _ _ _ _ Hgrp) as Hadd.
+  assert (Hbridge : forall i j,
+            In i (Oc::T1c::T2c::T3c::nil) -> In j (Oc::T1c::T2c::T3c::nil) ->
+            E.eq R i -> E.eq S j -> E4 (Curve25519.E.add R S)).
+  { intros i j Hi Hj HRi HSj.
+    apply (E4_Proper (Curve25519.E.add i j)).
+    - symmetry. apply Hadd; assumption.
+    - apply E4_closed_table; assumption. }
+  destruct HR as [HR|[HR|[HR|HR]]]; destruct HS as [HS|[HS|[HS|HS]]];
+    [ eapply (Hbridge Oc Oc)   | eapply (Hbridge Oc T1c)
+    | eapply (Hbridge Oc T2c)  | eapply (Hbridge Oc T3c)
+    | eapply (Hbridge T1c Oc)  | eapply (Hbridge T1c T1c)
+    | eapply (Hbridge T1c T2c) | eapply (Hbridge T1c T3c)
+    | eapply (Hbridge T2c Oc)  | eapply (Hbridge T2c T1c)
+    | eapply (Hbridge T2c T2c) | eapply (Hbridge T2c T3c)
+    | eapply (Hbridge T3c Oc)  | eapply (Hbridge T3c T1c)
+    | eapply (Hbridge T3c T2c) | eapply (Hbridge T3c T3c) ];
+    try (cbn [In]; tauto); assumption.
+Qed.
+
+(** [E4] is closed under [E.opp]: the torsion set is closed under (x,y) ↦ (-x,y). *)
+Lemma E4_opp : forall R : Curve25519.E.point, E4 R -> E4 (Eopp R).
+Proof.
+  intros R HR. unfold E4, is_4torsion_affine in *.
+  assert (Hco : E.coordinates (Eopp R)
+    = (F.opp (fst (E.coordinates R)), snd (E.coordinates R)))
+    by (destruct R as [[rx ry] Hr]; reflexivity).
+  rewrite Hco. destruct (E.coordinates R) as [x y]; cbn [fst snd].
+  destruct HR as [[Hx Hy]|[[Hx Hy]|[[Hx Hy]|[Hx Hy]]]]; subst;
+    [ left; split; [field|reflexivity]
+    | right; left; split; [field|reflexivity]
+    | right; right; right; split; reflexivity
+    | right; right; left; split; [field|reflexivity] ].
+Qed.
+
+(** ** [ristretto_equiv_sym] — symmetry.  Q - P = -(P - Q) (abelian-group
+    inverse-of-product), and [E4] is closed under [E.opp] (= [E4_opp]). *)
+Lemma ristretto_equiv_sym :
+  forall P Q : Curve25519.E.point, ristretto_equiv P Q -> ristretto_equiv Q P.
+Proof.
+  intros P Q H. apply equiv_iff_E4 in H. apply equiv_iff_E4.
+  pose proof curve25519_comm_group as Hcg. destruct Hcg as [Hgrp Hcomm].
+  assert (Hrearr : E.eq (Curve25519.E.add Q (Eopp P))
+                        (Eopp (Curve25519.E.add P (Eopp Q)))).
+  { pose proof (@inv_op _ _ _ _ _ Hgrp P (Eopp Q)) as Hinv. rewrite Hinv.
+    rewrite (@Group.inv_inv _ _ _ _ _ Hgrp Q). reflexivity. }
+  eapply E4_Proper; [ symmetry; exact Hrearr | ].
+  apply E4_opp; exact H.
+Qed.
+
+(** ** [ristretto_equiv_add_compat] — equivalence respects Edwards addition. *)
 Lemma ristretto_equiv_add_compat :
   forall P P' Q Q' : Curve25519.E.point,
     ristretto_equiv P P' ->
     ristretto_equiv Q Q' ->
     ristretto_equiv (Curve25519.E.add P Q) (Curve25519.E.add P' Q').
 Proof.
-  (* TODO: see strategy in docstring above. *)
-Admitted.
+  intros P P' Q Q' HP HQ.
+  apply equiv_iff_E4 in HP. apply equiv_iff_E4 in HQ. apply equiv_iff_E4.
+  pose proof curve25519_comm_group as Hcg. destruct Hcg as [Hgrp Hcomm].
+  pose proof (Hierarchy.commutative (is_commutative:=Hcomm)) as Hc.
+  pose proof (Hierarchy.associative (is_associative:=monoid_is_associative)) as Ha.
+  assert (Hswap : forall a b c : Curve25519.E.point,
+            (Curve25519.E.add (Curve25519.E.add a b) c
+             = Curve25519.E.add (Curve25519.E.add a c) b)%E)
+    by (intros a b c; rewrite <- !Ha; rewrite (Hc b c); reflexivity).
+  assert (Hrearr : E.eq
+            (Curve25519.E.add (Curve25519.E.add P Q)
+                              (Eopp (Curve25519.E.add P' Q')))
+            (Curve25519.E.add (Curve25519.E.add P (Eopp P'))
+                              (Curve25519.E.add Q (Eopp Q'))))
+    by (pose proof (@inv_op _ _ _ _ _ Hgrp P' Q') as Hinv; rewrite Hinv;
+        rewrite !Ha;
+        rewrite (Hswap (Curve25519.E.add P Q) (Eopp Q') (Eopp P'));
+        rewrite (Hswap P Q (Eopp P')); reflexivity).
+  eapply E4_Proper; [ symmetry; exact Hrearr | ].
+  apply E4_closed; assumption.
+Qed.
 
 (* ========================================================================
    Section 2: Phase B.2 — Canonicality.

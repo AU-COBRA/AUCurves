@@ -327,7 +327,7 @@ Definition rd_bad_cmd : rust_cmd_ed :=
 Definition rd_yzero_check (k_ok : rust_cmd_ed) : rust_cmd_ed :=
   REdSeq (REdScalarSet v_rd_yacc (SLit 0))
   (REdSeq (REdFor v_rd_loop 32
-             (REdSeq (REdByteLoad v_rd_ybyte (LE_TBytes_r v_rd_y 32)
+             (REdSeq (REdByteLoad v_rd_ybyte (LE_TBytes_r v_rd_y 40)
                         (SVar v_rd_loop))
                      (REdScalarSet v_rd_yacc
                         (SAdd (SVar v_rd_yacc) (SVar v_rd_ybyte)))))
@@ -395,7 +395,7 @@ Definition ristretto_decode_rs : rust_cmd_ed :=
   REdLetZero v_rd_t         (TBytes 40) (
   (* parse: bs → (s, status), then dispatch on the status byte. *)
   REdSeq (REdCallN "ristretto_parse_canonical_felem"
-            [LE_TBytes_r v_rd_s      32;
+            [LE_TBytes_r v_rd_s      40;
              LE_TBytes_r v_rd_status 1]
             [LE_TBytes_r v_rd_bs     32])
   (REdSeq (REdByteLoad v_rd_statusb (LE_TBytes_r v_rd_status 1) (SLit 0))
@@ -403,84 +403,84 @@ Definition ristretto_decode_rs : rust_cmd_ed :=
      (* status ≠ 0 ⇒ parse failed ⇒ bad point *)
      rd_bad_cmd
      (* status = 0 ⇒ success body *)
-     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_one 32) const_one_zs)
-     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_two 32) const_two_zs)
-     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_p   32) const_p_zs)
-     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_d   32) const_d_zs)
-     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_ss     32)
-                                     [LE_TBytes_r v_rd_s      32])
-     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_u1     32)
-                                     [LE_TBytes_r v_rd_one    32;
-                                      LE_TBytes_r v_rd_ss     32])
-     (REdSeq (REdCall "fe25519_add" (LE_TBytes_r v_rd_u2     32)
-                                     [LE_TBytes_r v_rd_one    32;
-                                      LE_TBytes_r v_rd_ss     32])
-     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u2_sqr 32)
-                                     [LE_TBytes_r v_rd_u2     32])
-     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u1_sq  32)
-                                     [LE_TBytes_r v_rd_u1     32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_d_u1sq 32)
-                                     [LE_TBytes_r v_rd_d      32;
-                                      LE_TBytes_r v_rd_u1_sq  32])
-     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_neg_du1sq 32)
-                                     [LE_TBytes_r v_rd_p      32;
-                                      LE_TBytes_r v_rd_d_u1sq 32])
-     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_v      32)
-                                     [LE_TBytes_r v_rd_neg_du1sq 32;
-                                      LE_TBytes_r v_rd_u2_sqr 32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_den    32)
-                                     [LE_TBytes_r v_rd_v      32;
-                                      LE_TBytes_r v_rd_u2_sqr 32])
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_one 40) const_one_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_two 40) const_two_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_p   40) const_p_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_d   40) const_d_zs)
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_ss     40)
+                                     [LE_TBytes_r v_rd_s      40])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_u1     40)
+                                     [LE_TBytes_r v_rd_one    40;
+                                      LE_TBytes_r v_rd_ss     40])
+     (REdSeq (REdCall "fe25519_add" (LE_TBytes_r v_rd_u2     40)
+                                     [LE_TBytes_r v_rd_one    40;
+                                      LE_TBytes_r v_rd_ss     40])
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u2_sqr 40)
+                                     [LE_TBytes_r v_rd_u2     40])
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u1_sq  40)
+                                     [LE_TBytes_r v_rd_u1     40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_d_u1sq 40)
+                                     [LE_TBytes_r v_rd_d      40;
+                                      LE_TBytes_r v_rd_u1_sq  40])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_neg_du1sq 40)
+                                     [LE_TBytes_r v_rd_p      40;
+                                      LE_TBytes_r v_rd_d_u1sq 40])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_v      40)
+                                     [LE_TBytes_r v_rd_neg_du1sq 40;
+                                      LE_TBytes_r v_rd_u2_sqr 40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_den    40)
+                                     [LE_TBytes_r v_rd_v      40;
+                                      LE_TBytes_r v_rd_u2_sqr 40])
      (REdSeq (REdCallN "ristretto_sqrt_ratio_m1"
                 [LE_TBytes_r v_rd_ws 1;
-                 LE_TBytes_r v_rd_I  32]
-                [LE_TBytes_r v_rd_one 32;
-                 LE_TBytes_r v_rd_den 32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dx     32)
-                                     [LE_TBytes_r v_rd_I      32;
-                                      LE_TBytes_r v_rd_u2     32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_IDx    32)
-                                     [LE_TBytes_r v_rd_I      32;
-                                      LE_TBytes_r v_rd_Dx     32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dy     32)
-                                     [LE_TBytes_r v_rd_IDx    32;
-                                      LE_TBytes_r v_rd_v      32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_s2     32)
-                                     [LE_TBytes_r v_rd_two    32;
-                                      LE_TBytes_r v_rd_s      32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_x_raw  32)
-                                     [LE_TBytes_r v_rd_s2     32;
-                                      LE_TBytes_r v_rd_Dx     32])
-     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_x_neg  32)
-                                     [LE_TBytes_r v_rd_p      32;
-                                      LE_TBytes_r v_rd_x_raw  32])
-     (REdSeq (REdByteLoad v_rd_xbit (LE_TBytes_r v_rd_x_raw 32) (SLit 0))
+                 LE_TBytes_r v_rd_I  40]
+                [LE_TBytes_r v_rd_one 40;
+                 LE_TBytes_r v_rd_den 40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dx     40)
+                                     [LE_TBytes_r v_rd_I      40;
+                                      LE_TBytes_r v_rd_u2     40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_IDx    40)
+                                     [LE_TBytes_r v_rd_I      40;
+                                      LE_TBytes_r v_rd_Dx     40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dy     40)
+                                     [LE_TBytes_r v_rd_IDx    40;
+                                      LE_TBytes_r v_rd_v      40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_s2     40)
+                                     [LE_TBytes_r v_rd_two    40;
+                                      LE_TBytes_r v_rd_s      40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_x_raw  40)
+                                     [LE_TBytes_r v_rd_s2     40;
+                                      LE_TBytes_r v_rd_Dx     40])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_x_neg  40)
+                                     [LE_TBytes_r v_rd_p      40;
+                                      LE_TBytes_r v_rd_x_raw  40])
+     (REdSeq (REdByteLoad v_rd_xbit (LE_TBytes_r v_rd_x_raw 40) (SLit 0))
      (REdSeq (REdSelect (SAnd (SVar v_rd_xbit) (SLit 1))
-                (LE_TBytes_r v_rd_x_neg 32)   (* if bit0 set: negate *)
-                (LE_TBytes_r v_rd_x_raw 32)   (* else: x_raw *)
-                (LE_TBytes_r v_rd_x     32))
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_y      32)
-                                     [LE_TBytes_r v_rd_Dy     32;
-                                      LE_TBytes_r v_rd_u1     32])
-     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_t      32)
-                                     [LE_TBytes_r v_rd_x      32;
-                                      LE_TBytes_r v_rd_y      32])
+                (LE_TBytes_r v_rd_x_neg 40)   (* if bit0 set: negate *)
+                (LE_TBytes_r v_rd_x_raw 40)   (* else: x_raw *)
+                (LE_TBytes_r v_rd_x     40))
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_y      40)
+                                     [LE_TBytes_r v_rd_Dy     40;
+                                      LE_TBytes_r v_rd_u1     40])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_t      40)
+                                     [LE_TBytes_r v_rd_x      40;
+                                      LE_TBytes_r v_rd_y      40])
      (* Failure dispatch: bad if (¬was_square) ∨ is_neg(t) ∨ y=0. *)
      (REdSeq (REdByteLoad v_rd_wsb (LE_TBytes_r v_rd_ws 1) (SLit 0))
      (REdIfNz (SVar v_rd_wsb)
         (* was_square = true ⇒ check is_negative(t) *)
-        (REdSeq (REdByteLoad v_rd_tbit (LE_TBytes_r v_rd_t 32) (SLit 0))
+        (REdSeq (REdByteLoad v_rd_tbit (LE_TBytes_r v_rd_t 40) (SLit 0))
         (REdIfNz (SAnd (SVar v_rd_tbit) (SLit 1))
            (* is_negative(t) = true ⇒ bad *)
            rd_bad_cmd
            (* else ⇒ check y = 0, then pack *)
            (rd_yzero_check
               (REdCall "pack_xyzt5" (LE_TBytes_r v_rd_out 200)
-                 [LE_TBytes_r v_rd_x   32;
-                  LE_TBytes_r v_rd_y   32;
-                  LE_TBytes_r v_rd_one 32;
-                  LE_TBytes_r v_rd_x   32;
-                  LE_TBytes_r v_rd_y   32]))))
+                 [LE_TBytes_r v_rd_x   40;
+                  LE_TBytes_r v_rd_y   40;
+                  LE_TBytes_r v_rd_one 40;
+                  LE_TBytes_r v_rd_x   40;
+                  LE_TBytes_r v_rd_y   40]))))
         (* was_square = false ⇒ bad *)
         rd_bad_cmd))
   )))))))))))))))))))))))))

@@ -258,11 +258,13 @@ Fixpoint rs_emit (indent : string) (c : rust_cmd_ed) : string :=
       indent ++ "}"
   | REdSetBytes loc bytes =>
       (* Whole-array literal write: emits
-           loc = [b0u8, b1u8, ..., bN-1u8];
-         Replaces paste-through shims for hand-coded constants like
-         B_COMPRESSED_LE / L_EXTRA_LE. *)
-      indent ++ rs_sanitize loc.(loc_var) ++ " = [" ++
-        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+           loc.copy_from_slice(&[b0u8, b1u8, ..., bN-1u8]);
+         [copy_from_slice] (rather than `loc = [...]`) so this works
+         whether [loc] is a local `[u8; N]` array OR a reference
+         parameter `&mut [u8; N]` (auto-deref to a slice in both
+         cases).  A bare `=` would type-error on a `&mut` param. *)
+      indent ++ rs_sanitize loc.(loc_var) ++ ".copy_from_slice(&[" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "])"
   | REdArrLoad dst src idx_e =>
       (* Array-of-slots read.  Emits
            dst = src[(idx_e) as usize];
@@ -293,10 +295,54 @@ Record rs_func_sig := {
 Definition rs_param_decl (p : String.string * tower_type_ed) : string :=
   let '(name, t) := p in rs_sanitize name ++ ": " ++ rs_param_type t.
 
+(** Scalar locals that are WRITTEN via [REdScalarSet] (a bare
+    assignment in emitted Rust) but never INTRODUCED via a [let]
+    ([REdLetU64] / [REdByteLoad] / [REdFor] iteration var) must be
+    pre-declared at the top of the function, else the emitted Rust
+    references an unbound name.  This arises for reduction
+    accumulators (e.g. the [REdFor] byte-sum in ristretto's y=0
+    check: [yacc := 0; for i { yacc += y[i] }]).  We collect the
+    [REdScalarSet] targets, subtract the [let]-bound names, and emit a
+    [let mut <v>: u64 = 0;] for each remainder.  For ASTs whose
+    accumulators are already [let]-bound this is a no-op. *)
+Fixpoint rs_scalar_set_vars (c : rust_cmd_ed) : list String.string :=
+  match c with
+  | REdSeq a b => rs_scalar_set_vars a ++ rs_scalar_set_vars b
+  | REdLetZero _ _ body => rs_scalar_set_vars body
+  | REdLetU64 _ _ body => rs_scalar_set_vars body
+  | REdScalarSet v _ => [v]
+  | REdIfNz _ c1 c2 => rs_scalar_set_vars c1 ++ rs_scalar_set_vars c2
+  | REdWhileNz _ body => rs_scalar_set_vars body
+  | REdFor _ _ body => rs_scalar_set_vars body
+  | REdBlock body => rs_scalar_set_vars body
+  | _ => []
+  end.
+
+Fixpoint rs_scalar_decl_vars (c : rust_cmd_ed) : list String.string :=
+  match c with
+  | REdSeq a b => rs_scalar_decl_vars a ++ rs_scalar_decl_vars b
+  | REdLetZero _ _ body => rs_scalar_decl_vars body
+  | REdLetU64 v _ body => v :: rs_scalar_decl_vars body
+  | REdByteLoad v _ _ => [v]
+  | REdIfNz _ c1 c2 => rs_scalar_decl_vars c1 ++ rs_scalar_decl_vars c2
+  | REdWhileNz _ body => rs_scalar_decl_vars body
+  | REdFor v _ body => v :: rs_scalar_decl_vars body
+  | REdBlock body => rs_scalar_decl_vars body
+  | _ => []
+  end.
+
+Definition rs_scalar_predecls (body : rust_cmd_ed) : list String.string :=
+  let decl := rs_scalar_decl_vars body in
+  List.nodup String.string_dec
+    (List.filter (fun v => negb (existsb (String.eqb v) decl))
+                 (rs_scalar_set_vars body)).
+
 Definition rs_func_emit (sig : rs_func_sig) (body : rust_cmd_ed) : string :=
   "pub fn " ++ sig.(rfs_name) ++ "(" ++
     join ", " (List.map rs_param_decl sig.(rfs_params)) ++
   ") {" ++ LF ++
+  join "" (List.map (fun v => "    let mut " ++ rs_sanitize v ++ ": u64 = 0;" ++ LF)
+                    (rs_scalar_predecls body)) ++
   rs_emit "    " body ++ ";" ++ LF ++
   "}".
 
@@ -538,8 +584,8 @@ Fixpoint rs_emit_inline (indent : string) (c : rust_cmd_ed) : string :=
       rs_emit_inline ("    " ++ indent) body ++ LF ++
       indent ++ "}"
   | REdSetBytes loc bytes =>
-      indent ++ rs_sanitize loc.(loc_var) ++ " = [" ++
-        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+      indent ++ rs_sanitize loc.(loc_var) ++ ".copy_from_slice(&[" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "])"
   | REdArrLoad dst src idx_e =>
       indent ++ rs_sanitize dst.(loc_var) ++ " = " ++
         rs_sanitize src.(loc_var) ++ "[(" ++ rs_sexpr idx_e ++ ") as usize]"
@@ -848,8 +894,8 @@ Fixpoint rs_pretty_stmt (indent : String.string) (s : rust_stmt_ast) : String.st
       rs_pretty_stmt ("    " ++ indent) body ++ LF ++
       indent ++ "}"
   | RSSetBytes v bytes =>
-      indent ++ v ++ " = [" ++
-        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]"
+      indent ++ v ++ ".copy_from_slice(&[" ++
+        join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "])"
   | RSArrLoad dst src ix =>
       indent ++ dst ++ " = " ++ src ++ "[(" ++
         rs_pretty_expr ix ++ ") as usize]"
@@ -884,6 +930,8 @@ Definition rs_func_emit_via_ast (sig : rs_func_sig) (body : rust_cmd_ed) : strin
   "pub fn " ++ sig.(rfs_name) ++ "(" ++
     join ", " (List.map rs_param_decl sig.(rfs_params)) ++
   ") {" ++ LF ++
+  join "" (List.map (fun v => "    let mut " ++ rs_sanitize v ++ ": u64 = 0;" ++ LF)
+                    (rs_scalar_predecls body)) ++
   rs_pretty_stmt "    " (cmd_to_ast body) ++ ";" ++ LF ++
   "}".
 

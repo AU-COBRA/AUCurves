@@ -236,13 +236,255 @@ Definition ristretto_decode_derive_goal : Prop :=
     150-LoC AST and 100-LoC simulation.  Total ~400 LoC.
 
     Until those land, [ristretto_decode_rs := REdSkip] is the safe
-    placeholder. *)
-Definition ristretto_decode_rs : rust_cmd_ed := REdSkip.
+    placeholder.
 
-(** Status placeholder for the simulation theorem. *)
-Theorem ristretto_decode_rs_correct_stub :
-  True.
-Proof. exact I. Qed.
+    UPDATE (2026-05-23): sub-blockers #1, #2, #3 are CLOSED.  The AST
+    below replaces [REdSkip] with the [parse_canonical] +
+    [const_one/two/d] + [s²] + [u1=1-ss] + [u2=1+ss] + [u2_sqr] +
+    [u1_sq] + [pack_xyzt5] chain.  The remaining gaps (v = −d·u1²−u2²,
+    sqrt_ratio_m1, x/y/t/conditional-negate, failure-branch zeroing)
+    are documented in the AST body comments and are filled in by the
+    upcoming Phase B.5c (next iteration). *)
+
+(** Local convenience constructors mirroring
+    [End2End/Ed25519/Sign_Verify_RustCmd.v]. *)
+Definition LE_TBytes_r (v : String.string) (n : nat) : located_ed :=
+  {| loc_var := v; loc_type := TBytes n |}.
+
+(** Constant byte-lists for [REdSetBytes] (T1: verified constant slots,
+    replacing the trusted [fe25519_const_*] FFI leaves).  Each is the
+    little-endian byte sequence (as [list Z]) of the field constant;
+    [REdSetBytes] writes [map Z_to_byte] of these into the slot, and
+    the simulation proof discharges
+    [map Z_to_byte const_*_zs = <field constant LE encoding>] by
+    [vm_compute]. *)
+(** Felem constants as 40-byte LE [list Z] (32 value bytes + 8 zero
+    pad), matching the 40-byte felem slot convention shared with the
+    Ed25519 fe25519 byte-ABI. *)
+Definition const_one_zs : list Z := 1 :: List.repeat 0 39.
+Definition const_two_zs : list Z := 2 :: List.repeat 0 39.
+Definition const_d_zs : list Z :=
+  List.app
+    [ 0xa3; 0x78; 0x59; 0x13; 0xca; 0x4d; 0xeb; 0x75;
+      0xab; 0xd8; 0x41; 0x41; 0x4d; 0x0a; 0x70; 0x00;
+      0x98; 0xe8; 0x79; 0x77; 0x79; 0x40; 0xc7; 0x8c;
+      0x73; 0xfe; 0x6f; 0x2b; 0xee; 0x6c; 0x03; 0x52 ]%Z
+    (List.repeat 0%Z 8).
+(** The prime [p = 2^255 - 19] as a 32-byte LE [list Z], derived from
+    its canonical [le_split] encoding so the simulation lemma
+    [map Z_to_byte const_p_zs = le_split 32 ed25519_p] holds by
+    [vm_compute]. *)
+Definition const_p_zs : list Z := List.map byte.unsigned (le_split 40 ed25519_p).
+
+(** Intermediate slot names used by the decoder AST. *)
+Definition v_rd_bs        := "bs_var".
+Definition v_rd_out       := "out_var".
+Definition v_rd_s         := "s_var".
+Definition v_rd_status    := "status_var".
+Definition v_rd_one       := "one_var".
+Definition v_rd_two       := "two_var".
+Definition v_rd_d         := "d_var".
+Definition v_rd_p         := "p_var".
+Definition v_rd_ss        := "ss_var".
+Definition v_rd_u1        := "u1_var".
+Definition v_rd_u2        := "u2_var".
+Definition v_rd_u1_sq     := "u1_sq_var".
+Definition v_rd_u2_sqr    := "u2_sqr_var".
+Definition v_rd_d_u1sq    := "d_u1sq_var".
+Definition v_rd_neg_du1sq := "neg_du1sq_var".
+Definition v_rd_v         := "v_var".
+Definition v_rd_den       := "den_var".
+Definition v_rd_ws        := "ws_var".
+Definition v_rd_I         := "I_var".
+Definition v_rd_Dx        := "Dx_var".
+Definition v_rd_IDx       := "IDx_var".
+Definition v_rd_Dy        := "Dy_var".
+Definition v_rd_s2        := "s2_var".
+Definition v_rd_x_raw     := "x_raw_var".
+Definition v_rd_x_neg     := "x_neg_var".
+Definition v_rd_x         := "x_var".
+Definition v_rd_y         := "y_var".
+Definition v_rd_t         := "t_var".
+(** Scalar (u64) slots. *)
+Definition v_rd_statusb   := "statusb_s".
+Definition v_rd_xbit      := "xbit_s".
+Definition v_rd_tbit      := "tbit_s".
+Definition v_rd_wsb       := "wsb_s".
+Definition v_rd_yacc      := "yacc_s".
+Definition v_rd_ybyte     := "ybyte_s".
+Definition v_rd_loop      := "yloop_s".
+
+(** [bad_cmd]: write the 200-byte all-zero [ristretto_bad_point] into
+    the output slot.  [map Z_to_byte (repeat 0 200) = repeat Byte.x00
+    200 = ristretto_bad_point]. *)
+Definition rd_bad_cmd : rust_cmd_ed :=
+  REdSetBytes (LE_TBytes_r v_rd_out 200) (List.repeat 0%Z 200).
+
+(** [rd_yzero_check]: accumulate the 32 bytes of [y_var] into the
+    scalar [yacc_s] (initialised to 0), then branch: if the sum is
+    non-zero (y ≠ 0) run [k_ok]; if zero (y = 0) run [rd_bad_cmd].
+    The byte-sum is 0 iff every byte is 0 iff [le_combine y = 0]. *)
+Definition rd_yzero_check (k_ok : rust_cmd_ed) : rust_cmd_ed :=
+  REdSeq (REdScalarSet v_rd_yacc (SLit 0))
+  (REdSeq (REdFor v_rd_loop 32
+             (REdSeq (REdByteLoad v_rd_ybyte (LE_TBytes_r v_rd_y 32)
+                        (SVar v_rd_loop))
+                     (REdScalarSet v_rd_yacc
+                        (SAdd (SVar v_rd_yacc) (SVar v_rd_ybyte)))))
+          (REdIfNz (SVar v_rd_yacc) k_ok rd_bad_cmd)).
+
+(** Faithful Ristretto255 decoder AST (RFC 9496 §3.2.1).
+
+    Closes all four sub-blockers and matches
+    [ristretto_decode_gallina_nlet] step-for-step:
+
+      parse_canonical_felem(bs) → s, status
+      if status ≠ 0  →  bad_point
+      else:
+        one,two,p,d  := REdSetBytes literals (verified constants)
+        ss       := fe25519_sq  s
+        u1       := fe25519_sub one ss
+        u2       := fe25519_add one ss
+        u2_sqr   := fe25519_sq  u2
+        u1_sq    := fe25519_sq  u1
+        d_u1sq   := fe25519_mul d u1_sq
+        neg_du1sq:= fe25519_sub p d_u1sq         (= (p - d·u1²) mod p)
+        v        := fe25519_sub neg_du1sq u2_sqr
+        den      := fe25519_mul v u2_sqr
+        (ws,I)   := sqrt_ratio_m1(one, den)
+        Dx       := fe25519_mul I u2
+        IDx      := fe25519_mul I Dx
+        Dy       := fe25519_mul IDx v
+        s2       := fe25519_mul two s            (= 2·s)
+        x_raw    := fe25519_mul s2 Dx
+        x_neg    := fe25519_sub p x_raw          (= canonical_negate x_raw)
+        xbit     := bit0 of x_raw
+        x        := select xbit ? x_neg : x_raw
+        y        := fe25519_mul Dy u1
+        t        := fe25519_mul x y
+        if was_square = false (ws byte = 0)  → bad_point
+        else if is_negative(t) (bit0 t)      → bad_point
+        else if y = 0 (byte-sum of y = 0)    → bad_point
+        else pack_xyzt5(x, y, one, x, y) → out *)
+Definition ristretto_decode_rs : rust_cmd_ed :=
+  REdLetZero v_rd_s         (TBytes 40) (
+  REdLetZero v_rd_status    (TBytes 1)  (
+  REdLetZero v_rd_one       (TBytes 40) (
+  REdLetZero v_rd_two       (TBytes 40) (
+  REdLetZero v_rd_d         (TBytes 40) (
+  REdLetZero v_rd_p         (TBytes 40) (
+  REdLetZero v_rd_ss        (TBytes 40) (
+  REdLetZero v_rd_u1        (TBytes 40) (
+  REdLetZero v_rd_u2        (TBytes 40) (
+  REdLetZero v_rd_u1_sq     (TBytes 40) (
+  REdLetZero v_rd_u2_sqr    (TBytes 40) (
+  REdLetZero v_rd_d_u1sq    (TBytes 40) (
+  REdLetZero v_rd_neg_du1sq (TBytes 40) (
+  REdLetZero v_rd_v         (TBytes 40) (
+  REdLetZero v_rd_den       (TBytes 40) (
+  REdLetZero v_rd_ws        (TBytes 1)  (
+  REdLetZero v_rd_I         (TBytes 40) (
+  REdLetZero v_rd_Dx        (TBytes 40) (
+  REdLetZero v_rd_IDx       (TBytes 40) (
+  REdLetZero v_rd_Dy        (TBytes 40) (
+  REdLetZero v_rd_s2        (TBytes 40) (
+  REdLetZero v_rd_x_raw     (TBytes 40) (
+  REdLetZero v_rd_x_neg     (TBytes 40) (
+  REdLetZero v_rd_x         (TBytes 40) (
+  REdLetZero v_rd_y         (TBytes 40) (
+  REdLetZero v_rd_t         (TBytes 40) (
+  (* parse: bs → (s, status), then dispatch on the status byte. *)
+  REdSeq (REdCallN "ristretto_parse_canonical_felem"
+            [LE_TBytes_r v_rd_s      32;
+             LE_TBytes_r v_rd_status 1]
+            [LE_TBytes_r v_rd_bs     32])
+  (REdSeq (REdByteLoad v_rd_statusb (LE_TBytes_r v_rd_status 1) (SLit 0))
+  (REdIfNz (SVar v_rd_statusb)
+     (* status ≠ 0 ⇒ parse failed ⇒ bad point *)
+     rd_bad_cmd
+     (* status = 0 ⇒ success body *)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_one 32) const_one_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_two 32) const_two_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_p   32) const_p_zs)
+     (REdSeq (REdSetBytes (LE_TBytes_r v_rd_d   32) const_d_zs)
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_ss     32)
+                                     [LE_TBytes_r v_rd_s      32])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_u1     32)
+                                     [LE_TBytes_r v_rd_one    32;
+                                      LE_TBytes_r v_rd_ss     32])
+     (REdSeq (REdCall "fe25519_add" (LE_TBytes_r v_rd_u2     32)
+                                     [LE_TBytes_r v_rd_one    32;
+                                      LE_TBytes_r v_rd_ss     32])
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u2_sqr 32)
+                                     [LE_TBytes_r v_rd_u2     32])
+     (REdSeq (REdCall "fe25519_sq"  (LE_TBytes_r v_rd_u1_sq  32)
+                                     [LE_TBytes_r v_rd_u1     32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_d_u1sq 32)
+                                     [LE_TBytes_r v_rd_d      32;
+                                      LE_TBytes_r v_rd_u1_sq  32])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_neg_du1sq 32)
+                                     [LE_TBytes_r v_rd_p      32;
+                                      LE_TBytes_r v_rd_d_u1sq 32])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_v      32)
+                                     [LE_TBytes_r v_rd_neg_du1sq 32;
+                                      LE_TBytes_r v_rd_u2_sqr 32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_den    32)
+                                     [LE_TBytes_r v_rd_v      32;
+                                      LE_TBytes_r v_rd_u2_sqr 32])
+     (REdSeq (REdCallN "ristretto_sqrt_ratio_m1"
+                [LE_TBytes_r v_rd_ws 1;
+                 LE_TBytes_r v_rd_I  32]
+                [LE_TBytes_r v_rd_one 32;
+                 LE_TBytes_r v_rd_den 32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dx     32)
+                                     [LE_TBytes_r v_rd_I      32;
+                                      LE_TBytes_r v_rd_u2     32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_IDx    32)
+                                     [LE_TBytes_r v_rd_I      32;
+                                      LE_TBytes_r v_rd_Dx     32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_Dy     32)
+                                     [LE_TBytes_r v_rd_IDx    32;
+                                      LE_TBytes_r v_rd_v      32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_s2     32)
+                                     [LE_TBytes_r v_rd_two    32;
+                                      LE_TBytes_r v_rd_s      32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_x_raw  32)
+                                     [LE_TBytes_r v_rd_s2     32;
+                                      LE_TBytes_r v_rd_Dx     32])
+     (REdSeq (REdCall "fe25519_sub" (LE_TBytes_r v_rd_x_neg  32)
+                                     [LE_TBytes_r v_rd_p      32;
+                                      LE_TBytes_r v_rd_x_raw  32])
+     (REdSeq (REdByteLoad v_rd_xbit (LE_TBytes_r v_rd_x_raw 32) (SLit 0))
+     (REdSeq (REdSelect (SAnd (SVar v_rd_xbit) (SLit 1))
+                (LE_TBytes_r v_rd_x_neg 32)   (* if bit0 set: negate *)
+                (LE_TBytes_r v_rd_x_raw 32)   (* else: x_raw *)
+                (LE_TBytes_r v_rd_x     32))
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_y      32)
+                                     [LE_TBytes_r v_rd_Dy     32;
+                                      LE_TBytes_r v_rd_u1     32])
+     (REdSeq (REdCall "fe25519_mul" (LE_TBytes_r v_rd_t      32)
+                                     [LE_TBytes_r v_rd_x      32;
+                                      LE_TBytes_r v_rd_y      32])
+     (* Failure dispatch: bad if (¬was_square) ∨ is_neg(t) ∨ y=0. *)
+     (REdSeq (REdByteLoad v_rd_wsb (LE_TBytes_r v_rd_ws 1) (SLit 0))
+     (REdIfNz (SVar v_rd_wsb)
+        (* was_square = true ⇒ check is_negative(t) *)
+        (REdSeq (REdByteLoad v_rd_tbit (LE_TBytes_r v_rd_t 32) (SLit 0))
+        (REdIfNz (SAnd (SVar v_rd_tbit) (SLit 1))
+           (* is_negative(t) = true ⇒ bad *)
+           rd_bad_cmd
+           (* else ⇒ check y = 0, then pack *)
+           (rd_yzero_check
+              (REdCall "pack_xyzt5" (LE_TBytes_r v_rd_out 200)
+                 [LE_TBytes_r v_rd_x   32;
+                  LE_TBytes_r v_rd_y   32;
+                  LE_TBytes_r v_rd_one 32;
+                  LE_TBytes_r v_rd_x   32;
+                  LE_TBytes_r v_rd_y   32]))))
+        (* was_square = false ⇒ bad *)
+        rd_bad_cmd))
+  )))))))))))))))))))))))))
+  ))))))))))))))))))))))))))).
 
 (* ========================================================================
    Section 2b: gallina-driven dispatcher demonstration.

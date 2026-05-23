@@ -35,10 +35,14 @@ From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 From Stdlib Require Import Init.Byte.
+From Stdlib Require Import micromega.Lia.
+Require Import coqutil.Word.LittleEndianList.
 Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.RustCmdRupicola.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
+Require Import Bedrock.End2End.Ed25519.CompressVerified.
+Require Import Bedrock.End2End.Ed25519.XyztAddVerified.
 Require Import Bedrock.End2End.Lizard.RistrettoHelpers.
 Require Import Bedrock.End2End.Ristretto.RistrettoBridges.
 Import ListNotations.
@@ -418,6 +422,250 @@ Section RistrettoTier4Multi.
   Qed.
 
 End RistrettoTier4Multi.
+
+(* ================================================================ *)
+(* §4. slot_holds_z abstract-Z bridge (sub-blocker #1 fix).           *)
+(* ================================================================ *)
+
+(** [slot_holds_z rs x z] — the abstract-Z view of a slot.  Asserts
+    that [x] holds the 32-byte canonical LE encoding of [z], and that
+    [z] is in the F_p range.  Provides a stable form for chained
+    arithmetic continuations: [(le_combine (le_split 32 z)) mod 2^256 =
+    z] holds whenever [0 <= z < 2^256], but [assumption] can't unify
+    the two forms.  Use [slot_holds_z] to skip the round-trip
+    bookkeeping at each compose. *)
+Definition slot_holds_z (rs : rust_state_ed) (x : String.string) (z : Z) : Prop :=
+  slot_holds rs x (le_split 32 z) /\ 0 <= z < ed25519_p.
+
+Lemma slot_holds_z_intro :
+  forall rs x z,
+    slot_holds rs x (le_split 32 z) ->
+    0 <= z < ed25519_p ->
+    slot_holds_z rs x z.
+Proof. intros; split; assumption. Qed.
+
+Lemma slot_holds_z_bytes :
+  forall rs x z,
+    slot_holds_z rs x z ->
+    slot_holds rs x (le_split 32 z).
+Proof. intros rs x z [H _]; exact H. Qed.
+
+Lemma slot_holds_z_bound :
+  forall rs x z,
+    slot_holds_z rs x z ->
+    0 <= z < ed25519_p.
+Proof. intros rs x z [_ H]; exact H. Qed.
+
+Lemma slot_holds_z_frame :
+  forall rs1 rs2 dst x z,
+    frames_except rs1 rs2 dst ->
+    x <> dst ->
+    slot_holds_z rs1 x z ->
+    slot_holds_z rs2 x z.
+Proof.
+  intros rs1 rs2 dst x z Hfr Hne [Hh Hb]; split.
+  - eapply slot_holds_frame; eauto.
+  - exact Hb.
+Qed.
+
+(** Round-trip cancellation: combining then splitting again on a
+    32-byte LE encoding of an in-range [z] returns the original
+    encoding.  Direct corollary of [LittleEndianList.le_combine_split]
+    plus [z < 2^256] (which follows from [z < ed25519_p < 2^256]). *)
+Lemma le_split_combine_canonical :
+  forall z,
+    0 <= z < ed25519_p ->
+    le_split 32 (le_combine (le_split 32 z)) = le_split 32 z.
+Proof.
+  intros z [Hlo Hhi].
+  rewrite le_combine_split.
+  unfold ed25519_p in Hhi.
+  rewrite Z.mod_small; [reflexivity|].
+  change (2 ^ (Z.of_nat 32 * 8)) with (2 ^ 256).
+  lia.
+Qed.
+
+(* ================================================================ *)
+(* §5. Tier-4 lemmas for the constant setters (sub-blocker #2 fix).   *)
+(* ================================================================ *)
+
+Section RistrettoTier4Const.
+  Context (function_table : function_table_ed).
+  Context (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                           rust_state_ed -> rust_state_ed -> Prop).
+
+  Lemma compile_red_const_one
+        (rs : rust_state_ed) (result_var : var)
+        (k : rust_cmd_ed) (pred : rpred) :
+    (forall rs1,
+        slot_holds rs1 result_var fe25519_const_one_spec ->
+        rhoare strong_callee_post_ristretto callee_post_n function_table rs1 k pred) ->
+    rhoare strong_callee_post_ristretto callee_post_n function_table rs
+      (REdSeq (REdCall "fe25519_const_one"
+                 {| loc_var := result_var; loc_type := TBytes 32 |}
+                 [])
+              k)
+      pred.
+  Proof.
+    intros Hk.
+    eapply compile_red_seq.
+    { eapply compile_red_call.
+      intros rs1 Hpost.
+      cbv [strong_callee_post_ristretto strong_callee_post_fe25519_const_one] in Hpost.
+      cbn in Hpost.
+      destruct Hpost as [Hframe1 Htgt].
+      exact (conj Hframe1 Htgt). }
+    intros rs1 [_Hframe1 Htgt1].
+    apply Hk. exact Htgt1.
+  Qed.
+
+  Lemma compile_red_const_two
+        (rs : rust_state_ed) (result_var : var)
+        (k : rust_cmd_ed) (pred : rpred) :
+    (forall rs1,
+        slot_holds rs1 result_var fe25519_const_two_spec ->
+        rhoare strong_callee_post_ristretto callee_post_n function_table rs1 k pred) ->
+    rhoare strong_callee_post_ristretto callee_post_n function_table rs
+      (REdSeq (REdCall "fe25519_const_two"
+                 {| loc_var := result_var; loc_type := TBytes 32 |}
+                 [])
+              k)
+      pred.
+  Proof.
+    intros Hk.
+    eapply compile_red_seq.
+    { eapply compile_red_call.
+      intros rs1 Hpost.
+      cbv [strong_callee_post_ristretto strong_callee_post_fe25519_const_two] in Hpost.
+      cbn in Hpost.
+      destruct Hpost as [Hframe1 Htgt].
+      exact (conj Hframe1 Htgt). }
+    intros rs1 [_Hframe1 Htgt1].
+    apply Hk. exact Htgt1.
+  Qed.
+
+  Lemma compile_red_const_d
+        (rs : rust_state_ed) (result_var : var)
+        (k : rust_cmd_ed) (pred : rpred) :
+    (forall rs1,
+        slot_holds rs1 result_var fe25519_const_d_spec ->
+        rhoare strong_callee_post_ristretto callee_post_n function_table rs1 k pred) ->
+    rhoare strong_callee_post_ristretto callee_post_n function_table rs
+      (REdSeq (REdCall "fe25519_const_d"
+                 {| loc_var := result_var; loc_type := TBytes 32 |}
+                 [])
+              k)
+      pred.
+  Proof.
+    intros Hk.
+    eapply compile_red_seq.
+    { eapply compile_red_call.
+      intros rs1 Hpost.
+      cbv [strong_callee_post_ristretto strong_callee_post_fe25519_const_d] in Hpost.
+      cbn in Hpost.
+      destruct Hpost as [Hframe1 Htgt].
+      exact (conj Hframe1 Htgt). }
+    intros rs1 [_Hframe1 Htgt1].
+    apply Hk. exact Htgt1.
+  Qed.
+
+  (* ============================================================ *)
+  (* §6.  compile_red_pack_xyzt5 (sub-blocker #3 fix)              *)
+  (* ============================================================ *)
+
+  Lemma compile_red_pack_xyzt5
+        (rs : rust_state_ed)
+        (out_var x_var y_var z_var ta_var tb_var : var)
+        (x_bs y_bs z_bs ta_bs tb_bs : list Byte.byte)
+        (k : rust_cmd_ed) (pred : rpred) :
+    slot_holds rs x_var  x_bs ->
+    slot_holds rs y_var  y_bs ->
+    slot_holds rs z_var  z_bs ->
+    slot_holds rs ta_var ta_bs ->
+    slot_holds rs tb_var tb_bs ->
+    x_var  <> out_var ->
+    y_var  <> out_var ->
+    z_var  <> out_var ->
+    ta_var <> out_var ->
+    tb_var <> out_var ->
+    (forall rs1,
+        slot_holds rs1 out_var (pack_xyzt5_spec x_bs y_bs z_bs ta_bs tb_bs) ->
+        slot_holds rs1 x_var  x_bs ->
+        slot_holds rs1 y_var  y_bs ->
+        slot_holds rs1 z_var  z_bs ->
+        slot_holds rs1 ta_var ta_bs ->
+        slot_holds rs1 tb_var tb_bs ->
+        rhoare strong_callee_post_ristretto callee_post_n function_table rs1 k pred) ->
+    rhoare strong_callee_post_ristretto callee_post_n function_table rs
+      (REdSeq (REdCall "pack_xyzt5"
+                 {| loc_var := out_var; loc_type := TBytes 200 |}
+                 [{| loc_var := x_var;  loc_type := TBytes 32 |};
+                  {| loc_var := y_var;  loc_type := TBytes 32 |};
+                  {| loc_var := z_var;  loc_type := TBytes 32 |};
+                  {| loc_var := ta_var; loc_type := TBytes 32 |};
+                  {| loc_var := tb_var; loc_type := TBytes 32 |}])
+              k)
+      pred.
+  Proof.
+    intros Hx Hy Hz Hta Htb Hne_x Hne_y Hne_z Hne_ta Hne_tb Hk.
+    eapply compile_red_seq.
+    { eapply compile_red_call.
+      intros rs1 Hpost.
+      cbv [strong_callee_post_ristretto strong_callee_post_pack_xyzt5] in Hpost.
+      cbn in Hpost.
+      destruct Hpost as [Hframe1
+                         [x_bs' [y_bs' [z_bs' [ta_bs' [tb_bs'
+                          [Hx' [Hy' [Hz' [Hta' [Htb' Htgt]]]]]]]]]]].
+      pose proof (slot_holds_inj _ _ _ _ Hx'  Hx)  as Heqx;  subst x_bs'.
+      pose proof (slot_holds_inj _ _ _ _ Hy'  Hy)  as Heqy;  subst y_bs'.
+      pose proof (slot_holds_inj _ _ _ _ Hz'  Hz)  as Heqz;  subst z_bs'.
+      pose proof (slot_holds_inj _ _ _ _ Hta' Hta) as Heqta; subst ta_bs'.
+      pose proof (slot_holds_inj _ _ _ _ Htb' Htb) as Heqtb; subst tb_bs'.
+      exact (conj Hframe1 Htgt). }
+    intros rs1 [Hframe1 Htgt1].
+    apply Hk.
+    - exact Htgt1.
+    - eapply slot_holds_frame; [exact Hframe1 | exact Hne_x  | exact Hx].
+    - eapply slot_holds_frame; [exact Hframe1 | exact Hne_y  | exact Hy].
+    - eapply slot_holds_frame; [exact Hframe1 | exact Hne_z  | exact Hz].
+    - eapply slot_holds_frame; [exact Hframe1 | exact Hne_ta | exact Hta].
+    - eapply slot_holds_frame; [exact Hframe1 | exact Hne_tb | exact Htb].
+  Qed.
+
+End RistrettoTier4Const.
+
+(* ================================================================ *)
+(* §7. compile_red_set_bytes — verified constant-slot write (T1).     *)
+(*     Replaces the trusted fe25519_const_* FFI leaves: REdSetBytes    *)
+(*     writes a literal byte array fully within the verified IR.       *)
+(* ================================================================ *)
+
+Section SetBytesCompile.
+  Context (callee_post : String.string -> list located_ed -> located_ed ->
+                         rust_state_ed -> rust_state_ed -> Prop).
+  Context (callee_post_n : String.string -> list located_ed -> list located_ed ->
+                           rust_state_ed -> rust_state_ed -> Prop).
+  Context (function_table : function_table_ed).
+
+  Lemma compile_red_set_bytes
+        (rs : rust_state_ed) (loc : located_ed) (bytes : list Z)
+        (n : nat) (bs_old : list Byte.byte) (pred : rpred) :
+    loc.(loc_type) = TBytes n ->
+    rs_get_tower_ed rs loc.(loc_var) =
+      Some (exist_tval_ed (TBytes n) (VBytes n bs_old)) ->
+    List.length bytes = n ->
+    pred (rs_set_tower_ed rs loc.(loc_var)
+            (exist_tval_ed (TBytes n) (VBytes n (List.map Z_to_byte bytes)))) ->
+    rhoare callee_post callee_post_n function_table rs (REdSetBytes loc bytes) pred.
+  Proof.
+    intros Hty Hget Hlen Hpred rs' Hexec.
+    (* [subst] reconciles the inversion's witnesses with our [n]/[bs_old]
+       (the slot lookup is functional), leaving the goal = [Hpred]. *)
+    inversion Hexec; subst.
+    exact Hpred.
+  Qed.
+
+End SetBytesCompile.
 
 (* ========================================================================
    Tier-4 deliverables summary (Phase B.5b, 2026-05-22):

@@ -83,10 +83,28 @@
 
 #![allow(dead_code, unused_variables)]
 
-// Constant setters + pack_xyzt5 (B.5b path b — sub-blocker #2/#3 fixes).
-// Always compiled because the extracted decode.rs / encode.rs will
-// reference these by C-ABI symbol name once the AST lands.
+// Constant setters + pack_xyzt5 + ristretto-leaf shims (B.5b/c).
+// Always compiled because the extracted decode.rs references these
+// by C-ABI symbol name.
 pub mod leaves;
+
+// Encode-specific leaves (`unpack_xyzt5`, `ristretto_pack_canonical_felem`).
+// The shared field ops / `fe25519_inv` / `ristretto_sqrt_ratio_m1` come
+// from `leaves.rs` + the curve25519-jasmin static lib.
+pub mod encode_leaves;
+
+// AUTO-GENERATED from `ristretto_decode_rs : rust_cmd_ed` in
+// `AUCurves/src/Bedrock/End2End/Ristretto/Ristretto_RustCmd.v`
+// via `ExtractRistrettoCmdRs.v`'s `rs_func_emit`.  Phase B.5c MVP
+// (partial decoder; ships only the arithmetic prefix + pack shape).
+pub mod decode;
+
+// AUTO-GENERATED from `ristretto_encode_rs : rust_cmd_ed` in
+// `AUCurves/src/Bedrock/End2End/Ristretto/Ristretto_Encode_RustCmd.v`
+// via `ExtractRistrettoCmdRs.v`'s `rs_func_emit`.  Full RFC 9496
+// §4.3.2 encoder (functional simulation against
+// `ristretto_encode_gallina_nlet`).
+pub mod encode;
 
 /// 32-byte canonical ristretto255 encoding.
 pub type RistrettoPoint32 = [u8; 32];
@@ -117,26 +135,30 @@ const BAD_POINT: RistrettoXyzt200 = [0x00u8; 200];
 /// Returns `Some(xyzt)` on success, `None` on any RFC 9496 §4.3.1
 /// rejection branch.
 ///
-/// **SCAFFOLD STUB** — always returns `None` until the emitted
-/// `decode.rs` lands.  Tests that depend on positive results will
-/// fail with a clear message.
-pub fn ristretto_decode(_bytes: &RistrettoPoint32) -> Option<RistrettoXyzt200> {
-    // TODO(B.5b): replace this body with a call to the emitted
-    // `decode::ristretto_decode` once `Ristretto_RustCmd.v` lands.
-    None
+/// Wraps the verified-extracted `decode::ristretto_decode` (from the
+/// `rust_cmd_ed` AST).  That body writes the canonical 200-byte xyzt on
+/// success and the all-zero `BAD_POINT` sentinel on any rejection
+/// branch (matching the Gallina `ristretto_bad_point`); we surface the
+/// sentinel as `None`.  A genuine decode never yields all-zero (the
+/// identity packs as `(0,1,1,0,1)`, y = 1 ≠ 0).
+pub fn ristretto_decode(bytes: &RistrettoPoint32) -> Option<RistrettoXyzt200> {
+    let mut bs = *bytes;
+    let mut out = [0u8; 200];
+    decode::ristretto_decode(&mut bs, &mut out);
+    if out == BAD_POINT { None } else { Some(out) }
 }
 
 /// Encode a 200-byte extended-twisted-Edwards xyzt to a 32-byte
 /// canonical ristretto encoding.
 ///
-/// **SCAFFOLD STUB** — always returns 32 bytes of `0xFF` until the
-/// emitted `encode.rs` lands.  Distinct from the legitimate
-/// all-zero encoding (the ristretto identity) and from any RFC test
-/// vector, so tests can detect reliance on the stub.
-pub fn ristretto_encode(_xyzt: &RistrettoXyzt200) -> RistrettoPoint32 {
-    // TODO(B.5b): replace this body with a call to the emitted
-    // `encode::ristretto_encode` once `Ristretto_RustCmd.v` lands.
-    [0xFFu8; 32]
+/// Wraps the verified-extracted `encode::ristretto_encode` (from the
+/// `ristretto_encode_rs : rust_cmd_ed` AST, functional-simulation
+/// against `ristretto_encode_gallina_nlet`, RFC 9496 §4.3.2).
+pub fn ristretto_encode(xyzt: &RistrettoXyzt200) -> RistrettoPoint32 {
+    let mut input = *xyzt;
+    let mut out = [0u8; 32];
+    encode::ristretto_encode(&mut input, &mut out);
+    out
 }
 
 // ----------------------------------------------------------------

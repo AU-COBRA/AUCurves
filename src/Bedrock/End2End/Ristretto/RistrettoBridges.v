@@ -47,6 +47,7 @@ Require Import Bedrock.SafeRustEd25519Tower.
 Require Import Bedrock.SafeRustEd25519Sim.
 Require Import Bedrock.End2End.Ed25519.RemainingBridges.
 Require Import Bedrock.End2End.Ed25519.Sign_Strong_Correctness.
+Require Import Bedrock.End2End.Ed25519.XyztAddVerified.
 Require Import Bedrock.End2End.Lizard.RistrettoConsts.
 Require Import Bedrock.End2End.Lizard.RistrettoHelpers.
 Import ListNotations.
@@ -309,6 +310,23 @@ Lemma canonical_negate_spec_len :
   forall z_bs, length (canonical_negate_spec z_bs) = 32%nat.
 Proof. intros; apply length_le_split. Qed.
 
+(** T3 decomposition: [canonical_negate] is just [fe25519_sub] against a
+    constant slot holding [p].  Lets the decoder AST drop the trusted
+    [ristretto_canonical_negate] leaf in favour of [REdSetBytes p] +
+    [fe25519_sub].  Holds because [le_combine (le_split 32 p) = p]
+    (since [p = 2^255-19 < 2^256]). *)
+Lemma fe25519_sub_p_eq_canonical_negate :
+  forall z_bs,
+    fe25519_sub_spec (le_split 32 ed25519_p) z_bs = canonical_negate_spec z_bs.
+Proof.
+  intros z_bs.
+  unfold fe25519_sub_spec, canonical_negate_spec, ristretto_canonical_negate.
+  rewrite le_combine_split.
+  rewrite (Z.mod_small ed25519_p (2 ^ (Z.of_nat 32 * 8)))
+    by (unfold ed25519_p; cbn; lia).
+  reflexivity.
+Qed.
+
 Definition strong_callee_post_ristretto_canonical_negate
            (args : list located_ed)
            (dst : located_ed)
@@ -319,6 +337,114 @@ Definition strong_callee_post_ristretto_canonical_negate
       exists z_bs,
         slot_holds rs1 z.(loc_var) z_bs /\
         slot_holds rs2 dst.(loc_var) (canonical_negate_spec z_bs)
+  | _ => True
+  end.
+
+(* ================================================================ *)
+(* §5b. Constant setters (path-(b) fix for AST sub-blocker #2)        *)
+(* ================================================================ *)
+
+(** Constant setter leaves: [fe25519_const_one], [fe25519_const_two],
+    [fe25519_const_d].  Each writes a fixed 32-byte LE-encoded
+    constant into the destination slot.  Rust implementations in
+    [curve25519-jasmin-rs/src/ristretto_rustcmd/leaves.rs]. *)
+
+(** The 32-byte LE encoding of [1] in F_p. *)
+Definition fe25519_const_one_spec : list Byte.byte := le_split 32 1.
+
+(** The 32-byte LE encoding of [2] in F_p. *)
+Definition fe25519_const_two_spec : list Byte.byte := le_split 32 2.
+
+(** The 32-byte LE encoding of Curve25519's [d] constant.
+    Cross-checked with the Rust side via the spot-check
+    [le_combine_d_matches] below. *)
+Definition fe25519_const_d_spec : list Byte.byte := le_split 32 ed25519_d.
+
+Lemma fe25519_const_one_spec_len : length fe25519_const_one_spec = 32%nat.
+Proof. apply length_le_split. Qed.
+Lemma fe25519_const_two_spec_len : length fe25519_const_two_spec = 32%nat.
+Proof. apply length_le_split. Qed.
+Lemma fe25519_const_d_spec_len : length fe25519_const_d_spec = 32%nat.
+Proof. apply length_le_split. Qed.
+
+(** [strong_callee_post_fe25519_const_*]: zero-argument leaves that
+    write a fixed constant.  Args is [] (no inputs); dst is the
+    32-byte destination slot. *)
+Definition strong_callee_post_fe25519_const_one
+           (args : list located_ed)
+           (dst : located_ed)
+           (rs1 rs2 : rust_state_ed) : Prop :=
+  frames_except rs1 rs2 dst.(loc_var) /\
+  match args with
+  | [] => slot_holds rs2 dst.(loc_var) fe25519_const_one_spec
+  | _  => True
+  end.
+
+Definition strong_callee_post_fe25519_const_two
+           (args : list located_ed)
+           (dst : located_ed)
+           (rs1 rs2 : rust_state_ed) : Prop :=
+  frames_except rs1 rs2 dst.(loc_var) /\
+  match args with
+  | [] => slot_holds rs2 dst.(loc_var) fe25519_const_two_spec
+  | _  => True
+  end.
+
+Definition strong_callee_post_fe25519_const_d
+           (args : list located_ed)
+           (dst : located_ed)
+           (rs1 rs2 : rust_state_ed) : Prop :=
+  frames_except rs1 rs2 dst.(loc_var) /\
+  match args with
+  | [] => slot_holds rs2 dst.(loc_var) fe25519_const_d_spec
+  | _  => True
+  end.
+
+(* ================================================================ *)
+(* §5c. pack_xyzt5 — 5-felem packer (path-(b) fix for sub-blocker #3) *)
+(* ================================================================ *)
+
+(** [pack_xyzt5_spec x y z ta tb] returns the 200-byte concatenation
+    of the five felems, each padded with 8 zero bytes:
+        x ‖ 0₈ ‖ y ‖ 0₈ ‖ z ‖ 0₈ ‖ ta ‖ 0₈ ‖ tb ‖ 0₈
+    where each felem is 32 bytes (so each slot is 40 bytes total).
+    Matches [XyztAddVerified.pack_xyzt5] under
+    [le_split 40 (le_combine bs) = bs ++ [0;0;0;0;0;0;0;0]] when
+    [bs] has length 32 and [le_combine bs < 2^256]. *)
+Definition pack_xyzt5_spec (x_bs y_bs z_bs ta_bs tb_bs : list Byte.byte)
+  : list Byte.byte :=
+  (x_bs ++ List.repeat Byte.x00 8 ++
+   y_bs ++ List.repeat Byte.x00 8 ++
+   z_bs ++ List.repeat Byte.x00 8 ++
+   ta_bs ++ List.repeat Byte.x00 8 ++
+   tb_bs ++ List.repeat Byte.x00 8)%list.
+
+Lemma pack_xyzt5_spec_len :
+  forall x y z ta tb,
+    length x = 32%nat -> length y = 32%nat -> length z = 32%nat ->
+    length ta = 32%nat -> length tb = 32%nat ->
+    length (pack_xyzt5_spec x y z ta tb) = 200%nat.
+Proof.
+  intros x y z ta tb Hx Hy Hz Hta Htb.
+  unfold pack_xyzt5_spec.
+  repeat rewrite length_app, ?List.repeat_length; lia.
+Qed.
+
+(** [strong_callee_post_pack_xyzt5]: 5-input, 1-output leaf. *)
+Definition strong_callee_post_pack_xyzt5
+           (args : list located_ed)
+           (dst : located_ed)
+           (rs1 rs2 : rust_state_ed) : Prop :=
+  frames_except rs1 rs2 dst.(loc_var) /\
+  match args with
+  | [x; y; z; ta; tb] =>
+      exists x_bs y_bs z_bs ta_bs tb_bs,
+        slot_holds rs1 x.(loc_var) x_bs /\
+        slot_holds rs1 y.(loc_var) y_bs /\
+        slot_holds rs1 z.(loc_var) z_bs /\
+        slot_holds rs1 ta.(loc_var) ta_bs /\
+        slot_holds rs1 tb.(loc_var) tb_bs /\
+        slot_holds rs2 dst.(loc_var) (pack_xyzt5_spec x_bs y_bs z_bs ta_bs tb_bs)
   | _ => True
   end.
 
@@ -343,6 +469,14 @@ Definition strong_callee_post_ristretto
       strong_callee_post_ristretto_pack_canonical args dst rs1 rs2
   | "ristretto_canonical_negate" =>
       strong_callee_post_ristretto_canonical_negate args dst rs1 rs2
+  | "fe25519_const_one" =>
+      strong_callee_post_fe25519_const_one args dst rs1 rs2
+  | "fe25519_const_two" =>
+      strong_callee_post_fe25519_const_two args dst rs1 rs2
+  | "fe25519_const_d" =>
+      strong_callee_post_fe25519_const_d args dst rs1 rs2
+  | "pack_xyzt5" =>
+      strong_callee_post_pack_xyzt5 args dst rs1 rs2
   | _ => frames_except rs1 rs2 dst.(loc_var)
   end.
 

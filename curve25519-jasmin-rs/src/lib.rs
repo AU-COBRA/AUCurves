@@ -158,6 +158,12 @@ pub mod zkgroup_demo;
 /// gated on `feature = "ed25519_rustcmd"`.
 pub mod ed25519_rustcmd;
 
+/// Ristretto255 decode/encode, also generated from the verified
+/// `rust_cmd_ed` AST.  Currently scaffold + path-(b) leaves
+/// (constant setters, pack_xyzt5); decode/encode stubs return
+/// `None`/`[0xFF; 32]` until the AST authoring lands.
+pub mod ristretto_rustcmd;
+
 /// GF(2^255 - 19) field element, 4 × u64 saturated representation.
 ///
 /// Limb layout: value = limbs[0] + limbs[1]*2^64 + limbs[2]*2^128 + limbs[3]*2^192

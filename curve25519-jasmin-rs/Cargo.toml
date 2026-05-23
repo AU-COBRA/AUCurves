@@ -40,6 +40,13 @@ name = "curve25519_jasmin"
 # `dalek_leaves` / `decomposed_leaves` must also be set.
 ed25519_rustcmd = []
 
+# `ristretto_rustcmd` enables the extracted Ristretto255 decode/encode
+# path (`src/ristretto_rustcmd/{decode,encode}.rs` from the verified
+# `rust_cmd_ed` AST) + the RFC 9496 §A KAT suite.  Needs the shared
+# fe25519 byte-ABI leaves, so it pulls `ed25519_rustcmd`; a leaves
+# backend (`dalek_leaves` / `decomposed_leaves`) must also be set.
+ristretto_rustcmd = ["ed25519_rustcmd"]
+
 # `divstep_invert`: route `mont_to_edwards::fe25519_invert` through
 # Bernstein-Yang divstep (`safegcd25519::fe25519_invert_divstep_tight`,
 # port of libsecp256k1 `secp256k1_modinv64`) instead of the Fermat

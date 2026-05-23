@@ -99,6 +99,31 @@ Definition sub_affine_y (P Q : Fp * Fp) : Fp :=
   let '(x2, y2) := opp_affine Q in
   ((y1 * y2 - Curve25519.E.a * x1 * x2) / (Fone - Curve25519.E.d * x1 * x2 * y1 * y2))%F.
 
+(* === helper for encoder-invariance halves === *)
+
+(** ** [is_negative (F.opp s) = negb (is_negative s)] for nonzero [s].
+    Uses oddness of [p = 2^255 - 19]: bit 0 of [p - k] equals
+    [negb (bit 0 of k)] when [0 < k < p]. *)
+Lemma is_negative_opp_nonzero : forall (s : Fp),
+  s <> Fzero -> is_negative (F.opp s) = negb (is_negative s).
+Proof.
+  intros s Hnz.
+  unfold is_negative.
+  rewrite F.to_Z_opp.
+  assert (Hp : (0 < 2^255-19)%Z) by (vm_compute; reflexivity).
+  assert (Hrng : (0 <= F.to_Z s < 2^255-19)%Z) by (apply F.to_Z_range; lia).
+  assert (Hsnz : F.to_Z s <> 0%Z).
+  { intro Hz. apply Hnz. apply ModularArithmeticTheorems.F.eq_to_Z_iff.
+    rewrite Hz. rewrite F.to_Z_of_Z. reflexivity. }
+  rewrite Z.mod_opp_l_nz; [|lia|rewrite Z.mod_small; lia].
+  rewrite Z.mod_small by lia.
+  change (Z.pos p) with (2^255 - 19)%Z.
+  rewrite !Z.bit0_odd.
+  rewrite Z.odd_sub.
+  replace (Z.odd (2^255 - 19)) with true by reflexivity.
+  destruct (Z.odd (F.to_Z s)); reflexivity.
+Qed.
+
 (* === case lemmas === *)
 
 (** ** Identity case — sub_affine P Q = (0, 1) ⇒ Px = Qx ∧ Py = Qy.

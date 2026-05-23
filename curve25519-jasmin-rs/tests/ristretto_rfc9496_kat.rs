@@ -332,3 +332,62 @@ fn stub_detection_canary() {
         );
     }
 }
+
+// ================================================================
+// Differential testing vs curve25519-dalek (no hand-transcribed
+// vectors).  The 3 corrupt §A.2 constants came from hand-typing RFC
+// 9496 §A; this test instead GENERATES inputs and compares decode /
+// encode to dalek (the reference impl) directly.
+//   (a) ~20k random 32-byte strings: accept/reject must match dalek,
+//       and every accepted input must round-trip (encode∘decode = id).
+//   (b) 512 genuine points n·B (via dalek): must decode + round-trip
+//       to dalek's own compression.
+// ================================================================
+
+#[test]
+fn differential_vs_dalek_random_and_valid() {
+    use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+    use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+    use curve25519_dalek::scalar::Scalar;
+
+    // (a) Random bytes (mostly invalid): accept/reject agreement + round-trip.
+    let mut s: u64 = 0x243F_6A88_85A3_08D3;
+    let mut next = move || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    };
+    for _ in 0..20_000 {
+        let mut bs = [0u8; 32];
+        for b in bs.iter_mut() {
+            *b = (next() & 0xff) as u8;
+        }
+        let dalek_some = CompressedRistretto(bs).decompress().is_some();
+        let mine = ristretto_decode(&bs);
+        assert_eq!(
+            mine.is_some(),
+            dalek_some,
+            "decode accept/reject disagrees with dalek on {bs:02x?}"
+        );
+        if let Some(xyzt) = mine {
+            assert_eq!(
+                ristretto_encode(&xyzt),
+                bs,
+                "encode(decode(bs)) != bs on accepted {bs:02x?}"
+            );
+        }
+    }
+
+    // (b) Genuine points n*B: must decode and round-trip to dalek's compression.
+    for n in 0u64..512 {
+        let p: RistrettoPoint = RISTRETTO_BASEPOINT_POINT * Scalar::from(n);
+        let bs = p.compress().to_bytes();
+        let xyzt = ristretto_decode(&bs).expect("a valid n*B encoding must decode");
+        assert_eq!(
+            ristretto_encode(&xyzt),
+            bs,
+            "encode(decode(n*B)) != n*B for n={n}"
+        );
+    }
+}

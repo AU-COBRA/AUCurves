@@ -45,11 +45,11 @@ Local Open Scope Z_scope.
 (* ================================================================ *)
 
 Lemma map_const_sqrt_m1 :
-  List.map Z_to_byte const_sqrt_m1_zs = le_split 32 ristretto_SQRT_M1.
+  List.map Z_to_byte const_sqrt_m1_zs = le_split 40 ristretto_SQRT_M1.
 Proof. unfold const_sqrt_m1_zs. vm_compute. reflexivity. Qed.
 
 Lemma map_const_invad :
-  List.map Z_to_byte const_invsqrt_amd_zs = le_split 32 ristretto_INVSQRT_A_MINUS_D.
+  List.map Z_to_byte const_invsqrt_amd_zs = le_split 40 ristretto_INVSQRT_A_MINUS_D.
 Proof. unfold const_invsqrt_amd_zs. vm_compute. reflexivity. Qed.
 
 Lemma map_zero32 :
@@ -219,6 +219,32 @@ Proof.
   intros xyzt.
   rewrite ristretto_encode_gallina_nlet_eq.
   apply ristretto_encode_gallina_length.
+Qed.
+
+(* ================================================================ *)
+(* §4b. Rejection-path characterisation (Qed, 0 axioms).             *)
+(*                                                                    *)
+(* The encoder's analogue of the decoder's                           *)
+(* [ristretto_decode_rhoare_reject].  Unlike the decoder — whose AST  *)
+(* contains an explicit [REdIfNz] status-byte branch into            *)
+(* [rd_bad_cmd] — the encoder AST [ristretto_encode_rs] runs its body *)
+(* unconditionally (it has no runtime length guard).  The reject      *)
+(* semantics therefore live entirely at the Gallina level: for any    *)
+(* input whose length is not 200, the specification                  *)
+(* [ristretto_encode_gallina_nlet] selects its else-branch and        *)
+(* returns the 32-byte all-zero encoding.  This is the [out = 32      *)
+(* zeros] complement of the success path, term-blowup-free, and lands *)
+(* as a clean Qed. *)
+Lemma ristretto_encode_gallina_reject :
+  forall xyzt,
+    length xyzt <> 200%nat ->
+    ristretto_encode_gallina_nlet xyzt = List.repeat Byte.x00 32.
+Proof.
+  intros xyzt Hlen.
+  unfold ristretto_encode_gallina_nlet.
+  destruct (Nat.eqb (length xyzt) 200) eqn:Hb.
+  - apply Nat.eqb_eq in Hb. contradiction.
+  - reflexivity.
 Qed.
 
 (* ================================================================ *)

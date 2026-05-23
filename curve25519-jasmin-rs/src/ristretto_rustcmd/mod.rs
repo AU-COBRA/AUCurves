@@ -106,6 +106,10 @@ pub mod decode;
 // `ristretto_encode_gallina_nlet`).
 pub mod encode;
 
+// Kani memory-safety / panic-freedom proof harnesses (verify-only).
+#[cfg(kani)]
+mod kani_proofs;
+
 /// 32-byte canonical ristretto255 encoding.
 pub type RistrettoPoint32 = [u8; 32];
 

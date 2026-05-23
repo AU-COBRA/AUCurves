@@ -228,9 +228,9 @@ Definition strong_callee_post_n_encode
     [map Z_to_byte const_* = le_split 32 ristretto_*] holds by
     [vm_compute]. *)
 Definition const_sqrt_m1_zs : list Z :=
-  List.map byte.unsigned (le_split 32 ristretto_SQRT_M1).
+  List.map byte.unsigned (le_split 40 ristretto_SQRT_M1).
 Definition const_invsqrt_amd_zs : list Z :=
-  List.map byte.unsigned (le_split 32 ristretto_INVSQRT_A_MINUS_D).
+  List.map byte.unsigned (le_split 40 ristretto_INVSQRT_A_MINUS_D).
 (** The prime [p] (reuse the decoder's [const_p_zs] via re-import). *)
 
 (* ========================================================================
@@ -327,44 +327,44 @@ Definition v_re_sbit    := "sbit_s".
      out    := ristretto_pack_canonical_felem s
    ======================================================================== *)
 Definition ristretto_encode_rs : rust_cmd_ed :=
-  REdLetZero v_re_x       (TBytes 32) (
-  REdLetZero v_re_y       (TBytes 32) (
-  REdLetZero v_re_z       (TBytes 32) (
-  REdLetZero v_re_ta      (TBytes 32) (
-  REdLetZero v_re_tb      (TBytes 32) (
-  REdLetZero v_re_one     (TBytes 32) (
-  REdLetZero v_re_p       (TBytes 32) (
-  REdLetZero v_re_sqrtm1  (TBytes 32) (
-  REdLetZero v_re_invad   (TBytes 32) (
-  REdLetZero v_re_zinv    (TBytes 32) (
-  REdLetZero v_re_tatb    (TBytes 32) (
-  REdLetZero v_re_t       (TBytes 32) (
-  REdLetZero v_re_zpy     (TBytes 32) (
-  REdLetZero v_re_zmy     (TBytes 32) (
-  REdLetZero v_re_u1      (TBytes 32) (
-  REdLetZero v_re_u2      (TBytes 32) (
-  REdLetZero v_re_u2sq    (TBytes 32) (
-  REdLetZero v_re_den     (TBytes 32) (
+  REdLetZero v_re_x       (TBytes 40) (
+  REdLetZero v_re_y       (TBytes 40) (
+  REdLetZero v_re_z       (TBytes 40) (
+  REdLetZero v_re_ta      (TBytes 40) (
+  REdLetZero v_re_tb      (TBytes 40) (
+  REdLetZero v_re_one     (TBytes 40) (
+  REdLetZero v_re_p       (TBytes 40) (
+  REdLetZero v_re_sqrtm1  (TBytes 40) (
+  REdLetZero v_re_invad   (TBytes 40) (
+  REdLetZero v_re_zinv    (TBytes 40) (
+  REdLetZero v_re_tatb    (TBytes 40) (
+  REdLetZero v_re_t       (TBytes 40) (
+  REdLetZero v_re_zpy     (TBytes 40) (
+  REdLetZero v_re_zmy     (TBytes 40) (
+  REdLetZero v_re_u1      (TBytes 40) (
+  REdLetZero v_re_u2      (TBytes 40) (
+  REdLetZero v_re_u2sq    (TBytes 40) (
+  REdLetZero v_re_den     (TBytes 40) (
   REdLetZero v_re_ws      (TBytes 1)  (
-  REdLetZero v_re_invsqrt (TBytes 32) (
-  REdLetZero v_re_D1      (TBytes 32) (
-  REdLetZero v_re_D2      (TBytes 32) (
-  REdLetZero v_re_D1D2    (TBytes 32) (
-  REdLetZero v_re_Zinv    (TBytes 32) (
-  REdLetZero v_re_ix      (TBytes 32) (
-  REdLetZero v_re_iy      (TBytes 32) (
-  REdLetZero v_re_eden    (TBytes 32) (
-  REdLetZero v_re_tZinv   (TBytes 32) (
-  REdLetZero v_re_xp      (TBytes 32) (
-  REdLetZero v_re_yp      (TBytes 32) (
-  REdLetZero v_re_deninv  (TBytes 32) (
-  REdLetZero v_re_xzinv   (TBytes 32) (
-  REdLetZero v_re_ypneg   (TBytes 32) (
-  REdLetZero v_re_ypp     (TBytes 32) (
-  REdLetZero v_re_zmypp   (TBytes 32) (
-  REdLetZero v_re_sraw    (TBytes 32) (
-  REdLetZero v_re_sneg    (TBytes 32) (
-  REdLetZero v_re_s       (TBytes 32) (
+  REdLetZero v_re_invsqrt (TBytes 40) (
+  REdLetZero v_re_D1      (TBytes 40) (
+  REdLetZero v_re_D2      (TBytes 40) (
+  REdLetZero v_re_D1D2    (TBytes 40) (
+  REdLetZero v_re_Zinv    (TBytes 40) (
+  REdLetZero v_re_ix      (TBytes 40) (
+  REdLetZero v_re_iy      (TBytes 40) (
+  REdLetZero v_re_eden    (TBytes 40) (
+  REdLetZero v_re_tZinv   (TBytes 40) (
+  REdLetZero v_re_xp      (TBytes 40) (
+  REdLetZero v_re_yp      (TBytes 40) (
+  REdLetZero v_re_deninv  (TBytes 40) (
+  REdLetZero v_re_xzinv   (TBytes 40) (
+  REdLetZero v_re_ypneg   (TBytes 40) (
+  REdLetZero v_re_ypp     (TBytes 40) (
+  REdLetZero v_re_zmypp   (TBytes 40) (
+  REdLetZero v_re_sraw    (TBytes 40) (
+  REdLetZero v_re_sneg    (TBytes 40) (
+  REdLetZero v_re_s       (TBytes 40) (
   (* unpack 200-byte input -> 5 felems *)
   REdSeq (REdCallN "unpack_xyzt5"
             [LE_TBytes_r v_re_x  32; LE_TBytes_r v_re_y  32;

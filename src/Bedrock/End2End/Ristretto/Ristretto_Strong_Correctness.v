@@ -61,16 +61,16 @@ Lemma map_const_two : List.map Z_to_byte const_two_zs = fe25519_const_two_spec.
 Proof. unfold fe25519_const_two_spec. vm_compute. reflexivity. Qed.
 Lemma map_const_d : List.map Z_to_byte const_d_zs = fe25519_const_d_spec.
 Proof. unfold fe25519_const_d_spec. vm_compute. reflexivity. Qed.
-Lemma map_const_p : List.map Z_to_byte const_p_zs = le_split 32 ed25519_p.
+Lemma map_const_p : List.map Z_to_byte const_p_zs = le_split 40 ed25519_p.
 Proof. vm_compute. reflexivity. Qed.
 Lemma map_bad : List.map Z_to_byte (List.repeat 0%Z 200) = ristretto_bad_point.
 Proof. unfold ristretto_bad_point. vm_compute. reflexivity. Qed.
 
-Lemma const_one_eq : fe25519_const_one_spec = le_split 32 1.
+Lemma const_one_eq : fe25519_const_one_spec = le_split 40 1.
 Proof. reflexivity. Qed.
-Lemma const_two_eq : fe25519_const_two_spec = le_split 32 2.
+Lemma const_two_eq : fe25519_const_two_spec = le_split 40 2.
 Proof. reflexivity. Qed.
-Lemma const_d_eq : fe25519_const_d_spec = le_split 32 ed25519_d.
+Lemma const_d_eq : fe25519_const_d_spec = le_split 40 ed25519_d.
 Proof. reflexivity. Qed.
 
 (* ================================================================ *)
@@ -278,12 +278,12 @@ Proof.
   rewrite le_combine_split_p by assumption. reflexivity.
 Qed.
 
-(** The constant-one slot, expressed via [le_split 32 1]. *)
-Lemma one_split : fe25519_const_one_spec = le_split 32 1.
+(** The constant-one slot, expressed via [le_split 40 1] (40-byte felem). *)
+Lemma one_split : fe25519_const_one_spec = le_split 40 1.
 Proof. reflexivity. Qed.
-Lemma two_split : fe25519_const_two_spec = le_split 32 2.
+Lemma two_split : fe25519_const_two_spec = le_split 40 2.
 Proof. reflexivity. Qed.
-Lemma d_split : fe25519_const_d_spec = le_split 32 ed25519_d.
+Lemma d_split : fe25519_const_d_spec = le_split 40 ed25519_d.
 Proof. reflexivity. Qed.
 
 (** [ed25519_d] is in range. *)
@@ -651,7 +651,7 @@ Proof.
   intros function_table rs1 bs out0 Hlen Hreject Hbs Hout.
   unfold ristretto_decode_rs.
   do 26 (apply compile_red_let_zero; intros ? ?).
-  set (rs_a := rs_set_tower_ed _ v_rd_t (exist_tval_ed (TBytes 32) v24)) in *.
+  set (rs_a := rs_set_tower_ed _ v_rd_t (exist_tval_ed (TBytes 40) v24)) in *.
   assert (Hbs_a : slot_holds rs_a v_rd_bs bs).
   { unfold rs_a. repeat (apply slot_holds_set_tower_other; [rd_neq|]). exact Hbs. }
   assert (Hout_a : rs_get_tower_ed rs_a v_rd_out = Some (exist_tval_ed (TBytes 200) (VBytes 200 out0))).

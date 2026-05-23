@@ -349,27 +349,27 @@ Definition strong_callee_post_ristretto_canonical_negate
     constant into the destination slot.  Rust implementations in
     [curve25519-jasmin-rs/src/ristretto_rustcmd/leaves.rs]. *)
 
-(** The 32-byte LE encoding of [1] in F_p. *)
-Definition fe25519_const_one_spec : list Byte.byte := le_split 32 1.
+(** The 40-byte LE encoding of [1] in F_p (32 value + 8 zero pad). *)
+Definition fe25519_const_one_spec : list Byte.byte := le_split 40 1.
 
-(** The 32-byte LE encoding of [2] in F_p. *)
-Definition fe25519_const_two_spec : list Byte.byte := le_split 32 2.
+(** The 40-byte LE encoding of [2] in F_p (32 value + 8 zero pad). *)
+Definition fe25519_const_two_spec : list Byte.byte := le_split 40 2.
 
-(** The 32-byte LE encoding of Curve25519's [d] constant.
-    Cross-checked with the Rust side via the spot-check
+(** The 40-byte LE encoding of Curve25519's [d] constant (32 value + 8
+    zero pad).  Cross-checked with the Rust side via the spot-check
     [le_combine_d_matches] below. *)
-Definition fe25519_const_d_spec : list Byte.byte := le_split 32 ed25519_d.
+Definition fe25519_const_d_spec : list Byte.byte := le_split 40 ed25519_d.
 
-Lemma fe25519_const_one_spec_len : length fe25519_const_one_spec = 32%nat.
+Lemma fe25519_const_one_spec_len : length fe25519_const_one_spec = 40%nat.
 Proof. apply length_le_split. Qed.
-Lemma fe25519_const_two_spec_len : length fe25519_const_two_spec = 32%nat.
+Lemma fe25519_const_two_spec_len : length fe25519_const_two_spec = 40%nat.
 Proof. apply length_le_split. Qed.
-Lemma fe25519_const_d_spec_len : length fe25519_const_d_spec = 32%nat.
+Lemma fe25519_const_d_spec_len : length fe25519_const_d_spec = 40%nat.
 Proof. apply length_le_split. Qed.
 
 (** [strong_callee_post_fe25519_const_*]: zero-argument leaves that
     write a fixed constant.  Args is [] (no inputs); dst is the
-    32-byte destination slot. *)
+    40-byte destination slot. *)
 Definition strong_callee_post_fe25519_const_one
            (args : list located_ed)
            (dst : located_ed)

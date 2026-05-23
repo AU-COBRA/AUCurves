@@ -391,10 +391,11 @@ Section BW6_FinalExpProof.
     forall functions
       (EnvContains : map.get functions "bw6_fp6_pow_u" =
         Some (snd BW6_761_FinalExp.bw6_fp6_pow_u))
+      (HFp6copy  : spec_of_Fp6_felem_copy functions)
       (HFpowabsu : spec_of_bw6_fp6_pow_abs_u functions),
     spec_of_bw6_fp6_pow_u functions.
   Proof.
-    intros functions EnvContains HFpowabsu.
+    intros functions EnvContains HFp6copy HFpowabsu.
     unfold spec_of_bw6_fp6_pow_u.
     intros pout px old_out x_val Rr tr mem0 [Hbx Hsep].
     eapply start_func; [exact EnvContains | clear EnvContains].
@@ -402,17 +403,114 @@ Section BW6_FinalExpProof.
     unfold BW6_761_FinalExp.bw6_fp6_pow_u. simpl snd. simpl fst.
     cbv match beta.
     eexists. split. { exact eq_refl. }
+    (* Stackalloc s *)
+    straightline. split. { apply Z_mod_mult. }
+    intros a_s mSs mCs HaSs HmSs.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_s mSs) HaSs) as [si Hsi].
+    pose proof (proj1 (map.split_comm mCs mem0 mSs) HmSs) as HmSs'.
+    assert (Hsep1 :
+      (FElem_Fp6 a_s si *
+       (FElem_Fp6 pout old_out *
+        (FElem_Fp6 px x_val * Rr)))%sep mCs).
+    { exists mSs, mem0. exact (conj HmSs' (conj Hsi Hsep)). }
+    clear Hsep Hsi HaSs HmSs HmSs'.
     cbv [BW6_761_FinalExp.cmd_seq_list].
+    (* Call 1: fp6_copy(s, x) — s := x_val *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6copy.
+         split.
+         { ecancel_assumption. }
+         { ecancel_assumption. } }
+    intros ? ? ? [? Hsep_copy]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+    (* Call 2: pow_abs_u(out, s) — out and s disjoint *)
     repeat straightline.
     eapply Semantics.weaken_call.
     1: { eapply HFpowabsu. split; [exact Hbx | ecancel_assumption]. }
-    intros t_c ? rets_c [Hrets_c [Htr_c [out_v [Hb_out Hsep_out]]]]. subst.
-    cbv [map.putmany_of_list_zip]. eexists. split. { reflexivity. }
+    intros ? ? ? [? [? [out_v [Hb_out Hsep_out]]]]. subst.
+    (* Dealloc s *)
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+    assert (Hsep_s_front :
+      (FElem_Fp6 a_s x_val *
+       (FElem_Fp6 pout out_v * (FElem_Fp6 px x_val * Rr)))%sep m'0).
+    { ecancel_assumption. }
+    destruct Hsep_s_front as [mStack [m_final [Hsp [Hfe_s Hrest]]]].
+    assert (Hab_s : Memory.anybytes a_s
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_s x_val mStack Hfe_s). }
+    exists m_final, mStack.
+    split. { exact Hab_s. }
+    split. { apply map.split_comm. exact Hsp. }
     cbv [list_map list_map_body WeakestPrecondition.get].
     split. { reflexivity. }
     split. { reflexivity. }
     exists out_v. split. { exact Hb_out. }
-    ecancel_assumption.
+    exact Hrest.
+  Qed.
+
+  (* In-place pow_u: out = x = p_x.  The stackalloc scratch makes
+     this correct (the base lives in [s], disjoint from [p_x]). *)
+  Lemma bw6_fp6_pow_u_inplace_ok :
+    forall functions
+      (EnvContains : map.get functions "bw6_fp6_pow_u" =
+        Some (snd BW6_761_FinalExp.bw6_fp6_pow_u))
+      (HFp6copy  : spec_of_Fp6_felem_copy functions)
+      (HFpowabsu : spec_of_bw6_fp6_pow_abs_u functions),
+    BW6_761_FinalExp.spec_of_bw6_fp6_pow_u_inplace functions.
+  Proof.
+    intros functions EnvContains HFp6copy HFpowabsu.
+    unfold BW6_761_FinalExp.spec_of_bw6_fp6_pow_u_inplace.
+    intros p_x x_val Rr tr mem0 Hbx Hsep.
+    eapply start_func; [exact EnvContains | clear EnvContains].
+    cbv [WeakestPrecondition.func].
+    unfold BW6_761_FinalExp.bw6_fp6_pow_u. simpl snd. simpl fst.
+    cbv match beta.
+    eexists. split. { exact eq_refl. }
+    straightline. split. { apply Z_mod_mult. }
+    intros a_s mSs mCs HaSs HmSs.
+    pose proof (proj1 (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _
+      bw6_Fp6_repr _ _ a_s mSs) HaSs) as [si Hsi].
+    pose proof (proj1 (map.split_comm mCs mem0 mSs) HmSs) as HmSs'.
+    assert (Hsep1 :
+      (FElem_Fp6 a_s si * (FElem_Fp6 p_x x_val * Rr))%sep mCs).
+    { exists mSs, mem0. exact (conj HmSs' (conj Hsi Hsep)). }
+    clear Hsep Hsi HaSs HmSs HmSs'.
+    cbv [BW6_761_FinalExp.cmd_seq_list].
+    (* Call 1: fp6_copy(s, x) — s := x_val *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFp6copy.
+         split.
+         { ecancel_assumption. }
+         { ecancel_assumption. } }
+    intros ? ? ? [? Hsep_copy]. subst.
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+    (* Call 2: pow_abs_u(out=p_x, s) — p_x and s disjoint *)
+    repeat straightline.
+    eapply Semantics.weaken_call.
+    1: { eapply HFpowabsu. split; [exact Hbx | ecancel_assumption]. }
+    intros ? ? ? [? [? [out_v [Hb_out Hsep_out]]]]. subst.
+    (* Dealloc s *)
+    cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
+    assert (Hsep_s_front :
+      (FElem_Fp6 a_s x_val * (FElem_Fp6 p_x out_v * Rr))%sep m'0).
+    { ecancel_assumption. }
+    destruct Hsep_s_front as [mStack [m_final [Hsp [Hfe_s Hrest]]]].
+    assert (Hab_s : Memory.anybytes a_s
+        (AbstractField.felem_size_in_bytes (F:=Fp6)) mStack).
+    { exact (AbstractField.FElem_to_bytes (field_representation:=bw6_Fp6_repr)
+               a_s x_val mStack Hfe_s). }
+    exists m_final, mStack.
+    split. { exact Hab_s. }
+    split. { apply map.split_comm. exact Hsp. }
+    cbv [list_map list_map_body WeakestPrecondition.get].
+    split. { reflexivity. }
+    split. { reflexivity. }
+    exists out_v. split. { exact Hb_out. }
+    exact Hrest.
   Qed.
 
   (* ============================================================ *)
@@ -1091,6 +1189,48 @@ Section BW6_FinalExpProof.
     exists hard_v.
     split. { exact Hb_hard. }
     exact Hrest_final.
+  Qed.
+
+  (* ============================================================ *)
+  (* Wired final exponentiation: discharge the easy / hard /       *)
+  (* pow_u / pow_abs_u / pow_u_inplace layer internally, leaving   *)
+  (* only the genuine leaf specs (Fp6 arithmetic + conjugate +     *)
+  (* the three Frobenius variants).  Those leaves are proved        *)
+  (* elsewhere: Fp6_{mul,sqr,inv,felem_copy}_ok in                 *)
+  (* CubicFieldExtensions, and bw6_fp6_{conjugate,frob,frob_p2,    *)
+  (* frob_p3}_ok in BW6_761_FrobLibBridge.  A top-level wiring      *)
+  (* that imports both can discharge them too.                     *)
+  (* ============================================================ *)
+  Lemma bw6_final_exp_ok_wired :
+    forall functions
+      (EnvFE : map.get functions "bw6_final_exp" =
+        Some (snd BW6_761_FinalExp.bw6_final_exp))
+      (EnvEasy : map.get functions "bw6_final_exp_easy" =
+        Some (snd BW6_761_FinalExp.bw6_final_exp_easy))
+      (EnvHard : map.get functions "bw6_final_exp_hard" =
+        Some (snd BW6_761_FinalExp.bw6_final_exp_hard))
+      (EnvPowU : map.get functions "bw6_fp6_pow_u" =
+        Some (snd BW6_761_FinalExp.bw6_fp6_pow_u))
+      (EnvPowAbsU : map.get functions "bw6_fp6_pow_abs_u" =
+        Some (snd BW6_761_FinalExp.bw6_fp6_pow_abs_u))
+      (HFp6mul     : spec_of_Fp6_mul functions)
+      (HFp6sqr     : spec_of_Fp6_sqr functions)
+      (HFp6inv     : spec_of_Fp6_inv functions)
+      (HFp6copy    : spec_of_Fp6_felem_copy functions)
+      (HFp6conj    : spec_of_bw6_fp6_conjugate functions)
+      (HFp6frob    : spec_of_bw6_fp6_frob functions)
+      (HFp6frob_p2 : spec_of_bw6_fp6_frob_p2 functions)
+      (HFp6frob_p3 : spec_of_bw6_fp6_frob_p3 functions),
+    spec_of_bw6_final_exp functions.
+  Proof.
+    intros.
+    pose proof (bw6_fp6_pow_abs_u_ok functions EnvPowAbsU HFp6mul HFp6sqr HFp6copy) as Hpa.
+    pose proof (bw6_fp6_pow_u_ok functions EnvPowU HFp6copy Hpa) as Hpu.
+    pose proof (bw6_fp6_pow_u_inplace_ok functions EnvPowU HFp6copy Hpa) as Hpu_ip.
+    pose proof (bw6_final_exp_easy_ok functions EnvEasy HFp6mul HFp6inv HFp6conj HFp6frob) as Heasy.
+    pose proof (bw6_final_exp_hard_ok functions EnvHard HFp6mul HFp6sqr HFp6conj
+                  HFp6frob HFp6frob_p2 HFp6frob_p3 Hpu Hpu_ip) as Hhard.
+    exact (bw6_final_exp_ok functions EnvFE Heasy Hhard).
   Qed.
 
 End BW6_FinalExpProof.

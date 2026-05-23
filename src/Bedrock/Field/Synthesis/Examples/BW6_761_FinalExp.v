@@ -269,13 +269,20 @@ Section BW6_FinalExp.
 
     Let fp6_pow_u_name : string := "bw6_fp6_pow_u".
 
+    (* Stackalloc a scratch [s], copy [x] into it, then run pow_abs_u
+       with [out] and the scratch [s].  This makes pow_u correct even
+       when called IN-PLACE (out = x): the base lives in [s], disjoint
+       from [out], so the squaring in pow_abs_u never clobbers it. *)
     Definition bw6_fp6_pow_u : function_t :=
       (fp6_pow_u_name,
        (["out"; "x"], []:list String.string,
         bedrock_func_body:(
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as s;
           coq:(cmd_seq_list [
+            Syntax.cmd.call [] fp6_copy_name
+              [Syntax.expr.var "s"; Syntax.expr.var "x"];
             Syntax.cmd.call [] fp6_pow_abs_u_name
-              [Syntax.expr.var "out"; Syntax.expr.var "x"]
+              [Syntax.expr.var "out"; Syntax.expr.var "s"]
           ])
         ))).
 

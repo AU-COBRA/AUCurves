@@ -369,9 +369,14 @@ Section BW6_FinalExp.
 
     Let fp6_frob_p2_name : string := "bw6_fp6_frob_p2".
 
+    (** Same body as [bw6_fp6_frob] (just called with squared gammas).
+        Internal var names match the library convention so the
+        [PairingFieldOpsCubicFirst] bridge can be reused at suffix
+        ["_p2"].  Callers pass positional args; the names
+        [gamma_fp3]/[gamma_fp6] here refer to the SQUARED gammas. *)
     Definition bw6_fp6_frob_p2 : function_t :=
       (fp6_frob_p2_name,
-       (["out"; "x"; "gamma_fp3_p2"; "gamma_fp6_p2"],
+       (["out"; "x"; "gamma_fp3"; "gamma_fp6"],
         []:list String.string,
         bedrock_func_body:(
           coq:(cmd_seq_list [
@@ -381,23 +386,23 @@ Section BW6_FinalExp.
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "out"));
                expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "x"));
-               expr_fp3_c1 (Syntax.expr.var "gamma_fp3_p2")];
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp3")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "out"));
                expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "x"));
-               expr_fp3_c2 (Syntax.expr.var "gamma_fp3_p2")];
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp3")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p2")];
+               expr_fp3_c0 (Syntax.expr.var "gamma_fp6")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c1 (Syntax.expr.var "gamma_fp6_p2")];
+               expr_fp3_c1 (Syntax.expr.var "gamma_fp6")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c2 (Syntax.expr.var "gamma_fp6_p2")]
+               expr_fp3_c2 (Syntax.expr.var "gamma_fp6")]
           ])
         ))).
 
@@ -410,9 +415,13 @@ Section BW6_FinalExp.
 
     Let fp6_frob_p3_name : string := "bw6_fp6_frob_p3".
 
+    (** Same internal var name "gamma" as the library's
+        [cubic_first_fp6_frob_p3] so the [PairingFieldOpsCubicFirst]
+        bridge can be reused.  Spec-level parameter [p_gfp6_p3] is
+        unchanged — those are at the Coq level, not bedrock2 vars. *)
     Definition bw6_fp6_frob_p3 : function_t :=
       (fp6_frob_p3_name,
-       (["out"; "x"; "gamma_fp6_p3"],
+       (["out"; "x"; "gamma"],
         []:list String.string,
         bedrock_func_body:(
           coq:(cmd_seq_list [
@@ -430,15 +439,15 @@ Section BW6_FinalExp.
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")];
+               expr_fp3_c0 (Syntax.expr.var "gamma")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")];
+               expr_fp3_c0 (Syntax.expr.var "gamma")];
             Syntax.cmd.call [] fp_mul_name
               [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
                expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
-               expr_fp3_c0 (Syntax.expr.var "gamma_fp6_p3")]
+               expr_fp3_c0 (Syntax.expr.var "gamma")]
           ])
         ))).
 

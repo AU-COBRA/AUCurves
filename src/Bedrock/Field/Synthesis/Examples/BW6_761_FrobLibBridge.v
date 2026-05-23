@@ -294,6 +294,76 @@ Section BW6_FrobLibBridge.
     SeparationLogic.ecancel_assumption_impl.
   Qed.
 
+  (** Reverse of [BW6_Fp6_to_lib_slots]: given the library 6-slot layout
+      with slot values that ARE the Fp projections of an Fp6 felem [x],
+      and a length witness [length x = 6n], recover [FElem_Fp6 p x]. *)
+  Lemma BW6_Fp6_from_lib_slots :
+    forall p (x : Fp6_felem) R m,
+      length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+      (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) p
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x))
+       * R)%sep m ->
+      (FElem_Fp6 p x * R)%sep m.
+  Proof.
+    intros p x R m Hlx H.
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    assert (Hl_fst : length (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x) = (3 * n)%nat) by
+      (unfold qe_fst_felem; rewrite firstn_length;
+       change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+         with (3 * n)%nat; lia).
+    assert (Hl_snd : length (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x) = (3 * n)%nat) by
+      (unfold qe_snd_felem; rewrite skipn_length;
+       change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+         with (3 * n)%nat; lia).
+    assert (Hl_c0_fst : length (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c0_felem; rewrite firstn_length; rewrite Hl_fst; lia).
+    assert (Hl_c1_fst : length (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c1_felem; rewrite firstn_length, skipn_length; rewrite Hl_fst; lia).
+    assert (Hl_c2_fst : length (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_fst_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c2_felem; rewrite skipn_length; rewrite Hl_fst; lia).
+    assert (Hl_c0_snd : length (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c0_felem; rewrite firstn_length; rewrite Hl_snd; lia).
+    assert (Hl_c1_snd : length (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c1_felem; rewrite firstn_length, skipn_length; rewrite Hl_snd; lia).
+    assert (Hl_c2_snd : length (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (@qe_snd_felem _ _ _ _ _ _ bw6_Fp3_repr x)) = n) by
+      (unfold ce_c2_felem; rewrite skipn_length; rewrite Hl_snd; lia).
+    apply (BW6_Fp6_join_from_lib_slots p _ _ _ _ _ _ R m
+             Hl_c0_fst Hl_c1_fst Hl_c2_fst Hl_c0_snd Hl_c1_snd Hl_c2_snd) in H.
+    rewrite (Fp6_concat_proj_eq x Hlx) in H.
+    exact H.
+  Qed.
+
+  (** Reverse of [BW6_Fp3_to_lib_slots]: same idea for Fp3. *)
+  Lemma BW6_Fp3_from_lib_slots :
+    forall p (x : Fp3_felem) R m,
+      length x = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat ->
+      (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p
+          (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr x)
+          (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr x)
+          (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr x)
+       * R)%sep m ->
+      (FElem_Fp3 p x * R)%sep m.
+  Proof.
+    intros p x R m Hlx H.
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    assert (Hl_c0 : length (@ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr x) = n) by
+      (unfold ce_c0_felem; rewrite firstn_length; rewrite Hlx; lia).
+    assert (Hl_c1 : length (@ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr x) = n) by
+      (unfold ce_c1_felem; rewrite firstn_length, skipn_length; rewrite Hlx; lia).
+    assert (Hl_c2 : length (@ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr x) = n) by
+      (unfold ce_c2_felem; rewrite skipn_length; rewrite Hlx; lia).
+    unfold PairingFieldOpsCubicFirst.FElem_Fp3_slots in H.
+    rewrite (Z.mul_0_l _), word.add_0_r, (Z.mul_1_l _) in H.
+    rewrite <- (Fp3_concat_proj_eq x Hlx).
+    apply (FElem_Fp_join3_in_sep p _ _ _ R m Hl_c0 Hl_c1 Hl_c2).
+    use_sep_assumption; cancel.
+  Qed.
+
   (* ============================================================== *)
   (* Bridge theorem (BLS12-377-style: take library spec as hypothesis) *)
   (*                                                                  *)
@@ -320,72 +390,912 @@ Section BW6_FrobLibBridge.
     forall functions
       (Hlib :
          PairingFieldOpsCubicFirst.spec_of_cubic_first_fp6_frob
-           (F_representation := bw6_Fp_repr) "bw6_" functions),
+           (F_representation := bw6_Fp_repr) "bw6_" "" functions),
     spec_of_bw6_fp6_frob functions.
   Proof.
     intros functions Hlib.
-    (* The library lemma [PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok]
-       is closed (Print Assumptions: Closed under the global context),
-       so the body-level WP for 6 sequential fp_copy + fp_mul calls is
-       fully discharged at the library level.
+    unfold spec_of_bw6_fp6_frob.
+    intros pout px p_gfp3 p_gfp6 old_out x gfp3 gfp6 Rr tr mem
+           [Hbx [Hbgfp3 [Hbgfp6 Hmem]]].
+    (* 1. Destructure bounds via cbn into 12 atomic Fp_bounded facts. *)
+    cbn [AbstractField.bounded_by AbstractField.tight_bounds
+         bw6_Fp6_repr bw6_Fp3_repr
+         QE_field_representation CE_field_representation] in Hbx, Hbgfp3, Hbgfp6.
+    destruct Hbx as [Hbx_c0 Hbx_c1].
+    destruct Hbx_c0 as [Hbxc0c0 [Hbxc0c1 Hbxc0c2]].
+    destruct Hbx_c1 as [Hbxc1c0 [Hbxc1c1 Hbxc1c2]].
+    destruct Hbgfp3 as [Hbg3c0 [Hbg3c1 Hbg3c2]].
+    destruct Hbgfp6 as [Hbg6c0 [Hbg6c1 Hbg6c2]].
+    (* 2. Pose named slot felems for the 18 Fp slot arguments. *)
+    pose (slot_x_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_o_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_g3_0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g3_1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g3_2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g6_0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g6_1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g6_2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    (* 3. Convert Hmem to library sep shape via 4 [assert + use_sep_assumption;
+       cancel + apply] rounds. *)
+    apply BW6_Fp6_to_lib_slots in Hmem.
+    assert (Hpx :
+      (FElem_Fp6 px x ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (FElem_Fp3 p_gfp3 gfp3 ⋆ (FElem_Fp3 p_gfp6 gfp6 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp6_to_lib_slots in Hpx.
+    assert (Hgfp3 :
+      (FElem_Fp3 p_gfp3 gfp3 ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+              (F_representation := bw6_Fp_repr) px
+              slot_x_c0c0 slot_x_c0c1 slot_x_c0c2
+              slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+            ⋆ (FElem_Fp3 p_gfp6 gfp6 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp3_to_lib_slots in Hgfp3.
+    assert (Hgfp6 :
+      (FElem_Fp3 p_gfp6 gfp6 ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+              (F_representation := bw6_Fp_repr) px
+              slot_x_c0c0 slot_x_c0c1 slot_x_c0c2
+              slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+            ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots
+                 (F_representation := bw6_Fp_repr) p_gfp3
+                 slot_g3_0 slot_g3_1 slot_g3_2 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp3_to_lib_slots in Hgfp6.
+    (* 4. Apply Hlib via Semantics.weaken_call. *)
+    unfold spec_of_cubic_first_fp6_frob in Hlib.
+    specialize (Hlib pout px p_gfp3 p_gfp6
+      slot_o_c0c0 slot_o_c0c1 slot_o_c0c2 slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+      slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+      slot_g3_0 slot_g3_1 slot_g3_2
+      slot_g6_0 slot_g6_1 slot_g6_2
+      Rr tr mem).
+    change (PairingFieldOpsCubicFirst.cubic_first_fp6_frob_name "bw6_" "")
+      with "bw6_fp6_frob" in Hlib.
+    eapply Semantics.weaken_call.
+    { apply Hlib. clear Hlib.
+      unfold Fp6_slots_tight, Fp3_slots_tight.
+      split; [|split; [|split]].
+      - split; [exact Hbxc0c0|].
+        split; [exact Hbxc0c1|].
+        split; [exact Hbxc0c2|].
+        split; [exact Hbxc1c0|].
+        split; [exact Hbxc1c1|exact Hbxc1c2].
+      - split; [exact Hbg3c0|].
+        split; [exact Hbg3c1|exact Hbg3c2].
+      - split; [exact Hbg6c0|].
+        split; [exact Hbg6c1|exact Hbg6c2].
+      - use_sep_assumption; cancel. }
+    (* 5. Destructure post. *)
+    intros tr' mem' rets Hpost.
+    cbn beta in Hpost.
+    destruct Hpost as [Hrets [Htreq [O0 [O1 [O2 [O3 [O4 [O5
+                       [Hbloose [Hfeval Hmem']]]]]]]]]].
+    subst tr' rets.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists ((O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    (* 6. Three remaining sub-goals: bounds, algebraic, sep.
 
-       This bridge wraps the library spec [spec_of_cubic_first_fp6_frob]
-       (stated at the Fp slot level: 6 individual fpfelem) onto the
-       BW6 spec [spec_of_bw6_fp6_frob] (stated at the Fp6_felem level:
-       a single list-word with cubic-on-quadratic layout).
+       All three depend on length witnesses:
+         - length Oi = felem_size_in_words (from Bignum.Bignum in Hmem')
+         - length x / gfp3 / gfp6 (from original Hmem via Bignum)
 
-       Definitional equality of the function bodies:
-         [snd bw6_fp6_frob = snd (PairingFieldOpsCubicFirst.cubic_first_fp6_frob "bw6_")]
-       holds by [eq_refl] (see Print bw6_fp6_frob; both reduce to the
-       same 7-step [cmd_seq_list] of fp_copy + 6×fp_mul).
+       Bounds: Fp6_bounded Fp6_loose ((O0++O1++O2)++(O3++O4++O5))
+         cbn-unfolds to 6 conjuncts of form
+           bounded_by loose_bounds (ce_c0_felem (qe_fst_felem concat)) ...
+         Each ce_ci (qe_? concat) = Oi reduces via firstn/skipn lemmas
+         under length witnesses; then HO0..HO5 discharge.
 
-       The structural conversion is now mechanically supported by the
-       three helpers above:
-         - [BW6_Fp6_to_lib_slots] : converts a [FElem_Fp6] sep entry to
-           the library's [FElem_Fp6_slots] shape, with all 6 slot
-           addresses rewritten from BW6 nested form to the library's
-           flat [slot_addr p k] form via the [word.add_assoc +
-           word.ring_morph_add] address recipe.
-         - [BW6_Fp3_to_lib_slots] : same for [FElem_Fp3] -> 3-slot.
-         - [BW6_Fp6_join_from_lib_slots] : reverse direction for
-           rebuilding the output [FElem_Fp6] from the library's 6
-           output slots.
+       Algebraic: Fp6_feval ((O0++O1++O2)++(O3++O4++O5)) =
+         FrobModelFp6 (Fp6_feval x) (Fp3_feval gfp3) (Fp3_feval gfp6).
+         Bridge:
+           - Fp6_feval (concat) = feval_Fp6_slots O0..O5 [concat-proj-eq
+             + length witness, mirrors Fp6_concat_proj_eq]
+           - Fp6_feval x = feval_Fp6_slots slot_x_c0c0..slot_x_c1c2
+             [same, from length x witness]
+           - Fp3_feval gfp3 = feval_Fp3_slots slot_g3_0..slot_g3_2
+             [same, length gfp3 witness]
+           - same for gfp6
+           - cubic_first_fp6_frob_model = FrobModelFp6 [reflexivity:
+             both bodies are identical fp3_mk-of-F.mul cascades; verified
+             by side-by-side comparison]
 
-       Wrapper translation steps:
-       1. Use [BW6_Fp6_to_lib_slots] / [BW6_Fp3_to_lib_slots] on Hmem
-          to expose the library's per-Fp-slot precondition shape.
-       2. Specialize [PairingFieldOpsCubicFirst.cubic_first_fp6_frob_ok]
-          at [cubic_first_prefix := "bw6_"] (so the library function name
-          [bw6_fp6_frob] matches our [EnvContains]) and apply.
-       3. From the library postcondition (6 output Fp slots O0..O5 with
-          loose bounds), rejoin via [BW6_Fp6_join_from_lib_slots] to get
-          [FElem_Fp6 pout ((O0++O1++O2)++(O3++O4++O5))].
-       4. Match [FrobModelFp6] against [cubic_first_fp6_frob_model]:
-          both unfold to identical per-Fp-slot products with the same
-          field operations on the same selectors.
+       Sep: Hmem' has library shape with output as FElem_Fp6_slots pout
+         O0..O5.
+         - BW6_Fp6_join_from_lib_slots produces FElem_Fp6 pout (concat)
+           given 6 length witnesses (length Oi = fp_size_in_words each).
+         - FElem_Fp6_join_from_proj_slots (PairingHelpers) converts the
+           input slots back to FElem_Fp6 px x (under length x witness).
+         - FElem_Fp3_join_from_proj_slots × 2 for gfp3, gfp6.
+         - Final ecancel.
 
-       Remaining blockers in the inline composition:
-         (a) Bound-type unification: the BW6 [Fp6_bounded Fp6_tight x]
-             destructures into 6 [Fp_bounded Fp_tight] components.
-             The library expects [bounded_by tight_bounds] where
-             [tight_bounds] is from [F_representation := bw6_Fp_repr]
-             but our destructured terms have [bounded_by Fp6_tight]
-             which is the BW6 notation for the *Fp6*-level tight
-             (recursively all 6 sub-slots tight).  After full unfold
-             both are propositionally equal but Coq's [change] reports
-             "Not convertible" without explicit unfolding hints.
-         (b) Model equality: [FrobModelFp6 (Fp6_feval x) ... ] vs
-             [cubic_first_fp6_frob_model (feval_Fp6_slots ...) ...]
-             unfold to identical per-Fp-slot products on identical
-             selectors, but [Fp6_feval x = feval_Fp6_slots (slots of x)]
-             requires the slot decomposition / length argument.
+       Estimated: 150-200 LoC, mechanical once length witnesses are
+       extracted via Bignum.Bignum_to_bytes applied to FElem_Fp atoms
+       inside Hmem' / Hmem. *)
+    (* === MCP-verified length extraction + sep partial reverse (2026-05-22) ===
 
-       The three helpers above remove the address-shape blocker (which
-       was the major obstruction in the prior retry attempt).  Closing
-       (a) and (b) is a few hours of careful unfolding work and is
-       deferred — the body-correctness chain is closed at the library;
-       this bridge is purely a structural re-shaping that does NOT
-       block extraction. *)
-  Admitted.
+       Sequence verified in MCP this session:
+
+         1. Extract length witnesses from Hmem (copy via [pose proof]
+            then destruct through sep):
+              pose proof Hmem as HmemC.
+              destruct HmemC as [? [? [_ [_ HmemCrest]]]].
+              destruct HmemCrest as [? [? [_ [HFx HmemCrest2]]]].
+              destruct HmemCrest2 as [? [? [_ [HFg3 HmemCrest3]]]].
+              destruct HmemCrest3 as [? [? [_ [HFg6 _]]]].
+              assert (Hlen_x : length x = felem_size_in_words_Fp6)
+                by apply (GenericSplitJoin.generic_FElem_length _ _ _ HFx).
+              (* similarly Hlen_gfp3, Hlen_gfp6 *)
+
+         2. Extract length(Oi) witnesses from Hmem' (post-call mem):
+              pose proof Hmem' as Htmp.
+              unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in Htmp.
+              destruct Htmp as [? [? [_ [Htmp_pout _]]]].
+              (* Then destruct Htmp_pout 5x to get HF_O0..HF_O5 *)
+              assert (HlO0 : length O0 = felem_size_in_words_Fp)
+                by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O0).
+              (* similarly HlO1..HlO5 *)
+
+         3. Sep reverse for pout output (verified in MCP):
+              apply (BW6_Fp6_join_from_lib_slots pout O0 O1 O2 O3 O4 O5
+                       _ _ HlO0 HlO1 HlO2 HlO3 HlO4 HlO5) in Hmem'.
+              (* now Hmem' has FElem_Fp6 pout ((O0++O1++O2)++(O3++O4++O5)) *)
+
+       Remaining: convert FElem_Fp6_slots px / FElem_Fp3_slots p_gfp3 /
+       FElem_Fp3_slots p_gfp6 back to FElem_Fp6 / FElem_Fp3.  This needs
+       a reverse-direction helper `BW6_Fp6_from_lib_slots` (mirror of
+       `BW6_Fp6_to_lib_slots`) that converts the address-normalized
+       library 6-slot form back to the BW6 nested Fp6_felem, under the
+       length witness on x.  The forward helper does
+       `FElem_Fp6 → FElem_Fp6_slots`; the reverse adds a `length x = 6n`
+       hypothesis and inverts via `FElem_Fp6_join_from_proj_slots` from
+       PairingHelpers (which is already proved, but for the
+       address-normalized 6-FElem form, not directly for the library's
+       `FElem_Fp6_slots`).  ~30 LoC to write the 3 reverse helpers + use them.
+
+       Algebraic (Fp6_feval (concat) = FrobModelFp6 ...) bridges via
+       Fp6_concat_proj_eq + reflexivity on the literal model equality.
+       Bounds reduce via firstn_app_sharp/skipn_app_sharp + 2-step
+       skipn_skipn for ce_c2.  Total remaining: ~80-100 LoC. *)
+    (* Extract length witnesses for x, gfp3, gfp6 from Hmem (still has Fp6/Fp3 atoms
+       for these — only pout was converted by the first apply BW6_Fp6_to_lib_slots). *)
+    pose proof Hmem as Hmem_lengths.
+    destruct Hmem_lengths as [? [? [_ [_ Hrest]]]].
+    destruct Hrest as [? [? [_ [HFx Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HFg3 Hrest3]]]].
+    destruct Hrest3 as [? [? [_ [HFg6 _]]]].
+    assert (Hlen_x : length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFx) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr)
+        with (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    assert (Hlen_g3 : length gfp3 = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFg3) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    assert (Hlen_g6 : length gfp6 = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFg6) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    clear HFx HFg3 HFg6.
+    (* Extract length witnesses for the 6 output slots O0..O5. *)
+    pose proof Hmem' as HmemX.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in HmemX.
+    destruct HmemX as [? [? [_ [HmemX_pout _]]]].
+    destruct HmemX_pout as [? [? [_ [HF_O0 Hrest1]]]].
+    destruct Hrest1 as [? [? [_ [HF_O1 Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HF_O2 Hrest3]]]].
+    destruct Hrest3 as [? [? [_ [HF_O3 Hrest4]]]].
+    destruct Hrest4 as [? [? [_ [HF_O4 HF_O5]]]].
+    assert (HlO0 : length O0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O0).
+    assert (HlO1 : length O1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O1).
+    assert (HlO2 : length O2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O2).
+    assert (HlO3 : length O3 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O3).
+    assert (HlO4 : length O4 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O4).
+    assert (HlO5 : length O5 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O5).
+    clear HF_O0 HF_O1 HF_O2 HF_O3 HF_O4 HF_O5.
+    (* 6 concrete projection equalities for the CONCAT. *)
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    set (CONCAT := (O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    assert (HlenC : length CONCAT = (6 * n)%nat).
+    { subst CONCAT. rewrite !app_length. lia. }
+    assert (Hfst : @qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O0 ++ O1 ++ O2).
+    { unfold qe_fst_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite firstn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.firstn_O, app_nil_r.
+      apply List.firstn_all2. rewrite !app_length, HlO0, HlO1, HlO2. lia. }
+    assert (Hsnd : @qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O3 ++ O4 ++ O5).
+    { unfold qe_snd_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite skipn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.skipn_O.
+      rewrite skipn_all2 by (rewrite !app_length, HlO0, HlO1, HlO2; lia).
+      reflexivity. }
+    assert (Hc0fst : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O0).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO0, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1fst : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O1).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia.
+      rewrite app_nil_l.
+      rewrite firstn_app, HlO1, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2fst : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O2).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO1, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O1) by lia. rewrite app_nil_l.
+      reflexivity. }
+    assert (Hc0snd : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O3).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO3, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1snd : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O4).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite firstn_app, HlO4, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2snd : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O5).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO4, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O4) by lia. rewrite app_nil_l.
+      reflexivity. }
+    unfold Fp6_slots_loose in Hbloose.
+    destruct Hbloose as [HbO0 [HbO1 [HbO2 [HbO3 [HbO4 HbO5]]]]].
+    split; [|split].
+    - (* Bounds: 6 conjuncts via the slot equalities. *)
+      cbn [AbstractField.bounded_by AbstractField.loose_bounds
+           bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      rewrite Hfst, Hsnd, Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      exact (conj (conj HbO0 (conj HbO1 HbO2)) (conj HbO3 (conj HbO4 HbO5))).
+    - (* Algebraic: bridge Fp6_feval CONCAT through feval_Fp6_slots and Hfeval. *)
+      cbn [AbstractField.feval bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      unfold GenericQuadraticSpecs.QE_feval, GenericCubicSpecs.CE_feval.
+      rewrite Hfst, Hsnd.
+      cbn [AbstractField.feval bw6_Fp3_repr CE_field_representation].
+      unfold GenericCubicSpecs.CE_feval.
+      rewrite Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      change (feval O0, feval O1, feval O2, (feval O3, feval O4, feval O5))
+        with (feval_Fp6_slots O0 O1 O2 O3 O4 O5).
+      rewrite Hfeval.
+      unfold cubic_first_fp6_frob_model, FrobModelFp6, frobenius_fp6_gallina,
+             cubic_first_frob_fp3_c0, cubic_first_frob_fp3_c1,
+             frobenius_fp3_c0_gallina, frobenius_fp3_c1_gallina,
+             fp6_mk, fp6_c0, fp6_c1, fp3_mk, fp3_a0, fp3_a1, fp3_a2,
+             feval_Fp6_slots, feval_Fp3_slots.
+      reflexivity.
+    - (* Sep: convert pout output via BW6_Fp6_join_from_lib_slots; convert px / gfp3 / gfp6
+         inputs back via BW6_Fp6_from_lib_slots / BW6_Fp3_from_lib_slots (the new reverse
+         helpers, using the length witnesses Hlen_x, Hlen_g3, Hlen_g6). *)
+      apply (BW6_Fp6_join_from_lib_slots pout O0 O1 O2 O3 O4 O5 _ _
+               HlO0 HlO1 HlO2 HlO3 HlO4 HlO5) in Hmem'.
+      assert (Hmem_px :
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) px
+           slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp3
+                 slot_g3_0 slot_g3_1 slot_g3_2
+               ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6
+                    slot_g6_0 slot_g6_1 slot_g6_2 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem'.
+      apply (BW6_Fp6_from_lib_slots px x _ _ Hlen_x) in Hmem_px.
+      assert (Hmem_g3 :
+        (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp3
+           slot_g3_0 slot_g3_1 slot_g3_2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (FElem_Fp6 px x
+               ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6
+                    slot_g6_0 slot_g6_1 slot_g6_2 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem_px.
+      apply (BW6_Fp3_from_lib_slots p_gfp3 gfp3 _ _ Hlen_g3) in Hmem_g3.
+      assert (Hmem_g6 :
+        (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6
+           slot_g6_0 slot_g6_1 slot_g6_2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (FElem_Fp6 px x
+               ⋆ (FElem_Fp3 p_gfp3 gfp3 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem_g3.
+      apply (BW6_Fp3_from_lib_slots p_gfp6 gfp6 _ _ Hlen_g6) in Hmem_g6.
+      use_sep_assumption; cancel.
+  Qed.
+
+  (* ============================================================== *)
+  (* Bridge for [bw6_fp6_frob_p2] — pi^2 variant.                    *)
+  (*                                                                  *)
+  (* Same as [bw6_fp6_frob_ok] but at the library suffix ["_p2"].    *)
+  (* The body of BW6's [bw6_fp6_frob_p2] (in BW6_761_FinalExp.v)     *)
+  (* uses gamma var names matching the library's defaults so the     *)
+  (* same library theorem applies modulo the function NAME suffix.   *)
+  (* The algebraic model [FrobModelFp6_p2] is definitionally equal   *)
+  (* to [FrobModelFp6] (see [frobenius_fp6_p2_unfold] in              *)
+  (* BW6_761_FrobModel.v) — the final [reflexivity] closes via       *)
+  (* unfolding both models to the same fp3_mk-of-F.mul cascade.      *)
+  (* ============================================================== *)
+  Theorem bw6_fp6_frob_p2_ok :
+    forall functions
+      (Hlib :
+         PairingFieldOpsCubicFirst.spec_of_cubic_first_fp6_frob
+           (F_representation := bw6_Fp_repr) "bw6_" "_p2" functions),
+    spec_of_bw6_fp6_frob_p2 functions.
+  Proof.
+    intros functions Hlib.
+    unfold spec_of_bw6_fp6_frob_p2.
+    intros pout px p_gfp3_p2 p_gfp6_p2 old_out x gfp3 gfp6 Rr tr mem
+           [Hbx [Hbgfp3 [Hbgfp6 Hmem]]].
+    cbn [AbstractField.bounded_by AbstractField.tight_bounds
+         bw6_Fp6_repr bw6_Fp3_repr
+         QE_field_representation CE_field_representation] in Hbx, Hbgfp3, Hbgfp6.
+    destruct Hbx as [Hbx_c0 Hbx_c1].
+    destruct Hbx_c0 as [Hbxc0c0 [Hbxc0c1 Hbxc0c2]].
+    destruct Hbx_c1 as [Hbxc1c0 [Hbxc1c1 Hbxc1c2]].
+    destruct Hbgfp3 as [Hbg3c0 [Hbg3c1 Hbg3c2]].
+    destruct Hbgfp6 as [Hbg6c0 [Hbg6c1 Hbg6c2]].
+    pose (slot_x_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_o_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_g3_0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g3_1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g3_2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr gfp3).
+    pose (slot_g6_0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g6_1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g6_2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    apply BW6_Fp6_to_lib_slots in Hmem.
+    assert (Hpx :
+      (FElem_Fp6 px x ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (FElem_Fp3 p_gfp3_p2 gfp3 ⋆ (FElem_Fp3 p_gfp6_p2 gfp6 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp6_to_lib_slots in Hpx.
+    assert (Hgfp3 :
+      (FElem_Fp3 p_gfp3_p2 gfp3 ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+              (F_representation := bw6_Fp_repr) px
+              slot_x_c0c0 slot_x_c0c1 slot_x_c0c2
+              slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+            ⋆ (FElem_Fp3 p_gfp6_p2 gfp6 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp3_to_lib_slots in Hgfp3.
+    assert (Hgfp6 :
+      (FElem_Fp3 p_gfp6_p2 gfp6 ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+              (F_representation := bw6_Fp_repr) px
+              slot_x_c0c0 slot_x_c0c1 slot_x_c0c2
+              slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+            ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots
+                 (F_representation := bw6_Fp_repr) p_gfp3_p2
+                 slot_g3_0 slot_g3_1 slot_g3_2 ⋆ Rr))))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp3_to_lib_slots in Hgfp6.
+    unfold spec_of_cubic_first_fp6_frob in Hlib.
+    specialize (Hlib pout px p_gfp3_p2 p_gfp6_p2
+      slot_o_c0c0 slot_o_c0c1 slot_o_c0c2 slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+      slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+      slot_g3_0 slot_g3_1 slot_g3_2
+      slot_g6_0 slot_g6_1 slot_g6_2
+      Rr tr mem).
+    change (PairingFieldOpsCubicFirst.cubic_first_fp6_frob_name "bw6_" "_p2")
+      with "bw6_fp6_frob_p2" in Hlib.
+    eapply Semantics.weaken_call.
+    { apply Hlib. clear Hlib.
+      unfold Fp6_slots_tight, Fp3_slots_tight.
+      split; [|split; [|split]].
+      - split; [exact Hbxc0c0|]. split; [exact Hbxc0c1|]. split; [exact Hbxc0c2|].
+        split; [exact Hbxc1c0|]. split; [exact Hbxc1c1|exact Hbxc1c2].
+      - split; [exact Hbg3c0|]. split; [exact Hbg3c1|exact Hbg3c2].
+      - split; [exact Hbg6c0|]. split; [exact Hbg6c1|exact Hbg6c2].
+      - use_sep_assumption; cancel. }
+    intros tr' mem' rets Hpost.
+    cbn beta in Hpost.
+    destruct Hpost as [Hrets [Htreq [O0 [O1 [O2 [O3 [O4 [O5
+                       [Hbloose [Hfeval Hmem']]]]]]]]]].
+    subst tr' rets.
+    pose proof Hmem as Hmem_lengths.
+    destruct Hmem_lengths as [? [? [_ [_ Hrest]]]].
+    destruct Hrest as [? [? [_ [HFx Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HFg3 Hrest3]]]].
+    destruct Hrest3 as [? [? [_ [HFg6 _]]]].
+    assert (Hlen_x : length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFx) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr)
+        with (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    assert (Hlen_g3 : length gfp3 = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFg3) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    assert (Hlen_g6 : length gfp6 = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFg6) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    clear HFx HFg3 HFg6.
+    pose proof Hmem' as HmemX.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in HmemX.
+    destruct HmemX as [? [? [_ [HmemX_pout _]]]].
+    destruct HmemX_pout as [? [? [_ [HF_O0 Hrest1]]]].
+    destruct Hrest1 as [? [? [_ [HF_O1 Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HF_O2 Hrest3]]]].
+    destruct Hrest3 as [? [? [_ [HF_O3 Hrest4]]]].
+    destruct Hrest4 as [? [? [_ [HF_O4 HF_O5]]]].
+    assert (HlO0 : length O0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O0).
+    assert (HlO1 : length O1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O1).
+    assert (HlO2 : length O2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O2).
+    assert (HlO3 : length O3 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O3).
+    assert (HlO4 : length O4 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O4).
+    assert (HlO5 : length O5 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O5).
+    clear HF_O0 HF_O1 HF_O2 HF_O3 HF_O4 HF_O5.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists ((O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    set (CONCAT := (O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    assert (HlenC : length CONCAT = (6 * n)%nat).
+    { subst CONCAT. rewrite !app_length. lia. }
+    assert (Hfst : @qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O0 ++ O1 ++ O2).
+    { unfold qe_fst_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite firstn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.firstn_O, app_nil_r.
+      apply List.firstn_all2. rewrite !app_length, HlO0, HlO1, HlO2. lia. }
+    assert (Hsnd : @qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O3 ++ O4 ++ O5).
+    { unfold qe_snd_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite skipn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.skipn_O.
+      rewrite skipn_all2 by (rewrite !app_length, HlO0, HlO1, HlO2; lia).
+      reflexivity. }
+    assert (Hc0fst : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O0).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO0, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1fst : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O1).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia. rewrite app_nil_l.
+      rewrite firstn_app, HlO1, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2fst : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O2).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO1, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O1) by lia. rewrite app_nil_l.
+      reflexivity. }
+    assert (Hc0snd : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O3).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO3, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1snd : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O4).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite firstn_app, HlO4, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2snd : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O5).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO4, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O4) by lia. rewrite app_nil_l.
+      reflexivity. }
+    unfold Fp6_slots_loose in Hbloose.
+    destruct Hbloose as [HbO0 [HbO1 [HbO2 [HbO3 [HbO4 HbO5]]]]].
+    split; [|split].
+    - cbn [AbstractField.bounded_by AbstractField.loose_bounds
+           bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      rewrite Hfst, Hsnd, Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      exact (conj (conj HbO0 (conj HbO1 HbO2)) (conj HbO3 (conj HbO4 HbO5))).
+    - cbn [AbstractField.feval bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      unfold GenericQuadraticSpecs.QE_feval, GenericCubicSpecs.CE_feval.
+      rewrite Hfst, Hsnd.
+      cbn [AbstractField.feval bw6_Fp3_repr CE_field_representation].
+      unfold GenericCubicSpecs.CE_feval.
+      rewrite Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      change (feval O0, feval O1, feval O2, (feval O3, feval O4, feval O5))
+        with (feval_Fp6_slots O0 O1 O2 O3 O4 O5).
+      rewrite Hfeval.
+      unfold cubic_first_fp6_frob_model,
+             frobenius_fp6_p2_gallina, frobenius_fp6_gallina,
+             cubic_first_frob_fp3_c0, cubic_first_frob_fp3_c1,
+             frobenius_fp3_c0_gallina, frobenius_fp3_c1_gallina,
+             fp6_mk, fp6_c0, fp6_c1, fp3_mk, fp3_a0, fp3_a1, fp3_a2,
+             feval_Fp6_slots, feval_Fp3_slots.
+      reflexivity.
+    - apply (BW6_Fp6_join_from_lib_slots pout O0 O1 O2 O3 O4 O5 _ _
+               HlO0 HlO1 HlO2 HlO3 HlO4 HlO5) in Hmem'.
+      assert (Hmem_px :
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) px
+           slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp3_p2
+                 slot_g3_0 slot_g3_1 slot_g3_2
+               ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6_p2
+                    slot_g6_0 slot_g6_1 slot_g6_2 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem'.
+      apply (BW6_Fp6_from_lib_slots px x _ _ Hlen_x) in Hmem_px.
+      assert (Hmem_g3 :
+        (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp3_p2
+           slot_g3_0 slot_g3_1 slot_g3_2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (FElem_Fp6 px x
+               ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6_p2
+                    slot_g6_0 slot_g6_1 slot_g6_2 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem_px.
+      apply (BW6_Fp3_from_lib_slots p_gfp3_p2 gfp3 _ _ Hlen_g3) in Hmem_g3.
+      assert (Hmem_g6 :
+        (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6_p2
+           slot_g6_0 slot_g6_1 slot_g6_2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (FElem_Fp6 px x
+               ⋆ (FElem_Fp3 p_gfp3_p2 gfp3 ⋆ Rr))))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem_g3.
+      apply (BW6_Fp3_from_lib_slots p_gfp6_p2 gfp6 _ _ Hlen_g6) in Hmem_g6.
+      use_sep_assumption; cancel.
+  Qed.
+
+  (* ============================================================== *)
+  (* Bridge for [bw6_fp6_frob_p3] — pi^3 variant.                    *)
+  (*                                                                  *)
+  (* pi^3 has a different body from p1/p2: 3 fp_copy + 3 fp_mul with *)
+  (* a single Fp scalar (= gamma_fp6_p3.c0).  Uses the library's     *)
+  (* [cubic_first_fp6_frob_p3_ok] theorem (added to                  *)
+  (* PairingFieldOpsCubicFirst.v).  Signature: 3 pointers instead of *)
+  (* 4 (no gfp3).  Algebraic model:                                   *)
+  (*   FrobModelFp6_p3 (Fp6_feval x) (fp3_a0 _ (Fp3_feval gfp6))     *)
+  (* matches library's [cubic_first_fp6_frob_p3_model x g] where g  *)
+  (* = Fp_feval (ce_c0_felem gfp6) by definition.                     *)
+  (* ============================================================== *)
+  Theorem bw6_fp6_frob_p3_ok :
+    forall functions
+      (Hlib :
+         PairingFieldOpsCubicFirst.spec_of_cubic_first_fp6_frob_p3
+           (F_representation := bw6_Fp_repr) "bw6_" functions),
+    spec_of_bw6_fp6_frob_p3 functions.
+  Proof.
+    intros functions Hlib.
+    unfold spec_of_bw6_fp6_frob_p3.
+    intros pout px p_gfp6_p3 old_out x gfp6 Rr tr mem
+           [Hbx [Hbgfp6 Hmem]].
+    cbn [AbstractField.bounded_by AbstractField.tight_bounds
+         bw6_Fp6_repr bw6_Fp3_repr
+         QE_field_representation CE_field_representation] in Hbx, Hbgfp6.
+    destruct Hbx as [Hbx_c0 Hbx_c1].
+    destruct Hbx_c0 as [Hbxc0c0 [Hbxc0c1 Hbxc0c2]].
+    destruct Hbx_c1 as [Hbxc1c0 [Hbxc1c1 Hbxc1c2]].
+    destruct Hbgfp6 as [Hbg6c0 [Hbg6c1 Hbg6c2]].
+    pose (slot_x_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_x_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr x)).
+    pose (slot_o_c0c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c0c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_o_c1c2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr
+            (@qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr old_out)).
+    pose (slot_g_0 := @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g_1 := @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    pose (slot_g_2 := @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr gfp6).
+    apply BW6_Fp6_to_lib_slots in Hmem.
+    assert (Hpx :
+      (FElem_Fp6 px x ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (FElem_Fp3 p_gfp6_p3 gfp6 ⋆ Rr)))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp6_to_lib_slots in Hpx.
+    assert (Hg :
+      (FElem_Fp3 p_gfp6_p3 gfp6 ⋆
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+           (F_representation := bw6_Fp_repr) pout
+           slot_o_c0c0 slot_o_c0c1 slot_o_c0c2
+           slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+         ⋆ (PairingFieldOpsCubicFirst.FElem_Fp6_slots
+              (F_representation := bw6_Fp_repr) px
+              slot_x_c0c0 slot_x_c0c1 slot_x_c0c2
+              slot_x_c1c0 slot_x_c1c1 slot_x_c1c2 ⋆ Rr)))%sep mem)
+      by (use_sep_assumption; cancel).
+    apply BW6_Fp3_to_lib_slots in Hg.
+    unfold spec_of_cubic_first_fp6_frob_p3 in Hlib.
+    specialize (Hlib pout px p_gfp6_p3
+      slot_o_c0c0 slot_o_c0c1 slot_o_c0c2 slot_o_c1c0 slot_o_c1c1 slot_o_c1c2
+      slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+      slot_g_0 slot_g_1 slot_g_2
+      Rr tr mem).
+    change (PairingFieldOpsCubicFirst.cubic_first_fp6_frob_p3_name "bw6_")
+      with "bw6_fp6_frob_p3" in Hlib.
+    eapply Semantics.weaken_call.
+    { apply Hlib. clear Hlib.
+      unfold Fp6_slots_tight, Fp3_slots_tight.
+      split; [|split].
+      - split; [exact Hbxc0c0|]. split; [exact Hbxc0c1|]. split; [exact Hbxc0c2|].
+        split; [exact Hbxc1c0|]. split; [exact Hbxc1c1|exact Hbxc1c2].
+      - split; [exact Hbg6c0|]. split; [exact Hbg6c1|exact Hbg6c2].
+      - use_sep_assumption; cancel. }
+    intros tr' mem' rets Hpost.
+    cbn beta in Hpost.
+    destruct Hpost as [Hrets [Htreq [O0 [O1 [O2 [O3 [O4 [O5
+                       [Hbloose [Hfeval Hmem']]]]]]]]]].
+    subst tr' rets.
+    pose proof Hmem as Hmem_lengths.
+    destruct Hmem_lengths as [? [? [_ [_ Hrest]]]].
+    destruct Hrest as [? [? [_ [HFx Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HFg HFrr]]]].
+    assert (Hlen_x : length x = (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFx) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr)
+        with (6 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    assert (Hlen_g : length gfp6 = (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat).
+    { pose proof (GenericSplitJoin.generic_FElem_length _ _ _ HFg) as Htmp.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)%nat in Htmp.
+      exact Htmp. }
+    clear HFx HFg HFrr.
+    pose proof Hmem' as HmemX.
+    unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in HmemX.
+    destruct HmemX as [? [? [_ [HmemX_pout _]]]].
+    destruct HmemX_pout as [? [? [_ [HF_O0 Hrest1]]]].
+    destruct Hrest1 as [? [? [_ [HF_O1 Hrest2]]]].
+    destruct Hrest2 as [? [? [_ [HF_O2 Hrest3]]]].
+    destruct Hrest3 as [? [? [_ [HF_O3 Hrest4]]]].
+    destruct Hrest4 as [? [? [_ [HF_O4 HF_O5]]]].
+    assert (HlO0 : length O0 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O0).
+    assert (HlO1 : length O1 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O1).
+    assert (HlO2 : length O2 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O2).
+    assert (HlO3 : length O3 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O3).
+    assert (HlO4 : length O4 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O4).
+    assert (HlO5 : length O5 = @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr)
+      by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O5).
+    clear HF_O0 HF_O1 HF_O2 HF_O3 HF_O4 HF_O5.
+    split; [reflexivity|].
+    split; [reflexivity|].
+    exists ((O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    set (n := @AbstractField.felem_size_in_words _ _ _ _ _ _ bw6_Fp_repr) in *.
+    set (CONCAT := (O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
+    assert (HlenC : length CONCAT = (6 * n)%nat).
+    { subst CONCAT. rewrite !app_length. lia. }
+    assert (Hfst : @qe_fst_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O0 ++ O1 ++ O2).
+    { unfold qe_fst_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite firstn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.firstn_O, app_nil_r.
+      apply List.firstn_all2. rewrite !app_length, HlO0, HlO1, HlO2. lia. }
+    assert (Hsnd : @qe_snd_felem _ _ _ _ _ bw6_Fp3_params bw6_Fp3_repr CONCAT = O3 ++ O4 ++ O5).
+    { unfold qe_snd_felem. subst CONCAT.
+      change (@AbstractField.felem_size_in_words _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr)
+        with (3 * n)%nat.
+      rewrite skipn_app.
+      rewrite !app_length, HlO0, HlO1, HlO2.
+      replace (3 * n - (n + (n + n)))%nat with 0%nat by lia.
+      rewrite List.skipn_O.
+      rewrite skipn_all2 by (rewrite !app_length, HlO0, HlO1, HlO2; lia).
+      reflexivity. }
+    assert (Hc0fst : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O0).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO0, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1fst : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O1).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia. rewrite app_nil_l.
+      rewrite firstn_app, HlO1, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2fst : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O0 ++ O1 ++ O2) = O2).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO0, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O0) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO1, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O1) by lia. rewrite app_nil_l.
+      reflexivity. }
+    assert (Hc0snd : @ce_c0_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O3).
+    { unfold ce_c0_felem. fold n.
+      rewrite firstn_app, HlO3, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc1snd : @ce_c1_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O4).
+    { unfold ce_c1_felem. fold n.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite firstn_app, HlO4, Nat.sub_diag, List.firstn_O, app_nil_r.
+      apply List.firstn_all2. lia. }
+    assert (Hc2snd : @ce_c2_felem _ _ _ _ _ _ bw6_Fp_repr (O3 ++ O4 ++ O5) = O5).
+    { unfold ce_c2_felem. fold n.
+      replace (2 * n)%nat with (n + n)%nat by lia.
+      rewrite <- skipn_skipn.
+      rewrite skipn_app, HlO3, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O3) by lia. rewrite app_nil_l.
+      rewrite skipn_app, HlO4, Nat.sub_diag, List.skipn_O.
+      rewrite (skipn_all2 O4) by lia. rewrite app_nil_l.
+      reflexivity. }
+    unfold Fp6_slots_loose in Hbloose.
+    destruct Hbloose as [HbO0 [HbO1 [HbO2 [HbO3 [HbO4 HbO5]]]]].
+    split; [|split].
+    - cbn [AbstractField.bounded_by AbstractField.loose_bounds
+           bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      rewrite Hfst, Hsnd, Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      exact (conj (conj HbO0 (conj HbO1 HbO2)) (conj HbO3 (conj HbO4 HbO5))).
+    - (* Algebraic: bridge through Hfeval and identify model bodies *)
+      cbn [AbstractField.feval bw6_Fp6_repr bw6_Fp3_repr
+           QE_field_representation CE_field_representation].
+      unfold GenericQuadraticSpecs.QE_feval, GenericCubicSpecs.CE_feval.
+      rewrite Hfst, Hsnd.
+      cbn [AbstractField.feval bw6_Fp3_repr CE_field_representation].
+      unfold GenericCubicSpecs.CE_feval.
+      rewrite Hc0fst, Hc1fst, Hc2fst, Hc0snd, Hc1snd, Hc2snd.
+      change (feval O0, feval O1, feval O2, (feval O3, feval O4, feval O5))
+        with (feval_Fp6_slots O0 O1 O2 O3 O4 O5).
+      rewrite Hfeval.
+      unfold cubic_first_fp6_frob_p3_model,
+             frobenius_fp6_p3_gallina,
+             fp6_mk, fp6_c0, fp6_c1, fp3_mk, fp3_a0, fp3_a1, fp3_a2,
+             feval_Fp6_slots, feval_Fp3_slots.
+      reflexivity.
+    - apply (BW6_Fp6_join_from_lib_slots pout O0 O1 O2 O3 O4 O5 _ _
+               HlO0 HlO1 HlO2 HlO3 HlO4 HlO5) in Hmem'.
+      assert (Hmem_px :
+        (PairingFieldOpsCubicFirst.FElem_Fp6_slots (F_representation := bw6_Fp_repr) px
+           slot_x_c0c0 slot_x_c0c1 slot_x_c0c2 slot_x_c1c0 slot_x_c1c1 slot_x_c1c2
+         ⋆ (FElem_Fp6 pout CONCAT
+            ⋆ (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6_p3
+                 slot_g_0 slot_g_1 slot_g_2 ⋆ Rr)))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem'.
+      apply (BW6_Fp6_from_lib_slots px x _ _ Hlen_x) in Hmem_px.
+      assert (Hmem_g :
+        (PairingFieldOpsCubicFirst.FElem_Fp3_slots (F_representation := bw6_Fp_repr) p_gfp6_p3
+           slot_g_0 slot_g_1 slot_g_2
+         ⋆ (FElem_Fp6 pout CONCAT ⋆ (FElem_Fp6 px x ⋆ Rr)))%sep mem')
+        by (use_sep_assumption; cancel).
+      clear Hmem_px.
+      apply (BW6_Fp3_from_lib_slots p_gfp6_p3 gfp6 _ _ Hlen_g) in Hmem_g.
+      use_sep_assumption; cancel.
+  Qed.
 
 End BW6_FrobLibBridge.

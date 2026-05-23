@@ -154,6 +154,15 @@ Section CubicFirstPairingOps.
   (* ================================================================ *)
 
   Variable cubic_first_prefix : string.
+  (** Optional suffix that lets one library instance cover multiple
+      Frobenius variants on the same curve.  E.g. BW6-761 uses [""]
+      for [pi] and ["_p2"] for [pi^2].  The suffix is appended ONLY
+      to the function name (not to the parameter names); concrete
+      curves whose [pi^k] wrapper uses different internal arg names
+      should either alias to the library function (same name, same
+      body) or rename internal vars to match the library's fixed
+      [gamma_fp3]/[gamma_fp6].  Pass [""] for the no-suffix variant. *)
+  Variable cubic_first_extra_suffix : string.
 
   Local Definition fp_copy_name :=
     @AbstractField.felem_copy _ prime_field_parameters.
@@ -161,7 +170,7 @@ Section CubicFirstPairingOps.
     @AbstractField.mul _ prime_field_parameters.
 
   Local Definition cubic_first_fp6_frob_name :=
-    (cubic_first_prefix ++ "fp6_frob")%string.
+    (cubic_first_prefix ++ "fp6_frob" ++ cubic_first_extra_suffix)%string.
 
   Local Fixpoint cmd_seq_list (cmds : list Syntax.cmd.cmd) : Syntax.cmd.cmd :=
     match cmds with
@@ -653,10 +662,288 @@ Section CubicFirstPairingOps.
   Qed.
 
   (* ================================================================ *)
+  (* p3 variant: Frobenius pi^3                                         *)
+  (*                                                                    *)
+  (* pi^3 acts trivially on Fp3, so the c0 component is copied and the *)
+  (* c1 component is scaled per-slot by a single Fp scalar (extracted  *)
+  (* from gamma.c0).  For BW6-761 the caller passes a gamma whose .c0  *)
+  (* slot equals [-1 mod p] so the result is (c0, -c1).                 *)
+  (*                                                                    *)
+  (* Function: 3 fp_copy (c0 slots) + 3 fp_mul (c1 slots * gamma.c0).  *)
+  (* ================================================================ *)
+
+  Local Definition cubic_first_fp6_frob_p3_name :=
+    (cubic_first_prefix ++ "fp6_frob_p3")%string.
+
+  Definition cubic_first_fp6_frob_p3 : function_t :=
+    (cubic_first_fp6_frob_p3_name,
+     (["out"; "x"; "gamma"],
+      []:list String.string,
+      cmd_seq_list [
+        (* Copy c0 (3 slots) *)
+        Syntax.cmd.call [] fp_copy_name
+          [expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "out"));
+           expr_fp3_c0 (expr_fp6_c0 (Syntax.expr.var "x"))];
+        Syntax.cmd.call [] fp_copy_name
+          [expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "out"));
+           expr_fp3_c1 (expr_fp6_c0 (Syntax.expr.var "x"))];
+        Syntax.cmd.call [] fp_copy_name
+          [expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "out"));
+           expr_fp3_c2 (expr_fp6_c0 (Syntax.expr.var "x"))];
+        (* Multiply c1 slots by gamma.c0 *)
+        Syntax.cmd.call [] fp_mul_name
+          [expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "out"));
+           expr_fp3_c0 (expr_fp6_c1 (Syntax.expr.var "x"));
+           expr_fp3_c0 (Syntax.expr.var "gamma")];
+        Syntax.cmd.call [] fp_mul_name
+          [expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "out"));
+           expr_fp3_c1 (expr_fp6_c1 (Syntax.expr.var "x"));
+           expr_fp3_c0 (Syntax.expr.var "gamma")];
+        Syntax.cmd.call [] fp_mul_name
+          [expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "out"));
+           expr_fp3_c2 (expr_fp6_c1 (Syntax.expr.var "x"));
+           expr_fp3_c0 (Syntax.expr.var "gamma")]
+      ])).
+
+  Definition cubic_first_fp6_frob_p3_model (x : Fp6) (g : Fp) : Fp6 :=
+    fp6_mk (fp6_c0 x)
+           (fp3_mk (F.mul (fp3_a0 (fp6_c1 x)) g)
+                   (F.mul (fp3_a1 (fp6_c1 x)) g)
+                   (F.mul (fp3_a2 (fp6_c1 x)) g)).
+
+  Instance spec_of_cubic_first_fp6_frob_p3 : spec_of cubic_first_fp6_frob_p3_name :=
+    fnspec! cubic_first_fp6_frob_p3_name
+      (pout px pg : word)
+      / (o0 o1 o2 o3 o4 o5
+         x0 x1 x2 x3 x4 x5
+         g_0 g_1 g_2 : fpfelem) Rr,
+    { requires tr mem :=
+        Fp6_slots_tight x0 x1 x2 x3 x4 x5 /\
+        Fp3_slots_tight g_0 g_1 g_2 /\
+        (FElem_Fp6_slots pout o0 o1 o2 o3 o4 o5 *
+         (FElem_Fp6_slots px x0 x1 x2 x3 x4 x5 *
+          (FElem_Fp3_slots pg g_0 g_1 g_2 * Rr)))%sep mem;
+      ensures tr' mem' :=
+        tr = tr' /\
+        exists O0 O1 O2 O3 O4 O5 : fpfelem,
+          Fp6_slots_loose O0 O1 O2 O3 O4 O5 /\
+          feval_Fp6_slots O0 O1 O2 O3 O4 O5 =
+            cubic_first_fp6_frob_p3_model
+              (feval_Fp6_slots x0 x1 x2 x3 x4 x5)
+              (Fp_feval g_0) /\
+          (FElem_Fp6_slots pout O0 O1 O2 O3 O4 O5 *
+           (FElem_Fp6_slots px x0 x1 x2 x3 x4 x5 *
+            (FElem_Fp3_slots pg g_0 g_1 g_2 * Rr)))%sep mem' }.
+
+  Lemma cubic_first_fp6_frob_p3_ok :
+    forall functions
+      (EnvContains :
+         map.get functions cubic_first_fp6_frob_p3_name = Some (snd cubic_first_fp6_frob_p3))
+      (HFcopy : spec_of_Fp_felem_copy functions)
+      (HFmul  : spec_of_Fp_mul functions),
+    spec_of_cubic_first_fp6_frob_p3 functions.
+  Proof.
+    intros functions EnvContains HFcopy HFmul.
+    unfold spec_of_cubic_first_fp6_frob_p3.
+    intros pout px pg
+           o0 o1 o2 o3 o4 o5
+           x0' x1' x2' x3' x4' x5'
+           g_0 g_1 g_2
+           Rr tr mem0 [Hbx [Hbg Hmem]].
+    eapply start_func; [exact EnvContains | clear EnvContains].
+    cbv match beta delta [WeakestPrecondition.func cubic_first_fp6_frob_p3].
+    eexists; split; [exact eq_refl|].
+    unfold cmd_seq_list.
+    unfold FElem_Fp6_slots, FElem_Fp3_slots in Hmem.
+    unfold fp_copy_name, fp_mul_name in *.
+    replace (slot_addr px 0) with px in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    replace (slot_addr pout 0) with pout in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    replace (slot_addr pg 0) with pg in Hmem
+      by (symmetry; rewrite Z.mul_0_l; apply word.add_0_r).
+    rewrite ?Z.mul_1_l in Hmem.
+    replace (slot_addr pout 4)
+       with (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z fp_felem_offset)) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr pout 5)
+       with (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z (2 * fp_felem_offset))) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 4)
+       with (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z fp_felem_offset)) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 5)
+       with (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                      (word.of_Z (2 * fp_felem_offset))) in Hmem
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    destruct Hbx as [Hbx0 [Hbx1 [Hbx2 [Hbx3 [Hbx4 Hbx5]]]]].
+    destruct Hbg as [Hbg0 [Hbg1 Hbg2]].
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx3) as Hbx3L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx4) as Hbx4L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbx5) as Hbx5L.
+    pose proof (@AbstractField.relax_bounds _ _ _ _ _ _
+                  F_representation F_representation_ok _ Hbg0) as Hbg0L.
+
+    (* Call 1: fp_copy  out[0] := x[0] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFcopy pout px o0 x0'); split; SeparationLogic.ecancel_assumption_impl |].
+    cbv beta; intros ? ? ? [? [? H1]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* Call 2: fp_copy  out[1] := x[1] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFcopy (word.add pout (word.of_Z fp_felem_offset))
+                       (word.add px (word.of_Z fp_felem_offset))
+                       o1 x1'); split; SeparationLogic.ecancel_assumption_impl |].
+    cbv beta; intros ? ? ? [? [? H2]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* Call 3: fp_copy  out[2] := x[2] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFcopy (word.add pout (word.of_Z (2 * fp_felem_offset)))
+                       (word.add px (word.of_Z (2 * fp_felem_offset)))
+                       o2 x2'); split; SeparationLogic.ecancel_assumption_impl |].
+    cbv beta; intros ? ? ? [? [? H3]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* Call 4: fp_mul  out[3] := x[3] * g[0] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                      (word.add px (word.of_Z (3 * fp_felem_offset)))
+                      pg
+                      o3 x3' g_0);
+        split; [exact Hbx3L
+               | split; [exact Hbg0L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O3 [Hfev3 [HbO3 H4]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* Call 5: fp_mul  out[4] := x[4] * g[0] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z fp_felem_offset))
+                      (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z fp_felem_offset))
+                      pg
+                      o4 x4' g_0);
+        split; [exact Hbx4L
+               | split; [exact Hbg0L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O4 [Hfev4 [HbO4 H5]]]]]; subst.
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+
+    (* Call 6: fp_mul  out[5] := x[5] * g[0] *)
+    unfold1_cmd_goal; cbv beta match delta [cmd_body].
+    letexists; split; [eval_dexprs|].
+    eapply Semantics.weaken_call;
+      [ eapply (HFmul (word.add (word.add pout (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z (2 * fp_felem_offset)))
+                      (word.add (word.add px (word.of_Z (3 * fp_felem_offset)))
+                                (word.of_Z (2 * fp_felem_offset)))
+                      pg
+                      o5 x5' g_0);
+        split; [exact Hbx5L
+               | split; [exact Hbg0L
+                        | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                 | split; [eexists; SeparationLogic.ecancel_assumption_impl
+                                          | SeparationLogic.ecancel_assumption_impl] ] ] ] |].
+    cbv beta; intros ? ? ? [? [? [O5 [Hfev5 [HbO5 H6]]]]]; subst.
+
+    (* Final postcondition *)
+    cbv [map.putmany_of_list_zip]; eexists; split; [exact eq_refl|].
+    cbv [list_map list_map_body].
+    split; [exact eq_refl | split; [exact eq_refl|]].
+    exists x0', x1', x2', O3, O4, O5.
+    split;
+    [ (unfold Fp6_slots_loose;
+      cbn [bin_outbounds bin_mul] in *;
+      split; [| split; [| split; [| split; [| split]]]];
+      [ exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ Hbx0)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ Hbx1)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ Hbx2)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO3)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO4)
+      | exact (@AbstractField.relax_bounds _ _ _ _ _ _
+                 F_representation F_representation_ok _ HbO5) ])
+    | idtac ].
+    split;
+    [ (cbn [bin_model bin_mul] in *;
+      unfold feval_Fp6_slots, cubic_first_fp6_frob_p3_model,
+        feval_Fp3_slots, fp6_mk, fp6_c0, fp6_c1,
+        fp3_mk, fp3_a0, fp3_a1, fp3_a2;
+      cbn;
+      rewrite Hfev3, Hfev4, Hfev5;
+      reflexivity)
+    | idtac ].
+    unfold FElem_Fp6_slots, FElem_Fp3_slots.
+    replace (slot_addr pout 0) with pout
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    replace (slot_addr px 0) with px
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    replace (slot_addr pg 0) with pg
+      by (rewrite Z.mul_0_l; rewrite word.add_0_r; reflexivity).
+    rewrite ?Z.mul_1_l.
+    replace (slot_addr pout 4)
+       with (word.add (slot_addr pout 3) (word.of_Z fp_felem_offset))
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr pout 5)
+       with (slot_addr (slot_addr pout 3) 2)
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 4)
+       with (word.add (slot_addr px 3) (word.of_Z fp_felem_offset))
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    replace (slot_addr px 5)
+       with (slot_addr (slot_addr px 3) 2)
+      by (rewrite <- word.add_assoc by assumption;
+          f_equal; rewrite <- word.ring_morph_add by assumption;
+          f_equal; lia).
+    SeparationLogic.ecancel_assumption_impl.
+  Qed.
+
+  (* ================================================================ *)
   (* Exports                                                            *)
   (* ================================================================ *)
 
   Definition CubicFirstPairingOps_funcs : list function_t :=
-    [ cubic_first_fp6_frob ].
+    [ cubic_first_fp6_frob; cubic_first_fp6_frob_p3 ].
 
 End CubicFirstPairingOps.

@@ -19,38 +19,58 @@
 //!
 //! Run with: `cargo kani --features 'ristretto_rustcmd decomposed_leaves'`.
 //!
-//! STATUS (2026-05-23 feasibility run): Kani builds this crate fine
-//! (the `jasminc` build script and `blst` C dep are OK), and it DOES
-//! check the panic class we care about — it surfaced
-//! `core::slice::copy_from_slice_impl::len_mismatch_fail::do_panic`
-//! (exactly the `REdSetBytes` bug).  BUT the emitted `decode.rs`/
-//! `encode.rs` call the field/leaf primitives via `extern "C"` FFI
-//! (`fe25519_mul/add/sq`, `ristretto_sqrt_ratio_m1`,
-//! `ristretto_parse_canonical_felem`, `pack_xyzt5`, `fe25519_inv`,
-//! `unpack_xyzt5`), and Kani does NOT support calls to foreign "C"
-//! functions (`unsupported_construct`, kani#2423).  So verification
-//! cannot complete as-is.
+//! MECHANISM (2026-05-23): the emitted `decode.rs`/`encode.rs` reach
+//! the field / Ristretto leaves through `unsafe extern "C" { fn ... }`
+//! declarations.  Kani treats an un-stubbed `extern` declaration as an
+//! opaque foreign function (`unsupported_construct`, kani#2423), AND
+//! the real bodies run the intractable ~270-op `pow22523` chain.  Both
+//! are resolved by `#[kani::stub(target, replacement)]`: each harness
+//! maps the leaf's `extern`-declaration path (e.g.
+//! `super::decode::fe25519_mul`) to an ABSTRACT model in
+//! `super::kani_stubs` that writes `kani::any()`-filled buffers of the
+//! exact declared length (40 for felems, 32 for the canonical pack
+//! output, 1 for status / was-square, 200 for the packed xyzt).  Kani
+//! substitutes the model at every call site within the harness, so it
+//! reasons about the decode/encode GLUE — the slot byte-shuffling, the
+//! leaf-call dispatch, the `copy_from_slice` lengths, the `REdFor` /
+//! `REdSelect` index arithmetic — which is exactly where the 32/40
+//! buffer overrun and the `copy_from_slice` length-mismatch panic
+//! lived.  Symbolic `status` / `ws` bytes from the parse / sqrt-ratio
+//! stubs force BOTH the accept and reject decode branches.  Full
+//! functional `decode == dalek` stays with the Coq simulation + the
+//! dalek differential test.  The `unwind(256)` covers every bounded
+//! loop once the leaves are stubbed: the `REdFor` 40-byte felem masks,
+//! the abstract stubs' ≤200-byte fills, and the 200-byte
+//! `out == BAD_POINT` memcmp in the public `ristretto_decode` wrapper
+//! (each needs `len + 1` unwinds; 256 > 201).
 //!
-//! NEXT STEP to get a green proof: add `#[kani::stub(<extern_fn>,
-//! <rust_shim>)]` for each of the ~6 leaves, where the shim is an
-//! ABSTRACT model (returns `kani::any()` 40-byte felem / arbitrary
-//! status byte) rather than the real field arithmetic.  This verifies
-//! the memory-safety + panic-freedom of the decode/encode GLUE (the
-//! slot byte-shuffling, the dispatch, the `copy_from_slice` lengths,
-//! the `REdFor`/`REdSelect` index arithmetic) — which is where the
-//! 32/40 overrun and the copy_from_slice panic lived — WITHOUT the
-//! intractable symbolic field arithmetic.  Full functional
-//! `decode == dalek` stays with the Coq simulation + the dalek
-//! differential test.  The `unwind(101)` covers the pow-chain's
-//! bounded loops once the leaves are stubbed away.
+//! Stubs are referenced by their `extern`-declaration path because
+//! Kani's stub targeting uses Rust name resolution; using
+//! `#[kani::stub]` (rather than `#[cfg(kani)] #[no_mangle]` abstract
+//! definitions) means we never touch `fe25519_portable.rs` and incur
+//! no duplicate-symbol clash with the real leaves.
 
 #![cfg(kani)]
 
+use super::kani_stubs;
 use super::{ristretto_decode, ristretto_encode};
 
 /// Decoding ANY 32-byte input is memory-safe and panic-free.
 #[kani::proof]
-#[kani::unwind(101)]
+#[kani::unwind(256)]
+#[kani::stub(super::decode::fe25519_mul, kani_stubs::fe25519_mul_stub)]
+#[kani::stub(super::decode::fe25519_add, kani_stubs::fe25519_add_stub)]
+#[kani::stub(super::decode::fe25519_sub, kani_stubs::fe25519_sub_stub)]
+#[kani::stub(super::decode::fe25519_sq, kani_stubs::fe25519_sq_stub)]
+#[kani::stub(
+    super::decode::ristretto_parse_canonical_felem,
+    kani_stubs::ristretto_parse_canonical_felem_stub
+)]
+#[kani::stub(
+    super::decode::ristretto_sqrt_ratio_m1,
+    kani_stubs::ristretto_sqrt_ratio_m1_stub
+)]
+#[kani::stub(super::decode::pack_xyzt5, kani_stubs::pack_xyzt5_stub)]
 fn decode_no_ub_or_panic() {
     let bs: [u8; 32] = kani::any();
     let _ = ristretto_decode(&bs);
@@ -58,7 +78,21 @@ fn decode_no_ub_or_panic() {
 
 /// Encoding ANY 200-byte xyzt buffer is memory-safe and panic-free.
 #[kani::proof]
-#[kani::unwind(101)]
+#[kani::unwind(256)]
+#[kani::stub(super::encode::fe25519_mul, kani_stubs::fe25519_mul_stub)]
+#[kani::stub(super::encode::fe25519_add, kani_stubs::fe25519_add_stub)]
+#[kani::stub(super::encode::fe25519_sub, kani_stubs::fe25519_sub_stub)]
+#[kani::stub(super::encode::fe25519_sq, kani_stubs::fe25519_sq_stub)]
+#[kani::stub(super::encode::fe25519_inv, kani_stubs::fe25519_inv_stub)]
+#[kani::stub(
+    super::encode::ristretto_sqrt_ratio_m1,
+    kani_stubs::ristretto_sqrt_ratio_m1_stub
+)]
+#[kani::stub(
+    super::encode::ristretto_pack_canonical_felem,
+    kani_stubs::ristretto_pack_canonical_felem_stub
+)]
+#[kani::stub(super::encode::unpack_xyzt5, kani_stubs::unpack_xyzt5_stub)]
 fn encode_no_ub_or_panic() {
     let xyzt: [u8; 200] = kani::any();
     let _ = ristretto_encode(&xyzt);
@@ -68,7 +102,34 @@ fn encode_no_ub_or_panic() {
 /// point is a well-formed 32-byte array (length is structural, but the
 /// harness also exercises the full decode→encode pipeline for UB).
 #[kani::proof]
-#[kani::unwind(101)]
+#[kani::unwind(256)]
+#[kani::stub(super::decode::fe25519_mul, kani_stubs::fe25519_mul_stub)]
+#[kani::stub(super::decode::fe25519_add, kani_stubs::fe25519_add_stub)]
+#[kani::stub(super::decode::fe25519_sub, kani_stubs::fe25519_sub_stub)]
+#[kani::stub(super::decode::fe25519_sq, kani_stubs::fe25519_sq_stub)]
+#[kani::stub(
+    super::decode::ristretto_parse_canonical_felem,
+    kani_stubs::ristretto_parse_canonical_felem_stub
+)]
+#[kani::stub(
+    super::decode::ristretto_sqrt_ratio_m1,
+    kani_stubs::ristretto_sqrt_ratio_m1_stub
+)]
+#[kani::stub(super::decode::pack_xyzt5, kani_stubs::pack_xyzt5_stub)]
+#[kani::stub(super::encode::fe25519_mul, kani_stubs::fe25519_mul_stub)]
+#[kani::stub(super::encode::fe25519_add, kani_stubs::fe25519_add_stub)]
+#[kani::stub(super::encode::fe25519_sub, kani_stubs::fe25519_sub_stub)]
+#[kani::stub(super::encode::fe25519_sq, kani_stubs::fe25519_sq_stub)]
+#[kani::stub(super::encode::fe25519_inv, kani_stubs::fe25519_inv_stub)]
+#[kani::stub(
+    super::encode::ristretto_sqrt_ratio_m1,
+    kani_stubs::ristretto_sqrt_ratio_m1_stub
+)]
+#[kani::stub(
+    super::encode::ristretto_pack_canonical_felem,
+    kani_stubs::ristretto_pack_canonical_felem_stub
+)]
+#[kani::stub(super::encode::unpack_xyzt5, kani_stubs::unpack_xyzt5_stub)]
 fn decode_then_encode_no_ub() {
     let bs: [u8; 32] = kani::any();
     if let Some(xyzt) = ristretto_decode(&bs) {

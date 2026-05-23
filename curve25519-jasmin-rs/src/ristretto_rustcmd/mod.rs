@@ -106,6 +106,11 @@ pub mod decode;
 // `ristretto_encode_gallina_nlet`).
 pub mod encode;
 
+// Abstract stub models for the extern-"C" field/Ristretto leaves,
+// substituted into the Kani harnesses via `#[kani::stub(...)]`.
+#[cfg(kani)]
+pub mod kani_stubs;
+
 // Kani memory-safety / panic-freedom proof harnesses (verify-only).
 #[cfg(kani)]
 mod kani_proofs;

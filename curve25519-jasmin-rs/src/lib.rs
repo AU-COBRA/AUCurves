@@ -45,6 +45,11 @@
 //! inline `unsafe { ... }` blocks.
 
 #![allow(non_camel_case_types)]
+// Stacked `#[kani::stub(..)]` attributes on the Ristretto Kani
+// harnesses (`ristretto_rustcmd::kani_proofs`) expand recursively; 8+
+// stubs on one harness blow the default macro recursion limit of 128.
+// Gated on `kani` so the normal build is byte-for-byte unaffected.
+#![cfg_attr(kani, recursion_limit = "512")]
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,

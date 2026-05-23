@@ -191,7 +191,52 @@ Definition ristretto_decode_derive_goal : Prop :=
 (** Status placeholder for the AST.  In the gallina-driven [compile]
     world this would be the [Derive] output; here we hand-anchor it
     to [REdSkip] so the file builds.  The actual AST authoring is the
-    next deliverable (path A.1 of the §3 trade-off below).  *)
+    next deliverable (path A.1 of the §3 trade-off below).
+
+    PROGRESS (2026-05-23 — full sub-blocker analysis):
+
+    Replacing [REdSkip] with a real AST requires FOUR sub-blockers,
+    only one of which (#1) was previously documented:
+
+      #1  Abstract-Z bridge (slot_holds_z predicate).
+          ~50 LoC.  Documented in §2b's diagnostic block.  Without
+          it, the 2-step compose fails on byte/Z bookkeeping at the
+          slot boundary (le_combine ∘ le_split = id mod 2^256, but
+          [assumption] can't unify the two forms).
+
+      #2  Constant-slot mechanism.  [REdLetZero] only allocates
+          ZERO-FILLED slots; the body needs slots holding [1], [2],
+          and the 256-bit Curve25519 [d] constant.  No primitive
+          currently writes a non-zero constant into a slot.  Three
+          fixes (pick one):
+            (a) New constructor [REdConstSet : located_ed → list
+                Byte.byte → rust_cmd_ed] in
+                [SafeRustEd25519Sim.v]; update [rs_func_emit].
+            (b) Per-constant FFI leaves [fe25519_const_one],
+                [fe25519_const_two], [fe25519_const_d] (Rust side
+                hand-writes 3 trivial setters).  Cheapest.
+            (c) Caller-supplies constants via the function signature:
+                [fn ristretto_decode(bs, out, c1, c2, cd)].  Cleanest
+                but changes the public ABI.
+
+      #3  [pack_xyzt5] primitive.  [pack_canonical_felem] (current)
+          packs ONE 32-byte felem; the gallina output is
+          [pack_xyzt5 x y 1 x y] = 5 × 40-byte concatenation = 200
+          bytes (per [End2End/Ed25519/XyztAddVerified.v:82]).  Need
+          either a new leaf [pack_xyzt5] taking 5 felems, OR 5
+          sequential [memmove]-style leaves into the output slot.
+
+      #4  Simulation chain.  Once the AST is written, the simulation
+          proof composes the 13 Tier-4 lemmas via [rhoare] sequencing.
+          ~100 LoC.  Blocked on #1 (every continuation needs the
+          slot_holds_z predicate to carry the Z-value forward).
+
+    Pragmatic completion path: take fix (b) for #2 (~30 LoC Rust + ~80
+    LoC Coq Bridges entries), solve #1 (~50 LoC), then write the
+    150-LoC AST and 100-LoC simulation.  Total ~400 LoC.
+
+    Until those land, [ristretto_decode_rs := REdSkip] is the safe
+    placeholder. *)
 Definition ristretto_decode_rs : rust_cmd_ed := REdSkip.
 
 (** Status placeholder for the simulation theorem. *)

@@ -83,6 +83,11 @@
 
 #![allow(dead_code, unused_variables)]
 
+// Constant setters + pack_xyzt5 (B.5b path b — sub-blocker #2/#3 fixes).
+// Always compiled because the extracted decode.rs / encode.rs will
+// reference these by C-ABI symbol name once the AST lands.
+pub mod leaves;
+
 /// 32-byte canonical ristretto255 encoding.
 pub type RistrettoPoint32 = [u8; 32];
 

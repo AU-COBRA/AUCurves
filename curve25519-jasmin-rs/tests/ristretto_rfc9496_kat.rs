@@ -191,9 +191,14 @@ const A2_NONSQUARE_04: &str =
 const A2_NONSQUARE_05: &str =
     "190ee0101a9a9a161b105ea8a3fbfcfd\
      1d116746fd744326eccd1c7d90fba23a";
+// Corrected to a genuine published RFC 9496 Appendix A.2 non-square
+// vector (the prior `9e566f9b...` constant was bogus: it is a VALID
+// ristretto encoding — dalek's decompress() returns Some, so asserting
+// `== None` was incorrect).  This vector is rejected by both dalek and
+// the extracted decoder.
 const A2_NONSQUARE_06: &str =
-    "9e566f9b9f3b7f7a1941cc0adc288c37\
-     15020306a79e67345e94889c1c222c01";
+    "de6a7b00deadc788eb6b6c8d20c0ae96\
+     c2f2019078fa604fee5b87d6e989ad7b";
 
 #[test] fn rfc9496_a2_nonsquare_01() { assert_eq!(ristretto_decode(&h32(A2_NONSQUARE_01)), None); }
 #[test] fn rfc9496_a2_nonsquare_02() { assert_eq!(ristretto_decode(&h32(A2_NONSQUARE_02)), None); }
@@ -207,9 +212,13 @@ const A2_NONSQUARE_06: &str =
 const A2_NEG_T_01: &str =
     "3eb858e78f5a7b16b0a815223a421619\
      731d27fb5d3b9c4188758ffefa067146";
+// Corrected to a genuine published RFC 9496 Appendix A.2 negative-t
+// vector (the prior `a01c065e...` constant was bogus: it is a VALID
+// ristretto encoding accepted by dalek).  Rejected by both dalek and
+// the extracted decoder.
 const A2_NEG_T_02: &str =
-    "a01c065e223b9ba03b7da08e37741ffe\
-     23fb158ca1ad9b94060aa61faaaab65b";
+    "a45fdc55c76448c049a1ab33f17023ed\
+     fb2be3581e9c7aade8a6125215e04220";
 const A2_NEG_T_03: &str =
     "42fcada2658c3f9b06165b3f42826239\
      11fb39151585849d651a36e1f492bb43";
@@ -224,9 +233,15 @@ const A2_NEG_T_04: &str =
 
 // --- §A.2.5: y = 0 (6) -------------------------------------------
 
+// Corrected to the genuine published RFC 9496 Appendix A.2 "y = 0"
+// vector.  The prior all-zeros constant was bogus: s = 0 decodes to
+// the identity (x=0, y=1), a VALID point that dalek accepts — so
+// asserting `== None` was incorrect.  The real y=0 vector (= field
+// element p-1 with bit255 clear, i.e. `ec..7f`) is rejected by both
+// dalek and the extracted decoder.
 const A2_Y_ZERO_01: &str =
-    "00000000000000000000000000000000\
-     00000000000000000000000000000000";
+    "ecffffffffffffffffffffffffffffff\
+     ffffffffffffffffffffffffffffff7f";
 const A2_Y_ZERO_02: &str =
     "ecffffffffffffffffffffffffffffff\
      ffffffffffffffffffffffffffffff7f";
@@ -261,6 +276,44 @@ const A2_Y_ZERO_06: &str =
 // None for every input), so this canary catches false-positive
 // passes.
 // ================================================================
+
+// ================================================================
+// Oracle cross-check: the extracted decoder must agree with
+// curve25519-dalek's `CompressedRistretto::decompress` on every §A.2
+// vector (accept iff dalek accepts).  This is a regression guard that
+// the §A.2 constants above are themselves genuine rejection vectors —
+// it caught 3 bogus constants (NONSQUARE_06, NEG_T_02, Y_ZERO_01)
+// that were actually VALID encodings dalek accepts.
+// ================================================================
+
+#[test]
+fn a2_vectors_agree_with_dalek_oracle() {
+    let all = [
+        A2_NONCANONICAL_01, A2_NONCANONICAL_02, A2_NONCANONICAL_03,
+        A2_NONCANONICAL_04, A2_NONCANONICAL_05, A2_NONCANONICAL_06,
+        A2_NONCANONICAL_07, A2_NEG_S_01,
+        A2_NONSQUARE_01, A2_NONSQUARE_02, A2_NONSQUARE_03,
+        A2_NONSQUARE_04, A2_NONSQUARE_05, A2_NONSQUARE_06,
+        A2_NEG_T_01, A2_NEG_T_02, A2_NEG_T_03, A2_NEG_T_04,
+        A2_Y_ZERO_01, A2_Y_ZERO_02, A2_Y_ZERO_03,
+        A2_Y_ZERO_04, A2_Y_ZERO_05, A2_Y_ZERO_06,
+    ];
+    for hx in all {
+        let bs = h32(hx);
+        let dalek_some = curve25519_dalek::ristretto::CompressedRistretto(bs)
+            .decompress()
+            .is_some();
+        let ours_some = ristretto_decode(&bs).is_some();
+        assert_eq!(
+            ours_some, dalek_some,
+            "decoder disagrees with dalek oracle on vector {hx}: \
+             ours_some={ours_some} dalek_some={dalek_some}"
+        );
+        // All §A.2 vectors are rejection vectors: both must reject.
+        assert!(!dalek_some, "vector {hx} is NOT a valid §A.2 rejection \
+                              vector (dalek accepts it)");
+    }
+}
 
 #[test]
 fn stub_detection_canary() {

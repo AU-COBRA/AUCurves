@@ -19,35 +19,27 @@
     [multibase_iter_step_j0] / [_j1] / [_jm1] / [_j3] / [_jm3] as
     applicable.
 
-    Status note (2026-05-22).  Empirical build measurement of the
-    sister file [BW6_761_MillerLoopOptimal_proof_Common.v] shows
-    11+ minutes of cold-build library-load time before any tactic
-    sentence executes (704 s wall, per-sentence times all 0.0 s
-    via `-time`).  The bottleneck is [Rupicola.Lib.Api] (which
-    transitively pulls in 10 sub-files of Rupicola plus bedrock2
-    weakest-precondition machinery), NOT the [AffineMultibase]
-    Gallina model (a 384-LoC Qed-clean reference theory).  A
-    Module-Type refactor over [AffineMultibase] therefore cannot
-    reduce the build budget, because the refactor only abstracts
-    the small Gallina component — the heavy bedrock2/Rupicola
-    chain is still required for [fnspec!] in the strengthened
-    spec and for [WeakestPrecondition.cmd] in this Step lemma.
+    Build note.  This file's cold-build time (~11 min) is dominated
+    by loading [Rupicola.Lib.Api] (which transitively pulls in the
+    Rupicola sub-files plus the bedrock2 weakest-precondition
+    machinery), not by the [AffineMultibase] Gallina model (a
+    384-LoC reference theory).  A Module-Type refactor over
+    [AffineMultibase] therefore cannot reduce the build budget: it
+    only abstracts the small Gallina component, while the heavy
+    bedrock2/Rupicola chain is still required for [fnspec!] in the
+    strengthened spec and for [WeakestPrecondition.cmd] here.  This
+    file is consequently build-excluded in [src/Bedrock/dune].
 
-    Consequence: this file remains build-excluded in
-    [src/Bedrock/dune].  Phase 2 ships as a planning artifact
-    (Gallina-only reference + invariant scaffolding in Common,
-    [Admitted] Step lemma here, [Admitted] main theorem in
-    [BW6_761_MillerLoopOptimal_proof.v]).
-
-    Currently [Admitted] (Phase 2 Step 5).  Closing requires:
-      (i)  the per-call WP bridging lemmas for [g2_double_step],
-           [g2_add_step], [g2_line_compute], [sparse_line_eval]
-           (Phase 2 Step 4, sister-agent territory), AND
-      (ii) the Gallina-counter bump via
-           [multibase_iter_step_jX] (5-way symbol dispatch).
-
-    Split out of [BW6_761_MillerLoopOptimal_proof.v] for
-    build-time budget (see [_proof_Common.v] header). *)
+    Currently [Admitted].  Closing requires:
+      (i)  the per-call WP discharges for [g2_double_step],
+           [g2_add_step], [g2_line_compute], [sparse_line_eval],
+           which need those callee specs (in
+           [BW6_761_MillerLoopOptimal]) strengthened from their
+           current value-free form (output bounds + memory layout
+           only) to relate outputs to a Gallina model, AND
+      (ii) the Gallina-counter bump via [multibase_iter_step_jX]
+           (5-way symbol dispatch, lemmas in [AffineMultibase]).
+    See the [Proof] body below for the full prerequisite list. *)
 
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Common.
 
@@ -132,15 +124,29 @@ Section BW6_761_MillerLoopOptimal_Step.
             old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
             (vi - 1)%nat t' m' l').
   Proof.
-    (* TODO Phase 2 Step 5.  Walk the per-iteration WP through the
-       dbl_step + sparse_line + fp6_mul (+ optional add_step branch)
-       and use multibase_iter_step_jX consistency lemmas from
-       AffineMultibase to bump the Gallina counter.
+    (* Not yet closed.  Two prerequisites are missing:
 
-       Sister agent (a1444e31d54a30e0c) is fixing the Rust
-       extraction path that feeds the per-call WP bridging lemmas
-       — once that lands, the per-call WP discharges should be
-       drop-in. *)
+       (1) This lemma's signature must take the callee specs the
+           body uses — g2_double_step, g2_add_step, sparse_line_eval,
+           fp6_sqr, fp6_mul — as hypotheses (it currently lists only
+           the Fp3/Fp6 arithmetic specs, so the calls in
+           [miller_iter_body] cannot be discharged).
+
+       (2) Those callee specs (in BW6_761_MillerLoopOptimal) are
+           value-free: their postconditions assert only output bounds
+           and memory layout, with no equation relating the outputs
+           to a Gallina model.  Re-establishing the invariant's
+           algebraic part (multibase_state_at, via the
+           multibase_iter_step_jX lemmas in AffineMultibase) needs
+           them strengthened to relate outputs to dbl_step / add_step
+           / make_line — and the reference model's make_line
+           (bw6_make_line_abstract) is currently a stub returning
+           Fone, so a faithful line model must land first.
+
+       With strengthened specs the body itself is a straightforward
+       per-call WP walk (fp6_sqr; dbl_step; sparse_line; fp6_mul,
+       plus the add_step/sparse_line/fp6_mul branch when j <> 0)
+       followed by the matching multibase_iter_step_jX rewrite. *)
   Admitted.
 
 End BW6_761_MillerLoopOptimal_Step.

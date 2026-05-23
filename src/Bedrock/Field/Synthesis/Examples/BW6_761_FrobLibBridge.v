@@ -373,17 +373,6 @@ Section BW6_FrobLibBridge.
   (*     (F_representation_ok := bw6_Fp_repr_ok)                       *)
   (*     "bw6_" functions EnvContains HFcopy HFmul) as Hlib.            *)
   (*   apply (bw6_fp6_frob_ok functions Hlib).                         *)
-  (*                                                                  *)
-  (* Structural progress (foreground MCP session 2026-05-22):         *)
-  (*   - eapply Hlib closes Goal 1's call target cleanly               *)
-  (*     (after specialising the 18 felem args to ce_c*_felem of       *)
-  (*     qe_*_felem of x/old_out and ce_c*_felem of gfp3/gfp6).        *)
-  (*   - Remaining work: 3-way sep translation                        *)
-  (*     (FElem_Fp6 px x + 2× FElem_Fp3 → _slots form via sep_comm    *)
-  (*     rotations + the existing BW6_Fp6_to_lib_slots /              *)
-  (*     BW6_Fp3_to_lib_slots helpers), + 6-way Fp_bounded unfold of  *)
-  (*     Fp6_bounded Fp6_tight x, + post translation (existential     *)
-  (*     packing via BW6_Fp6_join_from_lib_slots).                    *)
   (* ============================================================== *)
 
   Theorem bw6_fp6_frob_ok :
@@ -510,89 +499,28 @@ Section BW6_FrobLibBridge.
     split; [reflexivity|].
     split; [reflexivity|].
     exists ((O0 ++ O1 ++ O2) ++ (O3 ++ O4 ++ O5)).
-    (* 6. Three remaining sub-goals: bounds, algebraic, sep.
+    (* 6. Three sub-goals: bounds, algebraic, sep.  All depend on length
+       witnesses (length Oi = felem_size_in_words from Hmem' via Bignum;
+       length x / gfp3 / gfp6 from the original Hmem).
 
-       All three depend on length witnesses:
-         - length Oi = felem_size_in_words (from Bignum.Bignum in Hmem')
-         - length x / gfp3 / gfp6 (from original Hmem via Bignum)
-
-       Bounds: Fp6_bounded Fp6_loose ((O0++O1++O2)++(O3++O4++O5))
-         cbn-unfolds to 6 conjuncts of form
-           bounded_by loose_bounds (ce_c0_felem (qe_fst_felem concat)) ...
-         Each ce_ci (qe_? concat) = Oi reduces via firstn/skipn lemmas
-         under length witnesses; then HO0..HO5 discharge.
+       Bounds: Fp6_bounded Fp6_loose ((O0++O1++O2)++(O3++O4++O5)) cbn-unfolds
+         to 6 conjuncts of form bounded_by loose_bounds (ce_ci (qe_? concat)).
+         Each ce_ci (qe_? concat) = Oi reduces via firstn/skipn lemmas under
+         the length witnesses; then HO0..HO5 discharge.
 
        Algebraic: Fp6_feval ((O0++O1++O2)++(O3++O4++O5)) =
-         FrobModelFp6 (Fp6_feval x) (Fp3_feval gfp3) (Fp3_feval gfp6).
-         Bridge:
-           - Fp6_feval (concat) = feval_Fp6_slots O0..O5 [concat-proj-eq
-             + length witness, mirrors Fp6_concat_proj_eq]
-           - Fp6_feval x = feval_Fp6_slots slot_x_c0c0..slot_x_c1c2
-             [same, from length x witness]
-           - Fp3_feval gfp3 = feval_Fp3_slots slot_g3_0..slot_g3_2
-             [same, length gfp3 witness]
-           - same for gfp6
-           - cubic_first_fp6_frob_model = FrobModelFp6 [reflexivity:
-             both bodies are identical fp3_mk-of-F.mul cascades; verified
-             by side-by-side comparison]
+         FrobModelFp6 (Fp6_feval x) (Fp3_feval gfp3) (Fp3_feval gfp6), bridged
+         by rewriting both sides through feval_Fp6_slots / feval_Fp3_slots
+         (via the concat-proj-eq lemmas + length witnesses); the model bodies
+         cubic_first_fp6_frob_model and FrobModelFp6 are the same fp3_mk-of-
+         F.mul cascade, so reflexivity closes.
 
-       Sep: Hmem' has library shape with output as FElem_Fp6_slots pout
-         O0..O5.
-         - BW6_Fp6_join_from_lib_slots produces FElem_Fp6 pout (concat)
-           given 6 length witnesses (length Oi = fp_size_in_words each).
-         - FElem_Fp6_join_from_proj_slots (PairingHelpers) converts the
-           input slots back to FElem_Fp6 px x (under length x witness).
-         - FElem_Fp3_join_from_proj_slots × 2 for gfp3, gfp6.
-         - Final ecancel.
-
-       Estimated: 150-200 LoC, mechanical once length witnesses are
-       extracted via Bignum.Bignum_to_bytes applied to FElem_Fp atoms
-       inside Hmem' / Hmem. *)
-    (* === MCP-verified length extraction + sep partial reverse (2026-05-22) ===
-
-       Sequence verified in MCP this session:
-
-         1. Extract length witnesses from Hmem (copy via [pose proof]
-            then destruct through sep):
-              pose proof Hmem as HmemC.
-              destruct HmemC as [? [? [_ [_ HmemCrest]]]].
-              destruct HmemCrest as [? [? [_ [HFx HmemCrest2]]]].
-              destruct HmemCrest2 as [? [? [_ [HFg3 HmemCrest3]]]].
-              destruct HmemCrest3 as [? [? [_ [HFg6 _]]]].
-              assert (Hlen_x : length x = felem_size_in_words_Fp6)
-                by apply (GenericSplitJoin.generic_FElem_length _ _ _ HFx).
-              (* similarly Hlen_gfp3, Hlen_gfp6 *)
-
-         2. Extract length(Oi) witnesses from Hmem' (post-call mem):
-              pose proof Hmem' as Htmp.
-              unfold PairingFieldOpsCubicFirst.FElem_Fp6_slots in Htmp.
-              destruct Htmp as [? [? [_ [Htmp_pout _]]]].
-              (* Then destruct Htmp_pout 5x to get HF_O0..HF_O5 *)
-              assert (HlO0 : length O0 = felem_size_in_words_Fp)
-                by apply (GenericSplitJoin.generic_FElem_length _ _ _ HF_O0).
-              (* similarly HlO1..HlO5 *)
-
-         3. Sep reverse for pout output (verified in MCP):
-              apply (BW6_Fp6_join_from_lib_slots pout O0 O1 O2 O3 O4 O5
-                       _ _ HlO0 HlO1 HlO2 HlO3 HlO4 HlO5) in Hmem'.
-              (* now Hmem' has FElem_Fp6 pout ((O0++O1++O2)++(O3++O4++O5)) *)
-
-       Remaining: convert FElem_Fp6_slots px / FElem_Fp3_slots p_gfp3 /
-       FElem_Fp3_slots p_gfp6 back to FElem_Fp6 / FElem_Fp3.  This needs
-       a reverse-direction helper `BW6_Fp6_from_lib_slots` (mirror of
-       `BW6_Fp6_to_lib_slots`) that converts the address-normalized
-       library 6-slot form back to the BW6 nested Fp6_felem, under the
-       length witness on x.  The forward helper does
-       `FElem_Fp6 → FElem_Fp6_slots`; the reverse adds a `length x = 6n`
-       hypothesis and inverts via `FElem_Fp6_join_from_proj_slots` from
-       PairingHelpers (which is already proved, but for the
-       address-normalized 6-FElem form, not directly for the library's
-       `FElem_Fp6_slots`).  ~30 LoC to write the 3 reverse helpers + use them.
-
-       Algebraic (Fp6_feval (concat) = FrobModelFp6 ...) bridges via
-       Fp6_concat_proj_eq + reflexivity on the literal model equality.
-       Bounds reduce via firstn_app_sharp/skipn_app_sharp + 2-step
-       skipn_skipn for ce_c2.  Total remaining: ~80-100 LoC. *)
+       Sep: Hmem' has the library shape with output FElem_Fp6_slots pout
+         O0..O5.  BW6_Fp6_join_from_lib_slots rebuilds FElem_Fp6 pout (concat)
+         from the 6 length witnesses; BW6_Fp6_from_lib_slots /
+         BW6_Fp3_from_lib_slots (×2) convert the input slots back to
+         FElem_Fp6 px x and FElem_Fp3 for gfp3/gfp6 under the length
+         witnesses; final ecancel. *)
     (* Extract length witnesses for x, gfp3, gfp6 from Hmem (still has Fp6/Fp3 atoms
        for these — only pout was converted by the first apply BW6_Fp6_to_lib_slots). *)
     pose proof Hmem as Hmem_lengths.

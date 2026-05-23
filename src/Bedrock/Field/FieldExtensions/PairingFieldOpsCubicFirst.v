@@ -376,9 +376,7 @@ Section CubicFirstPairingOps.
   (* NOTE.  The WP proof body is ~250 LoC of straight-line                *)
   (* sep-logic / dispatch — structurally identical to                  *)
   (* [PairingFieldOps.Fp6_frobenius_p2_ok] but at the Fp slot level   *)
-  (* instead of Fp2 component level.  We Admit it here and ship the    *)
-  (* fully proved spec so the bridge file can already use the         *)
-  (* library shape.                                                     *)
+  (* instead of Fp2 component level.                                     *)
   (* ================================================================ *)
 
   (* Local tactic: process the dexprs for a call.  All argument exprs

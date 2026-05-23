@@ -41,7 +41,14 @@ From Stdlib Require Import Lists.List.
 From Stdlib Require Import Init.Byte.
 Require Import coqutil.Word.LittleEndianList.
 Require Import Crypto.Spec.ModularArithmetic.
+Require Import Crypto.Arithmetic.ModularArithmeticTheorems.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import Crypto.Algebra.Field.
+Require Import Crypto.Algebra.Hierarchy.
+Require Import Crypto.Algebra.Group.
 Require Import Crypto.Spec.Curve25519.
+Require Import Crypto.Spec.CompleteEdwardsCurve.
+Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Decode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_RoundTrip.
@@ -51,6 +58,20 @@ Local Open Scope Z_scope.
 Local Notation Fp := (F.F (2^255 - 19)).
 Local Notation Fzero := (F.of_Z _ 0).
 Local Notation Fone  := (F.of_Z _ 1).
+
+(* Field tactic + group machinery for the Edwards-algebra admits below
+   (same setup as Ristretto255_TorsionCases.v; [fsatz] times out on the
+   concrete value of [Curve25519.E.d], so the stdlib [field] tactic with
+   [E.d]/[SQRT_M1] kept opaque is used instead). *)
+Local Existing Instance Curve25519.field.
+Local Existing Instance Curve25519.char_ge_3.
+
+Add Field _curve25519_field_canon :
+  (Algebra.Field.field_theory_for_stdlib_tactic(T:=F (2^255-19)%positive))
+  (morphism (F.ring_morph (2^255-19)%positive),
+   constants [F.is_constant],
+   div (F.morph_div_theory (2^255-19)%positive),
+   power_tac (F.power_theory (2^255-19)%positive) [F.is_pow_constant]).
 
 (* ========================================================================
    Section 1: Edwards-equivalence algebraic helpers.
@@ -83,6 +104,31 @@ Local Notation Fone  := (F.of_Z _ 1).
       - for each, compute [sub_affine Q P] = -(sub_affine P Q) and check
         it lies in the same set.
 *)
+(** ** [ristretto_equiv_refl] — equivalence is reflexive: P - P = O = (0,1) ∈ E[4].
+    Worked at the typed-Edwards-group level (P + (-P) = E.zero by [right_inverse]),
+    whose coordinates are (0,1) — the identity case of [is_4torsion_affine]. *)
+Lemma ristretto_equiv_refl : forall P : Curve25519.E.point, ristretto_equiv P P.
+Proof.
+  intros P.
+  pose (Popp := @AffineProofs.E.opp _ _ _ _ F.opp F.add F.sub F.mul _ _
+    Curve25519.field _ Curve25519.E.a Curve25519.E.d Curve25519.E.nonzero_a P).
+  pose (D := Curve25519.E.add P Popp).
+  assert (Hcoord : E.coordinates D
+    = (sub_affine_x (point_coords P) (point_coords P),
+       sub_affine_y (point_coords P) (point_coords P)))
+    by (destruct P as [[x y] Hoc]; reflexivity).
+  pose proof (@AffineProofs.E.edwards_curve_commutative_group _ _ _ _
+    F.opp F.add F.sub F.mul _ _ Curve25519.field Curve25519.char_ge_3 _
+    Curve25519.E.a Curve25519.E.d Curve25519.E.nonzero_a Curve25519.E.square_a
+    Curve25519.E.nonsquare_d) as Hgrp.
+  destruct Hgrp as [Hgrp_group _].
+  assert (HD0 : (D = Curve25519.E.zero)%E)
+    by (subst D Popp; apply right_inverse).
+  unfold ristretto_equiv. rewrite sub_affine_eq_pair. left.
+  unfold CompleteEdwardsCurve.E.eq in HD0. rewrite Hcoord in HD0.
+  destruct HD0 as [Hx Hy]. split; assumption.
+Qed.
+
 Lemma ristretto_equiv_sym :
   forall P Q : Curve25519.E.point,
     ristretto_equiv P Q -> ristretto_equiv Q P.
@@ -291,19 +337,11 @@ Proof.
   split.
   - intros Heq. subst bs2.
     rewrite HdecP in HdecQ. inversion HdecQ; subst Q.
-    (* Need [ristretto_equiv P P].  We don't introduce a fresh
-       reflexivity admit here; instead route through B.1: every P
-       on the main subgroup satisfies [ristretto_equiv P P'] where
-       P' is decode(encode P).  We don't have on_main_subgroup as
-       a hypothesis, so we admit this branch via the upcoming
-       [ristretto_equiv_refl] (Edwards calculation P - P = (0, 1)). *)
-    (* Defer: in practice every well-typed P has P - P = O = (0,1)
-       4-torsion.  We avoid stating this as a fresh admit by
-       leaving the iff as a *one-direction* theorem in the next
-       statement below. *)
-    admit.
+    (* [ristretto_equiv P P] now discharged by [ristretto_equiv_refl]
+       (P - P = O = (0,1) ∈ E[4], via the typed Edwards group). *)
+    apply ristretto_equiv_refl.
   - intro Hequiv. eapply ristretto_decode_canonical; eauto.
-Admitted.
+Qed.
 
 (** ** One-direction version (no new admits): equivalence implies
     bytes equal.  This is the direction security proofs actually use:

@@ -145,5 +145,28 @@ Section GnarkDouble.
     cbv beta zeta. fsatz.
   Qed.
 
+  (** New Z-coordinate is nonzero (so the next iteration's
+      dehomogenisation is well-defined): for doubling [nz = 2 Y³ Z]. *)
+  Lemma gnark_double_nz (Y Z : F) (HZ : Z <> 0) (HY : Y <> 0) :
+    let B := Y * Y in
+    let C := Z * Z in
+    let H := ((Y + Z) * (Y + Z)) - B - C in
+    B * H <> 0.
+  Proof.
+    cbv beta zeta. fsatz.
+  Qed.
+
+  (** For mixed addition [nz = L³ Z], nonzero given [Z<>0] and distinct
+      x-coords. *)
+  Lemma gnark_add_nz (X Z ax : F) (HZ : Z <> 0) (HL : ax * Z <> X) :
+    let X2Z1 := ax * Z in
+    let L := X - X2Z1 in
+    let D := L * L in
+    let E := L * D in
+    E * Z <> 0.
+  Proof.
+    cbv beta zeta. fsatz.
+  Qed.
+
 End GnarkDouble.
 End GnarkDouble.

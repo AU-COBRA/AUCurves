@@ -608,4 +608,15 @@ Section BW6_761_MillerLoopOptimal_Step.
     rewrite Hfold. cbv beta iota. exact Hpr''.
   Qed.
 
+  (** The main-loop digit list consists only of alphabet digits
+      {-3,-1,0,1,3} (NAF), so [emit_iters_ok] applies.  Discharged by
+      computation on the concrete list. *)
+  Lemma bw6_main_loop_js_alphabet :
+    List.Forall (fun j => j = 0%Z \/ j = 1%Z \/ j = (-1)%Z \/ j = 3%Z \/ j = (-3)%Z)
+      bw6_main_loop_js.
+  Proof.
+    apply List.Forall_forall. intros x Hx.
+    vm_compute in Hx. intuition (subst; reflexivity).
+  Qed.
+
 End BW6_761_MillerLoopOptimal_Step.

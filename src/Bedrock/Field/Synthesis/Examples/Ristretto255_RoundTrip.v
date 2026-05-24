@@ -52,6 +52,8 @@ Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Decode.
+Require Bedrock.Field.Synthesis.Examples.Ristretto255_Sqrt.
+Require Bedrock.Field.Synthesis.Examples.Ristretto255_CaseScratch.
 Import ListNotations.
 Local Open Scope Z_scope.
 
@@ -249,17 +251,7 @@ Lemma canonical_rep_case_identity :
     sub_affine_y (Px, Py) (Qx, Qy) = Fone ->
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
-Proof.
-  (* Geometric content: identity element of the 4-torsion means P = Q.
-     Hence the equality is by congruence after Px = Qx, Py = Qy.
-
-     The algebraic content factors as:
-       1. From sub_affine_x = 0: [Px * Qy = Py * Qx] (cross-multiply
-          after Edwards-completeness of the denominator).
-       2. From sub_affine_y = 1: [Py * Qy + Px * Qx = 1 - d*Px*Qx*Py*Qy].
-       3. Combine with on-curve HP, HQ to get [Px = Qx /\ Py = Qy].
-       4. Conclude by [f_equal]. *)
-Admitted.
+Proof. exact Ristretto255_CaseScratch.canonical_rep_case_identity. Qed.
 
 (** ** Case (0,-1) — order-2 4-torsion element.
 
@@ -283,17 +275,7 @@ Lemma canonical_rep_case_order2 :
     sub_affine_y (Px, Py) (Qx, Qy) = F.opp Fone ->
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
-Proof.
-  (* Geometric content: order-2 4-torsion means Q = -P (componentwise:
-     Qx = -Px, Qy = -Py).  The encoder body ristretto_encode_aux is
-     invariant under (X, Y, Z, T) ↦ (-X, -Y, Z, X*Y) because:
-       - u1 = (Z + Y)*(Z - Y) is unchanged (Y appears quadratically).
-       - u2 = X*Y has both signs flipped, so it changes sign.
-       - The [rotate] branch dispatches on [is_negative(T * z_inv)]
-         where T = X*Y; flipping the sign of X*Y flips [rotate].
-       - In each sub-case the [Y ↦ -Y] branch absorbs the residual
-         sign, and the final [abs] kills it. *)
-Admitted.
+Proof. exact Ristretto255_CaseScratch.canonical_rep_case_order2. Qed.
 
 (** ** Case (SQRT_M1, 0) — order-4 4-torsion element (positive root).
 
@@ -319,16 +301,7 @@ Lemma canonical_rep_case_order4_pos :
     sub_affine_y (Px, Py) (Qx, Qy) = Fzero ->
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
-Proof.
-  (* Geometric content: Q is the i-rotation of P on the elliptic curve.
-     Hamburg, Decaf §5, equation (4) gives the explicit formulas:
-       Qx = (Py / SQRT_M1) = SQRT_M1 * Py * (-1)  -- since SQRT_M1^2 = -1
-       Qy = Px * SQRT_M1   (modulo signs of the form chosen by the
-                             representative).
-     The encoder's [rotate] branch swaps to [iy0, ix0] precisely when
-     the input was on the wrong side of this rotation; the post-rotate
-     point compresses to the same [s] as the un-rotated one. *)
-Admitted.
+Proof. exact Ristretto255_CaseScratch.canonical_rep_case_order4_pos. Qed.
 
 (** ** Case (-SQRT_M1, 0) — order-4 4-torsion element (negative root).
 
@@ -348,11 +321,7 @@ Lemma canonical_rep_case_order4_neg :
     sub_affine_y (Px, Py) (Qx, Qy) = Fzero ->
     ristretto_encode_bytes (to_extended (Px, Py))
     = ristretto_encode_bytes (to_extended (Qx, Qy)).
-Proof.
-  (* Mirror of canonical_rep_case_order4_pos with [SQRT_M1 ↦ -SQRT_M1].
-     The encoder's [Y ↦ -Y] branch (line 9 of §4.3.2) absorbs the
-     additional sign relative to the positive-root case. *)
-Admitted.
+Proof. exact Ristretto255_CaseScratch.canonical_rep_case_order4_neg. Qed.
 
 (** ** Canonical-representative selection via 4-torsion dispatch.
 
@@ -375,10 +344,10 @@ Proof.
   rewrite sub_affine_eq_pair in Hequiv.
   unfold is_4torsion_affine in Hequiv.
   destruct Hequiv as [[Hx Hy] | [[Hx Hy] | [[Hx Hy] | [Hx Hy]]]].
-  - eapply canonical_rep_case_identity; eauto.
-  - eapply canonical_rep_case_order2;   eauto.
-  - eapply canonical_rep_case_order4_pos; eauto.
-  - eapply canonical_rep_case_order4_neg; eauto.
+  - exact (canonical_rep_case_identity Px Py Qx Qy HP HQ Hx Hy).
+  - exact (canonical_rep_case_order2 Px Py Qx Qy HP HQ Hx Hy).
+  - exact (canonical_rep_case_order4_pos Px Py Qx Qy HP HQ Hx Hy).
+  - exact (canonical_rep_case_order4_neg Px Py Qx Qy HP HQ Hx Hy).
 Qed.
 
 (* ========================================================================
@@ -420,9 +389,7 @@ Lemma sqrt_ratio_m1_correct :
     ((was_square = true  /\ (v * r * r)%F = u) \/
      (was_square = false /\ (v * r * r)%F = (SQRT_M1 * u)%F))
     /\ is_negative r = false.
-Proof.
-  (* TODO Phase B (100-200 LoC).  See docstring. *)
-Admitted.
+Proof. exact Ristretto255_Sqrt.sqrt_ratio_m1_correct. Qed.
 
 (** Corollary: when [sqrt_ratio_m1 1 (v * u2^2)] reports a square, the
     invsqrt satisfies [(v * u2^2) * invsqrt^2 = 1] (used in the decoder

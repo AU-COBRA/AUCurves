@@ -514,6 +514,143 @@ Proof.
   exact Hxy.
 Qed.
 
+(* ========================================================================
+   Section 4b: structural scaffolding for the round-trip theorems.
+   All Qed, 0 axioms.  The two round-trip theorems below are reduced to
+   two clean algebraic cores [decode_encode_core] / [encode_decode_core].
+   ======================================================================== *)
+
+(** If the canonical parse of [bs] yields [s], then [bs] is exactly the
+    32-byte little-endian encoding of [s]. *)
+Lemma canonical_F_to_bs : forall bs s,
+  bytes_to_canonical_F bs = Some s -> bs = le_split 32 (F.to_Z s).
+Proof.
+  intros bs s H. unfold bytes_to_canonical_F in H.
+  destruct (Nat.eqb (length bs) 32) eqn:Hlen; [|discriminate].
+  apply Nat.eqb_eq in Hlen.
+  destruct (Z.testbit (le_combine bs) 255) eqn:Hbit; [discriminate|].
+  destruct (Z.ltb (le_combine bs) (2^255-19)) eqn:Hlt; [|discriminate].
+  injection H as H. subst s.
+  apply Z.ltb_lt in Hlt.
+  pose proof (le_combine_bound bs) as Hbnd.
+  assert (HtoZ : F.to_Z (F.of_Z (2^255-19) (le_combine bs)) = le_combine bs).
+  { rewrite F.to_Z_of_Z. apply Z.mod_small. lia. }
+  rewrite HtoZ.
+  rewrite <- Hlen. symmetry. apply split_le_combine.
+Qed.
+
+(** Generic dependent-convoy eliminator (Some case). *)
+Lemma option_pair_eq_convoy_Some :
+  forall (A1 A2 B : Type) (oa : option (A1 * A2))
+         (f : forall x y, oa = Some (x, y) -> B) (b : B),
+    (match oa as r return oa = r -> option B with
+     | None        => fun _ => None
+     | Some (x, y) => fun H : oa = Some (x, y) => Some (f x y H)
+     end eq_refl) = Some b ->
+    exists x y (e : oa = Some (x, y)), f x y e = b.
+Proof.
+  intros A1 A2 B oa f b H.
+  destruct oa as [[x y]|].
+  - exists x, y, eq_refl. cbn in H. injection H as H. exact H.
+  - cbn in H. discriminate H.
+Qed.
+
+(** Generic dependent-convoy introduction (existence). *)
+Lemma option_pair_convoy_exists :
+  forall (A1 A2 B : Type) (oa : option (A1*A2)) (f : forall x y, oa = Some (x,y) -> B) x y,
+    oa = Some (x,y) ->
+    exists b, (match oa as r return oa = r -> option B with
+               | None => fun _ => None
+               | Some (x,y) => fun H : oa = Some (x,y) => Some (f x y H)
+               end eq_refl) = Some b.
+Proof.
+  intros A1 A2 B oa f x y He. destruct oa as [[x0 y0]|].
+  - eexists. cbn. reflexivity.
+  - discriminate He.
+Qed.
+
+(** The decoder's typed output projects to the coordinate-level decode. *)
+Lemma decode_bytes_coords : forall oc bs P,
+  ristretto_decode_bytes oc bs = Some P ->
+  ristretto_decode_coords bs = Some (point_coords P).
+Proof.
+  intros oc bs P H. unfold ristretto_decode_bytes in H.
+  apply option_pair_eq_convoy_Some in H.
+  destruct H as [x [y [e Hf]]].
+  rewrite <- Hf. unfold point_coords. cbn [proj1_sig]. exact e.
+Qed.
+
+(** A successful coordinate decode lifts to a successful typed decode. *)
+Lemma decode_bytes_some_of_coords : forall oc bs x' y',
+  ristretto_decode_coords bs = Some (x', y') ->
+  exists Q, ristretto_decode_bytes oc bs = Some Q.
+Proof.
+  intros oc bs x' y' He. unfold ristretto_decode_bytes.
+  apply (option_pair_convoy_exists _ _ _ (ristretto_decode_coords bs)
+           (fun x y H => exist _ (x,y) (oc bs x y H)) x' y' He).
+Qed.
+
+(** A successful coordinate decode came from a canonical field parse. *)
+Lemma decode_coords_canonical : forall bs x y,
+  ristretto_decode_coords bs = Some (x, y) ->
+  exists s, bytes_to_canonical_F bs = Some s.
+Proof.
+  intros bs x y H. unfold ristretto_decode_coords in H.
+  destruct (bytes_to_canonical_F bs) as [s|] eqn:E.
+  - exists s. reflexivity.
+  - discriminate H.
+Qed.
+
+(* ========================================================================
+   The two algebraic CORES — the sole remaining gaps in this file.  Both
+   are pure field-algebra over the RFC 9496 encode/decode pipelines; the
+   round-trip theorems below discharge entirely once these land.
+   ======================================================================== *)
+
+(** CORE A (decode -> encode).  The point [(x,y)] produced by the decoder
+    from [bs] (whose canonical parse is [s]) re-encodes to exactly [s].
+
+    Proof outline (RFC 9496 §4.3.1 lines 4-16 then §4.3.2):
+      - unfold [ristretto_decode_coords bs]; from the hyps the inner
+        parse matches [s], [is_negative s = false], and the
+        [was_square]/[is_negative t]/[y<>0] guards passed.  Name
+        ss,u1,u2,u2_sqr,v,den,I,Dx,Dy.
+      - From [sqrt_ratio_m1_decode_invariant]: [v * u2_sqr * I^2 = 1].
+      - [x = abs(2*s*Dx)], [y = u1*Dy]; [to_extended (x,y) = (x,y,1,x*y)].
+      - unfold [ristretto_encode_aux x y 1 (x*y)], discharge the
+        [rotate] / [is_negative] branches; [field] + the sqrt invariant
+        reduce to [abs(...) = s] via [is_negative s = false].  ~200-300 LoC. *)
+Lemma decode_encode_core : forall bs s x y,
+  bytes_to_canonical_F bs = Some s ->
+  ristretto_decode_coords bs = Some (x, y) ->
+  ristretto_encode (to_extended (x, y)) = s.
+Proof.
+Admitted.
+
+(** CORE B (encode -> decode).  Encoding an on-curve affine point and
+    decoding the result succeeds and recovers a ristretto-equivalent
+    representative.
+
+    Proof outline:
+      - [s := ristretto_encode (to_extended (x,y)) = abs(...)], so
+        [is_negative s = false] and [F.to_Z s < p]; hence
+        [bytes_to_canonical_F (le_split 32 (F.to_Z s)) = Some s]
+        (le_split_F_round_trip) and decode enters its main branch.
+      - Trace §4.3.1 with this [s]: [was_square] holds (the encoder's
+        [s] is a genuine square); [t],[y] nonzero by the curve equation;
+        produce [(x',y')].
+      - The decoded [(x',y')] and [(x,y)] differ by an E[4] element
+        (the encoder's [rotate]/[Y:=-Y] choices land in the same coset),
+        giving [is_4torsion_affine (sub_affine (x,y) (x',y'))].
+      - Decode-facing dual of [canonical_rep_selection].  ~200-400 LoC. *)
+Lemma encode_decode_core : forall x y,
+  (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
+  exists x' y',
+    ristretto_decode_coords (ristretto_encode_bytes (to_extended (x, y))) = Some (x', y') /\
+    is_4torsion_affine (sub_affine (x, y) (x', y')).
+Proof.
+Admitted.
+
 (** ** Theorem 1 (encode-then-decode round-trip).
 
     For any point [P] on the main (prime-order) subgroup of
@@ -550,21 +687,20 @@ Theorem ristretto_encode_decode_roundtrip :
         (ristretto_encode_bytes (to_extended (point_coords P))) = Some Q
       /\ ristretto_equiv P Q.
 Proof.
-  intros oc P Hmain.
-  (* The proof needs [canonical_rep_selection] (admitted above) PLUS
-     the Phase-B on-curve obligation supplied by the caller PLUS the
-     [sqrt_ratio_m1] correctness (admitted above).  Each of the three
-     enables one of steps 1, 2, 3 in the sketch above.
-
-     The full reconstruction proof would unfold both
-     [ristretto_encode_bytes] and [ristretto_decode_bytes] and trace
-     the field-element through the 14-step encode followed by the
-     14-step decode, using [sqrt_ratio_m1_correct] at the two
-     sqrt-branch points.  Conservative estimate: 300-500 LoC of
-     case analysis on the [rotate] branch of the encoder and the
-     [was_square] branch of the decoder. *)
-  (* TODO Phase B.1 (300-500 LoC): see proof sketch in docstring. *)
-Admitted.
+  intros oc P _.
+  remember (point_coords P) as pc eqn:Hpc.
+  destruct pc as [x y].
+  pose proof (typed_point_on_curve P) as HPoc.
+  rewrite <- Hpc in HPoc. cbn in HPoc.
+  destruct (encode_decode_core x y HPoc) as [x' [y' [Hdec Hequiv]]].
+  destruct (decode_bytes_some_of_coords oc _ x' y' Hdec) as [Q HQ].
+  exists Q. split.
+  - exact HQ.
+  - unfold ristretto_equiv.
+    pose proof (decode_bytes_coords oc _ Q HQ) as HQc.
+    rewrite Hdec in HQc. injection HQc as HQc.
+    rewrite <- Hpc, <- HQc. exact Hequiv.
+Qed.
 
 (** ** Theorem 2 (decode-then-encode round-trip).
 
@@ -596,25 +732,14 @@ Theorem ristretto_decode_encode_roundtrip :
       ristretto_encode_bytes (to_extended (point_coords P)) = bs.
 Proof.
   intros oc bs Hlen P Hdec.
-  (* The proof factors as:
-       a. Argue [bytes_to_canonical_F bs = Some s] for some [s] (else
-          [ristretto_decode_coords bs = None] and [Hdec] contradicts).
-       b. Argue the decoder's [(x, y)] satisfy [x*y = ...] expressions
-          in terms of [s] (from [sqrt_ratio_m1_correct]).
-       c. Push through the encoder pipeline to derive
-          [ristretto_encode (to_extended (x, y)) = s].
-       d. Apply [le_split_F_round_trip] to recover [bs] (using that
-          [bytes_to_canonical_F bs = Some s] forces [bs = le_split 32
-          (F.to_Z s)]).
-
-     Step (c) is the canonical-rep selection in DECODER-FACING form:
-     not "P ~ Q implies same byte string" but "the explicit (x, y)
-     produced by the decoder is THE canonical representative of its
-     coset".  This is a slightly different shape from
-     [canonical_rep_selection] above and would need its own (or a
-     refined) admitted lemma. *)
-  (* TODO Phase B.1 (200-400 LoC): see proof sketch in docstring. *)
-Admitted.
+  pose proof (decode_bytes_coords oc bs P Hdec) as Hcoords.
+  destruct (point_coords P) as [x y] eqn:Hpc.
+  destruct (decode_coords_canonical bs x y Hcoords) as [s Hs].
+  pose proof (decode_encode_core bs s x y Hs Hcoords) as Hcore.
+  unfold ristretto_encode_bytes, ristretto_encode_bytes_of_F.
+  rewrite Hcore.
+  symmetry. apply (canonical_F_to_bs bs s Hs).
+Qed.
 
 (* ========================================================================
    Section 6: Trivial corollaries from the structural lemmas.

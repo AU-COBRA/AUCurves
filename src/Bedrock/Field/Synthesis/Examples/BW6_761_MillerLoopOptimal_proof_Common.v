@@ -252,6 +252,18 @@ Section BW6_761_MillerLoopOptimal_Common.
     (fv : Fp6) (Tx Ty Tz : Fp3)
     (t : Semantics.trace) (m : mem) (l : locals) : Prop :=
     t = tr /\
+    (* Input-buffer bounds the callees require; invariant (never
+       mutated): p_x/p_y for sparse_line, half for double_step, the
+       affine targets q0x..q1ny for add_step. *)
+    Fp_bounded Fp_loose p_x /\
+    Fp_bounded Fp_loose p_y /\
+    Fp_bounded Fp_tight half /\
+    Fp3_bounded Fp3_tight q0x /\
+    Fp3_bounded Fp3_tight q0y /\
+    Fp3_bounded Fp3_tight q1x /\
+    Fp3_bounded Fp3_tight q1y /\
+    Fp3_bounded Fp3_tight q0ny /\
+    Fp3_bounded Fp3_tight q1ny /\
     exists (f_val : Fp6_felem)
            (qx_val qy_val qz_val
             r0d_val r1d_val r2d_val

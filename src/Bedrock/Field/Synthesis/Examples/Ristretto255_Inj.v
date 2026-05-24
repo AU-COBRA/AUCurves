@@ -11,6 +11,7 @@ Require Import Crypto.Spec.ModularArithmetic Crypto.Arithmetic.ModularArithmetic
 Require Import Crypto.Arithmetic.PrimeFieldTheorems Crypto.Algebra.Hierarchy Crypto.Algebra.Field.
 Require Import Crypto.Spec.Curve25519.
 Require Import Crypto.Spec.CompleteEdwardsCurve.
+Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Decode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_RoundTrip.
@@ -35,6 +36,31 @@ Proof. unfold Curve25519.E.a. apply ModularArithmeticTheorems.F.eq_to_Z_iff. vm_
 (* a/b = c whenever a = c*b and b<>0. *)
 Local Lemma div_eq : forall (a b c : Fp), b <> Fzero -> a = (c * b)%F -> (a / b)%F = c.
 Proof. intros a b c Hb Ha. rewrite Ha. field. exact Hb. Qed.
+
+(* ===================== Edwards-completeness denominators =====================
+   For any two on-curve affine points, the two [sub_affine] denominators are
+   nonzero.  These are exactly the side conditions [step1_reduction] requires.
+   Both follow from Edwards-curve completeness ([d] a non-square): see
+   [Crypto.Curves.Edwards.Pre.denominator_nonzero_{x,y}].  Pure, reusable. *)
+Local Lemma denomx_nz : forall (x1 y1 x2 y2 : Fp),
+  (Curve25519.E.a * (x1 * x1) + y1 * y1 = Fone + Curve25519.E.d * (x1 * x1) * (y1 * y1))%F ->
+  (Curve25519.E.a * (x2 * x2) + y2 * y2 = Fone + Curve25519.E.d * (x2 * x2) * (y2 * y2))%F ->
+  (Fone + Curve25519.E.d * x1 * x2 * y1 * y2)%F <> Fzero.
+Proof.
+  intros x1 y1 x2 y2 H1 H2.
+  exact (Crypto.Curves.Edwards.Pre.denominator_nonzero_x _ Curve25519.E.nonzero_a
+           Curve25519.E.square_a _ Curve25519.E.nonsquare_d _ _ H1 _ _ H2).
+Qed.
+
+Local Lemma denomy_nz : forall (x1 y1 x2 y2 : Fp),
+  (Curve25519.E.a * (x1 * x1) + y1 * y1 = Fone + Curve25519.E.d * (x1 * x1) * (y1 * y1))%F ->
+  (Curve25519.E.a * (x2 * x2) + y2 * y2 = Fone + Curve25519.E.d * (x2 * x2) * (y2 * y2))%F ->
+  (Fone - Curve25519.E.d * x1 * x2 * y1 * y2)%F <> Fzero.
+Proof.
+  intros x1 y1 x2 y2 H1 H2.
+  exact (Crypto.Curves.Edwards.Pre.denominator_nonzero_y _ Curve25519.E.nonzero_a
+           Curve25519.E.square_a _ Curve25519.E.nonsquare_d _ _ H1 _ _ H2).
+Qed.
 
 (* ===================== STEP 1 reduction (pure field algebra) =====================
    If the Edwards difference numerators/denominators of (x,y) and (x',y') satisfy one
@@ -105,6 +131,47 @@ Qed.
      * [div_eq], [HaQ] — supporting field/curve facts.
      * [yeq_noflip] — STEP-2 principal-branch y-determination (sign-free):
        the encoder's non-rotate/non-flip/was_square branch pins y = y'.
+     * [denomx_nz], [denomy_nz] — the two [sub_affine] denominators
+       [1 +/- d*x*x2*y*y2] are nonzero for any two on-curve points (Edwards
+       completeness, [d] a non-square).  These discharge the side conditions
+       [step1_reduction] requires.  Wrap [Crypto.Curves.Edwards.Pre
+       .denominator_nonzero_{x,y}].  REUSABLE.
+
+   VERIFIED STRUCTURAL RECIPE (machine-checked interactively; the key the
+   earlier passes lacked, to be transcribed into the proof body).  After the
+   setup below, set [u1e := (1+y)(1-y)], [u2e := x*y], [arg := u1e*u2e^2],
+   destruct [sqrt_ratio_m1 1 arg] as [ws inv], and set [zinv := inv*inv*arg].
+
+     (Z) z_inv COLLAPSE.  In the encoder, [z_inv = den1*den2*T
+         = inv^2 * u1e * u2e * u2e = inv^2 * arg].  By [sqrt_ratio_m1_correct]
+         applied to (1, arg) [needs arg<>0 — see degenerate cases], the value
+         [arg*inv*inv] is EXACTLY [1] (ws=true) or [SQRT_M1] (ws=false).  Hence
+            Hzinv_val : zinv = Fone \/ zinv = SQRT_M1.
+         This pins [rotate = is_negative(u2e*zinv)] and the inner flip
+         [is_negative(Xenc*zinv)] with [Xenc = if rotate then y*SQRT_M1 else x].
+
+     (D2) DEN-MAGNITUDE.  With [den_inv = if rotate then inv*u1e*INVSQRT_A_MINUS_D
+         else inv*u2e]:
+            no-rotate : (inv*u2e)^2                       = zinv * /u1e
+            rotate    : (inv*u1e*INVSQRT_A_MINUS_D)^2      = zinv * /(1+x^2)
+         The rotate case uses the curve identity (a = -1)
+            Hcurve_id : (1+x^2)(1-y^2) = (x*y)^2 (a-d)
+         and the constant fact [K2 : INVSQRT_A_MINUS_D^2 (a-d) = 1].
+
+     (STAR) UNIFIED ENCODER INVERSION.  Writing
+            Yenc := if rotate then x*SQRT_M1 else y,
+            Yf   := if flip   then F.opp Yenc else Yenc,
+         one has [s = abs(den_inv*(1 - Yf))], so [s^2 = den_inv^2*(1-Yf)^2],
+         and [Yf^2 = Yenc^2].  Combining (D2) with the curve identity gives the
+         BRANCH-INDEPENDENT magnitude [den_inv^2*(1-Yf^2) = zinv], hence
+            Hstar : s*s*(1 + Yf) = zinv*(1 - Yf).
+         (Rotate uses [Yenc^2 = (x*SQRT_M1)^2 = -x^2], so [1-Yf^2 = 1+x^2];
+          no-rotate uses [Yenc^2 = y^2], so [1-Yf^2 = 1-y^2 = u1e].)
+
+   The decoder profile gives the dual [Hyvu2 : y'*(1+s^2) = 1-s^2], i.e.
+   [Hs2y' : s*s*(1+y') = 1-y'].  For [zinv = Fone], (STAR) and [Hs2y'] subtract
+   to [(Yf - y')(1 + s^2) = 0]; since [1 + s^2 <> 0] (= [Hu2nz]) this forces
+   [Yf = y'].  For [zinv = SQRT_M1] the analogous step pins the order-4 coset.
 
    The verified proof skeleton for [encode_decode_equiv'] (all steps below
    were machine-checked interactively and re-establish on each session) is:

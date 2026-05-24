@@ -705,9 +705,9 @@ Section BW6_MillerLoopOptimal.
       (px py pz pr0 pr1 pr2 phalf : word)
       / (x y z r0 r1 r2 : Fp3_felem) (half : Fp_felem) Rr,
     { requires tr mem :=
-        Fp3_bounded Fp3_tight x /\
-        Fp3_bounded Fp3_tight y /\
-        Fp3_bounded Fp3_tight z /\
+        Fp3_bounded Fp3_loose x /\
+        Fp3_bounded Fp3_loose y /\
+        Fp3_bounded Fp3_loose z /\
         Fp_bounded Fp_tight half /\
         (FElem_Fp3 px x *
          (FElem_Fp3 py y *
@@ -743,9 +743,9 @@ Section BW6_MillerLoopOptimal.
       (px py pz pr0 pr1 pr2 pax pay : word)
       / (x y z r0 r1 r2 ax ay : Fp3_felem) Rr,
     { requires tr mem :=
-        Fp3_bounded Fp3_tight x /\
-        Fp3_bounded Fp3_tight y /\
-        Fp3_bounded Fp3_tight z /\
+        Fp3_bounded Fp3_loose x /\
+        Fp3_bounded Fp3_loose y /\
+        Fp3_bounded Fp3_loose z /\
         Fp3_bounded Fp3_tight ax /\
         Fp3_bounded Fp3_tight ay /\
         (FElem_Fp3 px x *
@@ -785,9 +785,9 @@ Section BW6_MillerLoopOptimal.
       (px py pz pr0 pr1 pr2 pax pay : word)
       / (x y z r0 r1 r2 ax ay : Fp3_felem) Rr,
     { requires tr mem :=
-        Fp3_bounded Fp3_tight x /\
-        Fp3_bounded Fp3_tight y /\
-        Fp3_bounded Fp3_tight z /\
+        Fp3_bounded Fp3_loose x /\
+        Fp3_bounded Fp3_loose y /\
+        Fp3_bounded Fp3_loose z /\
         Fp3_bounded Fp3_tight ax /\
         Fp3_bounded Fp3_tight ay /\
         (FElem_Fp3 px x *
@@ -823,9 +823,9 @@ Section BW6_MillerLoopOptimal.
       (pout pr0 pr1 pr2 ppx ppy : word)
       / (old_out : Fp6_felem) (r0 r1 r2 : Fp3_felem) (px py : Fp_felem) Rr,
     { requires tr mem :=
-        Fp3_bounded Fp3_tight r0 /\
-        Fp3_bounded Fp3_tight r1 /\
-        Fp3_bounded Fp3_tight r2 /\
+        Fp3_bounded Fp3_loose r0 /\
+        Fp3_bounded Fp3_loose r1 /\
+        Fp3_bounded Fp3_loose r2 /\
         Fp_bounded Fp_loose px /\
         Fp_bounded Fp_loose py /\
         (FElem_Fp6 pout old_out *

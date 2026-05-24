@@ -257,10 +257,10 @@ Section BW6_761_MillerLoopOptimal_Common.
             r0d_val r1d_val r2d_val
             r0a_val r1a_val r2a_val : Fp3_felem)
            (line_d_val line_a_val : Fp6_felem),
-      Fp6_bounded Fp6_tight f_val /\
-      Fp3_bounded Fp3_tight qx_val /\
-      Fp3_bounded Fp3_tight qy_val /\
-      Fp3_bounded Fp3_tight qz_val /\
+      Fp6_bounded Fp6_loose f_val /\
+      Fp3_bounded Fp3_loose qx_val /\
+      Fp3_bounded Fp3_loose qy_val /\
+      Fp3_bounded Fp3_loose qz_val /\
       Fp6_feval f_val = fv /\
       Fp3_feval qx_val = Tx /\
       Fp3_feval qy_val = Ty /\

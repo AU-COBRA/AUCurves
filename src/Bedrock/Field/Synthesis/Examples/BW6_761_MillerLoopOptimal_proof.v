@@ -148,21 +148,15 @@ Section BW6_761_MillerLoopOptimal_Top.
     forall functions
       (EnvContains : map.get functions "bw6_761_miller_loop_optimal" =
         Some (snd bw6_761_miller_loop_optimal))
-      (HFp3mul  : spec_of (AbstractField.mul (F:=Fp3)) functions)
-      (HFp3add  : spec_of (AbstractField.add (F:=Fp3)) functions)
-      (HFp3sub  : spec_of (AbstractField.sub (F:=Fp3)) functions)
-      (HFp3sqr  : spec_of (AbstractField.square (F:=Fp3)) functions)
-      (HFp3opp  : spec_of (AbstractField.opp (F:=Fp3)) functions)
-      (HFp3copy : spec_of (AbstractField.felem_copy (F:=Fp3)) functions)
-      (HFp6mul  : spec_of (AbstractField.mul (F:=Fp6)) functions)
-      (HFp6sqr  : spec_of (AbstractField.square (F:=Fp6)) functions)
-      (HFp6copy : spec_of (AbstractField.felem_copy (F:=Fp6)) functions)
-      (HFpcopy  : spec_of (AbstractField.felem_copy (F:=Fp)) functions)
-      (HFromword : spec_of PrimeField.from_word functions)
-      (HG2dbl  : spec_of "bw6_761_g2_double_step" functions)
-      (HG2add  : spec_of "bw6_761_g2_add_step" functions)
-      (HG2line : spec_of "bw6_761_g2_line_compute" functions)
-      (HSparse : spec_of "bw6_761_sparse_line_eval" functions),
+      (HFp3copy : AbstractField.spec_of_felem_copy (field_representation:=bw6_Fp3_repr) functions)
+      (HFp6copy : AbstractField.spec_of_felem_copy (field_representation:=bw6_Fp6_repr) functions)
+      (HFromword : PrimeField.spec_of_from_word (field_representation:=bw6_Fp_repr) functions)
+      (HFp6mul  : AbstractField.spec_of_BinOp AbstractField.bin_mul (field_representation:=bw6_Fp6_repr) functions)
+      (HFp6sqr  : AbstractField.spec_of_UnOp AbstractField.un_square (field_representation:=bw6_Fp6_repr) functions)
+      (HG2dbl  : spec_of_bw6_761_g2_double_step functions)
+      (HG2add  : spec_of_bw6_761_g2_add_step functions)
+      (HG2line : spec_of_bw6_761_g2_line_compute functions)
+      (HSparse : spec_of_bw6_761_sparse_line_eval functions),
     spec_of_bw6_761_miller_loop_optimal_strengthened functions.
   Proof.
     (* Skeleton.

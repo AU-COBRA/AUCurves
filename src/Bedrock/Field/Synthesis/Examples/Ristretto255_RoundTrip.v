@@ -903,7 +903,7 @@ Qed.
     invariants [y'·u2 = u1] and [x'²·v = 4·s²], [x'] is an [abs] (so
     nonnegative), [y' <> 0], and crucially [(x', y')] lies ON the
     Edwards25519 curve.  Pure field algebra; 0 axioms.  *)
-Local Lemma decoded_self_characterization :
+Lemma decoded_self_characterization :
   forall (s x' y' : Fp),
     ristretto_decode_coords (le_split 32 (F.to_Z s)) = Some (x', y') ->
     let ss := (s * s)%F in
@@ -1019,10 +1019,12 @@ Qed.
     [rotate]/[Y:=-Y] branch structure then forces their Edwards
     difference [sub_affine pP pQ] into E[4].  ~150-250 LoC. *)
 Lemma encode_decode_equiv : forall (pP pQ : Fp * Fp),
+  (let '(x, y) := pP in
+     (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F) ->
   ristretto_decode_coords (ristretto_encode_bytes (to_extended pP)) = Some pQ ->
   is_4torsion_affine (sub_affine pP pQ).
 Proof.
-  intros pP pQ Hdec.
+  intros pP pQ Hoc Hdec.
   pose proof (encode_decode_same_s pP pQ Hdec) as Hsame.
   destruct pP as [x y]. destruct pQ as [x' y'].
   set (s := ristretto_encode (to_extended (x, y))) in *.
@@ -1080,7 +1082,8 @@ Proof.
   pose proof (decode_bytes_coords oc _ Q Hdec) as HQc.
   unfold ristretto_equiv.
   apply (encode_decode_equiv (point_coords P) (point_coords Q)).
-  exact HQc.
+  - exact (typed_point_on_curve P).
+  - exact HQc.
 Qed.
 
 (** ** Theorem 2 (decode-then-encode round-trip).

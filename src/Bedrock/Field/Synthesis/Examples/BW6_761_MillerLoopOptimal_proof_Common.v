@@ -59,6 +59,8 @@ Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
     own file. *)
 Require Import Bedrock.Field.PairingTheory.Affine.
 Require Import Bedrock.Field.PairingTheory.AffineMultibase.
+Require Import Bedrock.Field.PairingTheory.ProjectiveMultibase.
+Require Import Bedrock.Field.Synthesis.Examples.BW6_761_ProjOps.
 
 Import BinInt String List.ListNotations.
 
@@ -157,38 +159,16 @@ Section BW6_761_MillerLoopOptimal_Common.
     (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.
 
   (* ================================================================ *)
-  (* FieldOps instance for the Gallina reference model.               *)
+  (* Main-loop digit list (the bedrock emit_iters argument).          *)
   (* ================================================================ *)
 
-  (** [fp3_mul_fp]: scalar-multiply an Fp3 by an Fp element. *)
-  Definition bw6_fp3_mul_fp (x : Fp3) (s : Fp) : Fp3 :=
-    let '(a, b, c) := x in
-    (F.mul a s, F.mul b s, F.mul c s).
-
-  (** Abstract make_line: free parameter of the reference model. *)
-  Definition bw6_make_line_abstract (lam Tx Ty : Fp3) (Px Py : Fp) : Fp6 :=
-    @AbstractField.Fone _ bw6_Fp6_params.
-
-  (** Canonical [FieldOps] instance for BW6's tower.  Slot mapping:
-        Fp_*    -> Fp
-        Fp2_*   -> Fp3
-        Fp12_*  -> Fp6 *)
-  Definition bw6_761_field_ops : FieldOps Fp Fp3 Fp6 :=
-    {| fp_zero    := @F.zero PrimeField.M_pos;
-       fp_one     := @F.one PrimeField.M_pos;
-       fp2_zero   := @AbstractField.Fzero _ bw6_Fp3_params;
-       fp2_one    := @AbstractField.Fone _ bw6_Fp3_params;
-       fp2_add    := @AbstractField.Fadd _ bw6_Fp3_params;
-       fp2_sub    := @AbstractField.Fsub _ bw6_Fp3_params;
-       fp2_neg    := @AbstractField.Fopp _ bw6_Fp3_params;
-       fp2_mul    := @AbstractField.Fmul _ bw6_Fp3_params;
-       fp2_sqr    := fun x => @AbstractField.Fmul _ bw6_Fp3_params x x;
-       fp2_inv    := @AbstractField.Finv _ bw6_Fp3_params;
-       fp2_mul_fp := bw6_fp3_mul_fp;
-       fp12_one   := @AbstractField.Fone _ bw6_Fp6_params;
-       fp12_mul   := @AbstractField.Fmul _ bw6_Fp6_params;
-       fp12_sqr   := fun x => @AbstractField.Fmul _ bw6_Fp6_params x x;
-       make_line  := bw6_make_line_abstract |}.
+  (** The 187 main-loop digits j[187],...,j[1] processed by emit_iters
+      between the i=188 init and the i=0 final adjustment.  Equal to the
+      bedrock [bw6_main_loop_js] (= rev (tl (removelast bw6_j_seq))),
+      stated here over the local copy [bw6_j_seq_loc].  The projective
+      FieldOps + per-step models live in [BW6_761_ProjOps]. *)
+  Definition bw6_main_loop_js_loc : list Z :=
+    List.rev (List.tl (List.removelast bw6_j_seq_loc)).
 
   (* ================================================================ *)
   (* Strengthened spec.                                                *)
@@ -237,42 +217,31 @@ Section BW6_761_MillerLoopOptimal_Common.
                  (FElem_Fp3 p_q0ny q0ny *
                   (FElem_Fp3 p_q1ny q1ny *
                    (FElem_Fp p_half half * Rr))))))))))%sep mem' /\
-          (* The output Fp6 value equals the Gallina reference model. *)
+          (* The output Fp6 value equals the projective whole-body model
+             (faithful to [miller_loop_optimal_body]: seed q1 -> i=188
+             init -> main loop over [bw6_main_loop_js_loc] -> i=0 final
+             adjustment). *)
           Fp6_feval out =
-            affine_miller_optimal_ate bw6_761_field_ops
-              188%nat bw6_alphabet
+            bw6_proj_whole_body bw6_main_loop_js_loc
               (Fp_feval p_x) (Fp_feval p_y)
               (Fp3_feval q0x) (Fp3_feval q0y)
-              (Fp3_feval q0x) (Fp3_feval q0ny)
               (Fp3_feval q1x) (Fp3_feval q1y)
-              (Fp3_feval q1x) (Fp3_feval q1ny) }.
+              (Fp3_feval q0ny) (Fp3_feval q1ny)
+              (Fp_feval half) }.
 
   (* ================================================================ *)
-  (* Loop invariant.                                                   *)
+  (* Loop running-state relation (projective model).                  *)
   (* ================================================================ *)
 
-  (** Gallina-level invariant tying [(f, T)] to the multibase aux.
-      Match-on-[k] so the [k = 0] base case reduces directly to
-      a simple conjunction without forcing the kernel to walk
-      [affine_miller_5symbol_aux ... 0 ...]'s let-binding. *)
-  Definition multibase_state_at
-    (k : nat)
-    (Px Py : Fp) (Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg : Fp3)
-    (f : Fp6) (Tx Ty : Fp3) : Prop :=
-    match k with
-    | O => f = fp12_one bw6_761_field_ops /\ Tx = Qx /\ Ty = Qy
-    | S _ =>
-        let result :=
-          affine_miller_5symbol_aux bw6_761_field_ops
-            bw6_alphabet k Px Py
-            Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-            (fp12_one bw6_761_field_ops) Qx Qy
-        in
-        fst (fst result) = f /\ snd (fst result) = Tx /\ snd result = Ty
-    end.
-
-  (** Full loop invariant.  Memory layout + Gallina state. *)
-  Definition miller_loop_inv_opt
+  (** [proj_running ... fv Tx Ty Tz t m l]: the stack buffers hold a
+      well-bounded Fp6/Fp3 layout whose fevals are exactly the Gallina
+      state (running f = [fv], projective point T = (Tx,Ty,Tz)).  The
+      main loop ([emit_iters]) is proved by induction on the digit list,
+      advancing this by one [bw6_proj_multibase_iter] per
+      [miller_iter_body]; init / final-adjustment bracket it.  The
+      Gallina state is carried as explicit parameters (no [v <= 188]
+      bound, no [multibase_state_at]). *)
+  Definition proj_running
     (a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
      a_line_d a_line_a : word)
     (pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half : word)
@@ -280,9 +249,9 @@ Section BW6_761_MillerLoopOptimal_Common.
     (p_x p_y : Fp_felem)
     (q0x q0y q1x q1y q0ny q1ny : Fp3_felem) (half : Fp_felem)
     (Rr : mem -> Prop) (tr : Semantics.trace)
-    (v : nat) (t : Semantics.trace) (m : mem) (l : locals) : Prop :=
+    (fv : Fp6) (Tx Ty Tz : Fp3)
+    (t : Semantics.trace) (m : mem) (l : locals) : Prop :=
     t = tr /\
-    (v <= 188)%nat /\
     exists (f_val : Fp6_felem)
            (qx_val qy_val qz_val
             r0d_val r1d_val r2d_val
@@ -292,6 +261,10 @@ Section BW6_761_MillerLoopOptimal_Common.
       Fp3_bounded Fp3_tight qx_val /\
       Fp3_bounded Fp3_tight qy_val /\
       Fp3_bounded Fp3_tight qz_val /\
+      Fp6_feval f_val = fv /\
+      Fp3_feval qx_val = Tx /\
+      Fp3_feval qy_val = Ty /\
+      Fp3_feval qz_val = Tz /\
       (FElem_Fp6 a_f f_val *
        (FElem_Fp3 a_qx qx_val *
         (FElem_Fp3 a_qy qy_val *
@@ -313,160 +286,6 @@ Section BW6_761_MillerLoopOptimal_Common.
                         (FElem_Fp3 p_q1y q1y *
                          (FElem_Fp3 p_q0ny q0ny *
                           (FElem_Fp3 p_q1ny q1ny *
-                           (FElem_Fp p_half half * Rr))))))))))))))))))))))%sep m /\
-      multibase_state_at (188 - v)%nat
-        (Fp_feval p_x) (Fp_feval p_y)
-        (Fp3_feval q0x) (Fp3_feval q0y)
-        (Fp3_feval q0x) (Fp3_feval q0ny)
-        (Fp3_feval q1x) (Fp3_feval q1y)
-        (Fp3_feval q1x) (Fp3_feval q1ny)
-        (Fp6_feval f_val) (Fp3_feval qx_val) (Fp3_feval qy_val).
-
-  (* ================================================================ *)
-  (* Base-case: invariant at k = 0.                                   *)
-  (* ================================================================ *)
-
-  Lemma multibase_state_at_zero :
-    forall Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-           f Tx Ty,
-      f = fp12_one bw6_761_field_ops ->
-      Tx = Qx -> Ty = Qy ->
-      multibase_state_at 0%nat
-        Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-        f Tx Ty.
-  Proof.
-    intros Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg f Tx Ty Hf HTx HTy.
-    (* With [multibase_state_at] now match-on-k, the iter-0 case
-       unfolds directly to [f = fp12_one ... /\ Tx = Qx /\ Ty = Qy]. *)
-    simpl. auto.
-  Qed.
-
-  (* ================================================================ *)
-  (* Sub-lemma 1 (Init): the invariant holds at [v = 188] under the   *)
-  (* initial seeding (running f := 1, T := q1).                        *)
-  (*                                                                  *)
-  (* Folded into Common (rather than its own file) because per-file   *)
-  (* re-imports of the heavy Rupicola + bedrock2 chain dominate       *)
-  (* compile time; bundling here keeps total split-build wall-clock   *)
-  (* under the 5-min budget. *)
-  (* ================================================================ *)
-
-  (** Init lemma: from a fresh stack layout with [f := 1, T := Q],
-      the invariant at [v = 188] is satisfied.  Corresponds to the
-      post-seeding state of the bedrock2 body (after [fp3_copy qx
-      q1x; fp3_copy qy q1y; from_word qz := (1,0,0)] but BEFORE the
-      first [miller_iter_init] doubling step). *)
-  Lemma miller_loop_inv_opt_init :
-    forall a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
-           a_line_d a_line_a
-           pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
-           (old_out : Fp6_felem) (p_x p_y : Fp_felem)
-           (q0x q0y q1x q1y q0ny q1ny : Fp3_felem) (half : Fp_felem)
-           (f_val : Fp6_felem)
-           (qx_val qy_val qz_val
-            r0d r1d r2d r0a r1a r2a : Fp3_felem)
-           (line_d line_a : Fp6_felem)
-           (Rr : mem -> Prop) (tr : Semantics.trace) (m : mem) (l : locals),
-      Fp6_bounded Fp6_tight f_val ->
-      Fp3_bounded Fp3_tight qx_val ->
-      Fp3_bounded Fp3_tight qy_val ->
-      Fp3_bounded Fp3_tight qz_val ->
-      (FElem_Fp6 a_f f_val *
-       (FElem_Fp3 a_qx qx_val *
-        (FElem_Fp3 a_qy qy_val *
-         (FElem_Fp3 a_qz qz_val *
-          (FElem_Fp3 a_r0d r0d *
-           (FElem_Fp3 a_r1d r1d *
-            (FElem_Fp3 a_r2d r2d *
-             (FElem_Fp3 a_r0a r0a *
-              (FElem_Fp3 a_r1a r1a *
-               (FElem_Fp3 a_r2a r2a *
-                (FElem_Fp6 a_line_d line_d *
-                 (FElem_Fp6 a_line_a line_a *
-                  (FElem_Fp6 pout old_out *
-                   (FElem_Fp p_px p_x *
-                    (FElem_Fp p_py p_y *
-                     (FElem_Fp3 p_q0x q0x *
-                      (FElem_Fp3 p_q0y q0y *
-                       (FElem_Fp3 p_q1x q1x *
-                        (FElem_Fp3 p_q1y q1y *
-                         (FElem_Fp3 p_q0ny q0ny *
-                          (FElem_Fp3 p_q1ny q1ny *
-                           (FElem_Fp p_half half * Rr))))))))))))))))))))))%sep m ->
-      Fp6_feval f_val = fp12_one bw6_761_field_ops ->
-      Fp3_feval qx_val = Fp3_feval q0x ->
-      Fp3_feval qy_val = Fp3_feval q0y ->
-      miller_loop_inv_opt
-        a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
-        a_line_d a_line_a
-        pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
-        old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
-        188%nat tr m l.
-  Proof.
-    intros until l.
-    intros Hbf Hbqx Hbqy Hbqz Hsep Hf_one Hqx_eq Hqy_eq.
-    unfold miller_loop_inv_opt.
-    split; [reflexivity |].
-    split; [lia |].
-    exists f_val, qx_val, qy_val, qz_val,
-           r0d, r1d, r2d, r0a, r1a, r2a,
-           line_d, line_a.
-    split; [exact Hbf |].
-    split; [exact Hbqx |].
-    split; [exact Hbqy |].
-    split; [exact Hbqz |].
-    split; [exact Hsep |].
-    change (188 - 188)%nat with 0%nat.
-    (* [cbn in <hyp>] aligns [Fp6_feval] / [Fp3_feval] (BW6 notations)
-       with [QE_feval] / [CE_feval] (the generic names in the goal
-       after [simpl]).  Without this, [exact] / [apply] forces
-       conversion through typeclass projections — minutes-long hang. *)
-    simpl.
-    cbn in Hf_one, Hqx_eq, Hqy_eq.
-    split; [exact Hf_one |].
-    split; [exact Hqx_eq | exact Hqy_eq].
-  Qed.
-
-  (* ================================================================ *)
-  (* Sub-lemma 3 (Exit): the final-adjustment fragment converts the   *)
-  (* post-main-loop state into the full optimal-ate output.            *)
-  (* ================================================================ *)
-
-  (** Exit lemma: the final-adjustment fragment converts the post-
-      main-loop state into the full optimal-ate output. *)
-  Lemma miller_loop_inv_opt_exit :
-    forall (Px Py : Fp)
-           (Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg : Fp3)
-           (f : Fp6) (Tx Ty : Fp3),
-      multibase_state_at 188%nat
-        Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-        f Tx Ty ->
-      let f_final :=
-        affine_miller_5symbol_final_adjustment bw6_761_field_ops
-          f Tx Ty Px Py
-          Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-      in
-      f_final =
-        affine_miller_optimal_ate bw6_761_field_ops
-          188%nat bw6_alphabet Px Py
-          Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg.
-  Proof.
-    intros Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-           f Tx Ty Hinv f_final.
-    unfold multibase_state_at in Hinv.
-    unfold f_final.
-    (* Use [remember] + [Strategy 0] at the top of this file to keep
-       the 188-step fixpoint opaque during kernel conversion (per
-       reference_qed_kernel_check_blowup_dealloc.md). *)
-    cbv beta delta [affine_miller_optimal_ate affine_miller_5symbol].
-    remember (affine_miller_5symbol_aux bw6_761_field_ops bw6_alphabet
-                188 Px Py Qx Qy QxNeg QyNeg PhiQx PhiQy PhiQxNeg PhiQyNeg
-                (fp12_one bw6_761_field_ops) Qx Qy)
-      as triple eqn:Heq.
-    destruct triple as [[f' Tx'] Ty'].
-    cbn [fst snd] in Hinv.
-    destruct Hinv as [Hf [HTx HTy]]; subst.
-    reflexivity.
-  Qed.
+                           (FElem_Fp p_half half * Rr))))))))))))))))))))))%sep m.
 
 End BW6_761_MillerLoopOptimal_Common.

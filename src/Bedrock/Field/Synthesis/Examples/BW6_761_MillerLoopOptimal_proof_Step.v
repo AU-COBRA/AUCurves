@@ -619,4 +619,116 @@ Section BW6_761_MillerLoopOptimal_Step.
     vm_compute in Hx. intuition (subst; reflexivity).
   Qed.
 
+  (** i=0 final adjustment ([miller_iter_final]): square; double;
+      sparse_d; mul_d; line_compute@(q1x,q1ny) (NO point update);
+      sparse_a; mul_a.  Produces the final running f =
+      [bw6_proj_final_adjustment].  The point ends at the doubled point
+      (line_compute does not update it).  Precondition is [proj_running]
+      (f is bounded here, unlike before init). *)
+  Lemma final_ok :
+    forall functions
+      (Hdbl    : spec_of_bw6_761_g2_double_step functions)
+      (Hline   : spec_of_bw6_761_g2_line_compute functions)
+      (Hsparse : spec_of_bw6_761_sparse_line_eval functions)
+      (HFp6mul : spec_of_BinOp bin_mul (field_representation:=bw6_Fp6_repr) functions)
+      (HFp6sqr : spec_of_UnOp un_square (field_representation:=bw6_Fp6_repr) functions),
+    forall a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+           a_line_d a_line_a
+           pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+           (old_out : Fp6_felem) (p_x p_y : Fp_felem)
+           (q0x q0y q1x q1y q0ny q1ny : Fp3_felem) (half : Fp_felem)
+           (Rr : mem -> Prop) (tr : Semantics.trace)
+           (fv : Fp6) (Tx Ty Tz : Fp3)
+           (ti : Semantics.trace) (mi : mem) (li : locals),
+      step_locals li a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+        a_line_d a_line_a p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half ->
+      proj_running
+        a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+        a_line_d a_line_a
+        pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+        old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
+        fv Tx Ty Tz ti mi li ->
+      WeakestPrecondition.cmd functions miller_iter_final ti mi li
+        (fun t' m' l' =>
+          l' = li /\
+          (let '((x1, y1, z1), _) :=
+             bw6_proj_double_step Tx Ty Tz (Fp_feval half) in
+           proj_running
+             a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+             a_line_d a_line_a
+             pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+             old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
+             (bw6_proj_final_adjustment fv Tx Ty Tz (Fp3_feval q1x) (Fp3_feval q1ny)
+                (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half))
+             x1 y1 z1 t' m' l')).
+  Proof.
+    intros functions Hdbl Hline Hsparse Hmul Hsqr.
+    intros a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr fv Tx Ty Tz ti mi li Hloc Hrun.
+    unfold proj_running in Hrun.
+    destruct Hrun as (Htr & Hbpx & Hbpy & Hbhalf & Hbq0x & Hbq0y & Hbq1x & Hbq1y & Hbq0ny & Hbq1ny & f_val & qx_val & qy_val & qz_val & r0d_val & r1d_val & r2d_val & r0a_val & r1a_val & r2a_val & line_d_val & line_a_val & Hbf & Hbqx & Hbqy & Hbqz & Hef & Heqx & Heqy & Heqz & Hsep).
+    unfold step_locals in Hloc.
+    destruct Hloc as (Lf & Lqx & Lqy & Lqz & Lr0d & Lr1d & Lr2d & Lr0a & Lr1a & Lr2a & Lld & Lla & Lpx & Lpy & Lq0x & Lq0y & Lq1x & Lq1y & Lq0ny & Lq1ny & Lhalf).
+    subst ti.
+    cbv [miller_iter_final]. cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hsqr. split; [exact Hbf|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t1 m1 rets1 Hpost1. destruct Hpost1 as (-> & <- & f1v & Hfe1 & Hb1 & Hs1). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hdbl. split;[exact Hbqx|]. split;[exact Hbqy|]. split;[exact Hbqz|]. split;[exact Hbhalf|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t2 m2 rets2 Hpost2. destruct Hpost2 as (-> & <- & x2v & y2v & z2v & r0v & r1v & r2v & Hbx2 & Hby2 & Hbz2 & Hbr0 & Hbr1 & Hbr2 & Hs2 & Hval2). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hsparse. split;[exact Hbr0|]. split;[exact Hbr1|]. split;[exact Hbr2|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t3 m3 rets3 Hpost3. destruct Hpost3 as (-> & <- & ld2 & Hbld2 & Hs3 & Hvld). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb1) |]. split; [ exact Hbld2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t4 m4 rets4 Hpost4. destruct Hpost4 as (-> & <- & f2v & Hfe2 & Hb2 & Hs4). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hline. split;[exact Hbx2|]. split;[exact Hby2|]. split;[exact Hbz2|]. split;[exact Hbq1x|]. split;[exact Hbq1ny|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t5 m5 rets5 Hpost5. destruct Hpost5 as (-> & <- & r0av & r1av & r2av & Hbr0a & Hbr1a & Hbr2a & Hs5 & Hvlc). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hsparse. split;[exact Hbr0a|]. split;[exact Hbr1a|]. split;[exact Hbr2a|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t6 m6 rets6 Hpost6. destruct Hpost6 as (-> & <- & la2 & Hbla2 & Hs6 & Hvla). eexists. split. 1: reflexivity.
+    repeat straightline.
+    eexists. split. 1: dexprs_fast.
+    eapply Semantics.weaken_call.
+    { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb2) |]. split; [ exact Hbla2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+    cbv beta. intros t7 m7 rets7 Hpost7. destruct Hpost7 as (-> & <- & f3v & Hfe3 & Hb3 & Hs7).
+    eexists. split. 1: reflexivity. split; [reflexivity|].
+    unfold bw6_proj_double_step in Hval2.
+    cbv [bw6_proj_final_adjustment proj_final_adjustment bw6_proj_double_step].
+    rewrite <- Heqx, <- Heqy, <- Heqz.
+    destruct (proj_double_step bw6_proj_ops (Fp3_feval qx_val) (Fp3_feval qy_val) (Fp3_feval qz_val) (Fp_feval half)) as [[[x1 y1] z1] [[r0d r1d] r2d]] eqn:HD.
+    destruct Hval2 as (Hx1 & Hy1 & Hz1 & Hr0 & Hr1 & Hr2).
+    cbv beta zeta iota.
+    unfold bw6_proj_line_compute in Hvlc.
+    rewrite <- Hx1, <- Hy1, <- Hz1.
+    destruct (proj_line_compute bw6_proj_ops (Fp3_feval x2v) (Fp3_feval y2v) (Fp3_feval z2v) (Fp3_feval q1x) (Fp3_feval q1ny)) as [[r0a r1a] r2a] eqn:HL.
+    destruct Hvlc as (Hlc0 & Hlc1 & Hlc2).
+    cbv beta zeta iota.
+    unfold proj_running.
+    split; [reflexivity|].
+    split; [exact Hbpx|]. split; [exact Hbpy|]. split; [exact Hbhalf|].
+    split; [exact Hbq0x|]. split; [exact Hbq0y|]. split; [exact Hbq1x|]. split; [exact Hbq1y|]. split; [exact Hbq0ny|]. split; [exact Hbq1ny|].
+    exists f3v, x2v, y2v, z2v, r0v, r1v, r2v, r0av, r1av, r2av, ld2, la2.
+    split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb3) |].
+    split; [exact Hbx2|]. split; [exact Hby2|]. split; [exact Hbz2|].
+    split.
+    2:{ split; [reflexivity|]. split; [reflexivity|]. split; [reflexivity|]. SeparationLogic.ecancel_assumption_impl. }
+    rewrite Hfe3, Hfe2, Hfe1, Hef, Hvld, Hvla, Hr0, Hr1, Hr2, Hlc0, Hlc1, Hlc2.
+    cbv [bw6_proj_sparse_line bin_model bin_mul un_model un_square Affine.fp12_mul Affine.fp12_sqr bw6_proj_ops].
+    unfold AbstractField.Fsquare. reflexivity.
+  Qed.
+
 End BW6_761_MillerLoopOptimal_Step.

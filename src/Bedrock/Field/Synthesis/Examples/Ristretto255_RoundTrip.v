@@ -882,6 +882,128 @@ Qed.
         (the encoder's [rotate]/[Y:=-Y] choices land in the same coset),
         giving [is_4torsion_affine (sub_affine (x,y) (x',y'))].
       - Decode-facing dual of [canonical_rep_selection].  ~200-400 LoC. *)
+Lemma encode_decode_same_s : forall (pP pQ : Fp * Fp),
+  ristretto_decode_coords (ristretto_encode_bytes (to_extended pP)) = Some pQ ->
+  ristretto_encode (to_extended pQ) = ristretto_encode (to_extended pP).
+Proof.
+  intros pP pQ Hdec.
+  destruct pQ as [x' y'].
+  unfold ristretto_encode_bytes, ristretto_encode_bytes_of_F in Hdec.
+  apply (decode_encode_core (le_split 32 (F.to_Z (ristretto_encode (to_extended pP))))
+           (ristretto_encode (to_extended pP)) x' y').
+  - apply le_split_F_round_trip.
+  - exact Hdec.
+Qed.
+
+(** ** Decoder output characterization.
+
+    From a successful decode of [le_split 32 (F.to_Z s)] to [(x', y')] we
+    recover the full algebraic profile of the canonical representative:
+    [s] is nonnegative, the parsed [(x', y')] satisfies the decoder's
+    invariants [y'·u2 = u1] and [x'²·v = 4·s²], [x'] is an [abs] (so
+    nonnegative), [y' <> 0], and crucially [(x', y')] lies ON the
+    Edwards25519 curve.  Pure field algebra; 0 axioms.  *)
+Local Lemma decoded_self_characterization :
+  forall (s x' y' : Fp),
+    ristretto_decode_coords (le_split 32 (F.to_Z s)) = Some (x', y') ->
+    let ss := (s * s)%F in
+    let u1 := (Fone - ss)%F in
+    let u2 := (Fone + ss)%F in
+    let v  := (F.opp (E.d * (u1 * u1)) - u2 * u2)%F in
+      is_negative s = false
+   /\ y' <> Fzero
+   /\ u2 <> Fzero
+   /\ v <> Fzero
+   /\ (y' * u2)%F = u1
+   /\ (x' * x' * v)%F = (F.of_Z p 4 * (s * s))%F
+   /\ is_negative x' = false
+   /\ (E.a * (x' * x') + y' * y' = Fone + E.d * (x' * x') * (y' * y'))%F.
+Proof.
+  intros s x' y' Hdec.
+  pose proof (le_split_F_round_trip s) as Hbtc.
+  unfold ristretto_decode_coords in Hdec.
+  rewrite Hbtc in Hdec.
+  destruct (is_negative s) eqn:Hnegs; [discriminate Hdec|].
+  destruct (sqrt_ratio_m1 Fone
+     ((F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+       (Fone + s * s) * (Fone + s * s)) *
+      ((Fone + s * s) * (Fone + s * s)))) as [was_square invsqrt] eqn:Hsr.
+  destruct was_square eqn:Hws; simpl negb in Hdec; [|discriminate Hdec].
+  rewrite !orb_false_l in Hdec.
+  destruct (is_negative
+        (abs (F.of_Z p 2 * s * (invsqrt * (Fone + s * s))) *
+         ((Fone - s * s) *
+          (invsqrt * (invsqrt * (Fone + s * s)) *
+           (F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+            (Fone + s * s) * (Fone + s * s)))))) eqn:Hnegt; [discriminate Hdec|].
+  destruct (F.to_Z ((Fone - s * s) *
+     (invsqrt * (invsqrt * (Fone + s * s)) *
+      (F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+       (Fone + s * s) * (Fone + s * s)))) =? 0)%Z eqn:Hyz; [discriminate Hdec|].
+  injection Hdec as Hx' Hy'.
+  set (ss := (s * s)%F) in *.
+  set (u1 := (Fone - ss)%F) in *.
+  set (u2 := (Fone + ss)%F) in *.
+  set (u2_sqr := (u2 * u2)%F) in *.
+  set (v := (F.opp (E.d * (u1 * u1)) - u2_sqr)%F) in *.
+  set (den := (v * u2_sqr)%F) in *.
+  cbv zeta.
+  assert (Hynz : y' <> Fzero) by
+    (intro Hcontra; apply Z.eqb_neq in Hyz; apply Hyz;
+     rewrite Hy'; rewrite Hcontra; rewrite ModularArithmeticTheorems.F.to_Z_of_Z; reflexivity).
+  assert (Hdennz : den <> Fzero).
+  { intro Hd. apply Hynz. rewrite <- Hy'.
+    unfold den in Hd. apply Ristretto255_Sqrt.mul_zero_factor in Hd.
+    destruct Hd as [Hv|Hu2s].
+    - fold v in Hv. rewrite Hv. ring.
+    - unfold u2_sqr in Hu2s. apply Ristretto255_Sqrt.mul_zero_factor in Hu2s.
+      destruct Hu2s as [Hu|Hu]; fold u2 in Hu; rewrite Hu; ring. }
+  pose proof (sqrt_ratio_m1_decode_invariant s Hdennz true invsqrt Hsr eq_refl) as Hinv.
+  fold ss u1 u2 u2_sqr v den in Hinv.
+  assert (Hu2nz : u2 <> Fzero) by
+    (intro Hk; apply Hdennz; unfold den, u2_sqr; rewrite Hk; ring).
+  assert (Hvnz : v <> Fzero) by
+    (intro Hk; apply Hdennz; unfold den; fold v; rewrite Hk; ring).
+  assert (Hyvu2 : (y' * u2)%F = u1) by
+    (rewrite <- Hy';
+     transitivity (u1 * ((v * u2_sqr) * invsqrt * invsqrt))%F;
+     [ unfold u2_sqr; ring | fold den; rewrite Hinv; ring ]).
+  assert (Hxvsq : (x' * x')%F
+                  = (F.of_Z p 2 * s * (invsqrt * u2)) * (F.of_Z p 2 * s * (invsqrt * u2))) by
+    (rewrite <- Hx'; apply Ristretto255_Sqrt.abs_sq).
+  assert (Hxv2v : (x' * x' * v)%F = (F.of_Z p 4 * (s * s))%F);
+  [ rewrite Hxvsq;
+    transitivity ((F.of_Z p 4 * (s*s)) * (v * u2_sqr * invsqrt * invsqrt))%F;
+    [ unfold u2_sqr; ring_simplify;
+      replace (F.of_Z p 2 * F.of_Z p 2)%F with (F.of_Z p 4)
+        by (apply ModularArithmeticTheorems.F.eq_to_Z_iff; vm_compute; reflexivity);
+      ring
+    | fold den; rewrite Hinv; ring ]
+  | ].
+  assert (Hxneg : is_negative x' = false) by (rewrite <- Hx'; apply Ristretto255_Sqrt.is_negative_abs).
+  assert (H4 : F.of_Z p 4 = (Fone + Fone + Fone + Fone)%F) by
+    (apply ModularArithmeticTheorems.F.eq_to_Z_iff; vm_compute; reflexivity).
+  assert (HaQ : E.a = F.opp Fone) by
+    (unfold E.a; apply ModularArithmeticTheorems.F.eq_to_Z_iff; vm_compute; reflexivity).
+  assert (Hoc_Q : (E.a * (x' * x') + y' * y' = Fone + E.d * (x' * x') * (y' * y'))%F);
+  [ apply (Ristretto255_Sqrt.mul_cancel_l (v * (u2 * u2)));
+    [ intro Hk; apply Ristretto255_Sqrt.mul_zero_factor in Hk; destruct Hk as [Hk|Hk];
+      [ apply Hvnz; exact Hk
+      | apply Ristretto255_Sqrt.mul_zero_factor in Hk; destruct Hk; apply Hu2nz; assumption ] | ];
+    transitivity (E.a * (x' * x' * v) * (u2 * u2) + (y' * u2) * (y' * u2) * v)%F;
+    [ ring
+    | transitivity (v * (u2 * u2) + E.d * (x' * x' * v) * ((y' * u2) * (y' * u2)))%F;
+      [ rewrite Hxv2v, Hyvu2, HaQ, H4; unfold v, u1, u2, u2_sqr, ss; fold ss; unfold u2, ss; ring
+      | ring ] ]
+  | ].
+  fold ss u1 u2. fold u2_sqr.
+  assert (Hxv2v' : x' * x' * v = F.of_Z p 4 * ss) by (unfold ss; exact Hxv2v).
+  split; [reflexivity|]. split; [exact Hynz|]. split; [exact Hu2nz|].
+  split; [ change (F.opp (E.d * (u1*u1)) - u2_sqr <> Fzero); fold v; exact Hvnz |].
+  split; [exact Hyvu2|]. split; [ fold v; exact Hxv2v' |].
+  split; [exact Hxneg | exact Hoc_Q].
+Qed.
+
 (** IMPORTANT CORRECTION: the existence form above is FALSE.  A generic
     on-curve point's encoding is rejected by the decoder's [was_square]
     guard (RFC 9496 §4.3.1 line 15), so [ristretto_decode_coords ... =
@@ -900,6 +1022,21 @@ Lemma encode_decode_equiv : forall (pP pQ : Fp * Fp),
   ristretto_decode_coords (ristretto_encode_bytes (to_extended pP)) = Some pQ ->
   is_4torsion_affine (sub_affine pP pQ).
 Proof.
+  intros pP pQ Hdec.
+  pose proof (encode_decode_same_s pP pQ Hdec) as Hsame.
+  destruct pP as [x y]. destruct pQ as [x' y'].
+  set (s := ristretto_encode (to_extended (x, y))) in *.
+  unfold ristretto_encode_bytes, ristretto_encode_bytes_of_F in Hdec.
+  fold s in Hdec.
+  pose proof (decoded_self_characterization s x' y' Hdec) as Hchar.
+  cbv zeta in Hchar.
+  destruct Hchar as (Hnegs & Hynz & Hu2nz & Hvnz & Hyvu2 & Hxv2v & Hxneg & Hoc_Q).
+  rewrite sub_affine_eq_pair.
+  (* REMAINING: ristretto injectivity — invert ristretto_encode_aux on pP
+     (4 encoder branches + sqrt square/non-square branch), pinning (x,y) to
+     one of pQ's four E[4]-translates; then sub_affine_x/y land in the
+     matching is_4torsion_affine disjunct.  Decode-facing dual of
+     canonical_rep_selection (~200-400 LoC, Decaf/Jacobi-quartic). *)
 Admitted.
 
 (** ** Theorem 1 (encode-then-decode round-trip).

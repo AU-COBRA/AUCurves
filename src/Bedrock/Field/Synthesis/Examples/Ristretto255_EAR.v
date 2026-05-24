@@ -21,6 +21,41 @@ Add Field _f : (Algebra.Field.field_theory_for_stdlib_tactic(T:=F (2^255-19)%pos
    div (F.morph_div_theory (2^255-19)%positive),
    power_tac (F.power_theory (2^255-19)%positive) [F.is_pow_constant]).
 
+(** [(-1)] raised to an odd power is [-1]. *)
+Lemma negone_odd_pow : forall k:N, ((F.opp Fone : Fp) ^ (2*k+1))%F = F.opp Fone.
+Proof.
+  intro k. rewrite F.pow_add_r, F.pow_1_r, <- (F.pow_pow_l (F.opp Fone : Fp) 2 k).
+  rewrite F.pow_2_r.
+  assert (Hoo : (F.opp Fone * F.opp Fone)%F = (Fone:Fp))
+    by (apply ModularArithmeticTheorems.F.eq_to_Z_iff; vm_compute; reflexivity).
+  rewrite Hoo.
+  assert (Hpk : (Fone:Fp) ^ k = Fone)
+    by (etransitivity; [ apply F.pow_1_l | reflexivity ]).
+  rewrite Hpk. apply Hierarchy.left_identity.
+Qed.
+
+(** [SQRT_M1] is a quadratic non-residue mod [p = 2^255-19].
+    By Euler's criterion, if [SQRT_M1] were a square then
+    [SQRT_M1 ^ ((p-1)/2) = 1]; but [(p-1)/2 = 2*(2^253-5)], so
+    [SQRT_M1 ^ ((p-1)/2) = (SQRT_M1^2)^(2^253-5) = (-1)^(2^253-5) = -1]
+    since [2^253-5] is odd, contradicting [1 <> -1]. *)
+Lemma SQRT_M1_nonsquare : ~ (exists b:Fp, (b*b)%F = SQRT_M1).
+Proof.
+  intros [b Hb].
+  pose proof (@F.euler_criterion (2^255-19)%positive prime_p ltac:(Decidable.vm_decide)
+              SQRT_M1 SQRT_M1_nz) as Heuler.
+  assert (Hsq : (SQRT_M1 ^ Z.to_N ((2^255-19) / 2))%F = Fone)
+    by (apply Heuler; exists b; exact Hb).
+  assert (Hexp : Z.to_N ((2^255-19) / 2) = (2 * (2^253 - 5))%N)
+    by (vm_compute; reflexivity).
+  rewrite Hexp in Hsq.
+  rewrite <- (F.pow_pow_l SQRT_M1 2 (2^253-5)) in Hsq.
+  rewrite F.pow_2_r, SQRT_M1_sq in Hsq.
+  assert (Hodd : (2^253-5)%N = (2 * (2^252 - 3) + 1)%N) by (vm_compute; reflexivity).
+  rewrite Hodd in Hsq. rewrite negone_odd_pow in Hsq.
+  apply one_ne_opp_one. symmetry. exact Hsq.
+Qed.
+
 Lemma ear_proof : forall (c Qx Qy : Fp),
   (c * c)%F = F.opp Fone ->
   (E.a * (Qx * Qx) + Qy * Qy =
@@ -259,14 +294,58 @@ Proof.
          HsqR [aR*P^2*iR^2 = SQRT_M1], multiplying and using
          HaLaR [aL*aR = P^2*(E.a-E.d)] and K2 [INVSQRT^2*(E.a-E.d) = 1] gives
          (P^3*iL*iR*F.inv INVSQRT_A_MINUS_D)^2 = SQRT_M1, i.e. SQRT_M1 is a
-         square.  Setting w := that root, w^4 = SQRT_M1^2 = -1, so by Fermat
-         (Fpow_pm1) w^(p-1) = (w^4)^((p-1)/4) = (-1)^((p-1)/4) = -1 (since
-         (p-1)/4 = 2^253-5 is odd), contradicting w^(p-1) = 1.  The order-8
-         contradiction needs a small N-exponent lemma; left admitted. *)
-      admit.
+         square, contradicting [SQRT_M1_nonsquare]. *)
+      exfalso.
+      assert (HInz : INVSQRT_A_MINUS_D <> Fzero)
+        by (unfold INVSQRT_A_MINUS_D; Decidable.vm_decide).
+      apply SQRT_M1_nonsquare.
+      exists (F.inv INVSQRT_A_MINUS_D * (P * P * P) * iL * iR)%F.
+      set (X := ((P*P*P*iL*iR) * (P*P*P*iL*iR))%F).
+      assert (HsqL' : (aL * (P * P) * iL * iL)%F = Fone)
+        by (rewrite <- HeLsq; exact HsqL).
+      assert (HsqR' : (aR * (P * P) * iR * iR)%F = SQRT_M1)
+        by (rewrite HsqR; field).
+      assert (Hpre : ((E.a - E.d) * X)%F = SQRT_M1).
+      { transitivity ((aL * (P*P) * iL * iL) * (aR * (P*P) * iR * iR))%F.
+        { assert (Hr : ((aL * (P*P) * iL * iL) * (aR * (P*P) * iR * iR))%F
+                     = ((aL * aR) * ((P*P*iL*iR) * (P*P*iL*iR)))%F) by field.
+          rewrite Hr, HaLaR. unfold X. field. }
+        { rewrite HsqL', HsqR'. field. } }
+      assert (HX : X = (SQRT_M1 * (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D))%F).
+      { transitivity ((INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * (E.a - E.d)) * X)%F.
+        { rewrite K2. field. }
+        { assert (Hr : (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * (E.a - E.d) * X)%F
+                     = (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * ((E.a - E.d) * X))%F) by field.
+          rewrite Hr, Hpre. field. } }
+      transitivity (F.inv INVSQRT_A_MINUS_D * F.inv INVSQRT_A_MINUS_D * X)%F.
+      * unfold X. field; exact HInz.
+      * rewrite HX. field; exact HInz.
     + (* wsL = false, wsR = true: VACUOUS, symmetric to the previous
-         (SQRT_M1 would be a square via P^3*iL*iR*INVSQRT_A_MINUS_D). *)
-      admit.
+         (SQRT_M1 would be a square via P^3*iL*iR*F.inv INVSQRT_A_MINUS_D). *)
+      exfalso.
+      assert (HInz : INVSQRT_A_MINUS_D <> Fzero)
+        by (unfold INVSQRT_A_MINUS_D; Decidable.vm_decide).
+      apply SQRT_M1_nonsquare.
+      exists (F.inv INVSQRT_A_MINUS_D * (P * P * P) * iL * iR)%F.
+      set (X := ((P*P*P*iL*iR) * (P*P*P*iL*iR))%F).
+      assert (HsqL' : (aL * (P * P) * iL * iL)%F = SQRT_M1)
+        by (rewrite <- HeLsq, HsqL; field).
+      assert (HsqR' : (aR * (P * P) * iR * iR)%F = Fone) by exact HsqR.
+      assert (Hpre : ((E.a - E.d) * X)%F = SQRT_M1).
+      { transitivity ((aL * (P*P) * iL * iL) * (aR * (P*P) * iR * iR))%F.
+        { assert (Hr : ((aL * (P*P) * iL * iL) * (aR * (P*P) * iR * iR))%F
+                     = ((aL * aR) * ((P*P*iL*iR) * (P*P*iL*iR)))%F) by field.
+          rewrite Hr, HaLaR. unfold X. field. }
+        { rewrite HsqL', HsqR'. field. } }
+      assert (HX : X = (SQRT_M1 * (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D))%F).
+      { transitivity ((INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * (E.a - E.d)) * X)%F.
+        { rewrite K2. field. }
+        { assert (Hr : (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * (E.a - E.d) * X)%F
+                     = (INVSQRT_A_MINUS_D * INVSQRT_A_MINUS_D * ((E.a - E.d) * X))%F) by field.
+          rewrite Hr, Hpre. field. } }
+      transitivity (F.inv INVSQRT_A_MINUS_D * F.inv INVSQRT_A_MINUS_D * X)%F.
+      * unfold X. field; exact HInz.
+      * rewrite HX. field; exact HInz.
     + (* wsL = false, wsR = false: zL = -SQRT_M1*P, zR = SQRT_M1*P. *)
       rewrite HsqL in HzL_val. rewrite HsqR in HzR_val.
       assert (HnzR : zR <> Fzero) by (rewrite HzR_val; intro Hk;
@@ -375,4 +454,4 @@ Proof.
               * ((Fone - F.opp Qy) * (Fone - F.opp Qy)))%F; [ field | rewrite Hmag; field ]. }
           { transitivity ((iL * aL * INVSQRT_A_MINUS_D * (iL * aL * INVSQRT_A_MINUS_D))
               * ((Fone - Qy) * (Fone - Qy)))%F; [ field | rewrite Hmag; field ]. } }
-Admitted.
+Qed.

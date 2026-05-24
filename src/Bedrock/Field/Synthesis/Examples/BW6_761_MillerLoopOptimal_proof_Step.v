@@ -285,11 +285,256 @@ Section BW6_761_MillerLoopOptimal_Step.
        3,m3}.  Same per-call discharge pattern as j=0; deferred. *)
     apply Z.eqb_neq in Hj0.
     destruct Hj as [Hj|[Hj|[Hj|[Hj|Hj]]]];
-      [ congruence
-      | subst j; admit
-      | subst j; admit
-      | subst j; admit
-      | subst j; admit ].
-  Admitted.
+      [ congruence | subst j | subst j | subst j | subst j ].
+    (* Each nonzero digit: the j=0 walk (square; double; sparse_d; mul_d)
+       then the add branch (g2_add_step against the j-selected affine
+       target; sparse_a; mul_a), matched via proj_multibase_iter_j{1,m1,
+       3,m3}.  Affine targets: 1->(q0x,q0y) -1->(q0x,q0ny)
+       3->(q1x,q1y) -3->(q1x,q1ny). *)
+    { (* j = 1 *)
+      cbv [miller_iter_body]. change (1 =? 0)%Z with false. cbv iota.
+      cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsqr. split; [exact Hbf|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t1 m1 rets1 Hpost1. destruct Hpost1 as (-> & <- & f1v & Hfe1 & Hb1 & Hs1). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hdbl. split;[exact Hbqx|]. split;[exact Hbqy|]. split;[exact Hbqz|]. split;[exact Hbhalf|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t2 m2 rets2 Hpost2. destruct Hpost2 as (-> & <- & x2v & y2v & z2v & r0v & r1v & r2v & Hbx2 & Hby2 & Hbz2 & Hbr0 & Hbr1 & Hbr2 & Hs2 & Hval2). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0|]. split;[exact Hbr1|]. split;[exact Hbr2|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t3 m3 rets3 Hpost3. destruct Hpost3 as (-> & <- & ld2 & Hbld2 & Hs3 & Hvld). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb1) |]. split; [ exact Hbld2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t4 m4 rets4 Hpost4. destruct Hpost4 as (-> & <- & f2v & Hfe2 & Hb2 & Hs4). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hadd. split;[exact Hbx2|]. split;[exact Hby2|]. split;[exact Hbz2|]. split;[exact Hbq0x|]. split;[exact Hbq0y|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t5 m5 rets5 Hpost5. destruct Hpost5 as (-> & <- & x3v & y3v & z3v & r0av & r1av & r2av & Hbx3 & Hby3 & Hbz3 & Hbr0a & Hbr1a & Hbr2a & Hs5 & Hval5). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0a|]. split;[exact Hbr1a|]. split;[exact Hbr2a|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t6 m6 rets6 Hpost6. destruct Hpost6 as (-> & <- & la2 & Hbla2 & Hs6 & Hvla). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb2) |]. split; [ exact Hbla2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t7 m7 rets7 Hpost7. destruct Hpost7 as (-> & <- & f3v & Hfe3 & Hb3 & Hs7).
+      exists li. split; [reflexivity|]. split; [reflexivity|].
+      cbv [bw6_proj_multibase_iter]. rewrite proj_multibase_iter_j1.
+      unfold bw6_proj_double_step in Hval2. unfold bw6_proj_add_step in Hval5.
+      rewrite <- Heqx, <- Heqy, <- Heqz.
+      destruct (proj_double_step bw6_proj_ops (Fp3_feval qx_val) (Fp3_feval qy_val) (Fp3_feval qz_val) (Fp_feval half)) as [[[x1 y1] z1] [[r0d r1d] r2d]] eqn:HD.
+      destruct Hval2 as (Hx1 & Hy1 & Hz1 & Hr0 & Hr1 & Hr2).
+      cbv beta zeta iota.
+      rewrite <- Hx1, <- Hy1, <- Hz1.
+      destruct (proj_add_step bw6_proj_ops (Fp3_feval x2v) (Fp3_feval y2v) (Fp3_feval z2v) (Fp3_feval q0x) (Fp3_feval q0y)) as [[[x2 y2] z2] [[r0a r1a] r2a]] eqn:HA.
+      destruct Hval5 as (Hx2 & Hy2 & Hz2 & Hr0a' & Hr1a' & Hr2a').
+      cbv beta zeta iota.
+      unfold proj_running.
+      split; [reflexivity|].
+      split; [exact Hbpx|]. split; [exact Hbpy|]. split; [exact Hbhalf|].
+      split; [exact Hbq0x|]. split; [exact Hbq0y|]. split; [exact Hbq1x|]. split; [exact Hbq1y|]. split; [exact Hbq0ny|]. split; [exact Hbq1ny|].
+      exists f3v, x3v, y3v, z3v, r0v, r1v, r2v, r0av, r1av, r2av, ld2, la2.
+      split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb3) |].
+      split; [exact Hbx3|]. split; [exact Hby3|]. split; [exact Hbz3|].
+      split.
+      2:{ split; [exact Hx2|]. split; [exact Hy2|]. split; [exact Hz2|]. SeparationLogic.ecancel_assumption_impl. }
+      rewrite Hfe3, Hfe2, Hfe1, Hef, Hvld, Hvla, Hr0, Hr1, Hr2, Hr0a', Hr1a', Hr2a'.
+      cbv [bw6_proj_sparse_line bin_model bin_mul un_model un_square Affine.fp12_mul Affine.fp12_sqr bw6_proj_ops].
+      unfold AbstractField.Fsquare. reflexivity. }
+    { (* j = -1 *)
+      cbv [miller_iter_body]. change ((-1) =? 0)%Z with false. cbv iota.
+      cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsqr. split; [exact Hbf|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t1 m1 rets1 Hpost1. destruct Hpost1 as (-> & <- & f1v & Hfe1 & Hb1 & Hs1). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hdbl. split;[exact Hbqx|]. split;[exact Hbqy|]. split;[exact Hbqz|]. split;[exact Hbhalf|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t2 m2 rets2 Hpost2. destruct Hpost2 as (-> & <- & x2v & y2v & z2v & r0v & r1v & r2v & Hbx2 & Hby2 & Hbz2 & Hbr0 & Hbr1 & Hbr2 & Hs2 & Hval2). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0|]. split;[exact Hbr1|]. split;[exact Hbr2|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t3 m3 rets3 Hpost3. destruct Hpost3 as (-> & <- & ld2 & Hbld2 & Hs3 & Hvld). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb1) |]. split; [ exact Hbld2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t4 m4 rets4 Hpost4. destruct Hpost4 as (-> & <- & f2v & Hfe2 & Hb2 & Hs4). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hadd. split;[exact Hbx2|]. split;[exact Hby2|]. split;[exact Hbz2|]. split;[exact Hbq0x|]. split;[exact Hbq0ny|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t5 m5 rets5 Hpost5. destruct Hpost5 as (-> & <- & x3v & y3v & z3v & r0av & r1av & r2av & Hbx3 & Hby3 & Hbz3 & Hbr0a & Hbr1a & Hbr2a & Hs5 & Hval5). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0a|]. split;[exact Hbr1a|]. split;[exact Hbr2a|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t6 m6 rets6 Hpost6. destruct Hpost6 as (-> & <- & la2 & Hbla2 & Hs6 & Hvla). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb2) |]. split; [ exact Hbla2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t7 m7 rets7 Hpost7. destruct Hpost7 as (-> & <- & f3v & Hfe3 & Hb3 & Hs7).
+      exists li. split; [reflexivity|]. split; [reflexivity|].
+      cbv [bw6_proj_multibase_iter]. rewrite proj_multibase_iter_jm1.
+      unfold bw6_proj_double_step in Hval2. unfold bw6_proj_add_step in Hval5.
+      rewrite <- Heqx, <- Heqy, <- Heqz.
+      destruct (proj_double_step bw6_proj_ops (Fp3_feval qx_val) (Fp3_feval qy_val) (Fp3_feval qz_val) (Fp_feval half)) as [[[x1 y1] z1] [[r0d r1d] r2d]] eqn:HD.
+      destruct Hval2 as (Hx1 & Hy1 & Hz1 & Hr0 & Hr1 & Hr2).
+      cbv beta zeta iota.
+      rewrite <- Hx1, <- Hy1, <- Hz1.
+      destruct (proj_add_step bw6_proj_ops (Fp3_feval x2v) (Fp3_feval y2v) (Fp3_feval z2v) (Fp3_feval q0x) (Fp3_feval q0ny)) as [[[x2 y2] z2] [[r0a r1a] r2a]] eqn:HA.
+      destruct Hval5 as (Hx2 & Hy2 & Hz2 & Hr0a' & Hr1a' & Hr2a').
+      cbv beta zeta iota.
+      unfold proj_running.
+      split; [reflexivity|].
+      split; [exact Hbpx|]. split; [exact Hbpy|]. split; [exact Hbhalf|].
+      split; [exact Hbq0x|]. split; [exact Hbq0y|]. split; [exact Hbq1x|]. split; [exact Hbq1y|]. split; [exact Hbq0ny|]. split; [exact Hbq1ny|].
+      exists f3v, x3v, y3v, z3v, r0v, r1v, r2v, r0av, r1av, r2av, ld2, la2.
+      split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb3) |].
+      split; [exact Hbx3|]. split; [exact Hby3|]. split; [exact Hbz3|].
+      split.
+      2:{ split; [exact Hx2|]. split; [exact Hy2|]. split; [exact Hz2|]. SeparationLogic.ecancel_assumption_impl. }
+      rewrite Hfe3, Hfe2, Hfe1, Hef, Hvld, Hvla, Hr0, Hr1, Hr2, Hr0a', Hr1a', Hr2a'.
+      cbv [bw6_proj_sparse_line bin_model bin_mul un_model un_square Affine.fp12_mul Affine.fp12_sqr bw6_proj_ops].
+      unfold AbstractField.Fsquare. reflexivity. }
+    { (* j = 3 *)
+      cbv [miller_iter_body]. change (3 =? 0)%Z with false. cbv iota.
+      cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsqr. split; [exact Hbf|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t1 m1 rets1 Hpost1. destruct Hpost1 as (-> & <- & f1v & Hfe1 & Hb1 & Hs1). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hdbl. split;[exact Hbqx|]. split;[exact Hbqy|]. split;[exact Hbqz|]. split;[exact Hbhalf|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t2 m2 rets2 Hpost2. destruct Hpost2 as (-> & <- & x2v & y2v & z2v & r0v & r1v & r2v & Hbx2 & Hby2 & Hbz2 & Hbr0 & Hbr1 & Hbr2 & Hs2 & Hval2). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0|]. split;[exact Hbr1|]. split;[exact Hbr2|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t3 m3 rets3 Hpost3. destruct Hpost3 as (-> & <- & ld2 & Hbld2 & Hs3 & Hvld). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb1) |]. split; [ exact Hbld2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t4 m4 rets4 Hpost4. destruct Hpost4 as (-> & <- & f2v & Hfe2 & Hb2 & Hs4). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hadd. split;[exact Hbx2|]. split;[exact Hby2|]. split;[exact Hbz2|]. split;[exact Hbq1x|]. split;[exact Hbq1y|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t5 m5 rets5 Hpost5. destruct Hpost5 as (-> & <- & x3v & y3v & z3v & r0av & r1av & r2av & Hbx3 & Hby3 & Hbz3 & Hbr0a & Hbr1a & Hbr2a & Hs5 & Hval5). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0a|]. split;[exact Hbr1a|]. split;[exact Hbr2a|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t6 m6 rets6 Hpost6. destruct Hpost6 as (-> & <- & la2 & Hbla2 & Hs6 & Hvla). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb2) |]. split; [ exact Hbla2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t7 m7 rets7 Hpost7. destruct Hpost7 as (-> & <- & f3v & Hfe3 & Hb3 & Hs7).
+      exists li. split; [reflexivity|]. split; [reflexivity|].
+      cbv [bw6_proj_multibase_iter]. rewrite proj_multibase_iter_j3.
+      unfold bw6_proj_double_step in Hval2. unfold bw6_proj_add_step in Hval5.
+      rewrite <- Heqx, <- Heqy, <- Heqz.
+      destruct (proj_double_step bw6_proj_ops (Fp3_feval qx_val) (Fp3_feval qy_val) (Fp3_feval qz_val) (Fp_feval half)) as [[[x1 y1] z1] [[r0d r1d] r2d]] eqn:HD.
+      destruct Hval2 as (Hx1 & Hy1 & Hz1 & Hr0 & Hr1 & Hr2).
+      cbv beta zeta iota.
+      rewrite <- Hx1, <- Hy1, <- Hz1.
+      destruct (proj_add_step bw6_proj_ops (Fp3_feval x2v) (Fp3_feval y2v) (Fp3_feval z2v) (Fp3_feval q1x) (Fp3_feval q1y)) as [[[x2 y2] z2] [[r0a r1a] r2a]] eqn:HA.
+      destruct Hval5 as (Hx2 & Hy2 & Hz2 & Hr0a' & Hr1a' & Hr2a').
+      cbv beta zeta iota.
+      unfold proj_running.
+      split; [reflexivity|].
+      split; [exact Hbpx|]. split; [exact Hbpy|]. split; [exact Hbhalf|].
+      split; [exact Hbq0x|]. split; [exact Hbq0y|]. split; [exact Hbq1x|]. split; [exact Hbq1y|]. split; [exact Hbq0ny|]. split; [exact Hbq1ny|].
+      exists f3v, x3v, y3v, z3v, r0v, r1v, r2v, r0av, r1av, r2av, ld2, la2.
+      split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb3) |].
+      split; [exact Hbx3|]. split; [exact Hby3|]. split; [exact Hbz3|].
+      split.
+      2:{ split; [exact Hx2|]. split; [exact Hy2|]. split; [exact Hz2|]. SeparationLogic.ecancel_assumption_impl. }
+      rewrite Hfe3, Hfe2, Hfe1, Hef, Hvld, Hvla, Hr0, Hr1, Hr2, Hr0a', Hr1a', Hr2a'.
+      cbv [bw6_proj_sparse_line bin_model bin_mul un_model un_square Affine.fp12_mul Affine.fp12_sqr bw6_proj_ops].
+      unfold AbstractField.Fsquare. reflexivity. }
+    { (* j = -3 *)
+      cbv [miller_iter_body]. change ((-3) =? 0)%Z with false. cbv iota.
+      cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsqr. split; [exact Hbf|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t1 m1 rets1 Hpost1. destruct Hpost1 as (-> & <- & f1v & Hfe1 & Hb1 & Hs1). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hdbl. split;[exact Hbqx|]. split;[exact Hbqy|]. split;[exact Hbqz|]. split;[exact Hbhalf|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t2 m2 rets2 Hpost2. destruct Hpost2 as (-> & <- & x2v & y2v & z2v & r0v & r1v & r2v & Hbx2 & Hby2 & Hbz2 & Hbr0 & Hbr1 & Hbr2 & Hs2 & Hval2). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0|]. split;[exact Hbr1|]. split;[exact Hbr2|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t3 m3 rets3 Hpost3. destruct Hpost3 as (-> & <- & ld2 & Hbld2 & Hs3 & Hvld). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb1) |]. split; [ exact Hbld2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t4 m4 rets4 Hpost4. destruct Hpost4 as (-> & <- & f2v & Hfe2 & Hb2 & Hs4). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hadd. split;[exact Hbx2|]. split;[exact Hby2|]. split;[exact Hbz2|]. split;[exact Hbq1x|]. split;[exact Hbq1ny|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t5 m5 rets5 Hpost5. destruct Hpost5 as (-> & <- & x3v & y3v & z3v & r0av & r1av & r2av & Hbx3 & Hby3 & Hbz3 & Hbr0a & Hbr1a & Hbr2a & Hs5 & Hval5). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hsparse. split;[exact Hbr0a|]. split;[exact Hbr1a|]. split;[exact Hbr2a|]. split;[exact Hbpx|]. split;[exact Hbpy|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t6 m6 rets6 Hpost6. destruct Hpost6 as (-> & <- & la2 & Hbla2 & Hs6 & Hvla). eexists. split. 1: reflexivity.
+      repeat straightline.
+      eexists. split. 1: dexprs_fast.
+      eapply Semantics.weaken_call.
+      { eapply Hmul. split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb2) |]. split; [ exact Hbla2 |]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. split; [eexists; SeparationLogic.ecancel_assumption_impl|]. SeparationLogic.ecancel_assumption_impl. }
+      cbv beta. intros t7 m7 rets7 Hpost7. destruct Hpost7 as (-> & <- & f3v & Hfe3 & Hb3 & Hs7).
+      exists li. split; [reflexivity|]. split; [reflexivity|].
+      cbv [bw6_proj_multibase_iter]. rewrite proj_multibase_iter_jm3.
+      unfold bw6_proj_double_step in Hval2. unfold bw6_proj_add_step in Hval5.
+      rewrite <- Heqx, <- Heqy, <- Heqz.
+      destruct (proj_double_step bw6_proj_ops (Fp3_feval qx_val) (Fp3_feval qy_val) (Fp3_feval qz_val) (Fp_feval half)) as [[[x1 y1] z1] [[r0d r1d] r2d]] eqn:HD.
+      destruct Hval2 as (Hx1 & Hy1 & Hz1 & Hr0 & Hr1 & Hr2).
+      cbv beta zeta iota.
+      rewrite <- Hx1, <- Hy1, <- Hz1.
+      destruct (proj_add_step bw6_proj_ops (Fp3_feval x2v) (Fp3_feval y2v) (Fp3_feval z2v) (Fp3_feval q1x) (Fp3_feval q1ny)) as [[[x2 y2] z2] [[r0a r1a] r2a]] eqn:HA.
+      destruct Hval5 as (Hx2 & Hy2 & Hz2 & Hr0a' & Hr1a' & Hr2a').
+      cbv beta zeta iota.
+      unfold proj_running.
+      split; [reflexivity|].
+      split; [exact Hbpx|]. split; [exact Hbpy|]. split; [exact Hbhalf|].
+      split; [exact Hbq0x|]. split; [exact Hbq0y|]. split; [exact Hbq1x|]. split; [exact Hbq1y|]. split; [exact Hbq0ny|]. split; [exact Hbq1ny|].
+      exists f3v, x3v, y3v, z3v, r0v, r1v, r2v, r0av, r1av, r2av, ld2, la2.
+      split; [ apply (@AbstractField.relax_bounds _ _ _ _ _ _ bw6_Fp6_repr bw6_Fp6_repr_ok _ Hb3) |].
+      split; [exact Hbx3|]. split; [exact Hby3|]. split; [exact Hbz3|].
+      split.
+      2:{ split; [exact Hx2|]. split; [exact Hy2|]. split; [exact Hz2|]. SeparationLogic.ecancel_assumption_impl. }
+      rewrite Hfe3, Hfe2, Hfe1, Hef, Hvld, Hvla, Hr0, Hr1, Hr2, Hr0a', Hr1a', Hr2a'.
+      cbv [bw6_proj_sparse_line bin_model bin_mul un_model un_square Affine.fp12_mul Affine.fp12_sqr bw6_proj_ops].
+      unfold AbstractField.Fsquare. reflexivity. }
+  Qed.
 
 End BW6_761_MillerLoopOptimal_Step.

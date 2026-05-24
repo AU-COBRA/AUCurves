@@ -537,4 +537,75 @@ Section BW6_761_MillerLoopOptimal_Step.
       unfold AbstractField.Fsquare. reflexivity. }
   Qed.
 
+  (** Chain the per-iteration step over the whole digit list: the
+      unrolled [emit_iters js] advances [proj_running] by exactly
+      [bw6_proj_main_loop js], leaving locals unchanged.  Proved by
+      induction on [js], discharging each head with
+      [miller_loop_body_step_opt].  [js] must consist of alphabet
+      digits (the NAF digits of the main loop are). *)
+  Lemma emit_iters_ok :
+    forall functions
+      (Hdbl    : spec_of_bw6_761_g2_double_step functions)
+      (Hadd    : spec_of_bw6_761_g2_add_step functions)
+      (Hsparse : spec_of_bw6_761_sparse_line_eval functions)
+      (HFp6mul : spec_of_BinOp bin_mul (field_representation:=bw6_Fp6_repr) functions)
+      (HFp6sqr : spec_of_UnOp un_square (field_representation:=bw6_Fp6_repr) functions),
+    forall (js : list Z),
+      List.Forall (fun j => j = 0%Z \/ j = 1%Z \/ j = (-1)%Z \/ j = 3%Z \/ j = (-3)%Z) js ->
+    forall a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+           a_line_d a_line_a
+           pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+           (old_out : Fp6_felem) (p_x p_y : Fp_felem)
+           (q0x q0y q1x q1y q0ny q1ny : Fp3_felem) (half : Fp_felem)
+           (Rr : mem -> Prop) (tr : Semantics.trace)
+           (fv : Fp6) (Tx Ty Tz : Fp3)
+           (ti : Semantics.trace) (mi : mem) (li : locals),
+      step_locals li a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+        a_line_d a_line_a p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half ->
+      proj_running
+        a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+        a_line_d a_line_a
+        pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+        old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
+        fv Tx Ty Tz ti mi li ->
+      WeakestPrecondition.cmd functions (emit_iters js) ti mi li
+        (fun t' m' l' =>
+          l' = li /\
+          (let '(fv', (Tx', Ty', Tz')) :=
+             bw6_proj_main_loop js
+               (Fp3_feval q0x) (Fp3_feval q0y) (Fp3_feval q0ny)
+               (Fp3_feval q1x) (Fp3_feval q1y) (Fp3_feval q1ny)
+               (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half)
+               fv Tx Ty Tz in
+           proj_running
+             a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a
+             a_line_d a_line_a
+             pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half
+             old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr
+             fv' Tx' Ty' Tz' t' m' l')).
+  Proof.
+    intros functions Hdbl Hadd Hsparse Hmul Hsqr js.
+    induction js as [|j rest IH].
+    { intros Hforall a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr fv Tx Ty Tz ti mi li Hloc Hrun.
+      cbn [emit_iters bw6_proj_main_loop proj_main_loop].
+      repeat straightline. exact Hrun. }
+    intros Hforall a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr fv Tx Ty Tz ti mi li Hloc Hrun.
+    inversion Hforall as [| jj rr Hj Hrest]; subst.
+    assert (Hfold :
+      bw6_proj_main_loop (j :: rest) (Fp3_feval q0x) (Fp3_feval q0y) (Fp3_feval q0ny) (Fp3_feval q1x) (Fp3_feval q1y) (Fp3_feval q1ny) (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half) fv Tx Ty Tz
+      = (let '(f', (x', y', z')) := bw6_proj_multibase_iter (Fp3_feval q0x) (Fp3_feval q0y) (Fp3_feval q0ny) (Fp3_feval q1x) (Fp3_feval q1y) (Fp3_feval q1ny) (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half) j fv Tx Ty Tz in
+         bw6_proj_main_loop rest (Fp3_feval q0x) (Fp3_feval q0y) (Fp3_feval q0ny) (Fp3_feval q1x) (Fp3_feval q1y) (Fp3_feval q1ny) (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half) f' x' y' z')) by reflexivity.
+    cbn [emit_iters].
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eapply WeakestPreconditionProperties.Proper_cmd.
+    2: { eapply (miller_loop_body_step_opt functions Hdbl Hadd Hsparse Hmul Hsqr a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr j fv Tx Ty Tz ti mi li Hj Hloc Hrun). }
+    intros t' m' l' [-> Hpr].
+    destruct (bw6_proj_multibase_iter (Fp3_feval q0x) (Fp3_feval q0y) (Fp3_feval q0ny) (Fp3_feval q1x) (Fp3_feval q1y) (Fp3_feval q1ny) (Fp_feval p_x) (Fp_feval p_y) (Fp_feval half) j fv Tx Ty Tz) as [fv1 [[Tx1 Ty1] Tz1]] eqn:Hiter.
+    eapply WeakestPreconditionProperties.Proper_cmd.
+    2: { eapply (IH Hrest a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tr fv1 Tx1 Ty1 Tz1 t' m' li Hloc Hpr). }
+    intros t'' m'' l'' [-> Hpr''].
+    split; [reflexivity|].
+    rewrite Hfold. cbv beta iota. exact Hpr''.
+  Qed.
+
 End BW6_761_MillerLoopOptimal_Step.

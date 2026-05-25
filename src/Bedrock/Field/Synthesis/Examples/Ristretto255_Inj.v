@@ -30,11 +30,11 @@ Add Field _f : (Algebra.Field.field_theory_for_stdlib_tactic(T:=F (2^255-19)%pos
    power_tac (F.power_theory (2^255-19)%positive) [F.is_pow_constant]).
 
 (* a = -1 in Curve25519. *)
-Local Lemma HaQ : Curve25519.E.a = F.opp Fone.
+Lemma HaQ : Curve25519.E.a = F.opp Fone.
 Proof. unfold Curve25519.E.a. apply ModularArithmeticTheorems.F.eq_to_Z_iff. vm_compute. reflexivity. Qed.
 
 (* a/b = c whenever a = c*b and b<>0. *)
-Local Lemma div_eq : forall (a b c : Fp), b <> Fzero -> a = (c * b)%F -> (a / b)%F = c.
+Lemma div_eq : forall (a b c : Fp), b <> Fzero -> a = (c * b)%F -> (a / b)%F = c.
 Proof. intros a b c Hb Ha. rewrite Ha. field. exact Hb. Qed.
 
 (* ===================== Edwards-completeness denominators =====================
@@ -42,7 +42,7 @@ Proof. intros a b c Hb Ha. rewrite Ha. field. exact Hb. Qed.
    nonzero.  These are exactly the side conditions [step1_reduction] requires.
    Both follow from Edwards-curve completeness ([d] a non-square): see
    [Crypto.Curves.Edwards.Pre.denominator_nonzero_{x,y}].  Pure, reusable. *)
-Local Lemma denomx_nz : forall (x1 y1 x2 y2 : Fp),
+Lemma denomx_nz : forall (x1 y1 x2 y2 : Fp),
   (Curve25519.E.a * (x1 * x1) + y1 * y1 = Fone + Curve25519.E.d * (x1 * x1) * (y1 * y1))%F ->
   (Curve25519.E.a * (x2 * x2) + y2 * y2 = Fone + Curve25519.E.d * (x2 * x2) * (y2 * y2))%F ->
   (Fone + Curve25519.E.d * x1 * x2 * y1 * y2)%F <> Fzero.
@@ -52,7 +52,7 @@ Proof.
            Curve25519.E.square_a _ Curve25519.E.nonsquare_d _ _ H1 _ _ H2).
 Qed.
 
-Local Lemma denomy_nz : forall (x1 y1 x2 y2 : Fp),
+Lemma denomy_nz : forall (x1 y1 x2 y2 : Fp),
   (Curve25519.E.a * (x1 * x1) + y1 * y1 = Fone + Curve25519.E.d * (x1 * x1) * (y1 * y1))%F ->
   (Curve25519.E.a * (x2 * x2) + y2 * y2 = Fone + Curve25519.E.d * (x2 * x2) * (y2 * y2))%F ->
   (Fone - Curve25519.E.d * x1 * x2 * y1 * y2)%F <> Fzero.
@@ -66,7 +66,7 @@ Qed.
    If the Edwards difference numerators/denominators of (x,y) and (x',y') satisfy one
    of the four polynomial systems below (with both sub_affine denominators nonzero),
    then sub_affine (x,y) (x',y') is one of the four 4-torsion points. *)
-Local Lemma step1_reduction : forall (x y x' y' : Fp),
+Lemma step1_reduction : forall (x y x' y' : Fp),
   (Fone + Curve25519.E.d * x * F.opp x' * y * y') <> Fzero ->
   (Fone - Curve25519.E.d * x * F.opp x' * y * y') <> Fzero ->
   (   ((x * y' - y * x' = Fzero) /\ (y * y' - x * x' = Fone + Curve25519.E.d * x * x' * y * y'))
@@ -97,7 +97,7 @@ Qed.
    Combined with the decoder relation s^2 (1+y') = 1-y', this forces y = y' (sign-free).
    This is the cleanest piece of the encoder inversion and is reused by the principal
    (identity, system (i)) torsion case. *)
-Local Lemma yeq_noflip : forall (s x y y' invsqrtE : Fp),
+Lemma yeq_noflip : forall (s x y y' invsqrtE : Fp),
   (s * s * (Fone + y') = Fone - y')%F ->
   (Fone + s * s <> Fzero)%F ->
   (s * s = invsqrtE * (x * y) * (Fone - y) * (invsqrtE * (x * y) * (Fone - y)))%F ->
@@ -125,7 +125,7 @@ Qed.
    and [sub_affine (x,y) (0,1) = (x,y)], with [(x,y)] itself in E[4]. *)
 
 (* [s = 0] whenever the sqrt argument is 0 (invsqrt of 0 is 0). *)
-Local Lemma enc_arg0_s0 : forall (x y : Fp),
+Lemma enc_arg0_s0 : forall (x y : Fp),
   ((Fone + y) * (Fone - y) * (x * y * (x * y)))%F = Fzero ->
   ristretto_encode_aux x y Fone (x * y) = Fzero.
 Proof.
@@ -155,7 +155,7 @@ Proof.
 Qed.
 
 (* On the curve, the sqrt argument vanishing forces [(x,y)] itself into E[4]. *)
-Local Lemma deg_oncurve_torsion : forall (x y : Fp),
+Lemma deg_oncurve_torsion : forall (x y : Fp),
   (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
   ((Fone + y) * (Fone - y) * (x * y * (x * y)))%F = Fzero ->
   is_4torsion_affine (x, y).
@@ -217,7 +217,7 @@ Proof.
 Qed.
 
 (* [sub_affine (a,b) (0,1) = (a,b)] (unconditional; denominators collapse to 1). *)
-Local Lemma sub_affine_id_01 : forall (a b : Fp), sub_affine (a, b) (Fzero, Fone) = (a, b).
+Lemma sub_affine_id_01 : forall (a b : Fp), sub_affine (a, b) (Fzero, Fone) = (a, b).
 Proof.
   intros a b. unfold sub_affine, opp_affine.
   f_equal; [ field; Decidable.vm_decide | unfold Curve25519.E.a; field; Decidable.vm_decide ].
@@ -228,7 +228,7 @@ Qed.
    [oncurve_x2_eq]: on the curve, [x^2] is a function of [y^2] (off the
    [1-y^2=0] locus), so equal [y^2] forces equal [x^2]. *)
 
-Local Lemma abs_pins_sign : forall (a b : Fp),
+Lemma abs_pins_sign : forall (a b : Fp),
   (a * a)%F = (b * b)%F -> is_negative b = false ->
   (is_negative a = false -> a = b) /\ (is_negative a = true -> a = F.opp b).
 Proof.
@@ -241,7 +241,7 @@ Proof.
     assert (Hr : a = F.opp (F.opp a)) by field. rewrite Hr, Habs. reflexivity.
 Qed.
 
-Local Lemma oncurve_x2_eq : forall (x y x'' y'' : Fp),
+Lemma oncurve_x2_eq : forall (x y x'' y'' : Fp),
   (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
   (Curve25519.E.a * (x'' * x'') + y'' * y'' = Fone + Curve25519.E.d * (x'' * x'') * (y'' * y''))%F ->
   (y * y)%F = (y'' * y'')%F ->
@@ -272,7 +272,7 @@ Proof.
 Qed.
 
 (* 1 - d*x^2 <> 0 for x <> 0 (d is a non-square). *)
-Local Lemma one_sub_dx2_nz : forall (x : Fp), x <> Fzero ->
+Lemma one_sub_dx2_nz : forall (x : Fp), x <> Fzero ->
   (Fone - Curve25519.E.d * (x * x))%F <> Fzero.
 Proof.
   intros x Hx Hk.
@@ -288,7 +288,7 @@ Qed.
 
 (* Rotated on-curve relation: y'^2 = -x^2 forces x'^2 = -y^2 (mirrors
    oncurve_x2_eq via the 1-d*x^2 factor instead of 1-y^2). *)
-Local Lemma oncurve_rot_x2 : forall (x y x' y' : Fp),
+Lemma oncurve_rot_x2 : forall (x y x' y' : Fp),
   (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
   (Curve25519.E.a * (x' * x') + y' * y' = Fone + Curve25519.E.d * (x' * x') * (y' * y'))%F ->
   (y' * y' = F.opp (x * x))%F ->
@@ -433,7 +433,7 @@ Qed.
    (with the sqrt argument nonzero), the decoder relation [s^2(1+y')=1-y'],
    and the sign/on-curve profile of [(x',y')], invert the encoder to one of
    [step1_reduction]'s four polynomial systems, hence E[4]. *)
-Local Lemma main_inversion : forall (x y x' y' : Fp),
+Lemma main_inversion : forall (x y x' y' : Fp),
   (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
   (Curve25519.E.a * (x' * x') + y' * y' = Fone + Curve25519.E.d * (x' * x') * (y' * y'))%F ->
   ((Fone + y) * (Fone - y) * (x * y * (x * y)))%F <> Fzero ->
@@ -671,6 +671,24 @@ Proof.
         transitivity (F.opp Fone*(x*x) + y*y)%F; [ ring | ].
         rewrite Hoc. ring.
   - (* ===== M = SQRT_M1 ===== *)
+    (* BLOCKED — diagnosed 2026-05-25.  These four leaves are CONSISTENT (not
+       vacuous: the squareness check gives no contradiction — 1-y'^2=(2s/(1+s^2))^2
+       is a square, forcing 1-Yf^2 non-square, consistently).  But main_inversion's
+       hypotheses are INSUFFICIENT to close them.  For M=Fone, HMcancel gives Yf=y'
+       (a clean square), so on-curve pins x'^2 as a square and abs_pins_sign recovers
+       x' LINEARLY.  For M=SQRT_M1, Hstar+Hs2y' only give the Mobius relation
+       Hrel : SQRT_M1*(1-Yf)*(1+y') = (1-y')*(1+Yf), i.e. y' is a SQRT_M1-twist of x
+       (rot=true; verified Goal 2: (1+x)*y' = F.opp(SQRT_M1*(1-x))) or of y (rot=false).
+       Then x'^2 is a non-square ratio, and step1_reduction's four systems — which use
+       x' LINEARLY — are NOT polynomial consequences of on-curve(x',y') + the forced
+       y'^2 (an irreducible d*(1-x)^4 term remains, since Hoc_Q only yields x'^2).
+       main_inversion receives NO hypothesis linking x' to s/the encoder.
+       FIX: thread the decoder's LINEAR x' relation, x' = abs(F.of_Z _ 2 * s * Dx)
+       with Dx = invsqrt*u2 (decoder invsqrt), into main_inversion — requires
+       strengthening decoded_self_characterization (RoundTrip) to expose the decoder's
+       invsqrt/Dx and threading it through encode_decode_equiv' -> main_inversion.
+       The verified Mobius derivation (Hrel, Hy'lin, HAB/HBmA, Hy'p, Hns) is recorded
+       in LESSONS.md STATUS for replay once the hypothesis is added. *)
     admit.
 Admitted.
 

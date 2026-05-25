@@ -90,15 +90,21 @@ Section AllocRegions.
     Z.modulo n (Memory.bytes_per_word width) = 0 ->
     (forall a mStack mCombined,
         Memory.anybytes a n mStack -> map.split mCombined m mStack ->
-        WeakestPrecondition.cmd e c t mCombined (map.put l x a)
+        dlet! l := map.put l x a in
+        WeakestPrecondition.cmd e c t mCombined l
           (fun t' mC' l' => exists m' mS',
              Memory.anybytes a n mS' /\ map.split mC' m' mS' /\ post t' m' l')) ->
     WeakestPrecondition.cmd e (cmd.stackalloc x n c) t m l post.
+  (* NB: the body hypothesis KEEPS the [dlet! l := map.put l x a in ...] exactly as the
+     stackalloc WP produces it (rather than the already-substituted [map.put l x a]).  This
+     makes [apply alloc_one] a true drop-in for the manual [split]: the subsequent
+     [repeat straightline] reduces that [dlet] to *name* the local, so downstream code that
+     refers to those local names (e.g. BW6's [l10]) sees the same naming as before. *)
   Proof.
     intros Hmod Hbody.
     unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
     split; [ exact Hmod | ].
-    intros a mStack mCombined Hany Hsplit. cbv [dlet].
+    intros a mStack mCombined Hany Hsplit.
     exact (Hbody a mStack mCombined Hany Hsplit).
   Qed.
 

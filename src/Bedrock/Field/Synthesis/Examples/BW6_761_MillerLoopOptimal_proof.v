@@ -100,6 +100,7 @@ Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime.
 Require Import Bedrock.Field.FieldExtensions.GenericQuadraticSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericCubicSpecs.
 Require Import Bedrock.Field.FieldExtensions.GenericSplitJoin.
+Require Import Bedrock.Field.FieldExtensions.WPRegions.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoopOptimal.
 
@@ -260,18 +261,18 @@ Section BW6_761_MillerLoopOptimal_Top.
     (* Hide the inputs sep behind a [unit ->] wrapper so [straightline]'s
        array threading does not grow it (the fast solver cliffs ~7 atoms). *)
     rename Hsep into Hin. pose proof (fun (_:unit) => Hin) as HinF. clear Hin.
-    split. { apply Z_mod_mult. } intros a_f mStack_f mComb_f HanyF HsplitF. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_qx mStack_qx mComb_qx HanyQx HsplitQx. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_qy mStack_qy mComb_qy HanyQy HsplitQy. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_qz mStack_qz mComb_qz HanyQz HsplitQz. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r0d mStack_r0d mComb_r0d HanyR0d HsplitR0d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r1d mStack_r1d mComb_r1d HanyR1d HsplitR1d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r2d mStack_r2d mComb_r2d HanyR2d HsplitR2d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r0a mStack_r0a mComb_r0a HanyR0a HsplitR0a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r1a mStack_r1a mComb_r1a HanyR1a HsplitR1a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_r2a mStack_r2a mComb_r2a HanyR2a HsplitR2a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_line_d mStack_line_d mComb_line_d HanyLd HsplitLd. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
-    split. { apply Z_mod_mult. } intros a_line_a mStack_line_a mComb_line_a HanyLa HsplitLa. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_f mStack_f mComb_f HanyF HsplitF. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_qx mStack_qx mComb_qx HanyQx HsplitQx. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_qy mStack_qy mComb_qy HanyQy HsplitQy. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_qz mStack_qz mComb_qz HanyQz HsplitQz. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r0d mStack_r0d mComb_r0d HanyR0d HsplitR0d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r1d mStack_r1d mComb_r1d HanyR1d HsplitR1d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r2d mStack_r2d mComb_r2d HanyR2d HsplitR2d. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r0a mStack_r0a mComb_r0a HanyR0a HsplitR0a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r1a mStack_r1a mComb_r1a HanyR1a HsplitR1a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_r2a mStack_r2a mComb_r2a HanyR2a HsplitR2a. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_line_d mStack_line_d mComb_line_d HanyLd HsplitLd. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
+    apply alloc_one. { apply Z_mod_mult. } intros a_line_a mStack_line_a mComb_line_a HanyLa HsplitLa. repeat match goal with Hs : sep _ _ _ |- _ => clear Hs end. repeat straightline.
     pose proof (HinF tt) as Hin. clear HinF.
     pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr _ _ a_f) as Hfb. unfold AbstractField.Placeholder in Hfb. pose proof (proj1 (Hfb mStack_f) HanyF) as [fv0 Hfe_f]. clear Hfb.
     pose proof (@AbstractField.FElem_from_bytes _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr _ _ a_qx) as Hfb. unfold AbstractField.Placeholder in Hfb. pose proof (proj1 (Hfb mStack_qx) HanyQx) as [qxv Hfe_qx]. clear Hfb.
@@ -360,7 +361,7 @@ Section BW6_761_MillerLoopOptimal_Top.
     clear Hs2 Hqz Hsc2 Hqzj HsD Hbq1x_l Hbq1y_l Hbqz_l Ec0 Ec1 Ec2.
     eexists. split. 1: reflexivity.
     (* (d) Assemble the running [proj_running] after the init step. *)
-    assert (Hrun : proj_running a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tc2 (@AbstractField.feval _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr fSv) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr x1v) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr y1v) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr z1v) tc2 mS l10) by (unfold proj_running; split; [reflexivity|]; split; [exact Hbpx|]; split; [exact Hbpy|]; split; [exact Hbhalf|]; split; [exact Hbq0x|]; split; [exact Hbq0y|]; split; [exact Hbq1x|]; split; [exact Hbq1y|]; split; [exact Hbq0ny|]; split; [exact Hbq1ny|]; exists fSv, x1v, y1v, z1v, r0v, r1v, r2v, r0av, r1av, r2av, ldv, lav; split; [exact HbfS|]; split; [exact Hbx1|]; split; [exact Hby1|]; split; [exact Hbz1|]; split; [reflexivity|]; split; [reflexivity|]; split; [reflexivity|]; split; [reflexivity|]; SeparationLogic.ecancel_assumption_impl).
+    assert (Hrun : proj_running a_f a_qx a_qy a_qz a_r0d a_r1d a_r2d a_r0a a_r1a a_r2a a_line_d a_line_a pout p_px p_py p_q0x p_q0y p_q1x p_q1y p_q0ny p_q1ny p_half old_out p_x p_y q0x q0y q1x q1y q0ny q1ny half Rr tc2 (@AbstractField.feval _ bw6_Fp6_params _ _ _ _ bw6_Fp6_repr fSv) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr x1v) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr y1v) (@AbstractField.feval _ bw6_Fp3_params _ _ _ _ bw6_Fp3_repr z1v) tc2 mS l10) by abstract (unfold proj_running; split; [reflexivity|]; split; [exact Hbpx|]; split; [exact Hbpy|]; split; [exact Hbhalf|]; split; [exact Hbq0x|]; split; [exact Hbq0y|]; split; [exact Hbq1x|]; split; [exact Hbq1y|]; split; [exact Hbq0ny|]; split; [exact Hbq1ny|]; exists fSv, x1v, y1v, z1v, r0v, r1v, r2v, r0av, r1av, r2av, ldv, lav; split; [exact HbfS|]; split; [exact Hbx1|]; split; [exact Hby1|]; split; [exact Hbz1|]; split; [reflexivity|]; split; [reflexivity|]; split; [reflexivity|]; split; [reflexivity|]; SeparationLogic.ecancel_assumption_impl).
     (* (e) Main loop: emit_iters_ok advances proj_running over bw6_main_loop_js. *)
     cbv [cmd_seq_list BW6_761_MillerLoop.cmd_seq_list].
     unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
@@ -381,6 +382,10 @@ Section BW6_761_MillerLoopOptimal_Top.
     destruct HpostF as [-> HrunF].
     destruct (BW6_761_ProjOps.bw6_proj_double_step Tx2 Ty2 Tz2 (feval half)) as [[[x1f y1f] z1f] rd] eqn:HDF.
     clear Hrun HrunM HsS.
+    (* Context cleaning: with Hrun (proj_running, abstracted) gone, the bounds/values
+       that fed it are no longer referenced — clear them so step (g)+dealloc and the
+       main [Qed] re-check a smaller context. *)
+    try clear Hbpx Hbpy Hbq0x Hbq0y Hbq1x Hbq1y Hbq0ny Hbq1ny Hbhalf Hbx1 Hby1 Hbz1 Hbr0 Hbr1 Hbr2 HbfS Hbc0 Hbc1 Hbc2 r0v r1v r2v.
     unfold proj_running in HrunF.
     destruct HrunF as (HtrF & Hbpx2 & Hbpy2 & Hbhalf2 & Hbq0x2 & Hbq0y2 & Hbq1x2 & Hbq1y2 & Hbq0ny2 & Hbq1ny2 & ffin & qxf & qyf & qzf & r0df & r1df & r2df & r0af & r1af & r2af & ldf & laf & Hbffin & Hbqxf & Hbqyf & Hbqzf & Heffin & Heqxf & Heqyf & Heqzf & HsF).
     (* (g) fp6_copy out <- f *)

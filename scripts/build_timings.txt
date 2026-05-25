@@ -56,3 +56,16 @@
 #   src/Bedrock/P256/{PrecomputedMultiples,RecodeProofs,RecodeSpecs,Scalarmult}.v (4 new upstream files needing newer coqutil)
 #   src/Spec/XEdDSA.v                                                           (duplicate; canonical in AUCurves)
 # All also stripped from src/{,Bedrock/}Everything.v + _CoqProject.
+
+# === 2026-05-25 partial profiling run (dune -j1, full Bedrock theory rebuild) ===
+# Triggered by a dune edit (BW6 re-exclusion); killed at OOM in the Spec theory.
+# Box baseline was ~7GB, so -j1 + a single ~6GB file exceeded 14GB RAM. The run
+# did NOT complete, but these CPU-bound timings (user~=wall, sys~=0) are reliable:
+  ~225s    -      src/Bedrock/Field/PairingTheory/ZModTest.v            Definition test_miller (Eval vm_compute) — BN254 affine Miller loop over the naive Fp12_Z tower
+  ~222s    -      src/Bedrock/Field/PairingTheory/ZModTest.v            Definition test_miller_mtwist — ditto (M-twist line). ~7.5min total for the two.
+#                                                                       NEEDED value (imported by MillerLoopWP / MillerEquiv / PairingTest as the L4 reference) — cannot exclude.
+#                                                                       Staged fix: Eval vm_compute -> Eval native_compute (idiomatic for a slow big-value compute). UNVALIDATED;
+#                                                                       validate on a build (and watch memory — native-compile of the Miller-loop closure may itself be heavy).
+#  (NB: earlier draft of this line wrongly attributed these to GnarkDoubleCorrect.v — the -time log's
+#   nearest File marker was GnarkDoubleCorrect's line-30 warning, but the slow sentences are ZModTest's.)
+  OOM      ~6GB   src/Spec/HashToCurveSWUProof_G2.v                     killed here: worker hit ~6GB RSS at -j1 (memory hog — isolate or build with more RAM)

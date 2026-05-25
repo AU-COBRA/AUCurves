@@ -25,8 +25,5 @@
      Examples.p224_64_Fp2
      End2End.Ristretto.ScalarMult
      End2End.XEdDSA.Sign
-     End2End.XEdDSA.Verify
-     ; Step and main excluded — Step lemma not written yet.
-     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
-     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))
+     End2End.XEdDSA.Verify))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

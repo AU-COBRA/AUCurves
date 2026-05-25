@@ -688,7 +688,22 @@ Proof.
        strengthening decoded_self_characterization (RoundTrip) to expose the decoder's
        invsqrt/Dx and threading it through encode_decode_equiv' -> main_inversion.
        The verified Mobius derivation (Hrel, Hy'lin, HAB/HBmA, Hy'p, Hns) is recorded
-       in LESSONS.md STATUS for replay once the hypothesis is added. *)
+       in LESSONS.md STATUS for replay once the hypothesis is added.
+
+       REFINED 2026-05-25 (DEFINITIVE — branch analysis is fundamentally limited
+       here): threading the decoder's LINEAR x' (now available as
+       RoundTrip.decoded_invsqrt_x : x' = abs(2*s*(I*u2)), (v*u2^2)*I^2=1) does NOT
+       suffice.  That x' contains the DECODER's inverse-sqrt I, which is NOT a
+       rational function of (x,y) (it is a square root), so x' is not rational in
+       (x,y).  The only (x,y)-rational handle is x'^2 = 4*s^2/v, and for the Mobius
+       y' (M=SQRT_M1) that is a NON-SQUARE ratio — so x' has no rational square root
+       in (x,y), and step1_reduction's systems (which need x' LINEARLY and
+       rationally) are simply unreachable from the available hypotheses.  The M=Fone
+       leaves only closed because there x'^2 was a perfect square ((x)^2 or
+       (SQRT_M1*y)^2), letting abs_pins_sign recover x' rationally.  CONCLUSION: the
+       per-leaf branch analysis cannot close M=SQRT_M1; the clean path is the
+       Jacobi-quartic isomorphism (Hamburg Decaf S5), which represents the E[4]-coset
+       so the sqrt is carried in the coordinate — a scoped ~400 LoC construction. *)
     admit.
 Admitted.
 

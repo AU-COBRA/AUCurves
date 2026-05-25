@@ -38,13 +38,13 @@ Definition test_Qy : Fp2_Z :=
 (** Run the affine Miller loop for BN254 with loop_param = 6u+2
     and the D-twist line function. *)
 Definition test_miller : Fp12_Z :=
-  Eval vm_compute in
+  Eval native_compute in
     affine_miller bn254_zmod_ops 29793968203157093288
       test_Px test_Py test_Qx test_Qy.
 
 (** Also run with the M-twist (buggy for BN254) line to show they differ. *)
 Definition test_miller_mtwist : Fp12_Z :=
-  Eval vm_compute in
+  Eval native_compute in
     affine_miller
       (zmod_ops bn254_params
          (mtwist_make_line (prime_p bn254_params)))

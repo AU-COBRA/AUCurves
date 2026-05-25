@@ -1004,6 +1004,62 @@ Proof.
   split; [exact Hxneg | exact Hoc_Q].
 Qed.
 
+(** Companion: exposes the decoder's internal inverse-square-root [I] and the
+    LINEAR form of x' (x' = abs(2*s*I*u2)), with the sqrt invariant
+    (v*u2^2)*I^2 = 1.  Needed downstream to pin x' linearly (on-curve alone
+    yields only x'^2). *)
+Lemma decoded_invsqrt_x : forall (s x' y' : Fp),
+  ristretto_decode_coords (le_split 32 (F.to_Z s)) = Some (x', y') ->
+  exists I,
+    ((F.opp (E.d * ((Fone - s*s) * (Fone - s*s))) - (Fone + s*s) * (Fone + s*s))
+        * ((Fone + s*s) * (Fone + s*s)) * I * I = Fone)%F
+    /\ x' = abs (F.of_Z p 2 * s * (I * (Fone + s*s))).
+Proof.
+  intros s x' y' Hdec.
+  pose proof (le_split_F_round_trip s) as Hbtc.
+  unfold ristretto_decode_coords in Hdec.
+  rewrite Hbtc in Hdec.
+  destruct (is_negative s) eqn:Hnegs; [discriminate Hdec|].
+  destruct (sqrt_ratio_m1 Fone
+     ((F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+       (Fone + s * s) * (Fone + s * s)) *
+      ((Fone + s * s) * (Fone + s * s)))) as [was_square invsqrt] eqn:Hsr.
+  destruct was_square eqn:Hws; simpl negb in Hdec; [|discriminate Hdec].
+  rewrite !orb_false_l in Hdec.
+  destruct (is_negative
+        (abs (F.of_Z p 2 * s * (invsqrt * (Fone + s * s))) *
+         ((Fone - s * s) *
+          (invsqrt * (invsqrt * (Fone + s * s)) *
+           (F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+            (Fone + s * s) * (Fone + s * s)))))) eqn:Hnegt; [discriminate Hdec|].
+  destruct (F.to_Z ((Fone - s * s) *
+     (invsqrt * (invsqrt * (Fone + s * s)) *
+      (F.opp (E.d * ((Fone - s * s) * (Fone - s * s))) -
+       (Fone + s * s) * (Fone + s * s)))) =? 0)%Z eqn:Hyz; [discriminate Hdec|].
+  injection Hdec as Hx' Hy'.
+  set (ss := (s * s)%F) in *.
+  set (u1 := (Fone - ss)%F) in *.
+  set (u2 := (Fone + ss)%F) in *.
+  set (u2_sqr := (u2 * u2)%F) in *.
+  set (v := (F.opp (E.d * (u1 * u1)) - u2_sqr)%F) in *.
+  set (den := (v * u2_sqr)%F) in *.
+  assert (Hynz : y' <> Fzero) by
+    (intro Hcontra; apply Z.eqb_neq in Hyz; apply Hyz;
+     rewrite Hy'; rewrite Hcontra; rewrite ModularArithmeticTheorems.F.to_Z_of_Z; reflexivity).
+  assert (Hdennz : den <> Fzero).
+  { intro Hd. apply Hynz. rewrite <- Hy'.
+    unfold den in Hd. apply Ristretto255_Sqrt.mul_zero_factor in Hd.
+    destruct Hd as [Hv|Hu2s].
+    - fold v in Hv. rewrite Hv. ring.
+    - unfold u2_sqr in Hu2s. apply Ristretto255_Sqrt.mul_zero_factor in Hu2s.
+      destruct Hu2s as [Hu|Hu]; fold u2 in Hu; rewrite Hu; ring. }
+  pose proof (sqrt_ratio_m1_decode_invariant s Hdennz true invsqrt Hsr eq_refl) as Hinv.
+  fold ss u1 u2 u2_sqr v den in Hinv.
+  exists invsqrt. split.
+  - exact Hinv.
+  - symmetry; exact Hx'.
+Qed.
+
 (** IMPORTANT CORRECTION: the existence form above is FALSE.  A generic
     on-curve point's encoding is rejected by the decoder's [was_square]
     guard (RFC 9496 §4.3.1 line 15), so [ristretto_decode_coords ... =

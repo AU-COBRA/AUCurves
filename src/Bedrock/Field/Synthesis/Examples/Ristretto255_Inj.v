@@ -507,6 +507,28 @@ Proof.
          [Hs2y'] (eliminate s^2) to relate Yf and y' through SQRT_M1, then the
          same [oncurve_x2_eq]+[abs_pins_sign] sign-pinning yields the
          complementary two systems.
+
+     VALIDATED MECHANICS (2026-05-25, interactive PET on the real frozen prefix):
+       * The Petanque "set-bound if doesn't reduce under destruct" belief is
+         FALSE here: `destruct rot eqn:Hrot.` DOES reduce Xsel/Y0/den_inv to
+         their concrete arms, and `destruct flip eqn:Hflip.` reduces Yf.  So the
+         dispatch IS: `destruct HMval as [HM1|HMsq]. 1: pose proof (HMcancel HM1)
+         as HYfy'. 1: destruct rot eqn:Hrot. ...` (use `1:` goal selector; bare
+         tactics error with "2 goals focused", and `{ }`/`only 1:` fail in PET).
+       * The two M=1, rot=false leaves are CLEAN (system (i)/(ii)): HYfy' gives
+         y'=+/-y; oncurve_x2_eq gives x^2=x'^2; flip (= is_negative x after
+         rewrite HM1 + x*Fone=x) feeds abs_pins_sign to pin x=+/-x'; then
+         apply step1_reduction with denomx_nz/denomy_nz (need on-curve(-x',y'):
+         replace (F.opp x'*F.opp x') with (x'*x') by ring; exact Hoc_Q).
+       * REMAINING HARD KERNEL — the 4 order-4 / M=SQRT_M1 leaves: HMcancel +
+         on-curve alone DO NOT pin the sign.  E.g. M=1, rot=true: HYfy' gives
+         y' = +/- x*SQRT_M1 (so y'^2 = -x^2), and on-curve forces y^2 = -x'^2,
+         but on-curve is satisfied for BOTH y = +SQRT_M1*x' and y = -SQRT_M1*x'
+         (it does not constrain the sign), while the torsion system (iii)/(iv)
+         requires the specific one (y*y'=x*x').  That sign must come from the
+         MAGNITUDE: [Hmag] (den_inv^2*(1-Yf^2)=M) together with s=abs(...) /
+         is_negative s = Hnegs / is_negative inv = Hinvneg.  Closing these four
+         leaves is the genuine residual (magnitude-based sign determination).
      ---------------------------------------------------------------------- *)
 Admitted.
 

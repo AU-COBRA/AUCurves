@@ -271,6 +271,50 @@ Proof.
                               | transitivity (x''*x''*D)%F; [ exact (eq_sym Hx'') | field ] ].
 Qed.
 
+(* 1 - d*x^2 <> 0 for x <> 0 (d is a non-square). *)
+Local Lemma one_sub_dx2_nz : forall (x : Fp), x <> Fzero ->
+  (Fone - Curve25519.E.d * (x * x))%F <> Fzero.
+Proof.
+  intros x Hx Hk.
+  assert (Hxx : (x * x)%F <> Fzero)
+    by (intro H; destruct (Ristretto255_Sqrt.mul_zero_factor x x H); apply Hx; assumption).
+  assert (Hd1 : (Curve25519.E.d * (x * x))%F = Fone)
+    by (transitivity (Fone - (Fone - Curve25519.E.d * (x * x)))%F; [ ring | rewrite Hk; ring ]).
+  apply (Curve25519.E.nonsquare_d (F.inv x)).
+  apply (Ristretto255_Sqrt.mul_cancel_l (x * x) _ _ Hxx).
+  replace ((x * x) * Curve25519.E.d)%F with (Fone:Fp) by (rewrite <- Hd1; ring).
+  field. exact Hx.
+Qed.
+
+(* Rotated on-curve relation: y'^2 = -x^2 forces x'^2 = -y^2 (mirrors
+   oncurve_x2_eq via the 1-d*x^2 factor instead of 1-y^2). *)
+Local Lemma oncurve_rot_x2 : forall (x y x' y' : Fp),
+  (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
+  (Curve25519.E.a * (x' * x') + y' * y' = Fone + Curve25519.E.d * (x' * x') * (y' * y'))%F ->
+  (y' * y' = F.opp (x * x))%F ->
+  x <> Fzero ->
+  (x' * x' = F.opp (y * y))%F.
+Proof.
+  intros x y x' y' Hc Hc' Hy' Hx.
+  pose proof (one_sub_dx2_nz x Hx) as Hdx2.
+  rewrite HaQ in Hc, Hc'. rewrite Hy' in Hc'.
+  set (D := (Fone - Curve25519.E.d * (x * x))%F) in *.
+  assert (Hyx : (y * y * D = Fone + x * x)%F).
+  { unfold D.
+    assert (Hr : (y * y * (Fone - Curve25519.E.d * (x * x)))%F
+               = ((F.opp Fone * (x*x) + y*y) - (Fone + Curve25519.E.d * (x*x) * (y*y)) + Fone + x*x)%F) by field.
+    rewrite Hr, Hc. field. }
+  assert (Hx'x : (x' * x' * D = F.opp (Fone + x * x))%F).
+  { unfold D.
+    assert (Hr : (x' * x' * (Fone - Curve25519.E.d * (x * x)))%F
+               = ((Fone + Curve25519.E.d * (x'*x') * F.opp (x*x)) - (F.opp Fone * (x'*x') + F.opp (x*x)) + F.opp (Fone + x*x))%F) by field.
+    rewrite Hr, Hc'. field. }
+  apply (Ristretto255_Sqrt.mul_cancel_l D _ _ Hdx2).
+  transitivity (F.opp (Fone + x*x))%F.
+  - transitivity (x' * x' * D)%F; [ ring | exact Hx'x ].
+  - transitivity (F.opp (y * y * D))%F; [ rewrite Hyx; ring | ring ].
+Qed.
+
 (* ============================================================================
    STATUS (ristretto255 injectivity residual / Decaf cofactor theorem).
 

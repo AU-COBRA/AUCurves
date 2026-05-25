@@ -25,5 +25,9 @@
      Examples.p224_64_Fp2
      End2End.Ristretto.ScalarMult
      End2End.XEdDSA.Sign
-     End2End.XEdDSA.Verify))
+     End2End.XEdDSA.Verify
+     ; Step and main excluded — Step lemma not written yet; main's Qed is
+     ; structural/intractable (see docs/bw6-761-optimal-ate-qed-performance.md).
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

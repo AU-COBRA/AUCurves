@@ -574,6 +574,104 @@ Proof.
          is_negative s = Hnegs / is_negative inv = Hinvneg.  Closing these four
          leaves is the genuine residual (magnitude-based sign determination).
      ---------------------------------------------------------------------- *)
+  assert (Hxnz : x <> Fzero) by (intro Hk; apply Hu2nz0; unfold u2; rewrite Hk; ring).
+  assert (Hynz0 : y <> Fzero) by (intro Hk; apply Hu2nz0; unfold u2; rewrite Hk; ring).
+  assert (HoQ' : (Curve25519.E.a * (F.opp x' * F.opp x') + y' * y'
+                  = Fone + Curve25519.E.d * (F.opp x' * F.opp x') * (y' * y'))%F)
+    by (replace (F.opp x' * F.opp x')%F with (x' * x')%F by ring; exact Hoc_Q).
+  pose proof (denomx_nz x y (F.opp x') y' Hoc HoQ') as Hdx.
+  pose proof (denomy_nz x y (F.opp x') y' Hoc HoQ') as Hdy.
+  assert (HSnz : SQRT_M1 <> Fzero) by (apply Ristretto255_Sqrt.SQRT_M1_nz).
+  destruct HMval as [HM1 | HMsq].
+  - (* ===== M = Fone : HMcancel gives Yf = y' ===== *)
+    pose proof (HMcancel HM1) as HYfy'.
+    destruct rot eqn:Hrot; destruct flip eqn:Hflip.
+    + (* rot=true, flip=true : y' = -(x*SQRT_M1), x' = -(SQRT_M1*y) ; system (iii) *)
+      assert (HY' : y' = F.opp (x * SQRT_M1)%F) by (rewrite <- HYfy'; reflexivity).
+      assert (Hy'2 : (y' * y' = F.opp (x * x))%F)
+        by (rewrite HY'; transitivity ((x*x)*(SQRT_M1*SQRT_M1))%F;
+            [ ring | rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring ]).
+      pose proof (oncurve_rot_x2 x y x' y' Hoc Hoc_Q Hy'2 Hxnz) as Hx'2.
+      assert (Hsneg : is_negative (SQRT_M1 * y) = true).
+      { change (is_negative (y * SQRT_M1 * M) = true) in Hflip.
+        rewrite HM1 in Hflip.
+        replace (y * SQRT_M1 * Fone)%F with (SQRT_M1 * y)%F in Hflip by ring.
+        exact Hflip. }
+      assert (Hsymnz : (SQRT_M1 * y)%F <> Fzero)
+        by (intro Hk; destruct (Ristretto255_Sqrt.mul_zero_factor _ _ Hk); [ apply HSnz | apply Hynz0 ]; assumption).
+      assert (Hbneg : is_negative (F.opp (SQRT_M1 * y)) = false)
+        by (rewrite (Ristretto255_Sqrt.is_negative_opp_nonzero _ Hsymnz), Hsneg; reflexivity).
+      assert (Hx'eq : x' = F.opp (SQRT_M1 * y)).
+      { destruct (abs_pins_sign x' (F.opp (SQRT_M1 * y))) as [Hp _].
+        - rewrite Hx'2. transitivity ((SQRT_M1*SQRT_M1)*(y*y))%F;
+          [ rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring | ring ].
+        - exact Hbneg.
+        - exact (Hp Hxneg). }
+      apply step1_reduction; [ exact Hdx | exact Hdy | ].
+      assert (Hxxyy : (Curve25519.E.d * x * x' * y * y' = F.opp (Curve25519.E.d*(x*x)*(y*y)))%F).
+      { rewrite HY', Hx'eq. transitivity (Curve25519.E.d*(x*x)*(y*y)*(SQRT_M1*SQRT_M1))%F;
+        [ ring | rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring ]. }
+      right; right; left. split.
+      * rewrite HY', Hx'eq. ring.
+      * rewrite Hxxyy, HY', Hx'eq. rewrite HaQ in Hoc.
+        transitivity (SQRT_M1 * (F.opp Fone*(x*x) + y*y))%F; [ ring | rewrite Hoc; ring ].
+    + (* rot=true, flip=false : y' = x*SQRT_M1, x' = SQRT_M1*y ; system (iv) *)
+      assert (HY' : y' = (x * SQRT_M1)%F) by (rewrite <- HYfy'; reflexivity).
+      assert (Hy'2 : (y' * y' = F.opp (x * x))%F)
+        by (rewrite HY'; transitivity ((x*x)*(SQRT_M1*SQRT_M1))%F;
+            [ ring | rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring ]).
+      pose proof (oncurve_rot_x2 x y x' y' Hoc Hoc_Q Hy'2 Hxnz) as Hx'2.
+      assert (Hsneg : is_negative (SQRT_M1 * y) = false).
+      { change (is_negative (y * SQRT_M1 * M) = false) in Hflip.
+        rewrite HM1 in Hflip.
+        replace (y * SQRT_M1 * Fone)%F with (SQRT_M1 * y)%F in Hflip by ring.
+        exact Hflip. }
+      assert (Hx'eq : x' = (SQRT_M1 * y)%F).
+      { destruct (abs_pins_sign x' (SQRT_M1 * y)) as [Hp _].
+        - rewrite Hx'2. transitivity ((SQRT_M1*SQRT_M1)*(y*y))%F;
+          [ rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring | ring ].
+        - exact Hsneg.
+        - exact (Hp Hxneg). }
+      apply step1_reduction; [ exact Hdx | exact Hdy | ].
+      assert (Hxxyy : (Curve25519.E.d * x * x' * y * y' = F.opp (Curve25519.E.d*(x*x)*(y*y)))%F).
+      { rewrite HY', Hx'eq. transitivity (Curve25519.E.d*(x*x)*(y*y)*(SQRT_M1*SQRT_M1))%F;
+        [ ring | rewrite Ristretto255_CaseScratch.SQRT_M1_sq; ring ]. }
+      right; right; right. split.
+      * rewrite HY', Hx'eq. ring.
+      * rewrite Hxxyy, HY', Hx'eq. rewrite HaQ in Hoc.
+        transitivity (F.opp SQRT_M1 * (F.opp Fone*(x*x) + y*y))%F; [ ring | rewrite Hoc; ring ].
+    + (* rot=false, flip=true : y' = -y, x = -x' ; system (ii) *)
+      assert (HY' : y' = F.opp y) by (rewrite <- HYfy'; reflexivity).
+      assert (Hyy2 : (y * y = y' * y')%F) by (rewrite HY'; ring).
+      pose proof (oncurve_x2_eq x y x' y' Hoc Hoc_Q Hyy2 Hu1nz0) as Hx2.
+      assert (Hxn : is_negative x = true).
+      { change (is_negative (x * M) = true) in Hflip.
+        rewrite HM1 in Hflip. replace (x * Fone)%F with x in Hflip by ring. exact Hflip. }
+      assert (Hxeq : x = F.opp x').
+      { destruct (abs_pins_sign x x' Hx2 Hxneg) as [_ Hp]. exact (Hp Hxn). }
+      apply step1_reduction; [ exact Hdx | exact Hdy | ].
+      right; left. rewrite HY', Hxeq. split.
+      * ring.
+      * rewrite HaQ in Hoc_Q.
+        transitivity (F.opp (F.opp Fone*(x'*x') + (F.opp y)*(F.opp y)))%F; [ ring | ].
+        rewrite HY' in Hoc_Q. rewrite Hoc_Q. ring.
+    + (* rot=false, flip=false : y' = y, x = x' ; system (i) *)
+      assert (HY' : y' = y) by (rewrite <- HYfy'; reflexivity).
+      assert (Hyy2 : (y * y = y' * y')%F) by (rewrite HY'; ring).
+      pose proof (oncurve_x2_eq x y x' y' Hoc Hoc_Q Hyy2 Hu1nz0) as Hx2.
+      assert (Hxn : is_negative x = false).
+      { change (is_negative (x * M) = false) in Hflip.
+        rewrite HM1 in Hflip. replace (x * Fone)%F with x in Hflip by ring. exact Hflip. }
+      assert (Hxeq : x = x').
+      { destruct (abs_pins_sign x x' Hx2 Hxneg) as [Hp _]. exact (Hp Hxn). }
+      apply step1_reduction; [ exact Hdx | exact Hdy | ].
+      left. rewrite HY', <- Hxeq. split.
+      * ring.
+      * rewrite HaQ in Hoc.
+        transitivity (F.opp Fone*(x*x) + y*y)%F; [ ring | ].
+        rewrite Hoc. ring.
+  - (* ===== M = SQRT_M1 ===== *)
+    admit.
 Admitted.
 
 Lemma encode_decode_equiv' : forall (x y x' y' : Fp),

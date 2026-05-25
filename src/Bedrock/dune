@@ -29,5 +29,40 @@
      ; Step and main excluded — Step lemma not written yet; main's Qed is
      ; structural/intractable (see docs/bw6-761-optimal-ate-qed-performance.md).
      Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof
-     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step))
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Step
+     ; safegcd / FpInv chain: legacy flat-namespace ([-R src ""]) code that the dune
+     ; migration to qualified per-theory loadpaths did not port.  These bare-Require
+     ; divsteps_* from src/Arithmetic/safegcd (which has no dune theory and is not in
+     ; src/dune (dirs ...)), so the short names cannot resolve under dune.  Verify them
+     ; with the flat loadpath preserved in _CoqProject.bak (e.g. coq_makefile -f
+     ; _CoqProject.bak), NOT dune.  (Investigated 2026-05-25; all leaf, no cascade.)
+     Field.Synthesis.Examples.BLS12_377_FpInv_closed
+     Field.Synthesis.Examples.BLS12_377_FpInv_half_proved
+     Field.Synthesis.Examples.BLS12_381_FpInv_half_proved
+     Field.Synthesis.Examples.BLS12_FpInv_closed
+     Field.Synthesis.Examples.BLS24_509_FpInv_closed
+     Field.Synthesis.Examples.BLS24_509_FpInv_half_proved
+     Field.Synthesis.Examples.BN254_FpInv_closed
+     Field.Synthesis.Examples.BN254_FpInv_half_proved
+     Field.Synthesis.Examples.BN256_FpInv_closed
+     Field.Synthesis.Examples.BN256_FpInv_half_proved
+     Field.Synthesis.Examples.BN446_FpInv_closed
+     Field.Synthesis.Examples.BN446_FpInv_half_proved
+     Field.Synthesis.Examples.BW6_761_FpInv_closed
+     Field.Synthesis.Examples.BW6_761_FpInv_half_proved
+     Field.Synthesis.Examples.Fe25519_FpInv_proved
+     Field.Synthesis.Examples.P224_FpInv_closed
+     Field.Synthesis.Examples.P224_FpInv_half_proved
+     Field.Synthesis.Examples.P256_FpInv_closed
+     Field.Synthesis.Examples.P256_FpInv_half_proved
+     Field.Synthesis.Examples.P384_FpInv_closed
+     Field.Synthesis.Examples.P384_FpInv_half_proved
+     Field.Synthesis.Examples.P521_FpInv_closed
+     Field.Synthesis.Examples.P521_FpInv_half_proved
+     Field.Synthesis.Examples.Pallas_FpInv_closed
+     Field.Synthesis.Examples.Pallas_FpInv_half_proved
+     Field.Synthesis.Examples.Secp256k1_FpInv_closed
+     Field.Synthesis.Examples.Secp256k1_FpInv_half_proved
+     Field.Synthesis.Examples.Vesta_FpInv_closed
+     Field.Synthesis.Examples.Vesta_FpInv_half_proved))
  (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))

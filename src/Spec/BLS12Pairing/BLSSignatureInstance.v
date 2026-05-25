@@ -157,21 +157,21 @@ Definition bls12_aggregate (sigs : list G1) : G1 :=
 (* ================================================================== *)
 
 (** Bilinearity hypotheses — from Bilinearity.v *)
-Hypothesis bilinear_left :
+Axiom bilinear_left :
   forall (a : Z) (P : G1) (Q : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       (bls12_g1_scalar_mult a P) Q =
     fp12_pow bls12_p_pos
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P Q) a.
 
-Hypothesis bilinear_right :
+Axiom bilinear_right :
   forall (b : Z) (P : G1) (Q : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       P (bls12_g2_scalar_mult b Q) =
     fp12_pow bls12_p_pos
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P Q) b.
 
-Hypothesis additive_left :
+Axiom additive_left :
   forall (P Q : G1) (R : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       (bls12_g1_add P Q) R =
@@ -179,12 +179,12 @@ Hypothesis additive_left :
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P R)
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 Q R).
 
-Hypothesis non_degenerate :
+Axiom non_degenerate :
   pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
     g1_generator g2_generator <>
   Pairing.fp12_one bls12_p_pos.
 
-Hypothesis check_correct :
+Axiom check_correct :
   forall (P1 : G1) (Q1 : G2) (P2 : G1) (Q2 : G2),
     pairing_check bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 fp12_eq_dec
       P1 Q1 P2 Q2 = true
@@ -192,11 +192,11 @@ Hypothesis check_correct :
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P1 Q1 =
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P2 Q2.
 
-Hypothesis fp12_mul_one_r :
+Axiom fp12_mul_one_r :
   forall (x : Fp12),
     Pairing.fp12_mul bls12_p_pos x (Pairing.fp12_one bls12_p_pos) = x.
 
-Hypothesis fp12_mul_assoc :
+Axiom fp12_mul_assoc :
   forall (x y z : Fp12),
     Pairing.fp12_mul bls12_p_pos (Pairing.fp12_mul bls12_p_pos x y) z =
     Pairing.fp12_mul bls12_p_pos x (Pairing.fp12_mul bls12_p_pos y z).

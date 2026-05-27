@@ -52,6 +52,7 @@ Require Import Crypto.Curves.Edwards.AffineProofs.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Encode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Decode.
 Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_RoundTrip.
+Require Import Bedrock.Field.Synthesis.Examples.Ristretto255_Inj.
 Import ListNotations.
 Local Open Scope Z_scope.
 
@@ -252,12 +253,18 @@ Proof.
     [ left | right;left | right;right;left | right;right;right
     | right;left | left | right;right;right | right;right;left
     | right;right;left | right;right;right | right;left | left
-    | right;right;right | right;right;left | left | right;left ];
-    (split;
-      [ unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; field;
-        Decidable.vm_decide
-      | unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; field;
-        Decidable.vm_decide ]).
+    | right;right;right | right;right;left | left | right;left ].
+  all: split.
+  (* 12 cases: a torsion sum with a zero coordinate; field after unfolding the constants. *)
+  all: try solve [ unfold Curve25519.E.a, Curve25519.E.d, SQRT_M1; field; Decidable.vm_decide ].
+  (* remaining 4 (T2c x T3c): these need SQRT_M1^2 = -1 and a = -1, and [field] chokes on the
+     unfolded SQRT_M1 literal ("not a valid field equation").  Clear the unit denominator, then
+     rewrite SQRT_M1^2 -> -1 (the ^2-form of SQRT_M1_sq, since field_simplify emits a power). *)
+  all: assert (HS2 : (SQRT_M1 ^ 2 = F.opp Fone)%F)
+         by (rewrite <- Ristretto255_CaseScratch.SQRT_M1_sq; ring);
+       match goal with |- (?n / ?d)%F = _ => replace d with (Fone:Fp) by ring end;
+       unfold Curve25519.E.a; field_simplify;
+       first [ rewrite ?HS2; ring | Decidable.vm_decide ].
 Qed.
 
 (** Closure of [E4] under [E.add]. *)
@@ -267,7 +274,7 @@ Proof.
   intros R S HR HS.
   pose proof curve25519_comm_group as Hcg. destruct Hcg as [Hgrp Hcomm].
   apply E4_eq_one_of in HR. apply E4_eq_one_of in HS.
-  pose proof (@monoid_op_Proper _ _ _ _ Hgrp) as Hadd.
+  pose proof (monoid_op_Proper (monoid := group_monoid (group := Hgrp))) as Hadd.
   assert (Hbridge : forall i j,
             In i (Oc::T1c::T2c::T3c::nil) -> In j (Oc::T1c::T2c::T3c::nil) ->
             E.eq R i -> E.eq S j -> E4 (Curve25519.E.add R S)).
@@ -478,8 +485,8 @@ Theorem ristretto_encode_add_commute :
 Proof.
   intros oc P Q HmP HmQ.
   unfold ristretto_quotient_add.
-  destruct (ristretto_encode_decode_roundtrip oc P HmP) as [P' [HdecP HeqP]].
-  destruct (ristretto_encode_decode_roundtrip oc Q HmQ) as [Q' [HdecQ HeqQ]].
+  destruct (ristretto_encode_decode_roundtrip_subgroup oc P HmP) as [P' [HdecP HeqP]].
+  destruct (ristretto_encode_decode_roundtrip_subgroup oc Q HmQ) as [Q' [HdecQ HeqQ]].
   rewrite HdecP, HdecQ.
   symmetry.
   apply canonical_rep_selection.

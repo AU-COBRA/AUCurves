@@ -156,11 +156,20 @@ Definition ristretto_equiv (P Q : Curve25519.E.point) : Prop :=
     parameters through the round-trip theorem.  A future refinement
     can replace [on_main_subgroup] with the concrete characterisation
     and re-prove the theorems unchanged. *)
+(** [nB n] = n-fold sum of the basepoint [B], built from the instantiated
+    [Curve25519.E.add]/[E.zero] (avoids threading the generic [E.mul] field
+    parameters — the reason this was deferred). [B] has order [l], so [{nB n}] is
+    exactly the prime-order (main) subgroup. *)
+Definition nB (n : nat) : Curve25519.E.point :=
+  Nat.iter n (Curve25519.E.add Curve25519.E.B) Curve25519.E.zero.
+
+(** CONCRETIZED 2026-05-25 (was an abstract [True] placeholder): [P] is on the
+    main subgroup iff it is a multiple of [B].  Coordinate equality (on
+    [point_coords]) avoids sig proof-irrelevance.  The round-trip theorems use
+    this only as a hypothesis; the Decaf squareness `on_main_subgroup -> ws=true`
+    ([Ristretto255_Inj.main_subgroup_valid]) is the genuine content it gates. *)
 Definition on_main_subgroup (P : Curve25519.E.point) : Prop :=
-  (* The Phase-B downstream proof will instantiate this with the
-     concrete scalar-mult predicate; meanwhile, the round-trip theorem
-     uses it only as a hypothesis (no destruction). *)
-  True.
+  exists n : nat, point_coords P = point_coords (nB n).
 
 (* ========================================================================
    Section 2: The canonical-representative selection lemma.
@@ -1074,27 +1083,22 @@ Qed.
     re-encodes to s, so pP and pQ encode identically; the encoder's
     [rotate]/[Y:=-Y] branch structure then forces their Edwards
     difference [sub_affine pP pQ] into E[4].  ~150-250 LoC. *)
+(** CORRECTED 2026-05-25 — the unconditional form is FALSE (see correction note above:
+    Coq-verified counterexample [pP=(_,10)] on-curve, decodes to a NON-equivalent point).
+    The round-trip holds only for VALID ristretto inputs, i.e. when the encoder's
+    [sqrt_ratio_m1] branch succeeded ([was_square = true]).  This corrected statement is
+    PROVED (0 axioms) as [Ristretto255_Inj.encode_decode_equiv']; it cannot be proved here
+    because its inversion is [Ristretto255_Inj.main_inversion], downstream of this file
+    (RoundTrip cannot import Inj — circular).  Kept here as the decode-facing interface. *)
 Lemma encode_decode_equiv : forall (pP pQ : Fp * Fp),
   (let '(x, y) := pP in
      (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F) ->
   ristretto_decode_coords (ristretto_encode_bytes (to_extended pP)) = Some pQ ->
+  (let '(x, y) := pP in
+     fst (sqrt_ratio_m1 Fone ((Fone + y) * (Fone - y) * (x * y * (x * y)))) = true) ->
   is_4torsion_affine (sub_affine pP pQ).
 Proof.
-  intros pP pQ Hoc Hdec.
-  pose proof (encode_decode_same_s pP pQ Hdec) as Hsame.
-  destruct pP as [x y]. destruct pQ as [x' y'].
-  set (s := ristretto_encode (to_extended (x, y))) in *.
-  unfold ristretto_encode_bytes, ristretto_encode_bytes_of_F in Hdec.
-  fold s in Hdec.
-  pose proof (decoded_self_characterization s x' y' Hdec) as Hchar.
-  cbv zeta in Hchar.
-  destruct Hchar as (Hnegs & Hynz & Hu2nz & Hvnz & Hyvu2 & Hxv2v & Hxneg & Hoc_Q).
-  rewrite sub_affine_eq_pair.
-  (* REMAINING: ristretto injectivity — invert ristretto_encode_aux on pP
-     (4 encoder branches + sqrt square/non-square branch), pinning (x,y) to
-     one of pQ's four E[4]-translates; then sub_affine_x/y land in the
-     matching is_4torsion_affine disjunct.  Decode-facing dual of
-     canonical_rep_selection (~200-400 LoC, Decaf/Jacobi-quartic). *)
+  (* = Ristretto255_Inj.encode_decode_equiv' (proved, 0 axioms); discharged downstream. *)
 Admitted.
 
 (** ** Theorem 1 (encode-then-decode round-trip).
@@ -1132,14 +1136,17 @@ Theorem ristretto_encode_decode_roundtrip :
   forall (on_curve_obligation : OnCurveObligation) (P Q : Curve25519.E.point),
     ristretto_decode_bytes on_curve_obligation
       (ristretto_encode_bytes (to_extended (point_coords P))) = Some Q ->
+    (let '(x, y) := point_coords P in
+       fst (sqrt_ratio_m1 Fone ((Fone + y) * (Fone - y) * (x * y * (x * y)))) = true) ->
     ristretto_equiv P Q.
 Proof.
-  intros oc P Q Hdec.
+  intros oc P Q Hdec Hvalid.
   pose proof (decode_bytes_coords oc _ Q Hdec) as HQc.
   unfold ristretto_equiv.
   apply (encode_decode_equiv (point_coords P) (point_coords Q)).
   - exact (typed_point_on_curve P).
   - exact HQc.
+  - exact Hvalid.
 Qed.
 
 (** ** Theorem 2 (decode-then-encode round-trip).

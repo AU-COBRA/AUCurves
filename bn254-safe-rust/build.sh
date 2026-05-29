@@ -30,12 +30,32 @@ mkdir -p "$OUT_DIR"
 GEN="$PWD/generated"
 JASMINC="${JASMINC:-jasminc}"
 
+# Leaf source selection (#219 spill-policy re-test).
+#   BN254_LEAVES=spill   (default) — bn254_leaves.jazz, the pp_module emit
+#                                    (all non-bool temps #[spill] reg u64).
+#   BN254_LEAVES=nospill            — bn254_leaves_nospill.jazz, the
+#                                    pp_module_nospill emit on the leaves
+#                                    that fit in 16 GPRs (add/sub/select/
+#                                    felem_copy declared plain reg u64).
+#                                    mul/square keep #[spill]: the 4xu64
+#                                    schoolbook genuinely exceeds 16 regs
+#                                    and jasminc -auto-spill cannot allocate
+#                                    them without spilling.
+# Both emits are semantics-preserving by the Qed lemmas
+# pp_locals_decls_nospill_drops_spill / pp_locals_decls_spill_form in
+# src/Bedrock/Jasmin/Core.v (#[spill] is a register-allocation hint with
+# no effect on the program denotation).
+case "${BN254_LEAVES:-spill}" in
+  nospill) LEAVES_SRC="$GEN/bn254_leaves_nospill.jazz" ;;
+  *)       LEAVES_SRC="$GEN/bn254_leaves.jazz" ;;
+esac
+
 # 1. Rename bn254_mul → bn254_mul_jasmin in the .jazz source so it doesn't
 #    collide with the CryptOpt-supplied bn254_mul. This is the cleanest
 #    way to handle the symbol split: a textual substitution on a .jazz
 #    file the reviewer can diff against the original.
 sed 's/\bbn254_mul\b/bn254_mul_jasmin/g' \
-    "$GEN/bn254_leaves.jazz" > "$OUT_DIR/bn254_leaves_renamed.jazz"
+    "$LEAVES_SRC" > "$OUT_DIR/bn254_leaves_renamed.jazz"
 
 # 2. jasminc → AT&T assembly (verified register allocation)
 "$JASMINC" -auto-spill "$OUT_DIR/bn254_leaves_renamed.jazz" \

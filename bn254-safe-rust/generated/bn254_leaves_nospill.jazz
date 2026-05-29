@@ -1,0 +1,3647 @@
+export fn bn254_add(reg u64 out0, reg u64 in0, reg u64 in1) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 x0;
+  reg u64 x1;
+  reg u64 x2;
+  reg u64 x3;
+  reg u64 x4;
+  reg u64 x5;
+  reg u64 x6;
+  reg u64 x7;
+  reg bool __cf;
+  reg u64 x8;
+  reg u64 x10;
+  reg u64 x12;
+  reg u64 x14;
+  reg u64 x15;
+  reg bool __bf;
+  reg u64 x16;
+  reg u64 x18;
+  reg u64 x20;
+  reg u64 x22;
+  reg u64 x23;
+  reg u64 x26;
+  reg u64 x29;
+  reg u64 x32;
+  reg u64 x35;
+  reg u64 x36;
+  reg u64 x37;
+  reg u64 x38;
+  reg u64 x39;
+  x0 = [in0 + 0];
+  x1 = [(in0 + 8) + 0];
+  x2 = [(in0 + 16) + 0];
+  x3 = [(in0 + 24) + 0];
+  x4 = [in1 + 0];
+  x5 = [(in1 + 8) + 0];
+  x6 = [(in1 + 16) + 0];
+  x7 = [(in1 + 24) + 0];
+  _, __cf, _, _, _, x8 = #ADD(x0, x4);
+  __cf, x10 = #ADCX(x1, x5, __cf);
+  __cf, x12 = #ADCX(x2, x6, __cf);
+  __cf, x14 = #ADCX(x3, x7, __cf);
+  x15 = 0;
+  if __cf {
+    x15 = 1;
+  }
+  __wtmp__ = 4332616871279656263;
+  x16 = x8;
+  _, __bf, _, _, _, x16 = #SUB(x16, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  x18 = x10;
+  _, __bf, _, _, _, x18 = #SBB(x18, __wtmp__, __bf);
+  __wtmp__ = 13281191951274694749;
+  x20 = x12;
+  _, __bf, _, _, _, x20 = #SBB(x20, __wtmp__, __bf);
+  __wtmp__ = 3486998266802970665;
+  x22 = x14;
+  _, __bf, _, _, _, x22 = #SBB(x22, __wtmp__, __bf);
+  x23 = 0;
+  if __bf {
+    x23 = 1;
+  }
+  if ((x23 == 0)) {
+    x26 = x16;
+  } else {
+    x26 = x8;
+  }
+  if ((x23 == 0)) {
+    x29 = x18;
+  } else {
+    x29 = x10;
+  }
+  if ((x23 == 0)) {
+    x32 = x20;
+  } else {
+    x32 = x12;
+  }
+  if ((x23 == 0)) {
+    x35 = x22;
+  } else {
+    x35 = x14;
+  }
+  x36 = x26;
+  x37 = x29;
+  x38 = x32;
+  x39 = x35;
+  [out0 + 0] = x36;
+  [(out0 + 8) + 0] = x37;
+  [(out0 + 16) + 0] = x38;
+  [(out0 + 24) + 0] = x39;
+}
+
+
+export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
+  reg u64 __mulx_tmp__;
+  reg u64 x0;
+  reg u64 x1;
+  reg u64 x2;
+  reg u64 x3;
+  reg u64 x4;
+  reg u64 x5;
+  reg u64 x6;
+  reg u64 x7;
+  reg bool __bf;
+  reg u64 x8;
+  reg u64 x10;
+  reg u64 x12;
+  reg u64 x14;
+  reg u64 x15;
+  reg u64 x16;
+  reg u64 x16_bp0;
+  reg u64 __wtmp__;
+  reg bool __ltu_x17_bp0;
+  reg u64 x17_bp0;
+  reg u64 x17;
+  reg u64 x18;
+  reg u64 x18_bp0;
+  reg bool __ltu_x19_bp1;
+  reg u64 x19_bp1;
+  reg u64 x19_lt_b_bp2;
+  reg bool __ltu_x19_bp3;
+  reg u64 x19_bp3;
+  reg u64 x19a_bp0;
+  reg u64 x19;
+  reg u64 x20;
+  reg u64 x20_bp0;
+  reg bool __ltu_x21_bp4;
+  reg u64 x21_bp4;
+  reg u64 x21_lt_b_bp5;
+  reg bool __ltu_x21_bp6;
+  reg u64 x21_bp6;
+  reg u64 x21a_bp0;
+  reg u64 x21a_bp1;
+  reg u64 x21;
+  reg u64 x21_bp0;
+  reg u64 x22;
+  reg u64 x23;
+  reg u64 x24;
+  reg u64 x25;
+  x0 = [in0 + 0];
+  x1 = [(in0 + 8) + 0];
+  x2 = [(in0 + 16) + 0];
+  x3 = [(in0 + 24) + 0];
+  x4 = [in1 + 0];
+  x5 = [(in1 + 8) + 0];
+  x6 = [(in1 + 16) + 0];
+  x7 = [(in1 + 24) + 0];
+  __wtmp__ = x4;
+  x8 = x0;
+  _, __bf, _, _, _, x8 = #SUB(x8, __wtmp__);
+  __wtmp__ = x5;
+  x10 = x1;
+  _, __bf, _, _, _, x10 = #SBB(x10, __wtmp__, __bf);
+  __wtmp__ = x6;
+  x12 = x2;
+  _, __bf, _, _, _, x12 = #SBB(x12, __wtmp__, __bf);
+  __wtmp__ = x7;
+  x14 = x3;
+  _, __bf, _, _, _, x14 = #SBB(x14, __wtmp__, __bf);
+  x15 = 0;
+  if __bf {
+    x15 = 0;
+    x15 = (x15 - 1);
+  }
+  x16 = x8;
+  x16_bp0 = x15;
+  __wtmp__ = 4332616871279656263;
+  x16_bp0 = (x16_bp0 & __wtmp__);
+  x16 = (x16 + x16_bp0);
+  __ltu_x17_bp0 = (x16 <u x8);
+  x17_bp0 = 0;
+  if __ltu_x17_bp0 {
+    x17_bp0 = 1;
+  }
+  x17 = x17_bp0;
+  x17 = (x17 + x10);
+  x18 = x17;
+  x18_bp0 = x15;
+  __wtmp__ = 10917124144477883021;
+  x18_bp0 = (x18_bp0 & __wtmp__);
+  x18 = (x18 + x18_bp0);
+  __ltu_x19_bp1 = (x17 <u x10);
+  x19_bp1 = 0;
+  if __ltu_x19_bp1 {
+    x19_bp1 = 1;
+  }
+  x19_lt_b_bp2 = x15;
+  __wtmp__ = 10917124144477883021;
+  x19_lt_b_bp2 = (x19_lt_b_bp2 & __wtmp__);
+  __ltu_x19_bp3 = (x18 <u x19_lt_b_bp2);
+  x19_bp3 = 0;
+  if __ltu_x19_bp3 {
+    x19_bp3 = 1;
+  }
+  x19a_bp0 = x19_bp1;
+  x19a_bp0 = (x19a_bp0 + x19_bp3);
+  x19 = x19a_bp0;
+  x19 = (x19 + x12);
+  x20 = x19;
+  x20_bp0 = x15;
+  __wtmp__ = 13281191951274694749;
+  x20_bp0 = (x20_bp0 & __wtmp__);
+  x20 = (x20 + x20_bp0);
+  __ltu_x21_bp4 = (x19 <u x12);
+  x21_bp4 = 0;
+  if __ltu_x21_bp4 {
+    x21_bp4 = 1;
+  }
+  x21_lt_b_bp5 = x15;
+  __wtmp__ = 13281191951274694749;
+  x21_lt_b_bp5 = (x21_lt_b_bp5 & __wtmp__);
+  __ltu_x21_bp6 = (x20 <u x21_lt_b_bp5);
+  x21_bp6 = 0;
+  if __ltu_x21_bp6 {
+    x21_bp6 = 1;
+  }
+  x21a_bp0 = x21_bp4;
+  x21a_bp0 = (x21a_bp0 + x21_bp6);
+  x21a_bp1 = x21a_bp0;
+  x21a_bp1 = (x21a_bp1 + x14);
+  x21 = x21a_bp1;
+  x21_bp0 = x15;
+  __wtmp__ = 3486998266802970665;
+  x21_bp0 = (x21_bp0 & __wtmp__);
+  x21 = (x21 + x21_bp0);
+  x22 = x16;
+  x23 = x18;
+  x24 = x20;
+  x25 = x21;
+  [out0 + 0] = x22;
+  [(out0 + 8) + 0] = x23;
+  [(out0 + 16) + 0] = x24;
+  [(out0 + 24) + 0] = x25;
+}
+
+
+export fn bn254_mul(reg u64 out0, reg u64 in0, reg u64 in1) {
+  reg u64 __mulx_tmp__;
+  #[spill] reg u64 x0;
+  #[spill] reg u64 x1;
+  #[spill] reg u64 x2;
+  #[spill] reg u64 x3;
+  #[spill] reg u64 x4;
+  #[spill] reg u64 x5;
+  #[spill] reg u64 x6;
+  #[spill] reg u64 x7;
+  #[spill] reg u64 x8;
+  #[spill] reg u64 x9;
+  #[spill] reg u64 x10;
+  #[spill] reg u64 x11;
+  reg u64 x13;
+  reg u64 x12;
+  reg u64 x15;
+  reg u64 x14;
+  reg u64 x17;
+  reg u64 x16;
+  reg u64 x19;
+  reg u64 x18;
+  reg bool __cf_x21;
+  reg u64 x20;
+  #[spill] reg u64 x21;
+  #[spill] reg u64 x22;
+  reg bool __ltu_x23_bp0;
+  #[spill] reg u64 x23_bp0;
+  #[spill] reg u64 x23;
+  #[spill] reg u64 x24;
+  reg bool __ltu_x25_bp1;
+  #[spill] reg u64 x25_bp1;
+  #[spill] reg u64 x25;
+  #[spill] reg u64 x26;
+  #[spill] reg u64 x27;
+  reg bool __ltu_x28_bp2;
+  #[spill] reg u64 x28_bp2;
+  #[spill] reg u64 x28;
+  #[spill] reg u64 x29;
+  reg bool __ltu_x30_bp3;
+  #[spill] reg u64 x30_bp3;
+  #[spill] reg u64 x30;
+  #[spill] reg u64 x31;
+  #[spill] reg u64 x32;
+  #[spill] reg u64 x33;
+  reg u64 __wtmp__;
+  reg u64 x35;
+  reg u64 x34;
+  reg u64 x37;
+  reg u64 x36;
+  reg u64 x39;
+  reg u64 x38;
+  reg u64 x41;
+  reg u64 x40;
+  reg bool __cf_x43;
+  reg u64 x42;
+  #[spill] reg u64 x43;
+  #[spill] reg u64 x44;
+  reg bool __ltu_x45_bp4;
+  #[spill] reg u64 x45_bp4;
+  #[spill] reg u64 x45;
+  #[spill] reg u64 x46;
+  reg bool __ltu_x47_bp5;
+  #[spill] reg u64 x47_bp5;
+  #[spill] reg u64 x47;
+  #[spill] reg u64 x48;
+  #[spill] reg u64 x49;
+  reg bool __ltu_x50_bp6;
+  #[spill] reg u64 x50_bp6;
+  #[spill] reg u64 x50;
+  #[spill] reg u64 x51;
+  reg bool __ltu_x52_bp7;
+  #[spill] reg u64 x52_bp7;
+  #[spill] reg u64 x52;
+  #[spill] reg u64 x53;
+  #[spill] reg u64 x54;
+  reg bool __cf_x56;
+  reg u64 x55;
+  #[spill] reg u64 x56;
+  #[spill] reg u64 x57;
+  reg bool __ltu_x58_bp8;
+  #[spill] reg u64 x58_bp8;
+  #[spill] reg u64 x58;
+  #[spill] reg u64 x59;
+  reg bool __ltu_x60_bp9;
+  #[spill] reg u64 x60_bp9;
+  #[spill] reg u64 x60;
+  #[spill] reg u64 x61;
+  #[spill] reg u64 x62;
+  reg bool __ltu_x63_bp10;
+  #[spill] reg u64 x63_bp10;
+  #[spill] reg u64 x63;
+  #[spill] reg u64 x64;
+  reg bool __ltu_x65_bp11;
+  #[spill] reg u64 x65_bp11;
+  #[spill] reg u64 x65;
+  #[spill] reg u64 x66;
+  #[spill] reg u64 x67;
+  reg bool __ltu_x68_bp12;
+  #[spill] reg u64 x68_bp12;
+  #[spill] reg u64 x68;
+  #[spill] reg u64 x69;
+  reg bool __ltu_x70_bp13;
+  #[spill] reg u64 x70_bp13;
+  #[spill] reg u64 x70;
+  #[spill] reg u64 x71;
+  #[spill] reg u64 x72;
+  reg bool __ltu_x73_bp14;
+  #[spill] reg u64 x73_bp14;
+  #[spill] reg u64 x73;
+  #[spill] reg u64 x74;
+  reg bool __ltu_x75_bp15;
+  #[spill] reg u64 x75_bp15;
+  #[spill] reg u64 x75;
+  #[spill] reg u64 x76;
+  reg u64 x78;
+  reg u64 x77;
+  reg u64 x80;
+  reg u64 x79;
+  reg u64 x82;
+  reg u64 x81;
+  reg u64 x84;
+  reg u64 x83;
+  reg bool __cf_x86;
+  reg u64 x85;
+  #[spill] reg u64 x86;
+  #[spill] reg u64 x87;
+  reg bool __ltu_x88_bp16;
+  #[spill] reg u64 x88_bp16;
+  #[spill] reg u64 x88;
+  #[spill] reg u64 x89;
+  reg bool __ltu_x90_bp17;
+  #[spill] reg u64 x90_bp17;
+  #[spill] reg u64 x90;
+  #[spill] reg u64 x91;
+  #[spill] reg u64 x92;
+  reg bool __ltu_x93_bp18;
+  #[spill] reg u64 x93_bp18;
+  #[spill] reg u64 x93;
+  #[spill] reg u64 x94;
+  reg bool __ltu_x95_bp19;
+  #[spill] reg u64 x95_bp19;
+  #[spill] reg u64 x95;
+  #[spill] reg u64 x96;
+  #[spill] reg u64 x97;
+  reg bool __cf_x99;
+  reg u64 x98;
+  #[spill] reg u64 x99;
+  #[spill] reg u64 x100;
+  reg bool __ltu_x101_bp20;
+  #[spill] reg u64 x101_bp20;
+  #[spill] reg u64 x101;
+  #[spill] reg u64 x102;
+  reg bool __ltu_x103_bp21;
+  #[spill] reg u64 x103_bp21;
+  #[spill] reg u64 x103;
+  #[spill] reg u64 x104;
+  #[spill] reg u64 x105;
+  reg bool __ltu_x106_bp22;
+  #[spill] reg u64 x106_bp22;
+  #[spill] reg u64 x106;
+  #[spill] reg u64 x107;
+  reg bool __ltu_x108_bp23;
+  #[spill] reg u64 x108_bp23;
+  #[spill] reg u64 x108;
+  #[spill] reg u64 x109;
+  #[spill] reg u64 x110;
+  reg bool __ltu_x111_bp24;
+  #[spill] reg u64 x111_bp24;
+  #[spill] reg u64 x111;
+  #[spill] reg u64 x112;
+  reg bool __ltu_x113_bp25;
+  #[spill] reg u64 x113_bp25;
+  #[spill] reg u64 x113;
+  #[spill] reg u64 x114;
+  #[spill] reg u64 x115;
+  reg bool __ltu_x116_bp26;
+  #[spill] reg u64 x116_bp26;
+  #[spill] reg u64 x116;
+  #[spill] reg u64 x117;
+  reg bool __ltu_x118_bp27;
+  #[spill] reg u64 x118_bp27;
+  #[spill] reg u64 x118;
+  #[spill] reg u64 x119;
+  #[spill] reg u64 x120;
+  reg u64 x122;
+  reg u64 x121;
+  reg u64 x124;
+  reg u64 x123;
+  reg u64 x126;
+  reg u64 x125;
+  reg u64 x128;
+  reg u64 x127;
+  reg bool __cf_x130;
+  reg u64 x129;
+  #[spill] reg u64 x130;
+  #[spill] reg u64 x131;
+  reg bool __ltu_x132_bp28;
+  #[spill] reg u64 x132_bp28;
+  #[spill] reg u64 x132;
+  #[spill] reg u64 x133;
+  reg bool __ltu_x134_bp29;
+  #[spill] reg u64 x134_bp29;
+  #[spill] reg u64 x134;
+  #[spill] reg u64 x135;
+  #[spill] reg u64 x136;
+  reg bool __ltu_x137_bp30;
+  #[spill] reg u64 x137_bp30;
+  #[spill] reg u64 x137;
+  #[spill] reg u64 x138;
+  reg bool __ltu_x139_bp31;
+  #[spill] reg u64 x139_bp31;
+  #[spill] reg u64 x139;
+  #[spill] reg u64 x140;
+  #[spill] reg u64 x141;
+  reg bool __cf_x143;
+  reg u64 x142;
+  #[spill] reg u64 x143;
+  #[spill] reg u64 x144;
+  reg bool __ltu_x145_bp32;
+  #[spill] reg u64 x145_bp32;
+  #[spill] reg u64 x145;
+  #[spill] reg u64 x146;
+  reg bool __ltu_x147_bp33;
+  #[spill] reg u64 x147_bp33;
+  #[spill] reg u64 x147;
+  #[spill] reg u64 x148;
+  #[spill] reg u64 x149;
+  reg bool __ltu_x150_bp34;
+  #[spill] reg u64 x150_bp34;
+  #[spill] reg u64 x150;
+  #[spill] reg u64 x151;
+  reg bool __ltu_x152_bp35;
+  #[spill] reg u64 x152_bp35;
+  #[spill] reg u64 x152;
+  #[spill] reg u64 x153;
+  #[spill] reg u64 x154;
+  reg bool __ltu_x155_bp36;
+  #[spill] reg u64 x155_bp36;
+  #[spill] reg u64 x155;
+  #[spill] reg u64 x156;
+  reg bool __ltu_x157_bp37;
+  #[spill] reg u64 x157_bp37;
+  #[spill] reg u64 x157;
+  #[spill] reg u64 x158;
+  #[spill] reg u64 x159;
+  reg bool __ltu_x160_bp38;
+  #[spill] reg u64 x160_bp38;
+  #[spill] reg u64 x160;
+  #[spill] reg u64 x161;
+  reg bool __ltu_x162_bp39;
+  #[spill] reg u64 x162_bp39;
+  #[spill] reg u64 x162;
+  #[spill] reg u64 x163;
+  #[spill] reg u64 x164;
+  reg u64 x166;
+  reg u64 x165;
+  reg u64 x168;
+  reg u64 x167;
+  reg u64 x170;
+  reg u64 x169;
+  reg u64 x172;
+  reg u64 x171;
+  reg bool __cf_x174;
+  reg u64 x173;
+  #[spill] reg u64 x174;
+  #[spill] reg u64 x175;
+  reg bool __ltu_x176_bp40;
+  #[spill] reg u64 x176_bp40;
+  #[spill] reg u64 x176;
+  #[spill] reg u64 x177;
+  reg bool __ltu_x178_bp41;
+  #[spill] reg u64 x178_bp41;
+  #[spill] reg u64 x178;
+  #[spill] reg u64 x179;
+  #[spill] reg u64 x180;
+  reg bool __ltu_x181_bp42;
+  #[spill] reg u64 x181_bp42;
+  #[spill] reg u64 x181;
+  #[spill] reg u64 x182;
+  reg bool __ltu_x183_bp43;
+  #[spill] reg u64 x183_bp43;
+  #[spill] reg u64 x183;
+  #[spill] reg u64 x184;
+  #[spill] reg u64 x185;
+  reg bool __cf_x187;
+  reg u64 x186;
+  #[spill] reg u64 x187;
+  #[spill] reg u64 x188;
+  reg bool __ltu_x189_bp44;
+  #[spill] reg u64 x189_bp44;
+  #[spill] reg u64 x189;
+  #[spill] reg u64 x190;
+  reg bool __ltu_x191_bp45;
+  #[spill] reg u64 x191_bp45;
+  #[spill] reg u64 x191;
+  #[spill] reg u64 x192;
+  #[spill] reg u64 x193;
+  reg bool __ltu_x194_bp46;
+  #[spill] reg u64 x194_bp46;
+  #[spill] reg u64 x194;
+  #[spill] reg u64 x195;
+  reg bool __ltu_x196_bp47;
+  #[spill] reg u64 x196_bp47;
+  #[spill] reg u64 x196;
+  #[spill] reg u64 x197;
+  #[spill] reg u64 x198;
+  reg bool __ltu_x199_bp48;
+  #[spill] reg u64 x199_bp48;
+  #[spill] reg u64 x199;
+  #[spill] reg u64 x200;
+  reg bool __ltu_x201_bp49;
+  #[spill] reg u64 x201_bp49;
+  #[spill] reg u64 x201;
+  #[spill] reg u64 x202;
+  #[spill] reg u64 x203;
+  reg bool __ltu_x204_bp50;
+  #[spill] reg u64 x204_bp50;
+  #[spill] reg u64 x204;
+  #[spill] reg u64 x205;
+  reg bool __ltu_x206_bp51;
+  #[spill] reg u64 x206_bp51;
+  #[spill] reg u64 x206;
+  #[spill] reg u64 x207;
+  #[spill] reg u64 x208;
+  reg u64 x210;
+  reg u64 x209;
+  reg u64 x212;
+  reg u64 x211;
+  reg u64 x214;
+  reg u64 x213;
+  reg u64 x216;
+  reg u64 x215;
+  reg bool __cf_x218;
+  reg u64 x217;
+  #[spill] reg u64 x218;
+  #[spill] reg u64 x219;
+  reg bool __ltu_x220_bp52;
+  #[spill] reg u64 x220_bp52;
+  #[spill] reg u64 x220;
+  #[spill] reg u64 x221;
+  reg bool __ltu_x222_bp53;
+  #[spill] reg u64 x222_bp53;
+  #[spill] reg u64 x222;
+  #[spill] reg u64 x223;
+  #[spill] reg u64 x224;
+  reg bool __ltu_x225_bp54;
+  #[spill] reg u64 x225_bp54;
+  #[spill] reg u64 x225;
+  #[spill] reg u64 x226;
+  reg bool __ltu_x227_bp55;
+  #[spill] reg u64 x227_bp55;
+  #[spill] reg u64 x227;
+  #[spill] reg u64 x228;
+  #[spill] reg u64 x229;
+  reg bool __cf_x231;
+  reg u64 x230;
+  #[spill] reg u64 x231;
+  #[spill] reg u64 x232;
+  reg bool __ltu_x233_bp56;
+  #[spill] reg u64 x233_bp56;
+  #[spill] reg u64 x233;
+  #[spill] reg u64 x234;
+  reg bool __ltu_x235_bp57;
+  #[spill] reg u64 x235_bp57;
+  #[spill] reg u64 x235;
+  #[spill] reg u64 x236;
+  #[spill] reg u64 x237;
+  reg bool __ltu_x238_bp58;
+  #[spill] reg u64 x238_bp58;
+  #[spill] reg u64 x238;
+  #[spill] reg u64 x239;
+  reg bool __ltu_x240_bp59;
+  #[spill] reg u64 x240_bp59;
+  #[spill] reg u64 x240;
+  #[spill] reg u64 x241;
+  #[spill] reg u64 x242;
+  reg bool __ltu_x243_bp60;
+  #[spill] reg u64 x243_bp60;
+  #[spill] reg u64 x243;
+  #[spill] reg u64 x244;
+  reg bool __ltu_x245_bp61;
+  #[spill] reg u64 x245_bp61;
+  #[spill] reg u64 x245;
+  #[spill] reg u64 x246;
+  #[spill] reg u64 x247;
+  reg bool __ltu_x248_bp62;
+  #[spill] reg u64 x248_bp62;
+  #[spill] reg u64 x248;
+  #[spill] reg u64 x249;
+  reg bool __ltu_x250_bp63;
+  #[spill] reg u64 x250_bp63;
+  #[spill] reg u64 x250;
+  #[spill] reg u64 x251;
+  #[spill] reg u64 x252;
+  reg u64 x254;
+  reg u64 x253;
+  reg u64 x256;
+  reg u64 x255;
+  reg u64 x258;
+  reg u64 x257;
+  reg u64 x260;
+  reg u64 x259;
+  reg bool __cf_x262;
+  reg u64 x261;
+  #[spill] reg u64 x262;
+  #[spill] reg u64 x263;
+  reg bool __ltu_x264_bp64;
+  #[spill] reg u64 x264_bp64;
+  #[spill] reg u64 x264;
+  #[spill] reg u64 x265;
+  reg bool __ltu_x266_bp65;
+  #[spill] reg u64 x266_bp65;
+  #[spill] reg u64 x266;
+  #[spill] reg u64 x267;
+  #[spill] reg u64 x268;
+  reg bool __ltu_x269_bp66;
+  #[spill] reg u64 x269_bp66;
+  #[spill] reg u64 x269;
+  #[spill] reg u64 x270;
+  reg bool __ltu_x271_bp67;
+  #[spill] reg u64 x271_bp67;
+  #[spill] reg u64 x271;
+  #[spill] reg u64 x272;
+  #[spill] reg u64 x273;
+  reg bool __cf_x275;
+  reg u64 x274;
+  #[spill] reg u64 x275;
+  #[spill] reg u64 x276;
+  reg bool __ltu_x277_bp68;
+  #[spill] reg u64 x277_bp68;
+  #[spill] reg u64 x277;
+  #[spill] reg u64 x278;
+  reg bool __ltu_x279_bp69;
+  #[spill] reg u64 x279_bp69;
+  #[spill] reg u64 x279;
+  #[spill] reg u64 x280;
+  #[spill] reg u64 x281;
+  reg bool __ltu_x282_bp70;
+  #[spill] reg u64 x282_bp70;
+  #[spill] reg u64 x282;
+  #[spill] reg u64 x283;
+  reg bool __ltu_x284_bp71;
+  #[spill] reg u64 x284_bp71;
+  #[spill] reg u64 x284;
+  #[spill] reg u64 x285;
+  #[spill] reg u64 x286;
+  reg bool __ltu_x287_bp72;
+  #[spill] reg u64 x287_bp72;
+  #[spill] reg u64 x287;
+  #[spill] reg u64 x288;
+  reg bool __ltu_x289_bp73;
+  #[spill] reg u64 x289_bp73;
+  #[spill] reg u64 x289;
+  #[spill] reg u64 x290;
+  #[spill] reg u64 x291;
+  reg bool __ltu_x292_bp74;
+  #[spill] reg u64 x292_bp74;
+  #[spill] reg u64 x292;
+  #[spill] reg u64 x293;
+  reg bool __ltu_x294_bp75;
+  #[spill] reg u64 x294_bp75;
+  #[spill] reg u64 x294;
+  #[spill] reg u64 x295;
+  #[spill] reg u64 x296;
+  reg u64 x298;
+  reg u64 x297;
+  reg u64 x300;
+  reg u64 x299;
+  reg u64 x302;
+  reg u64 x301;
+  reg u64 x304;
+  reg u64 x303;
+  reg bool __cf_x306;
+  reg u64 x305;
+  #[spill] reg u64 x306;
+  #[spill] reg u64 x307;
+  reg bool __ltu_x308_bp76;
+  #[spill] reg u64 x308_bp76;
+  #[spill] reg u64 x308;
+  #[spill] reg u64 x309;
+  reg bool __ltu_x310_bp77;
+  #[spill] reg u64 x310_bp77;
+  #[spill] reg u64 x310;
+  #[spill] reg u64 x311;
+  #[spill] reg u64 x312;
+  reg bool __ltu_x313_bp78;
+  #[spill] reg u64 x313_bp78;
+  #[spill] reg u64 x313;
+  #[spill] reg u64 x314;
+  reg bool __ltu_x315_bp79;
+  #[spill] reg u64 x315_bp79;
+  #[spill] reg u64 x315;
+  #[spill] reg u64 x316;
+  #[spill] reg u64 x317;
+  reg bool __cf_x319;
+  reg u64 x318;
+  #[spill] reg u64 x319;
+  #[spill] reg u64 x320;
+  reg bool __ltu_x321_bp80;
+  #[spill] reg u64 x321_bp80;
+  #[spill] reg u64 x321;
+  #[spill] reg u64 x322;
+  reg bool __ltu_x323_bp81;
+  #[spill] reg u64 x323_bp81;
+  #[spill] reg u64 x323;
+  #[spill] reg u64 x324;
+  #[spill] reg u64 x325;
+  reg bool __ltu_x326_bp82;
+  #[spill] reg u64 x326_bp82;
+  #[spill] reg u64 x326;
+  #[spill] reg u64 x327;
+  reg bool __ltu_x328_bp83;
+  #[spill] reg u64 x328_bp83;
+  #[spill] reg u64 x328;
+  #[spill] reg u64 x329;
+  #[spill] reg u64 x330;
+  reg bool __ltu_x331_bp84;
+  #[spill] reg u64 x331_bp84;
+  #[spill] reg u64 x331;
+  #[spill] reg u64 x332;
+  reg bool __ltu_x333_bp85;
+  #[spill] reg u64 x333_bp85;
+  #[spill] reg u64 x333;
+  #[spill] reg u64 x334;
+  #[spill] reg u64 x335;
+  reg bool __ltu_x336_bp86;
+  #[spill] reg u64 x336_bp86;
+  #[spill] reg u64 x336;
+  #[spill] reg u64 x337;
+  reg bool __ltu_x338_bp87;
+  #[spill] reg u64 x338_bp87;
+  #[spill] reg u64 x338;
+  #[spill] reg u64 x339;
+  #[spill] reg u64 x340;
+  #[spill] reg u64 x341;
+  reg bool __ltu_x342_bp88;
+  #[spill] reg u64 x342_bp88;
+  #[spill] reg u64 x342;
+  #[spill] reg u64 x343;
+  reg bool __ltu_x344_bp89;
+  #[spill] reg u64 x344_bp89;
+  #[spill] reg u64 x344;
+  #[spill] reg u64 x345;
+  reg bool __ltu_x346_bp90;
+  #[spill] reg u64 x346_bp90;
+  #[spill] reg u64 x346;
+  #[spill] reg u64 x347;
+  #[spill] reg u64 x348;
+  reg bool __ltu_x349_bp91;
+  #[spill] reg u64 x349_bp91;
+  #[spill] reg u64 x349;
+  #[spill] reg u64 x350;
+  reg bool __ltu_x351_bp92;
+  #[spill] reg u64 x351_bp92;
+  #[spill] reg u64 x351;
+  #[spill] reg u64 x352;
+  #[spill] reg u64 x353;
+  reg bool __ltu_x354_bp93;
+  #[spill] reg u64 x354_bp93;
+  #[spill] reg u64 x354;
+  #[spill] reg u64 x355;
+  reg bool __ltu_x356_bp94;
+  #[spill] reg u64 x356_bp94;
+  #[spill] reg u64 x356;
+  #[spill] reg u64 x357;
+  #[spill] reg u64 x358;
+  reg bool __ltu_x359_bp95;
+  #[spill] reg u64 x359_bp95;
+  #[spill] reg u64 x359;
+  #[spill] reg u64 x362;
+  #[spill] reg u64 x365;
+  #[spill] reg u64 x368;
+  #[spill] reg u64 x371;
+  #[spill] reg u64 x372;
+  #[spill] reg u64 x373;
+  #[spill] reg u64 x374;
+  #[spill] reg u64 x375;
+  x0 = [in0 + 0];
+  x1 = [(in0 + 8) + 0];
+  x2 = [(in0 + 16) + 0];
+  x3 = [(in0 + 24) + 0];
+  x4 = [in1 + 0];
+  x5 = [(in1 + 8) + 0];
+  x6 = [(in1 + 16) + 0];
+  x7 = [(in1 + 24) + 0];
+  x8 = x1;
+  x9 = x2;
+  x10 = x3;
+  x11 = x0;
+  __mulx_tmp__ = x11;
+  (x13, x12) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x11;
+  (x15, x14) = #MULX(__mulx_tmp__, x6);
+  __mulx_tmp__ = x11;
+  (x17, x16) = #MULX(__mulx_tmp__, x5);
+  __mulx_tmp__ = x11;
+  (x19, x18) = #MULX(__mulx_tmp__, x4);
+  _, __cf_x21, _, _, _, x20 = #ADD(x19, x16);
+  x21 = 0;
+  if __cf_x21 {
+    x21 = 1;
+  }
+  x22 = x21;
+  x22 = (x22 + x17);
+  __ltu_x23_bp0 = (x22 <u x17);
+  x23_bp0 = 0;
+  if __ltu_x23_bp0 {
+    x23_bp0 = 1;
+  }
+  x23 = x23_bp0;
+  x24 = x22;
+  x24 = (x24 + x14);
+  __ltu_x25_bp1 = (x24 <u x14);
+  x25_bp1 = 0;
+  if __ltu_x25_bp1 {
+    x25_bp1 = 1;
+  }
+  x25 = x25_bp1;
+  x26 = x23;
+  x26 = (x26 + x25);
+  x27 = x26;
+  x27 = (x27 + x15);
+  __ltu_x28_bp2 = (x27 <u x15);
+  x28_bp2 = 0;
+  if __ltu_x28_bp2 {
+    x28_bp2 = 1;
+  }
+  x28 = x28_bp2;
+  x29 = x27;
+  x29 = (x29 + x12);
+  __ltu_x30_bp3 = (x29 <u x12);
+  x30_bp3 = 0;
+  if __ltu_x30_bp3 {
+    x30_bp3 = 1;
+  }
+  x30 = x30_bp3;
+  x31 = x28;
+  x31 = (x31 + x30);
+  x32 = x31;
+  x32 = (x32 + x13);
+  x33 = x18;
+  __wtmp__ = 9786893198990664585;
+  x33 = (x33 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x33;
+  (x35, x34) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x33;
+  (x37, x36) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x33;
+  (x39, x38) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x33;
+  (x41, x40) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x43, _, _, _, x42 = #ADD(x41, x38);
+  x43 = 0;
+  if __cf_x43 {
+    x43 = 1;
+  }
+  x44 = x43;
+  x44 = (x44 + x39);
+  __ltu_x45_bp4 = (x44 <u x39);
+  x45_bp4 = 0;
+  if __ltu_x45_bp4 {
+    x45_bp4 = 1;
+  }
+  x45 = x45_bp4;
+  x46 = x44;
+  x46 = (x46 + x36);
+  __ltu_x47_bp5 = (x46 <u x36);
+  x47_bp5 = 0;
+  if __ltu_x47_bp5 {
+    x47_bp5 = 1;
+  }
+  x47 = x47_bp5;
+  x48 = x45;
+  x48 = (x48 + x47);
+  x49 = x48;
+  x49 = (x49 + x37);
+  __ltu_x50_bp6 = (x49 <u x37);
+  x50_bp6 = 0;
+  if __ltu_x50_bp6 {
+    x50_bp6 = 1;
+  }
+  x50 = x50_bp6;
+  x51 = x49;
+  x51 = (x51 + x34);
+  __ltu_x52_bp7 = (x51 <u x34);
+  x52_bp7 = 0;
+  if __ltu_x52_bp7 {
+    x52_bp7 = 1;
+  }
+  x52 = x52_bp7;
+  x53 = x50;
+  x53 = (x53 + x52);
+  x54 = x53;
+  x54 = (x54 + x35);
+  _, __cf_x56, _, _, _, x55 = #ADD(x18, x40);
+  x56 = 0;
+  if __cf_x56 {
+    x56 = 1;
+  }
+  x57 = x56;
+  x57 = (x57 + x20);
+  __ltu_x58_bp8 = (x57 <u x20);
+  x58_bp8 = 0;
+  if __ltu_x58_bp8 {
+    x58_bp8 = 1;
+  }
+  x58 = x58_bp8;
+  x59 = x57;
+  x59 = (x59 + x42);
+  __ltu_x60_bp9 = (x59 <u x42);
+  x60_bp9 = 0;
+  if __ltu_x60_bp9 {
+    x60_bp9 = 1;
+  }
+  x60 = x60_bp9;
+  x61 = x58;
+  x61 = (x61 + x60);
+  x62 = x61;
+  x62 = (x62 + x24);
+  __ltu_x63_bp10 = (x62 <u x24);
+  x63_bp10 = 0;
+  if __ltu_x63_bp10 {
+    x63_bp10 = 1;
+  }
+  x63 = x63_bp10;
+  x64 = x62;
+  x64 = (x64 + x46);
+  __ltu_x65_bp11 = (x64 <u x46);
+  x65_bp11 = 0;
+  if __ltu_x65_bp11 {
+    x65_bp11 = 1;
+  }
+  x65 = x65_bp11;
+  x66 = x63;
+  x66 = (x66 + x65);
+  x67 = x66;
+  x67 = (x67 + x29);
+  __ltu_x68_bp12 = (x67 <u x29);
+  x68_bp12 = 0;
+  if __ltu_x68_bp12 {
+    x68_bp12 = 1;
+  }
+  x68 = x68_bp12;
+  x69 = x67;
+  x69 = (x69 + x51);
+  __ltu_x70_bp13 = (x69 <u x51);
+  x70_bp13 = 0;
+  if __ltu_x70_bp13 {
+    x70_bp13 = 1;
+  }
+  x70 = x70_bp13;
+  x71 = x68;
+  x71 = (x71 + x70);
+  x72 = x71;
+  x72 = (x72 + x32);
+  __ltu_x73_bp14 = (x72 <u x32);
+  x73_bp14 = 0;
+  if __ltu_x73_bp14 {
+    x73_bp14 = 1;
+  }
+  x73 = x73_bp14;
+  x74 = x72;
+  x74 = (x74 + x54);
+  __ltu_x75_bp15 = (x74 <u x54);
+  x75_bp15 = 0;
+  if __ltu_x75_bp15 {
+    x75_bp15 = 1;
+  }
+  x75 = x75_bp15;
+  x76 = x73;
+  x76 = (x76 + x75);
+  __mulx_tmp__ = x8;
+  (x78, x77) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x8;
+  (x80, x79) = #MULX(__mulx_tmp__, x6);
+  __mulx_tmp__ = x8;
+  (x82, x81) = #MULX(__mulx_tmp__, x5);
+  __mulx_tmp__ = x8;
+  (x84, x83) = #MULX(__mulx_tmp__, x4);
+  _, __cf_x86, _, _, _, x85 = #ADD(x84, x81);
+  x86 = 0;
+  if __cf_x86 {
+    x86 = 1;
+  }
+  x87 = x86;
+  x87 = (x87 + x82);
+  __ltu_x88_bp16 = (x87 <u x82);
+  x88_bp16 = 0;
+  if __ltu_x88_bp16 {
+    x88_bp16 = 1;
+  }
+  x88 = x88_bp16;
+  x89 = x87;
+  x89 = (x89 + x79);
+  __ltu_x90_bp17 = (x89 <u x79);
+  x90_bp17 = 0;
+  if __ltu_x90_bp17 {
+    x90_bp17 = 1;
+  }
+  x90 = x90_bp17;
+  x91 = x88;
+  x91 = (x91 + x90);
+  x92 = x91;
+  x92 = (x92 + x80);
+  __ltu_x93_bp18 = (x92 <u x80);
+  x93_bp18 = 0;
+  if __ltu_x93_bp18 {
+    x93_bp18 = 1;
+  }
+  x93 = x93_bp18;
+  x94 = x92;
+  x94 = (x94 + x77);
+  __ltu_x95_bp19 = (x94 <u x77);
+  x95_bp19 = 0;
+  if __ltu_x95_bp19 {
+    x95_bp19 = 1;
+  }
+  x95 = x95_bp19;
+  x96 = x93;
+  x96 = (x96 + x95);
+  x97 = x96;
+  x97 = (x97 + x78);
+  _, __cf_x99, _, _, _, x98 = #ADD(x59, x83);
+  x99 = 0;
+  if __cf_x99 {
+    x99 = 1;
+  }
+  x100 = x99;
+  x100 = (x100 + x64);
+  __ltu_x101_bp20 = (x100 <u x64);
+  x101_bp20 = 0;
+  if __ltu_x101_bp20 {
+    x101_bp20 = 1;
+  }
+  x101 = x101_bp20;
+  x102 = x100;
+  x102 = (x102 + x85);
+  __ltu_x103_bp21 = (x102 <u x85);
+  x103_bp21 = 0;
+  if __ltu_x103_bp21 {
+    x103_bp21 = 1;
+  }
+  x103 = x103_bp21;
+  x104 = x101;
+  x104 = (x104 + x103);
+  x105 = x104;
+  x105 = (x105 + x69);
+  __ltu_x106_bp22 = (x105 <u x69);
+  x106_bp22 = 0;
+  if __ltu_x106_bp22 {
+    x106_bp22 = 1;
+  }
+  x106 = x106_bp22;
+  x107 = x105;
+  x107 = (x107 + x89);
+  __ltu_x108_bp23 = (x107 <u x89);
+  x108_bp23 = 0;
+  if __ltu_x108_bp23 {
+    x108_bp23 = 1;
+  }
+  x108 = x108_bp23;
+  x109 = x106;
+  x109 = (x109 + x108);
+  x110 = x109;
+  x110 = (x110 + x74);
+  __ltu_x111_bp24 = (x110 <u x74);
+  x111_bp24 = 0;
+  if __ltu_x111_bp24 {
+    x111_bp24 = 1;
+  }
+  x111 = x111_bp24;
+  x112 = x110;
+  x112 = (x112 + x94);
+  __ltu_x113_bp25 = (x112 <u x94);
+  x113_bp25 = 0;
+  if __ltu_x113_bp25 {
+    x113_bp25 = 1;
+  }
+  x113 = x113_bp25;
+  x114 = x111;
+  x114 = (x114 + x113);
+  x115 = x114;
+  x115 = (x115 + x76);
+  __ltu_x116_bp26 = (x115 <u x76);
+  x116_bp26 = 0;
+  if __ltu_x116_bp26 {
+    x116_bp26 = 1;
+  }
+  x116 = x116_bp26;
+  x117 = x115;
+  x117 = (x117 + x97);
+  __ltu_x118_bp27 = (x117 <u x97);
+  x118_bp27 = 0;
+  if __ltu_x118_bp27 {
+    x118_bp27 = 1;
+  }
+  x118 = x118_bp27;
+  x119 = x116;
+  x119 = (x119 + x118);
+  x120 = x98;
+  __wtmp__ = 9786893198990664585;
+  x120 = (x120 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x120;
+  (x122, x121) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x120;
+  (x124, x123) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x120;
+  (x126, x125) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x120;
+  (x128, x127) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x130, _, _, _, x129 = #ADD(x128, x125);
+  x130 = 0;
+  if __cf_x130 {
+    x130 = 1;
+  }
+  x131 = x130;
+  x131 = (x131 + x126);
+  __ltu_x132_bp28 = (x131 <u x126);
+  x132_bp28 = 0;
+  if __ltu_x132_bp28 {
+    x132_bp28 = 1;
+  }
+  x132 = x132_bp28;
+  x133 = x131;
+  x133 = (x133 + x123);
+  __ltu_x134_bp29 = (x133 <u x123);
+  x134_bp29 = 0;
+  if __ltu_x134_bp29 {
+    x134_bp29 = 1;
+  }
+  x134 = x134_bp29;
+  x135 = x132;
+  x135 = (x135 + x134);
+  x136 = x135;
+  x136 = (x136 + x124);
+  __ltu_x137_bp30 = (x136 <u x124);
+  x137_bp30 = 0;
+  if __ltu_x137_bp30 {
+    x137_bp30 = 1;
+  }
+  x137 = x137_bp30;
+  x138 = x136;
+  x138 = (x138 + x121);
+  __ltu_x139_bp31 = (x138 <u x121);
+  x139_bp31 = 0;
+  if __ltu_x139_bp31 {
+    x139_bp31 = 1;
+  }
+  x139 = x139_bp31;
+  x140 = x137;
+  x140 = (x140 + x139);
+  x141 = x140;
+  x141 = (x141 + x122);
+  _, __cf_x143, _, _, _, x142 = #ADD(x98, x127);
+  x143 = 0;
+  if __cf_x143 {
+    x143 = 1;
+  }
+  x144 = x143;
+  x144 = (x144 + x102);
+  __ltu_x145_bp32 = (x144 <u x102);
+  x145_bp32 = 0;
+  if __ltu_x145_bp32 {
+    x145_bp32 = 1;
+  }
+  x145 = x145_bp32;
+  x146 = x144;
+  x146 = (x146 + x129);
+  __ltu_x147_bp33 = (x146 <u x129);
+  x147_bp33 = 0;
+  if __ltu_x147_bp33 {
+    x147_bp33 = 1;
+  }
+  x147 = x147_bp33;
+  x148 = x145;
+  x148 = (x148 + x147);
+  x149 = x148;
+  x149 = (x149 + x107);
+  __ltu_x150_bp34 = (x149 <u x107);
+  x150_bp34 = 0;
+  if __ltu_x150_bp34 {
+    x150_bp34 = 1;
+  }
+  x150 = x150_bp34;
+  x151 = x149;
+  x151 = (x151 + x133);
+  __ltu_x152_bp35 = (x151 <u x133);
+  x152_bp35 = 0;
+  if __ltu_x152_bp35 {
+    x152_bp35 = 1;
+  }
+  x152 = x152_bp35;
+  x153 = x150;
+  x153 = (x153 + x152);
+  x154 = x153;
+  x154 = (x154 + x112);
+  __ltu_x155_bp36 = (x154 <u x112);
+  x155_bp36 = 0;
+  if __ltu_x155_bp36 {
+    x155_bp36 = 1;
+  }
+  x155 = x155_bp36;
+  x156 = x154;
+  x156 = (x156 + x138);
+  __ltu_x157_bp37 = (x156 <u x138);
+  x157_bp37 = 0;
+  if __ltu_x157_bp37 {
+    x157_bp37 = 1;
+  }
+  x157 = x157_bp37;
+  x158 = x155;
+  x158 = (x158 + x157);
+  x159 = x158;
+  x159 = (x159 + x117);
+  __ltu_x160_bp38 = (x159 <u x117);
+  x160_bp38 = 0;
+  if __ltu_x160_bp38 {
+    x160_bp38 = 1;
+  }
+  x160 = x160_bp38;
+  x161 = x159;
+  x161 = (x161 + x141);
+  __ltu_x162_bp39 = (x161 <u x141);
+  x162_bp39 = 0;
+  if __ltu_x162_bp39 {
+    x162_bp39 = 1;
+  }
+  x162 = x162_bp39;
+  x163 = x160;
+  x163 = (x163 + x162);
+  x164 = x163;
+  x164 = (x164 + x119);
+  __mulx_tmp__ = x9;
+  (x166, x165) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x9;
+  (x168, x167) = #MULX(__mulx_tmp__, x6);
+  __mulx_tmp__ = x9;
+  (x170, x169) = #MULX(__mulx_tmp__, x5);
+  __mulx_tmp__ = x9;
+  (x172, x171) = #MULX(__mulx_tmp__, x4);
+  _, __cf_x174, _, _, _, x173 = #ADD(x172, x169);
+  x174 = 0;
+  if __cf_x174 {
+    x174 = 1;
+  }
+  x175 = x174;
+  x175 = (x175 + x170);
+  __ltu_x176_bp40 = (x175 <u x170);
+  x176_bp40 = 0;
+  if __ltu_x176_bp40 {
+    x176_bp40 = 1;
+  }
+  x176 = x176_bp40;
+  x177 = x175;
+  x177 = (x177 + x167);
+  __ltu_x178_bp41 = (x177 <u x167);
+  x178_bp41 = 0;
+  if __ltu_x178_bp41 {
+    x178_bp41 = 1;
+  }
+  x178 = x178_bp41;
+  x179 = x176;
+  x179 = (x179 + x178);
+  x180 = x179;
+  x180 = (x180 + x168);
+  __ltu_x181_bp42 = (x180 <u x168);
+  x181_bp42 = 0;
+  if __ltu_x181_bp42 {
+    x181_bp42 = 1;
+  }
+  x181 = x181_bp42;
+  x182 = x180;
+  x182 = (x182 + x165);
+  __ltu_x183_bp43 = (x182 <u x165);
+  x183_bp43 = 0;
+  if __ltu_x183_bp43 {
+    x183_bp43 = 1;
+  }
+  x183 = x183_bp43;
+  x184 = x181;
+  x184 = (x184 + x183);
+  x185 = x184;
+  x185 = (x185 + x166);
+  _, __cf_x187, _, _, _, x186 = #ADD(x146, x171);
+  x187 = 0;
+  if __cf_x187 {
+    x187 = 1;
+  }
+  x188 = x187;
+  x188 = (x188 + x151);
+  __ltu_x189_bp44 = (x188 <u x151);
+  x189_bp44 = 0;
+  if __ltu_x189_bp44 {
+    x189_bp44 = 1;
+  }
+  x189 = x189_bp44;
+  x190 = x188;
+  x190 = (x190 + x173);
+  __ltu_x191_bp45 = (x190 <u x173);
+  x191_bp45 = 0;
+  if __ltu_x191_bp45 {
+    x191_bp45 = 1;
+  }
+  x191 = x191_bp45;
+  x192 = x189;
+  x192 = (x192 + x191);
+  x193 = x192;
+  x193 = (x193 + x156);
+  __ltu_x194_bp46 = (x193 <u x156);
+  x194_bp46 = 0;
+  if __ltu_x194_bp46 {
+    x194_bp46 = 1;
+  }
+  x194 = x194_bp46;
+  x195 = x193;
+  x195 = (x195 + x177);
+  __ltu_x196_bp47 = (x195 <u x177);
+  x196_bp47 = 0;
+  if __ltu_x196_bp47 {
+    x196_bp47 = 1;
+  }
+  x196 = x196_bp47;
+  x197 = x194;
+  x197 = (x197 + x196);
+  x198 = x197;
+  x198 = (x198 + x161);
+  __ltu_x199_bp48 = (x198 <u x161);
+  x199_bp48 = 0;
+  if __ltu_x199_bp48 {
+    x199_bp48 = 1;
+  }
+  x199 = x199_bp48;
+  x200 = x198;
+  x200 = (x200 + x182);
+  __ltu_x201_bp49 = (x200 <u x182);
+  x201_bp49 = 0;
+  if __ltu_x201_bp49 {
+    x201_bp49 = 1;
+  }
+  x201 = x201_bp49;
+  x202 = x199;
+  x202 = (x202 + x201);
+  x203 = x202;
+  x203 = (x203 + x164);
+  __ltu_x204_bp50 = (x203 <u x164);
+  x204_bp50 = 0;
+  if __ltu_x204_bp50 {
+    x204_bp50 = 1;
+  }
+  x204 = x204_bp50;
+  x205 = x203;
+  x205 = (x205 + x185);
+  __ltu_x206_bp51 = (x205 <u x185);
+  x206_bp51 = 0;
+  if __ltu_x206_bp51 {
+    x206_bp51 = 1;
+  }
+  x206 = x206_bp51;
+  x207 = x204;
+  x207 = (x207 + x206);
+  x208 = x186;
+  __wtmp__ = 9786893198990664585;
+  x208 = (x208 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x208;
+  (x210, x209) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x208;
+  (x212, x211) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x208;
+  (x214, x213) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x208;
+  (x216, x215) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x218, _, _, _, x217 = #ADD(x216, x213);
+  x218 = 0;
+  if __cf_x218 {
+    x218 = 1;
+  }
+  x219 = x218;
+  x219 = (x219 + x214);
+  __ltu_x220_bp52 = (x219 <u x214);
+  x220_bp52 = 0;
+  if __ltu_x220_bp52 {
+    x220_bp52 = 1;
+  }
+  x220 = x220_bp52;
+  x221 = x219;
+  x221 = (x221 + x211);
+  __ltu_x222_bp53 = (x221 <u x211);
+  x222_bp53 = 0;
+  if __ltu_x222_bp53 {
+    x222_bp53 = 1;
+  }
+  x222 = x222_bp53;
+  x223 = x220;
+  x223 = (x223 + x222);
+  x224 = x223;
+  x224 = (x224 + x212);
+  __ltu_x225_bp54 = (x224 <u x212);
+  x225_bp54 = 0;
+  if __ltu_x225_bp54 {
+    x225_bp54 = 1;
+  }
+  x225 = x225_bp54;
+  x226 = x224;
+  x226 = (x226 + x209);
+  __ltu_x227_bp55 = (x226 <u x209);
+  x227_bp55 = 0;
+  if __ltu_x227_bp55 {
+    x227_bp55 = 1;
+  }
+  x227 = x227_bp55;
+  x228 = x225;
+  x228 = (x228 + x227);
+  x229 = x228;
+  x229 = (x229 + x210);
+  _, __cf_x231, _, _, _, x230 = #ADD(x186, x215);
+  x231 = 0;
+  if __cf_x231 {
+    x231 = 1;
+  }
+  x232 = x231;
+  x232 = (x232 + x190);
+  __ltu_x233_bp56 = (x232 <u x190);
+  x233_bp56 = 0;
+  if __ltu_x233_bp56 {
+    x233_bp56 = 1;
+  }
+  x233 = x233_bp56;
+  x234 = x232;
+  x234 = (x234 + x217);
+  __ltu_x235_bp57 = (x234 <u x217);
+  x235_bp57 = 0;
+  if __ltu_x235_bp57 {
+    x235_bp57 = 1;
+  }
+  x235 = x235_bp57;
+  x236 = x233;
+  x236 = (x236 + x235);
+  x237 = x236;
+  x237 = (x237 + x195);
+  __ltu_x238_bp58 = (x237 <u x195);
+  x238_bp58 = 0;
+  if __ltu_x238_bp58 {
+    x238_bp58 = 1;
+  }
+  x238 = x238_bp58;
+  x239 = x237;
+  x239 = (x239 + x221);
+  __ltu_x240_bp59 = (x239 <u x221);
+  x240_bp59 = 0;
+  if __ltu_x240_bp59 {
+    x240_bp59 = 1;
+  }
+  x240 = x240_bp59;
+  x241 = x238;
+  x241 = (x241 + x240);
+  x242 = x241;
+  x242 = (x242 + x200);
+  __ltu_x243_bp60 = (x242 <u x200);
+  x243_bp60 = 0;
+  if __ltu_x243_bp60 {
+    x243_bp60 = 1;
+  }
+  x243 = x243_bp60;
+  x244 = x242;
+  x244 = (x244 + x226);
+  __ltu_x245_bp61 = (x244 <u x226);
+  x245_bp61 = 0;
+  if __ltu_x245_bp61 {
+    x245_bp61 = 1;
+  }
+  x245 = x245_bp61;
+  x246 = x243;
+  x246 = (x246 + x245);
+  x247 = x246;
+  x247 = (x247 + x205);
+  __ltu_x248_bp62 = (x247 <u x205);
+  x248_bp62 = 0;
+  if __ltu_x248_bp62 {
+    x248_bp62 = 1;
+  }
+  x248 = x248_bp62;
+  x249 = x247;
+  x249 = (x249 + x229);
+  __ltu_x250_bp63 = (x249 <u x229);
+  x250_bp63 = 0;
+  if __ltu_x250_bp63 {
+    x250_bp63 = 1;
+  }
+  x250 = x250_bp63;
+  x251 = x248;
+  x251 = (x251 + x250);
+  x252 = x251;
+  x252 = (x252 + x207);
+  __mulx_tmp__ = x10;
+  (x254, x253) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x10;
+  (x256, x255) = #MULX(__mulx_tmp__, x6);
+  __mulx_tmp__ = x10;
+  (x258, x257) = #MULX(__mulx_tmp__, x5);
+  __mulx_tmp__ = x10;
+  (x260, x259) = #MULX(__mulx_tmp__, x4);
+  _, __cf_x262, _, _, _, x261 = #ADD(x260, x257);
+  x262 = 0;
+  if __cf_x262 {
+    x262 = 1;
+  }
+  x263 = x262;
+  x263 = (x263 + x258);
+  __ltu_x264_bp64 = (x263 <u x258);
+  x264_bp64 = 0;
+  if __ltu_x264_bp64 {
+    x264_bp64 = 1;
+  }
+  x264 = x264_bp64;
+  x265 = x263;
+  x265 = (x265 + x255);
+  __ltu_x266_bp65 = (x265 <u x255);
+  x266_bp65 = 0;
+  if __ltu_x266_bp65 {
+    x266_bp65 = 1;
+  }
+  x266 = x266_bp65;
+  x267 = x264;
+  x267 = (x267 + x266);
+  x268 = x267;
+  x268 = (x268 + x256);
+  __ltu_x269_bp66 = (x268 <u x256);
+  x269_bp66 = 0;
+  if __ltu_x269_bp66 {
+    x269_bp66 = 1;
+  }
+  x269 = x269_bp66;
+  x270 = x268;
+  x270 = (x270 + x253);
+  __ltu_x271_bp67 = (x270 <u x253);
+  x271_bp67 = 0;
+  if __ltu_x271_bp67 {
+    x271_bp67 = 1;
+  }
+  x271 = x271_bp67;
+  x272 = x269;
+  x272 = (x272 + x271);
+  x273 = x272;
+  x273 = (x273 + x254);
+  _, __cf_x275, _, _, _, x274 = #ADD(x234, x259);
+  x275 = 0;
+  if __cf_x275 {
+    x275 = 1;
+  }
+  x276 = x275;
+  x276 = (x276 + x239);
+  __ltu_x277_bp68 = (x276 <u x239);
+  x277_bp68 = 0;
+  if __ltu_x277_bp68 {
+    x277_bp68 = 1;
+  }
+  x277 = x277_bp68;
+  x278 = x276;
+  x278 = (x278 + x261);
+  __ltu_x279_bp69 = (x278 <u x261);
+  x279_bp69 = 0;
+  if __ltu_x279_bp69 {
+    x279_bp69 = 1;
+  }
+  x279 = x279_bp69;
+  x280 = x277;
+  x280 = (x280 + x279);
+  x281 = x280;
+  x281 = (x281 + x244);
+  __ltu_x282_bp70 = (x281 <u x244);
+  x282_bp70 = 0;
+  if __ltu_x282_bp70 {
+    x282_bp70 = 1;
+  }
+  x282 = x282_bp70;
+  x283 = x281;
+  x283 = (x283 + x265);
+  __ltu_x284_bp71 = (x283 <u x265);
+  x284_bp71 = 0;
+  if __ltu_x284_bp71 {
+    x284_bp71 = 1;
+  }
+  x284 = x284_bp71;
+  x285 = x282;
+  x285 = (x285 + x284);
+  x286 = x285;
+  x286 = (x286 + x249);
+  __ltu_x287_bp72 = (x286 <u x249);
+  x287_bp72 = 0;
+  if __ltu_x287_bp72 {
+    x287_bp72 = 1;
+  }
+  x287 = x287_bp72;
+  x288 = x286;
+  x288 = (x288 + x270);
+  __ltu_x289_bp73 = (x288 <u x270);
+  x289_bp73 = 0;
+  if __ltu_x289_bp73 {
+    x289_bp73 = 1;
+  }
+  x289 = x289_bp73;
+  x290 = x287;
+  x290 = (x290 + x289);
+  x291 = x290;
+  x291 = (x291 + x252);
+  __ltu_x292_bp74 = (x291 <u x252);
+  x292_bp74 = 0;
+  if __ltu_x292_bp74 {
+    x292_bp74 = 1;
+  }
+  x292 = x292_bp74;
+  x293 = x291;
+  x293 = (x293 + x273);
+  __ltu_x294_bp75 = (x293 <u x273);
+  x294_bp75 = 0;
+  if __ltu_x294_bp75 {
+    x294_bp75 = 1;
+  }
+  x294 = x294_bp75;
+  x295 = x292;
+  x295 = (x295 + x294);
+  x296 = x274;
+  __wtmp__ = 9786893198990664585;
+  x296 = (x296 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x296;
+  (x298, x297) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x296;
+  (x300, x299) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x296;
+  (x302, x301) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x296;
+  (x304, x303) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x306, _, _, _, x305 = #ADD(x304, x301);
+  x306 = 0;
+  if __cf_x306 {
+    x306 = 1;
+  }
+  x307 = x306;
+  x307 = (x307 + x302);
+  __ltu_x308_bp76 = (x307 <u x302);
+  x308_bp76 = 0;
+  if __ltu_x308_bp76 {
+    x308_bp76 = 1;
+  }
+  x308 = x308_bp76;
+  x309 = x307;
+  x309 = (x309 + x299);
+  __ltu_x310_bp77 = (x309 <u x299);
+  x310_bp77 = 0;
+  if __ltu_x310_bp77 {
+    x310_bp77 = 1;
+  }
+  x310 = x310_bp77;
+  x311 = x308;
+  x311 = (x311 + x310);
+  x312 = x311;
+  x312 = (x312 + x300);
+  __ltu_x313_bp78 = (x312 <u x300);
+  x313_bp78 = 0;
+  if __ltu_x313_bp78 {
+    x313_bp78 = 1;
+  }
+  x313 = x313_bp78;
+  x314 = x312;
+  x314 = (x314 + x297);
+  __ltu_x315_bp79 = (x314 <u x297);
+  x315_bp79 = 0;
+  if __ltu_x315_bp79 {
+    x315_bp79 = 1;
+  }
+  x315 = x315_bp79;
+  x316 = x313;
+  x316 = (x316 + x315);
+  x317 = x316;
+  x317 = (x317 + x298);
+  _, __cf_x319, _, _, _, x318 = #ADD(x274, x303);
+  x319 = 0;
+  if __cf_x319 {
+    x319 = 1;
+  }
+  x320 = x319;
+  x320 = (x320 + x278);
+  __ltu_x321_bp80 = (x320 <u x278);
+  x321_bp80 = 0;
+  if __ltu_x321_bp80 {
+    x321_bp80 = 1;
+  }
+  x321 = x321_bp80;
+  x322 = x320;
+  x322 = (x322 + x305);
+  __ltu_x323_bp81 = (x322 <u x305);
+  x323_bp81 = 0;
+  if __ltu_x323_bp81 {
+    x323_bp81 = 1;
+  }
+  x323 = x323_bp81;
+  x324 = x321;
+  x324 = (x324 + x323);
+  x325 = x324;
+  x325 = (x325 + x283);
+  __ltu_x326_bp82 = (x325 <u x283);
+  x326_bp82 = 0;
+  if __ltu_x326_bp82 {
+    x326_bp82 = 1;
+  }
+  x326 = x326_bp82;
+  x327 = x325;
+  x327 = (x327 + x309);
+  __ltu_x328_bp83 = (x327 <u x309);
+  x328_bp83 = 0;
+  if __ltu_x328_bp83 {
+    x328_bp83 = 1;
+  }
+  x328 = x328_bp83;
+  x329 = x326;
+  x329 = (x329 + x328);
+  x330 = x329;
+  x330 = (x330 + x288);
+  __ltu_x331_bp84 = (x330 <u x288);
+  x331_bp84 = 0;
+  if __ltu_x331_bp84 {
+    x331_bp84 = 1;
+  }
+  x331 = x331_bp84;
+  x332 = x330;
+  x332 = (x332 + x314);
+  __ltu_x333_bp85 = (x332 <u x314);
+  x333_bp85 = 0;
+  if __ltu_x333_bp85 {
+    x333_bp85 = 1;
+  }
+  x333 = x333_bp85;
+  x334 = x331;
+  x334 = (x334 + x333);
+  x335 = x334;
+  x335 = (x335 + x293);
+  __ltu_x336_bp86 = (x335 <u x293);
+  x336_bp86 = 0;
+  if __ltu_x336_bp86 {
+    x336_bp86 = 1;
+  }
+  x336 = x336_bp86;
+  x337 = x335;
+  x337 = (x337 + x317);
+  __ltu_x338_bp87 = (x337 <u x317);
+  x338_bp87 = 0;
+  if __ltu_x338_bp87 {
+    x338_bp87 = 1;
+  }
+  x338 = x338_bp87;
+  x339 = x336;
+  x339 = (x339 + x338);
+  x340 = x339;
+  x340 = (x340 + x295);
+  x341 = x322;
+  __wtmp__ = 4332616871279656263;
+  x341 = (x341 - __wtmp__);
+  __ltu_x342_bp88 = (x322 <u x341);
+  x342_bp88 = 0;
+  if __ltu_x342_bp88 {
+    x342_bp88 = 1;
+  }
+  x342 = x342_bp88;
+  x343 = x327;
+  __wtmp__ = 10917124144477883021;
+  x343 = (x343 - __wtmp__);
+  __ltu_x344_bp89 = (x327 <u x343);
+  x344_bp89 = 0;
+  if __ltu_x344_bp89 {
+    x344_bp89 = 1;
+  }
+  x344 = x344_bp89;
+  x345 = x343;
+  x345 = (x345 - x342);
+  __ltu_x346_bp90 = (x343 <u x345);
+  x346_bp90 = 0;
+  if __ltu_x346_bp90 {
+    x346_bp90 = 1;
+  }
+  x346 = x346_bp90;
+  x347 = x344;
+  x347 = (x347 + x346);
+  x348 = x332;
+  __wtmp__ = 13281191951274694749;
+  x348 = (x348 - __wtmp__);
+  __ltu_x349_bp91 = (x332 <u x348);
+  x349_bp91 = 0;
+  if __ltu_x349_bp91 {
+    x349_bp91 = 1;
+  }
+  x349 = x349_bp91;
+  x350 = x348;
+  x350 = (x350 - x347);
+  __ltu_x351_bp92 = (x348 <u x350);
+  x351_bp92 = 0;
+  if __ltu_x351_bp92 {
+    x351_bp92 = 1;
+  }
+  x351 = x351_bp92;
+  x352 = x349;
+  x352 = (x352 + x351);
+  x353 = x337;
+  __wtmp__ = 3486998266802970665;
+  x353 = (x353 - __wtmp__);
+  __ltu_x354_bp93 = (x337 <u x353);
+  x354_bp93 = 0;
+  if __ltu_x354_bp93 {
+    x354_bp93 = 1;
+  }
+  x354 = x354_bp93;
+  x355 = x353;
+  x355 = (x355 - x352);
+  __ltu_x356_bp94 = (x353 <u x355);
+  x356_bp94 = 0;
+  if __ltu_x356_bp94 {
+    x356_bp94 = 1;
+  }
+  x356 = x356_bp94;
+  x357 = x354;
+  x357 = (x357 + x356);
+  x358 = x340;
+  x358 = (x358 - x357);
+  __ltu_x359_bp95 = (x340 <u x358);
+  x359_bp95 = 0;
+  if __ltu_x359_bp95 {
+    x359_bp95 = 1;
+  }
+  x359 = x359_bp95;
+  if ((x359 == 0)) {
+    x362 = x341;
+  } else {
+    x362 = x322;
+  }
+  if ((x359 == 0)) {
+    x365 = x345;
+  } else {
+    x365 = x327;
+  }
+  if ((x359 == 0)) {
+    x368 = x350;
+  } else {
+    x368 = x332;
+  }
+  if ((x359 == 0)) {
+    x371 = x355;
+  } else {
+    x371 = x337;
+  }
+  x372 = x362;
+  x373 = x365;
+  x374 = x368;
+  x375 = x371;
+  [out0 + 0] = x372;
+  [(out0 + 8) + 0] = x373;
+  [(out0 + 16) + 0] = x374;
+  [(out0 + 24) + 0] = x375;
+}
+
+
+export fn bn254_square(reg u64 out0, reg u64 in0) {
+  reg u64 __mulx_tmp__;
+  #[spill] reg u64 x0;
+  #[spill] reg u64 x1;
+  #[spill] reg u64 x2;
+  #[spill] reg u64 x3;
+  #[spill] reg u64 x4;
+  #[spill] reg u64 x5;
+  #[spill] reg u64 x6;
+  #[spill] reg u64 x7;
+  reg u64 x9;
+  reg u64 x8;
+  reg u64 x11;
+  reg u64 x10;
+  reg u64 x13;
+  reg u64 x12;
+  reg u64 x15;
+  reg u64 x14;
+  reg bool __cf_x17;
+  reg u64 x16;
+  #[spill] reg u64 x17;
+  #[spill] reg u64 x18;
+  reg bool __ltu_x19_bp0;
+  #[spill] reg u64 x19_bp0;
+  #[spill] reg u64 x19;
+  #[spill] reg u64 x20;
+  reg bool __ltu_x21_bp1;
+  #[spill] reg u64 x21_bp1;
+  #[spill] reg u64 x21;
+  #[spill] reg u64 x22;
+  #[spill] reg u64 x23;
+  reg bool __ltu_x24_bp2;
+  #[spill] reg u64 x24_bp2;
+  #[spill] reg u64 x24;
+  #[spill] reg u64 x25;
+  reg bool __ltu_x26_bp3;
+  #[spill] reg u64 x26_bp3;
+  #[spill] reg u64 x26;
+  #[spill] reg u64 x27;
+  #[spill] reg u64 x28;
+  #[spill] reg u64 x29;
+  reg u64 __wtmp__;
+  reg u64 x31;
+  reg u64 x30;
+  reg u64 x33;
+  reg u64 x32;
+  reg u64 x35;
+  reg u64 x34;
+  reg u64 x37;
+  reg u64 x36;
+  reg bool __cf_x39;
+  reg u64 x38;
+  #[spill] reg u64 x39;
+  #[spill] reg u64 x40;
+  reg bool __ltu_x41_bp4;
+  #[spill] reg u64 x41_bp4;
+  #[spill] reg u64 x41;
+  #[spill] reg u64 x42;
+  reg bool __ltu_x43_bp5;
+  #[spill] reg u64 x43_bp5;
+  #[spill] reg u64 x43;
+  #[spill] reg u64 x44;
+  #[spill] reg u64 x45;
+  reg bool __ltu_x46_bp6;
+  #[spill] reg u64 x46_bp6;
+  #[spill] reg u64 x46;
+  #[spill] reg u64 x47;
+  reg bool __ltu_x48_bp7;
+  #[spill] reg u64 x48_bp7;
+  #[spill] reg u64 x48;
+  #[spill] reg u64 x49;
+  #[spill] reg u64 x50;
+  reg bool __cf_x52;
+  reg u64 x51;
+  #[spill] reg u64 x52;
+  #[spill] reg u64 x53;
+  reg bool __ltu_x54_bp8;
+  #[spill] reg u64 x54_bp8;
+  #[spill] reg u64 x54;
+  #[spill] reg u64 x55;
+  reg bool __ltu_x56_bp9;
+  #[spill] reg u64 x56_bp9;
+  #[spill] reg u64 x56;
+  #[spill] reg u64 x57;
+  #[spill] reg u64 x58;
+  reg bool __ltu_x59_bp10;
+  #[spill] reg u64 x59_bp10;
+  #[spill] reg u64 x59;
+  #[spill] reg u64 x60;
+  reg bool __ltu_x61_bp11;
+  #[spill] reg u64 x61_bp11;
+  #[spill] reg u64 x61;
+  #[spill] reg u64 x62;
+  #[spill] reg u64 x63;
+  reg bool __ltu_x64_bp12;
+  #[spill] reg u64 x64_bp12;
+  #[spill] reg u64 x64;
+  #[spill] reg u64 x65;
+  reg bool __ltu_x66_bp13;
+  #[spill] reg u64 x66_bp13;
+  #[spill] reg u64 x66;
+  #[spill] reg u64 x67;
+  #[spill] reg u64 x68;
+  reg bool __ltu_x69_bp14;
+  #[spill] reg u64 x69_bp14;
+  #[spill] reg u64 x69;
+  #[spill] reg u64 x70;
+  reg bool __ltu_x71_bp15;
+  #[spill] reg u64 x71_bp15;
+  #[spill] reg u64 x71;
+  #[spill] reg u64 x72;
+  reg u64 x74;
+  reg u64 x73;
+  reg u64 x76;
+  reg u64 x75;
+  reg u64 x78;
+  reg u64 x77;
+  reg u64 x80;
+  reg u64 x79;
+  reg bool __cf_x82;
+  reg u64 x81;
+  #[spill] reg u64 x82;
+  #[spill] reg u64 x83;
+  reg bool __ltu_x84_bp16;
+  #[spill] reg u64 x84_bp16;
+  #[spill] reg u64 x84;
+  #[spill] reg u64 x85;
+  reg bool __ltu_x86_bp17;
+  #[spill] reg u64 x86_bp17;
+  #[spill] reg u64 x86;
+  #[spill] reg u64 x87;
+  #[spill] reg u64 x88;
+  reg bool __ltu_x89_bp18;
+  #[spill] reg u64 x89_bp18;
+  #[spill] reg u64 x89;
+  #[spill] reg u64 x90;
+  reg bool __ltu_x91_bp19;
+  #[spill] reg u64 x91_bp19;
+  #[spill] reg u64 x91;
+  #[spill] reg u64 x92;
+  #[spill] reg u64 x93;
+  reg bool __cf_x95;
+  reg u64 x94;
+  #[spill] reg u64 x95;
+  #[spill] reg u64 x96;
+  reg bool __ltu_x97_bp20;
+  #[spill] reg u64 x97_bp20;
+  #[spill] reg u64 x97;
+  #[spill] reg u64 x98;
+  reg bool __ltu_x99_bp21;
+  #[spill] reg u64 x99_bp21;
+  #[spill] reg u64 x99;
+  #[spill] reg u64 x100;
+  #[spill] reg u64 x101;
+  reg bool __ltu_x102_bp22;
+  #[spill] reg u64 x102_bp22;
+  #[spill] reg u64 x102;
+  #[spill] reg u64 x103;
+  reg bool __ltu_x104_bp23;
+  #[spill] reg u64 x104_bp23;
+  #[spill] reg u64 x104;
+  #[spill] reg u64 x105;
+  #[spill] reg u64 x106;
+  reg bool __ltu_x107_bp24;
+  #[spill] reg u64 x107_bp24;
+  #[spill] reg u64 x107;
+  #[spill] reg u64 x108;
+  reg bool __ltu_x109_bp25;
+  #[spill] reg u64 x109_bp25;
+  #[spill] reg u64 x109;
+  #[spill] reg u64 x110;
+  #[spill] reg u64 x111;
+  reg bool __ltu_x112_bp26;
+  #[spill] reg u64 x112_bp26;
+  #[spill] reg u64 x112;
+  #[spill] reg u64 x113;
+  reg bool __ltu_x114_bp27;
+  #[spill] reg u64 x114_bp27;
+  #[spill] reg u64 x114;
+  #[spill] reg u64 x115;
+  #[spill] reg u64 x116;
+  reg u64 x118;
+  reg u64 x117;
+  reg u64 x120;
+  reg u64 x119;
+  reg u64 x122;
+  reg u64 x121;
+  reg u64 x124;
+  reg u64 x123;
+  reg bool __cf_x126;
+  reg u64 x125;
+  #[spill] reg u64 x126;
+  #[spill] reg u64 x127;
+  reg bool __ltu_x128_bp28;
+  #[spill] reg u64 x128_bp28;
+  #[spill] reg u64 x128;
+  #[spill] reg u64 x129;
+  reg bool __ltu_x130_bp29;
+  #[spill] reg u64 x130_bp29;
+  #[spill] reg u64 x130;
+  #[spill] reg u64 x131;
+  #[spill] reg u64 x132;
+  reg bool __ltu_x133_bp30;
+  #[spill] reg u64 x133_bp30;
+  #[spill] reg u64 x133;
+  #[spill] reg u64 x134;
+  reg bool __ltu_x135_bp31;
+  #[spill] reg u64 x135_bp31;
+  #[spill] reg u64 x135;
+  #[spill] reg u64 x136;
+  #[spill] reg u64 x137;
+  reg bool __cf_x139;
+  reg u64 x138;
+  #[spill] reg u64 x139;
+  #[spill] reg u64 x140;
+  reg bool __ltu_x141_bp32;
+  #[spill] reg u64 x141_bp32;
+  #[spill] reg u64 x141;
+  #[spill] reg u64 x142;
+  reg bool __ltu_x143_bp33;
+  #[spill] reg u64 x143_bp33;
+  #[spill] reg u64 x143;
+  #[spill] reg u64 x144;
+  #[spill] reg u64 x145;
+  reg bool __ltu_x146_bp34;
+  #[spill] reg u64 x146_bp34;
+  #[spill] reg u64 x146;
+  #[spill] reg u64 x147;
+  reg bool __ltu_x148_bp35;
+  #[spill] reg u64 x148_bp35;
+  #[spill] reg u64 x148;
+  #[spill] reg u64 x149;
+  #[spill] reg u64 x150;
+  reg bool __ltu_x151_bp36;
+  #[spill] reg u64 x151_bp36;
+  #[spill] reg u64 x151;
+  #[spill] reg u64 x152;
+  reg bool __ltu_x153_bp37;
+  #[spill] reg u64 x153_bp37;
+  #[spill] reg u64 x153;
+  #[spill] reg u64 x154;
+  #[spill] reg u64 x155;
+  reg bool __ltu_x156_bp38;
+  #[spill] reg u64 x156_bp38;
+  #[spill] reg u64 x156;
+  #[spill] reg u64 x157;
+  reg bool __ltu_x158_bp39;
+  #[spill] reg u64 x158_bp39;
+  #[spill] reg u64 x158;
+  #[spill] reg u64 x159;
+  #[spill] reg u64 x160;
+  reg u64 x162;
+  reg u64 x161;
+  reg u64 x164;
+  reg u64 x163;
+  reg u64 x166;
+  reg u64 x165;
+  reg u64 x168;
+  reg u64 x167;
+  reg bool __cf_x170;
+  reg u64 x169;
+  #[spill] reg u64 x170;
+  #[spill] reg u64 x171;
+  reg bool __ltu_x172_bp40;
+  #[spill] reg u64 x172_bp40;
+  #[spill] reg u64 x172;
+  #[spill] reg u64 x173;
+  reg bool __ltu_x174_bp41;
+  #[spill] reg u64 x174_bp41;
+  #[spill] reg u64 x174;
+  #[spill] reg u64 x175;
+  #[spill] reg u64 x176;
+  reg bool __ltu_x177_bp42;
+  #[spill] reg u64 x177_bp42;
+  #[spill] reg u64 x177;
+  #[spill] reg u64 x178;
+  reg bool __ltu_x179_bp43;
+  #[spill] reg u64 x179_bp43;
+  #[spill] reg u64 x179;
+  #[spill] reg u64 x180;
+  #[spill] reg u64 x181;
+  reg bool __cf_x183;
+  reg u64 x182;
+  #[spill] reg u64 x183;
+  #[spill] reg u64 x184;
+  reg bool __ltu_x185_bp44;
+  #[spill] reg u64 x185_bp44;
+  #[spill] reg u64 x185;
+  #[spill] reg u64 x186;
+  reg bool __ltu_x187_bp45;
+  #[spill] reg u64 x187_bp45;
+  #[spill] reg u64 x187;
+  #[spill] reg u64 x188;
+  #[spill] reg u64 x189;
+  reg bool __ltu_x190_bp46;
+  #[spill] reg u64 x190_bp46;
+  #[spill] reg u64 x190;
+  #[spill] reg u64 x191;
+  reg bool __ltu_x192_bp47;
+  #[spill] reg u64 x192_bp47;
+  #[spill] reg u64 x192;
+  #[spill] reg u64 x193;
+  #[spill] reg u64 x194;
+  reg bool __ltu_x195_bp48;
+  #[spill] reg u64 x195_bp48;
+  #[spill] reg u64 x195;
+  #[spill] reg u64 x196;
+  reg bool __ltu_x197_bp49;
+  #[spill] reg u64 x197_bp49;
+  #[spill] reg u64 x197;
+  #[spill] reg u64 x198;
+  #[spill] reg u64 x199;
+  reg bool __ltu_x200_bp50;
+  #[spill] reg u64 x200_bp50;
+  #[spill] reg u64 x200;
+  #[spill] reg u64 x201;
+  reg bool __ltu_x202_bp51;
+  #[spill] reg u64 x202_bp51;
+  #[spill] reg u64 x202;
+  #[spill] reg u64 x203;
+  #[spill] reg u64 x204;
+  reg u64 x206;
+  reg u64 x205;
+  reg u64 x208;
+  reg u64 x207;
+  reg u64 x210;
+  reg u64 x209;
+  reg u64 x212;
+  reg u64 x211;
+  reg bool __cf_x214;
+  reg u64 x213;
+  #[spill] reg u64 x214;
+  #[spill] reg u64 x215;
+  reg bool __ltu_x216_bp52;
+  #[spill] reg u64 x216_bp52;
+  #[spill] reg u64 x216;
+  #[spill] reg u64 x217;
+  reg bool __ltu_x218_bp53;
+  #[spill] reg u64 x218_bp53;
+  #[spill] reg u64 x218;
+  #[spill] reg u64 x219;
+  #[spill] reg u64 x220;
+  reg bool __ltu_x221_bp54;
+  #[spill] reg u64 x221_bp54;
+  #[spill] reg u64 x221;
+  #[spill] reg u64 x222;
+  reg bool __ltu_x223_bp55;
+  #[spill] reg u64 x223_bp55;
+  #[spill] reg u64 x223;
+  #[spill] reg u64 x224;
+  #[spill] reg u64 x225;
+  reg bool __cf_x227;
+  reg u64 x226;
+  #[spill] reg u64 x227;
+  #[spill] reg u64 x228;
+  reg bool __ltu_x229_bp56;
+  #[spill] reg u64 x229_bp56;
+  #[spill] reg u64 x229;
+  #[spill] reg u64 x230;
+  reg bool __ltu_x231_bp57;
+  #[spill] reg u64 x231_bp57;
+  #[spill] reg u64 x231;
+  #[spill] reg u64 x232;
+  #[spill] reg u64 x233;
+  reg bool __ltu_x234_bp58;
+  #[spill] reg u64 x234_bp58;
+  #[spill] reg u64 x234;
+  #[spill] reg u64 x235;
+  reg bool __ltu_x236_bp59;
+  #[spill] reg u64 x236_bp59;
+  #[spill] reg u64 x236;
+  #[spill] reg u64 x237;
+  #[spill] reg u64 x238;
+  reg bool __ltu_x239_bp60;
+  #[spill] reg u64 x239_bp60;
+  #[spill] reg u64 x239;
+  #[spill] reg u64 x240;
+  reg bool __ltu_x241_bp61;
+  #[spill] reg u64 x241_bp61;
+  #[spill] reg u64 x241;
+  #[spill] reg u64 x242;
+  #[spill] reg u64 x243;
+  reg bool __ltu_x244_bp62;
+  #[spill] reg u64 x244_bp62;
+  #[spill] reg u64 x244;
+  #[spill] reg u64 x245;
+  reg bool __ltu_x246_bp63;
+  #[spill] reg u64 x246_bp63;
+  #[spill] reg u64 x246;
+  #[spill] reg u64 x247;
+  #[spill] reg u64 x248;
+  reg u64 x250;
+  reg u64 x249;
+  reg u64 x252;
+  reg u64 x251;
+  reg u64 x254;
+  reg u64 x253;
+  reg u64 x256;
+  reg u64 x255;
+  reg bool __cf_x258;
+  reg u64 x257;
+  #[spill] reg u64 x258;
+  #[spill] reg u64 x259;
+  reg bool __ltu_x260_bp64;
+  #[spill] reg u64 x260_bp64;
+  #[spill] reg u64 x260;
+  #[spill] reg u64 x261;
+  reg bool __ltu_x262_bp65;
+  #[spill] reg u64 x262_bp65;
+  #[spill] reg u64 x262;
+  #[spill] reg u64 x263;
+  #[spill] reg u64 x264;
+  reg bool __ltu_x265_bp66;
+  #[spill] reg u64 x265_bp66;
+  #[spill] reg u64 x265;
+  #[spill] reg u64 x266;
+  reg bool __ltu_x267_bp67;
+  #[spill] reg u64 x267_bp67;
+  #[spill] reg u64 x267;
+  #[spill] reg u64 x268;
+  #[spill] reg u64 x269;
+  reg bool __cf_x271;
+  reg u64 x270;
+  #[spill] reg u64 x271;
+  #[spill] reg u64 x272;
+  reg bool __ltu_x273_bp68;
+  #[spill] reg u64 x273_bp68;
+  #[spill] reg u64 x273;
+  #[spill] reg u64 x274;
+  reg bool __ltu_x275_bp69;
+  #[spill] reg u64 x275_bp69;
+  #[spill] reg u64 x275;
+  #[spill] reg u64 x276;
+  #[spill] reg u64 x277;
+  reg bool __ltu_x278_bp70;
+  #[spill] reg u64 x278_bp70;
+  #[spill] reg u64 x278;
+  #[spill] reg u64 x279;
+  reg bool __ltu_x280_bp71;
+  #[spill] reg u64 x280_bp71;
+  #[spill] reg u64 x280;
+  #[spill] reg u64 x281;
+  #[spill] reg u64 x282;
+  reg bool __ltu_x283_bp72;
+  #[spill] reg u64 x283_bp72;
+  #[spill] reg u64 x283;
+  #[spill] reg u64 x284;
+  reg bool __ltu_x285_bp73;
+  #[spill] reg u64 x285_bp73;
+  #[spill] reg u64 x285;
+  #[spill] reg u64 x286;
+  #[spill] reg u64 x287;
+  reg bool __ltu_x288_bp74;
+  #[spill] reg u64 x288_bp74;
+  #[spill] reg u64 x288;
+  #[spill] reg u64 x289;
+  reg bool __ltu_x290_bp75;
+  #[spill] reg u64 x290_bp75;
+  #[spill] reg u64 x290;
+  #[spill] reg u64 x291;
+  #[spill] reg u64 x292;
+  reg u64 x294;
+  reg u64 x293;
+  reg u64 x296;
+  reg u64 x295;
+  reg u64 x298;
+  reg u64 x297;
+  reg u64 x300;
+  reg u64 x299;
+  reg bool __cf_x302;
+  reg u64 x301;
+  #[spill] reg u64 x302;
+  #[spill] reg u64 x303;
+  reg bool __ltu_x304_bp76;
+  #[spill] reg u64 x304_bp76;
+  #[spill] reg u64 x304;
+  #[spill] reg u64 x305;
+  reg bool __ltu_x306_bp77;
+  #[spill] reg u64 x306_bp77;
+  #[spill] reg u64 x306;
+  #[spill] reg u64 x307;
+  #[spill] reg u64 x308;
+  reg bool __ltu_x309_bp78;
+  #[spill] reg u64 x309_bp78;
+  #[spill] reg u64 x309;
+  #[spill] reg u64 x310;
+  reg bool __ltu_x311_bp79;
+  #[spill] reg u64 x311_bp79;
+  #[spill] reg u64 x311;
+  #[spill] reg u64 x312;
+  #[spill] reg u64 x313;
+  reg bool __cf_x315;
+  reg u64 x314;
+  #[spill] reg u64 x315;
+  #[spill] reg u64 x316;
+  reg bool __ltu_x317_bp80;
+  #[spill] reg u64 x317_bp80;
+  #[spill] reg u64 x317;
+  #[spill] reg u64 x318;
+  reg bool __ltu_x319_bp81;
+  #[spill] reg u64 x319_bp81;
+  #[spill] reg u64 x319;
+  #[spill] reg u64 x320;
+  #[spill] reg u64 x321;
+  reg bool __ltu_x322_bp82;
+  #[spill] reg u64 x322_bp82;
+  #[spill] reg u64 x322;
+  #[spill] reg u64 x323;
+  reg bool __ltu_x324_bp83;
+  #[spill] reg u64 x324_bp83;
+  #[spill] reg u64 x324;
+  #[spill] reg u64 x325;
+  #[spill] reg u64 x326;
+  reg bool __ltu_x327_bp84;
+  #[spill] reg u64 x327_bp84;
+  #[spill] reg u64 x327;
+  #[spill] reg u64 x328;
+  reg bool __ltu_x329_bp85;
+  #[spill] reg u64 x329_bp85;
+  #[spill] reg u64 x329;
+  #[spill] reg u64 x330;
+  #[spill] reg u64 x331;
+  reg bool __ltu_x332_bp86;
+  #[spill] reg u64 x332_bp86;
+  #[spill] reg u64 x332;
+  #[spill] reg u64 x333;
+  reg bool __ltu_x334_bp87;
+  #[spill] reg u64 x334_bp87;
+  #[spill] reg u64 x334;
+  #[spill] reg u64 x335;
+  #[spill] reg u64 x336;
+  #[spill] reg u64 x337;
+  reg bool __ltu_x338_bp88;
+  #[spill] reg u64 x338_bp88;
+  #[spill] reg u64 x338;
+  #[spill] reg u64 x339;
+  reg bool __ltu_x340_bp89;
+  #[spill] reg u64 x340_bp89;
+  #[spill] reg u64 x340;
+  #[spill] reg u64 x341;
+  reg bool __ltu_x342_bp90;
+  #[spill] reg u64 x342_bp90;
+  #[spill] reg u64 x342;
+  #[spill] reg u64 x343;
+  #[spill] reg u64 x344;
+  reg bool __ltu_x345_bp91;
+  #[spill] reg u64 x345_bp91;
+  #[spill] reg u64 x345;
+  #[spill] reg u64 x346;
+  reg bool __ltu_x347_bp92;
+  #[spill] reg u64 x347_bp92;
+  #[spill] reg u64 x347;
+  #[spill] reg u64 x348;
+  #[spill] reg u64 x349;
+  reg bool __ltu_x350_bp93;
+  #[spill] reg u64 x350_bp93;
+  #[spill] reg u64 x350;
+  #[spill] reg u64 x351;
+  reg bool __ltu_x352_bp94;
+  #[spill] reg u64 x352_bp94;
+  #[spill] reg u64 x352;
+  #[spill] reg u64 x353;
+  #[spill] reg u64 x354;
+  reg bool __ltu_x355_bp95;
+  #[spill] reg u64 x355_bp95;
+  #[spill] reg u64 x355;
+  #[spill] reg u64 x358;
+  #[spill] reg u64 x361;
+  #[spill] reg u64 x364;
+  #[spill] reg u64 x367;
+  #[spill] reg u64 x368;
+  #[spill] reg u64 x369;
+  #[spill] reg u64 x370;
+  #[spill] reg u64 x371;
+  x0 = [in0 + 0];
+  x1 = [(in0 + 8) + 0];
+  x2 = [(in0 + 16) + 0];
+  x3 = [(in0 + 24) + 0];
+  x4 = x1;
+  x5 = x2;
+  x6 = x3;
+  x7 = x0;
+  __mulx_tmp__ = x7;
+  (x9, x8) = #MULX(__mulx_tmp__, x3);
+  __mulx_tmp__ = x7;
+  (x11, x10) = #MULX(__mulx_tmp__, x2);
+  __mulx_tmp__ = x7;
+  (x13, x12) = #MULX(__mulx_tmp__, x1);
+  __mulx_tmp__ = x7;
+  (x15, x14) = #MULX(__mulx_tmp__, x0);
+  _, __cf_x17, _, _, _, x16 = #ADD(x15, x12);
+  x17 = 0;
+  if __cf_x17 {
+    x17 = 1;
+  }
+  x18 = x17;
+  x18 = (x18 + x13);
+  __ltu_x19_bp0 = (x18 <u x13);
+  x19_bp0 = 0;
+  if __ltu_x19_bp0 {
+    x19_bp0 = 1;
+  }
+  x19 = x19_bp0;
+  x20 = x18;
+  x20 = (x20 + x10);
+  __ltu_x21_bp1 = (x20 <u x10);
+  x21_bp1 = 0;
+  if __ltu_x21_bp1 {
+    x21_bp1 = 1;
+  }
+  x21 = x21_bp1;
+  x22 = x19;
+  x22 = (x22 + x21);
+  x23 = x22;
+  x23 = (x23 + x11);
+  __ltu_x24_bp2 = (x23 <u x11);
+  x24_bp2 = 0;
+  if __ltu_x24_bp2 {
+    x24_bp2 = 1;
+  }
+  x24 = x24_bp2;
+  x25 = x23;
+  x25 = (x25 + x8);
+  __ltu_x26_bp3 = (x25 <u x8);
+  x26_bp3 = 0;
+  if __ltu_x26_bp3 {
+    x26_bp3 = 1;
+  }
+  x26 = x26_bp3;
+  x27 = x24;
+  x27 = (x27 + x26);
+  x28 = x27;
+  x28 = (x28 + x9);
+  x29 = x14;
+  __wtmp__ = 9786893198990664585;
+  x29 = (x29 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x29;
+  (x31, x30) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x29;
+  (x33, x32) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x29;
+  (x35, x34) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x29;
+  (x37, x36) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x39, _, _, _, x38 = #ADD(x37, x34);
+  x39 = 0;
+  if __cf_x39 {
+    x39 = 1;
+  }
+  x40 = x39;
+  x40 = (x40 + x35);
+  __ltu_x41_bp4 = (x40 <u x35);
+  x41_bp4 = 0;
+  if __ltu_x41_bp4 {
+    x41_bp4 = 1;
+  }
+  x41 = x41_bp4;
+  x42 = x40;
+  x42 = (x42 + x32);
+  __ltu_x43_bp5 = (x42 <u x32);
+  x43_bp5 = 0;
+  if __ltu_x43_bp5 {
+    x43_bp5 = 1;
+  }
+  x43 = x43_bp5;
+  x44 = x41;
+  x44 = (x44 + x43);
+  x45 = x44;
+  x45 = (x45 + x33);
+  __ltu_x46_bp6 = (x45 <u x33);
+  x46_bp6 = 0;
+  if __ltu_x46_bp6 {
+    x46_bp6 = 1;
+  }
+  x46 = x46_bp6;
+  x47 = x45;
+  x47 = (x47 + x30);
+  __ltu_x48_bp7 = (x47 <u x30);
+  x48_bp7 = 0;
+  if __ltu_x48_bp7 {
+    x48_bp7 = 1;
+  }
+  x48 = x48_bp7;
+  x49 = x46;
+  x49 = (x49 + x48);
+  x50 = x49;
+  x50 = (x50 + x31);
+  _, __cf_x52, _, _, _, x51 = #ADD(x14, x36);
+  x52 = 0;
+  if __cf_x52 {
+    x52 = 1;
+  }
+  x53 = x52;
+  x53 = (x53 + x16);
+  __ltu_x54_bp8 = (x53 <u x16);
+  x54_bp8 = 0;
+  if __ltu_x54_bp8 {
+    x54_bp8 = 1;
+  }
+  x54 = x54_bp8;
+  x55 = x53;
+  x55 = (x55 + x38);
+  __ltu_x56_bp9 = (x55 <u x38);
+  x56_bp9 = 0;
+  if __ltu_x56_bp9 {
+    x56_bp9 = 1;
+  }
+  x56 = x56_bp9;
+  x57 = x54;
+  x57 = (x57 + x56);
+  x58 = x57;
+  x58 = (x58 + x20);
+  __ltu_x59_bp10 = (x58 <u x20);
+  x59_bp10 = 0;
+  if __ltu_x59_bp10 {
+    x59_bp10 = 1;
+  }
+  x59 = x59_bp10;
+  x60 = x58;
+  x60 = (x60 + x42);
+  __ltu_x61_bp11 = (x60 <u x42);
+  x61_bp11 = 0;
+  if __ltu_x61_bp11 {
+    x61_bp11 = 1;
+  }
+  x61 = x61_bp11;
+  x62 = x59;
+  x62 = (x62 + x61);
+  x63 = x62;
+  x63 = (x63 + x25);
+  __ltu_x64_bp12 = (x63 <u x25);
+  x64_bp12 = 0;
+  if __ltu_x64_bp12 {
+    x64_bp12 = 1;
+  }
+  x64 = x64_bp12;
+  x65 = x63;
+  x65 = (x65 + x47);
+  __ltu_x66_bp13 = (x65 <u x47);
+  x66_bp13 = 0;
+  if __ltu_x66_bp13 {
+    x66_bp13 = 1;
+  }
+  x66 = x66_bp13;
+  x67 = x64;
+  x67 = (x67 + x66);
+  x68 = x67;
+  x68 = (x68 + x28);
+  __ltu_x69_bp14 = (x68 <u x28);
+  x69_bp14 = 0;
+  if __ltu_x69_bp14 {
+    x69_bp14 = 1;
+  }
+  x69 = x69_bp14;
+  x70 = x68;
+  x70 = (x70 + x50);
+  __ltu_x71_bp15 = (x70 <u x50);
+  x71_bp15 = 0;
+  if __ltu_x71_bp15 {
+    x71_bp15 = 1;
+  }
+  x71 = x71_bp15;
+  x72 = x69;
+  x72 = (x72 + x71);
+  __mulx_tmp__ = x4;
+  (x74, x73) = #MULX(__mulx_tmp__, x3);
+  __mulx_tmp__ = x4;
+  (x76, x75) = #MULX(__mulx_tmp__, x2);
+  __mulx_tmp__ = x4;
+  (x78, x77) = #MULX(__mulx_tmp__, x1);
+  __mulx_tmp__ = x4;
+  (x80, x79) = #MULX(__mulx_tmp__, x0);
+  _, __cf_x82, _, _, _, x81 = #ADD(x80, x77);
+  x82 = 0;
+  if __cf_x82 {
+    x82 = 1;
+  }
+  x83 = x82;
+  x83 = (x83 + x78);
+  __ltu_x84_bp16 = (x83 <u x78);
+  x84_bp16 = 0;
+  if __ltu_x84_bp16 {
+    x84_bp16 = 1;
+  }
+  x84 = x84_bp16;
+  x85 = x83;
+  x85 = (x85 + x75);
+  __ltu_x86_bp17 = (x85 <u x75);
+  x86_bp17 = 0;
+  if __ltu_x86_bp17 {
+    x86_bp17 = 1;
+  }
+  x86 = x86_bp17;
+  x87 = x84;
+  x87 = (x87 + x86);
+  x88 = x87;
+  x88 = (x88 + x76);
+  __ltu_x89_bp18 = (x88 <u x76);
+  x89_bp18 = 0;
+  if __ltu_x89_bp18 {
+    x89_bp18 = 1;
+  }
+  x89 = x89_bp18;
+  x90 = x88;
+  x90 = (x90 + x73);
+  __ltu_x91_bp19 = (x90 <u x73);
+  x91_bp19 = 0;
+  if __ltu_x91_bp19 {
+    x91_bp19 = 1;
+  }
+  x91 = x91_bp19;
+  x92 = x89;
+  x92 = (x92 + x91);
+  x93 = x92;
+  x93 = (x93 + x74);
+  _, __cf_x95, _, _, _, x94 = #ADD(x55, x79);
+  x95 = 0;
+  if __cf_x95 {
+    x95 = 1;
+  }
+  x96 = x95;
+  x96 = (x96 + x60);
+  __ltu_x97_bp20 = (x96 <u x60);
+  x97_bp20 = 0;
+  if __ltu_x97_bp20 {
+    x97_bp20 = 1;
+  }
+  x97 = x97_bp20;
+  x98 = x96;
+  x98 = (x98 + x81);
+  __ltu_x99_bp21 = (x98 <u x81);
+  x99_bp21 = 0;
+  if __ltu_x99_bp21 {
+    x99_bp21 = 1;
+  }
+  x99 = x99_bp21;
+  x100 = x97;
+  x100 = (x100 + x99);
+  x101 = x100;
+  x101 = (x101 + x65);
+  __ltu_x102_bp22 = (x101 <u x65);
+  x102_bp22 = 0;
+  if __ltu_x102_bp22 {
+    x102_bp22 = 1;
+  }
+  x102 = x102_bp22;
+  x103 = x101;
+  x103 = (x103 + x85);
+  __ltu_x104_bp23 = (x103 <u x85);
+  x104_bp23 = 0;
+  if __ltu_x104_bp23 {
+    x104_bp23 = 1;
+  }
+  x104 = x104_bp23;
+  x105 = x102;
+  x105 = (x105 + x104);
+  x106 = x105;
+  x106 = (x106 + x70);
+  __ltu_x107_bp24 = (x106 <u x70);
+  x107_bp24 = 0;
+  if __ltu_x107_bp24 {
+    x107_bp24 = 1;
+  }
+  x107 = x107_bp24;
+  x108 = x106;
+  x108 = (x108 + x90);
+  __ltu_x109_bp25 = (x108 <u x90);
+  x109_bp25 = 0;
+  if __ltu_x109_bp25 {
+    x109_bp25 = 1;
+  }
+  x109 = x109_bp25;
+  x110 = x107;
+  x110 = (x110 + x109);
+  x111 = x110;
+  x111 = (x111 + x72);
+  __ltu_x112_bp26 = (x111 <u x72);
+  x112_bp26 = 0;
+  if __ltu_x112_bp26 {
+    x112_bp26 = 1;
+  }
+  x112 = x112_bp26;
+  x113 = x111;
+  x113 = (x113 + x93);
+  __ltu_x114_bp27 = (x113 <u x93);
+  x114_bp27 = 0;
+  if __ltu_x114_bp27 {
+    x114_bp27 = 1;
+  }
+  x114 = x114_bp27;
+  x115 = x112;
+  x115 = (x115 + x114);
+  x116 = x94;
+  __wtmp__ = 9786893198990664585;
+  x116 = (x116 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x116;
+  (x118, x117) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x116;
+  (x120, x119) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x116;
+  (x122, x121) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x116;
+  (x124, x123) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x126, _, _, _, x125 = #ADD(x124, x121);
+  x126 = 0;
+  if __cf_x126 {
+    x126 = 1;
+  }
+  x127 = x126;
+  x127 = (x127 + x122);
+  __ltu_x128_bp28 = (x127 <u x122);
+  x128_bp28 = 0;
+  if __ltu_x128_bp28 {
+    x128_bp28 = 1;
+  }
+  x128 = x128_bp28;
+  x129 = x127;
+  x129 = (x129 + x119);
+  __ltu_x130_bp29 = (x129 <u x119);
+  x130_bp29 = 0;
+  if __ltu_x130_bp29 {
+    x130_bp29 = 1;
+  }
+  x130 = x130_bp29;
+  x131 = x128;
+  x131 = (x131 + x130);
+  x132 = x131;
+  x132 = (x132 + x120);
+  __ltu_x133_bp30 = (x132 <u x120);
+  x133_bp30 = 0;
+  if __ltu_x133_bp30 {
+    x133_bp30 = 1;
+  }
+  x133 = x133_bp30;
+  x134 = x132;
+  x134 = (x134 + x117);
+  __ltu_x135_bp31 = (x134 <u x117);
+  x135_bp31 = 0;
+  if __ltu_x135_bp31 {
+    x135_bp31 = 1;
+  }
+  x135 = x135_bp31;
+  x136 = x133;
+  x136 = (x136 + x135);
+  x137 = x136;
+  x137 = (x137 + x118);
+  _, __cf_x139, _, _, _, x138 = #ADD(x94, x123);
+  x139 = 0;
+  if __cf_x139 {
+    x139 = 1;
+  }
+  x140 = x139;
+  x140 = (x140 + x98);
+  __ltu_x141_bp32 = (x140 <u x98);
+  x141_bp32 = 0;
+  if __ltu_x141_bp32 {
+    x141_bp32 = 1;
+  }
+  x141 = x141_bp32;
+  x142 = x140;
+  x142 = (x142 + x125);
+  __ltu_x143_bp33 = (x142 <u x125);
+  x143_bp33 = 0;
+  if __ltu_x143_bp33 {
+    x143_bp33 = 1;
+  }
+  x143 = x143_bp33;
+  x144 = x141;
+  x144 = (x144 + x143);
+  x145 = x144;
+  x145 = (x145 + x103);
+  __ltu_x146_bp34 = (x145 <u x103);
+  x146_bp34 = 0;
+  if __ltu_x146_bp34 {
+    x146_bp34 = 1;
+  }
+  x146 = x146_bp34;
+  x147 = x145;
+  x147 = (x147 + x129);
+  __ltu_x148_bp35 = (x147 <u x129);
+  x148_bp35 = 0;
+  if __ltu_x148_bp35 {
+    x148_bp35 = 1;
+  }
+  x148 = x148_bp35;
+  x149 = x146;
+  x149 = (x149 + x148);
+  x150 = x149;
+  x150 = (x150 + x108);
+  __ltu_x151_bp36 = (x150 <u x108);
+  x151_bp36 = 0;
+  if __ltu_x151_bp36 {
+    x151_bp36 = 1;
+  }
+  x151 = x151_bp36;
+  x152 = x150;
+  x152 = (x152 + x134);
+  __ltu_x153_bp37 = (x152 <u x134);
+  x153_bp37 = 0;
+  if __ltu_x153_bp37 {
+    x153_bp37 = 1;
+  }
+  x153 = x153_bp37;
+  x154 = x151;
+  x154 = (x154 + x153);
+  x155 = x154;
+  x155 = (x155 + x113);
+  __ltu_x156_bp38 = (x155 <u x113);
+  x156_bp38 = 0;
+  if __ltu_x156_bp38 {
+    x156_bp38 = 1;
+  }
+  x156 = x156_bp38;
+  x157 = x155;
+  x157 = (x157 + x137);
+  __ltu_x158_bp39 = (x157 <u x137);
+  x158_bp39 = 0;
+  if __ltu_x158_bp39 {
+    x158_bp39 = 1;
+  }
+  x158 = x158_bp39;
+  x159 = x156;
+  x159 = (x159 + x158);
+  x160 = x159;
+  x160 = (x160 + x115);
+  __mulx_tmp__ = x5;
+  (x162, x161) = #MULX(__mulx_tmp__, x3);
+  __mulx_tmp__ = x5;
+  (x164, x163) = #MULX(__mulx_tmp__, x2);
+  __mulx_tmp__ = x5;
+  (x166, x165) = #MULX(__mulx_tmp__, x1);
+  __mulx_tmp__ = x5;
+  (x168, x167) = #MULX(__mulx_tmp__, x0);
+  _, __cf_x170, _, _, _, x169 = #ADD(x168, x165);
+  x170 = 0;
+  if __cf_x170 {
+    x170 = 1;
+  }
+  x171 = x170;
+  x171 = (x171 + x166);
+  __ltu_x172_bp40 = (x171 <u x166);
+  x172_bp40 = 0;
+  if __ltu_x172_bp40 {
+    x172_bp40 = 1;
+  }
+  x172 = x172_bp40;
+  x173 = x171;
+  x173 = (x173 + x163);
+  __ltu_x174_bp41 = (x173 <u x163);
+  x174_bp41 = 0;
+  if __ltu_x174_bp41 {
+    x174_bp41 = 1;
+  }
+  x174 = x174_bp41;
+  x175 = x172;
+  x175 = (x175 + x174);
+  x176 = x175;
+  x176 = (x176 + x164);
+  __ltu_x177_bp42 = (x176 <u x164);
+  x177_bp42 = 0;
+  if __ltu_x177_bp42 {
+    x177_bp42 = 1;
+  }
+  x177 = x177_bp42;
+  x178 = x176;
+  x178 = (x178 + x161);
+  __ltu_x179_bp43 = (x178 <u x161);
+  x179_bp43 = 0;
+  if __ltu_x179_bp43 {
+    x179_bp43 = 1;
+  }
+  x179 = x179_bp43;
+  x180 = x177;
+  x180 = (x180 + x179);
+  x181 = x180;
+  x181 = (x181 + x162);
+  _, __cf_x183, _, _, _, x182 = #ADD(x142, x167);
+  x183 = 0;
+  if __cf_x183 {
+    x183 = 1;
+  }
+  x184 = x183;
+  x184 = (x184 + x147);
+  __ltu_x185_bp44 = (x184 <u x147);
+  x185_bp44 = 0;
+  if __ltu_x185_bp44 {
+    x185_bp44 = 1;
+  }
+  x185 = x185_bp44;
+  x186 = x184;
+  x186 = (x186 + x169);
+  __ltu_x187_bp45 = (x186 <u x169);
+  x187_bp45 = 0;
+  if __ltu_x187_bp45 {
+    x187_bp45 = 1;
+  }
+  x187 = x187_bp45;
+  x188 = x185;
+  x188 = (x188 + x187);
+  x189 = x188;
+  x189 = (x189 + x152);
+  __ltu_x190_bp46 = (x189 <u x152);
+  x190_bp46 = 0;
+  if __ltu_x190_bp46 {
+    x190_bp46 = 1;
+  }
+  x190 = x190_bp46;
+  x191 = x189;
+  x191 = (x191 + x173);
+  __ltu_x192_bp47 = (x191 <u x173);
+  x192_bp47 = 0;
+  if __ltu_x192_bp47 {
+    x192_bp47 = 1;
+  }
+  x192 = x192_bp47;
+  x193 = x190;
+  x193 = (x193 + x192);
+  x194 = x193;
+  x194 = (x194 + x157);
+  __ltu_x195_bp48 = (x194 <u x157);
+  x195_bp48 = 0;
+  if __ltu_x195_bp48 {
+    x195_bp48 = 1;
+  }
+  x195 = x195_bp48;
+  x196 = x194;
+  x196 = (x196 + x178);
+  __ltu_x197_bp49 = (x196 <u x178);
+  x197_bp49 = 0;
+  if __ltu_x197_bp49 {
+    x197_bp49 = 1;
+  }
+  x197 = x197_bp49;
+  x198 = x195;
+  x198 = (x198 + x197);
+  x199 = x198;
+  x199 = (x199 + x160);
+  __ltu_x200_bp50 = (x199 <u x160);
+  x200_bp50 = 0;
+  if __ltu_x200_bp50 {
+    x200_bp50 = 1;
+  }
+  x200 = x200_bp50;
+  x201 = x199;
+  x201 = (x201 + x181);
+  __ltu_x202_bp51 = (x201 <u x181);
+  x202_bp51 = 0;
+  if __ltu_x202_bp51 {
+    x202_bp51 = 1;
+  }
+  x202 = x202_bp51;
+  x203 = x200;
+  x203 = (x203 + x202);
+  x204 = x182;
+  __wtmp__ = 9786893198990664585;
+  x204 = (x204 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x204;
+  (x206, x205) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x204;
+  (x208, x207) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x204;
+  (x210, x209) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x204;
+  (x212, x211) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x214, _, _, _, x213 = #ADD(x212, x209);
+  x214 = 0;
+  if __cf_x214 {
+    x214 = 1;
+  }
+  x215 = x214;
+  x215 = (x215 + x210);
+  __ltu_x216_bp52 = (x215 <u x210);
+  x216_bp52 = 0;
+  if __ltu_x216_bp52 {
+    x216_bp52 = 1;
+  }
+  x216 = x216_bp52;
+  x217 = x215;
+  x217 = (x217 + x207);
+  __ltu_x218_bp53 = (x217 <u x207);
+  x218_bp53 = 0;
+  if __ltu_x218_bp53 {
+    x218_bp53 = 1;
+  }
+  x218 = x218_bp53;
+  x219 = x216;
+  x219 = (x219 + x218);
+  x220 = x219;
+  x220 = (x220 + x208);
+  __ltu_x221_bp54 = (x220 <u x208);
+  x221_bp54 = 0;
+  if __ltu_x221_bp54 {
+    x221_bp54 = 1;
+  }
+  x221 = x221_bp54;
+  x222 = x220;
+  x222 = (x222 + x205);
+  __ltu_x223_bp55 = (x222 <u x205);
+  x223_bp55 = 0;
+  if __ltu_x223_bp55 {
+    x223_bp55 = 1;
+  }
+  x223 = x223_bp55;
+  x224 = x221;
+  x224 = (x224 + x223);
+  x225 = x224;
+  x225 = (x225 + x206);
+  _, __cf_x227, _, _, _, x226 = #ADD(x182, x211);
+  x227 = 0;
+  if __cf_x227 {
+    x227 = 1;
+  }
+  x228 = x227;
+  x228 = (x228 + x186);
+  __ltu_x229_bp56 = (x228 <u x186);
+  x229_bp56 = 0;
+  if __ltu_x229_bp56 {
+    x229_bp56 = 1;
+  }
+  x229 = x229_bp56;
+  x230 = x228;
+  x230 = (x230 + x213);
+  __ltu_x231_bp57 = (x230 <u x213);
+  x231_bp57 = 0;
+  if __ltu_x231_bp57 {
+    x231_bp57 = 1;
+  }
+  x231 = x231_bp57;
+  x232 = x229;
+  x232 = (x232 + x231);
+  x233 = x232;
+  x233 = (x233 + x191);
+  __ltu_x234_bp58 = (x233 <u x191);
+  x234_bp58 = 0;
+  if __ltu_x234_bp58 {
+    x234_bp58 = 1;
+  }
+  x234 = x234_bp58;
+  x235 = x233;
+  x235 = (x235 + x217);
+  __ltu_x236_bp59 = (x235 <u x217);
+  x236_bp59 = 0;
+  if __ltu_x236_bp59 {
+    x236_bp59 = 1;
+  }
+  x236 = x236_bp59;
+  x237 = x234;
+  x237 = (x237 + x236);
+  x238 = x237;
+  x238 = (x238 + x196);
+  __ltu_x239_bp60 = (x238 <u x196);
+  x239_bp60 = 0;
+  if __ltu_x239_bp60 {
+    x239_bp60 = 1;
+  }
+  x239 = x239_bp60;
+  x240 = x238;
+  x240 = (x240 + x222);
+  __ltu_x241_bp61 = (x240 <u x222);
+  x241_bp61 = 0;
+  if __ltu_x241_bp61 {
+    x241_bp61 = 1;
+  }
+  x241 = x241_bp61;
+  x242 = x239;
+  x242 = (x242 + x241);
+  x243 = x242;
+  x243 = (x243 + x201);
+  __ltu_x244_bp62 = (x243 <u x201);
+  x244_bp62 = 0;
+  if __ltu_x244_bp62 {
+    x244_bp62 = 1;
+  }
+  x244 = x244_bp62;
+  x245 = x243;
+  x245 = (x245 + x225);
+  __ltu_x246_bp63 = (x245 <u x225);
+  x246_bp63 = 0;
+  if __ltu_x246_bp63 {
+    x246_bp63 = 1;
+  }
+  x246 = x246_bp63;
+  x247 = x244;
+  x247 = (x247 + x246);
+  x248 = x247;
+  x248 = (x248 + x203);
+  __mulx_tmp__ = x6;
+  (x250, x249) = #MULX(__mulx_tmp__, x3);
+  __mulx_tmp__ = x6;
+  (x252, x251) = #MULX(__mulx_tmp__, x2);
+  __mulx_tmp__ = x6;
+  (x254, x253) = #MULX(__mulx_tmp__, x1);
+  __mulx_tmp__ = x6;
+  (x256, x255) = #MULX(__mulx_tmp__, x0);
+  _, __cf_x258, _, _, _, x257 = #ADD(x256, x253);
+  x258 = 0;
+  if __cf_x258 {
+    x258 = 1;
+  }
+  x259 = x258;
+  x259 = (x259 + x254);
+  __ltu_x260_bp64 = (x259 <u x254);
+  x260_bp64 = 0;
+  if __ltu_x260_bp64 {
+    x260_bp64 = 1;
+  }
+  x260 = x260_bp64;
+  x261 = x259;
+  x261 = (x261 + x251);
+  __ltu_x262_bp65 = (x261 <u x251);
+  x262_bp65 = 0;
+  if __ltu_x262_bp65 {
+    x262_bp65 = 1;
+  }
+  x262 = x262_bp65;
+  x263 = x260;
+  x263 = (x263 + x262);
+  x264 = x263;
+  x264 = (x264 + x252);
+  __ltu_x265_bp66 = (x264 <u x252);
+  x265_bp66 = 0;
+  if __ltu_x265_bp66 {
+    x265_bp66 = 1;
+  }
+  x265 = x265_bp66;
+  x266 = x264;
+  x266 = (x266 + x249);
+  __ltu_x267_bp67 = (x266 <u x249);
+  x267_bp67 = 0;
+  if __ltu_x267_bp67 {
+    x267_bp67 = 1;
+  }
+  x267 = x267_bp67;
+  x268 = x265;
+  x268 = (x268 + x267);
+  x269 = x268;
+  x269 = (x269 + x250);
+  _, __cf_x271, _, _, _, x270 = #ADD(x230, x255);
+  x271 = 0;
+  if __cf_x271 {
+    x271 = 1;
+  }
+  x272 = x271;
+  x272 = (x272 + x235);
+  __ltu_x273_bp68 = (x272 <u x235);
+  x273_bp68 = 0;
+  if __ltu_x273_bp68 {
+    x273_bp68 = 1;
+  }
+  x273 = x273_bp68;
+  x274 = x272;
+  x274 = (x274 + x257);
+  __ltu_x275_bp69 = (x274 <u x257);
+  x275_bp69 = 0;
+  if __ltu_x275_bp69 {
+    x275_bp69 = 1;
+  }
+  x275 = x275_bp69;
+  x276 = x273;
+  x276 = (x276 + x275);
+  x277 = x276;
+  x277 = (x277 + x240);
+  __ltu_x278_bp70 = (x277 <u x240);
+  x278_bp70 = 0;
+  if __ltu_x278_bp70 {
+    x278_bp70 = 1;
+  }
+  x278 = x278_bp70;
+  x279 = x277;
+  x279 = (x279 + x261);
+  __ltu_x280_bp71 = (x279 <u x261);
+  x280_bp71 = 0;
+  if __ltu_x280_bp71 {
+    x280_bp71 = 1;
+  }
+  x280 = x280_bp71;
+  x281 = x278;
+  x281 = (x281 + x280);
+  x282 = x281;
+  x282 = (x282 + x245);
+  __ltu_x283_bp72 = (x282 <u x245);
+  x283_bp72 = 0;
+  if __ltu_x283_bp72 {
+    x283_bp72 = 1;
+  }
+  x283 = x283_bp72;
+  x284 = x282;
+  x284 = (x284 + x266);
+  __ltu_x285_bp73 = (x284 <u x266);
+  x285_bp73 = 0;
+  if __ltu_x285_bp73 {
+    x285_bp73 = 1;
+  }
+  x285 = x285_bp73;
+  x286 = x283;
+  x286 = (x286 + x285);
+  x287 = x286;
+  x287 = (x287 + x248);
+  __ltu_x288_bp74 = (x287 <u x248);
+  x288_bp74 = 0;
+  if __ltu_x288_bp74 {
+    x288_bp74 = 1;
+  }
+  x288 = x288_bp74;
+  x289 = x287;
+  x289 = (x289 + x269);
+  __ltu_x290_bp75 = (x289 <u x269);
+  x290_bp75 = 0;
+  if __ltu_x290_bp75 {
+    x290_bp75 = 1;
+  }
+  x290 = x290_bp75;
+  x291 = x288;
+  x291 = (x291 + x290);
+  x292 = x270;
+  __wtmp__ = 9786893198990664585;
+  x292 = (x292 * __wtmp__);
+  __wtmp__ = 3486998266802970665;
+  __mulx_tmp__ = x292;
+  (x294, x293) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13281191951274694749;
+  __mulx_tmp__ = x292;
+  (x296, x295) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 10917124144477883021;
+  __mulx_tmp__ = x292;
+  (x298, x297) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 4332616871279656263;
+  __mulx_tmp__ = x292;
+  (x300, x299) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x302, _, _, _, x301 = #ADD(x300, x297);
+  x302 = 0;
+  if __cf_x302 {
+    x302 = 1;
+  }
+  x303 = x302;
+  x303 = (x303 + x298);
+  __ltu_x304_bp76 = (x303 <u x298);
+  x304_bp76 = 0;
+  if __ltu_x304_bp76 {
+    x304_bp76 = 1;
+  }
+  x304 = x304_bp76;
+  x305 = x303;
+  x305 = (x305 + x295);
+  __ltu_x306_bp77 = (x305 <u x295);
+  x306_bp77 = 0;
+  if __ltu_x306_bp77 {
+    x306_bp77 = 1;
+  }
+  x306 = x306_bp77;
+  x307 = x304;
+  x307 = (x307 + x306);
+  x308 = x307;
+  x308 = (x308 + x296);
+  __ltu_x309_bp78 = (x308 <u x296);
+  x309_bp78 = 0;
+  if __ltu_x309_bp78 {
+    x309_bp78 = 1;
+  }
+  x309 = x309_bp78;
+  x310 = x308;
+  x310 = (x310 + x293);
+  __ltu_x311_bp79 = (x310 <u x293);
+  x311_bp79 = 0;
+  if __ltu_x311_bp79 {
+    x311_bp79 = 1;
+  }
+  x311 = x311_bp79;
+  x312 = x309;
+  x312 = (x312 + x311);
+  x313 = x312;
+  x313 = (x313 + x294);
+  _, __cf_x315, _, _, _, x314 = #ADD(x270, x299);
+  x315 = 0;
+  if __cf_x315 {
+    x315 = 1;
+  }
+  x316 = x315;
+  x316 = (x316 + x274);
+  __ltu_x317_bp80 = (x316 <u x274);
+  x317_bp80 = 0;
+  if __ltu_x317_bp80 {
+    x317_bp80 = 1;
+  }
+  x317 = x317_bp80;
+  x318 = x316;
+  x318 = (x318 + x301);
+  __ltu_x319_bp81 = (x318 <u x301);
+  x319_bp81 = 0;
+  if __ltu_x319_bp81 {
+    x319_bp81 = 1;
+  }
+  x319 = x319_bp81;
+  x320 = x317;
+  x320 = (x320 + x319);
+  x321 = x320;
+  x321 = (x321 + x279);
+  __ltu_x322_bp82 = (x321 <u x279);
+  x322_bp82 = 0;
+  if __ltu_x322_bp82 {
+    x322_bp82 = 1;
+  }
+  x322 = x322_bp82;
+  x323 = x321;
+  x323 = (x323 + x305);
+  __ltu_x324_bp83 = (x323 <u x305);
+  x324_bp83 = 0;
+  if __ltu_x324_bp83 {
+    x324_bp83 = 1;
+  }
+  x324 = x324_bp83;
+  x325 = x322;
+  x325 = (x325 + x324);
+  x326 = x325;
+  x326 = (x326 + x284);
+  __ltu_x327_bp84 = (x326 <u x284);
+  x327_bp84 = 0;
+  if __ltu_x327_bp84 {
+    x327_bp84 = 1;
+  }
+  x327 = x327_bp84;
+  x328 = x326;
+  x328 = (x328 + x310);
+  __ltu_x329_bp85 = (x328 <u x310);
+  x329_bp85 = 0;
+  if __ltu_x329_bp85 {
+    x329_bp85 = 1;
+  }
+  x329 = x329_bp85;
+  x330 = x327;
+  x330 = (x330 + x329);
+  x331 = x330;
+  x331 = (x331 + x289);
+  __ltu_x332_bp86 = (x331 <u x289);
+  x332_bp86 = 0;
+  if __ltu_x332_bp86 {
+    x332_bp86 = 1;
+  }
+  x332 = x332_bp86;
+  x333 = x331;
+  x333 = (x333 + x313);
+  __ltu_x334_bp87 = (x333 <u x313);
+  x334_bp87 = 0;
+  if __ltu_x334_bp87 {
+    x334_bp87 = 1;
+  }
+  x334 = x334_bp87;
+  x335 = x332;
+  x335 = (x335 + x334);
+  x336 = x335;
+  x336 = (x336 + x291);
+  x337 = x318;
+  __wtmp__ = 4332616871279656263;
+  x337 = (x337 - __wtmp__);
+  __ltu_x338_bp88 = (x318 <u x337);
+  x338_bp88 = 0;
+  if __ltu_x338_bp88 {
+    x338_bp88 = 1;
+  }
+  x338 = x338_bp88;
+  x339 = x323;
+  __wtmp__ = 10917124144477883021;
+  x339 = (x339 - __wtmp__);
+  __ltu_x340_bp89 = (x323 <u x339);
+  x340_bp89 = 0;
+  if __ltu_x340_bp89 {
+    x340_bp89 = 1;
+  }
+  x340 = x340_bp89;
+  x341 = x339;
+  x341 = (x341 - x338);
+  __ltu_x342_bp90 = (x339 <u x341);
+  x342_bp90 = 0;
+  if __ltu_x342_bp90 {
+    x342_bp90 = 1;
+  }
+  x342 = x342_bp90;
+  x343 = x340;
+  x343 = (x343 + x342);
+  x344 = x328;
+  __wtmp__ = 13281191951274694749;
+  x344 = (x344 - __wtmp__);
+  __ltu_x345_bp91 = (x328 <u x344);
+  x345_bp91 = 0;
+  if __ltu_x345_bp91 {
+    x345_bp91 = 1;
+  }
+  x345 = x345_bp91;
+  x346 = x344;
+  x346 = (x346 - x343);
+  __ltu_x347_bp92 = (x344 <u x346);
+  x347_bp92 = 0;
+  if __ltu_x347_bp92 {
+    x347_bp92 = 1;
+  }
+  x347 = x347_bp92;
+  x348 = x345;
+  x348 = (x348 + x347);
+  x349 = x333;
+  __wtmp__ = 3486998266802970665;
+  x349 = (x349 - __wtmp__);
+  __ltu_x350_bp93 = (x333 <u x349);
+  x350_bp93 = 0;
+  if __ltu_x350_bp93 {
+    x350_bp93 = 1;
+  }
+  x350 = x350_bp93;
+  x351 = x349;
+  x351 = (x351 - x348);
+  __ltu_x352_bp94 = (x349 <u x351);
+  x352_bp94 = 0;
+  if __ltu_x352_bp94 {
+    x352_bp94 = 1;
+  }
+  x352 = x352_bp94;
+  x353 = x350;
+  x353 = (x353 + x352);
+  x354 = x336;
+  x354 = (x354 - x353);
+  __ltu_x355_bp95 = (x336 <u x354);
+  x355_bp95 = 0;
+  if __ltu_x355_bp95 {
+    x355_bp95 = 1;
+  }
+  x355 = x355_bp95;
+  if ((x355 == 0)) {
+    x358 = x337;
+  } else {
+    x358 = x318;
+  }
+  if ((x355 == 0)) {
+    x361 = x341;
+  } else {
+    x361 = x323;
+  }
+  if ((x355 == 0)) {
+    x364 = x346;
+  } else {
+    x364 = x328;
+  }
+  if ((x355 == 0)) {
+    x367 = x351;
+  } else {
+    x367 = x333;
+  }
+  x368 = x358;
+  x369 = x361;
+  x370 = x364;
+  x371 = x367;
+  [out0 + 0] = x368;
+  [(out0 + 8) + 0] = x369;
+  [(out0 + 16) + 0] = x370;
+  [(out0 + 24) + 0] = x371;
+}
+
+
+export fn bn254_select_znz(reg u64 out0, reg u64 in0, reg u64 in1, reg u64 in2) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 x0;
+  reg u64 x1;
+  reg u64 x2;
+  reg u64 x3;
+  reg u64 x4;
+  reg u64 x5;
+  reg u64 x6;
+  reg u64 x7;
+  reg u64 x10;
+  reg u64 x13;
+  reg u64 x16;
+  reg u64 x19;
+  reg u64 x20;
+  reg u64 x21;
+  reg u64 x22;
+  reg u64 x23;
+  x0 = [in1 + 0];
+  x1 = [(in1 + 8) + 0];
+  x2 = [(in1 + 16) + 0];
+  x3 = [(in1 + 24) + 0];
+  x4 = [in2 + 0];
+  x5 = [(in2 + 8) + 0];
+  x6 = [(in2 + 16) + 0];
+  x7 = [(in2 + 24) + 0];
+  if ((in0 == 0)) {
+    x10 = x0;
+  } else {
+    x10 = x4;
+  }
+  if ((in0 == 0)) {
+    x13 = x1;
+  } else {
+    x13 = x5;
+  }
+  if ((in0 == 0)) {
+    x16 = x2;
+  } else {
+    x16 = x6;
+  }
+  if ((in0 == 0)) {
+    x19 = x3;
+  } else {
+    x19 = x7;
+  }
+  x20 = x10;
+  x21 = x13;
+  x22 = x16;
+  x23 = x19;
+  [out0 + 0] = x20;
+  [(out0 + 8) + 0] = x21;
+  [(out0 + 16) + 0] = x22;
+  [(out0 + 24) + 0] = x23;
+}
+
+
+export fn bn254_felem_copy(reg u64 out, reg u64 in) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  [out + 0] = [in + 0];
+  [(out + 8) + 0] = [(in + 8) + 0];
+  [(out + 16) + 0] = [(in + 16) + 0];
+  [(out + 24) + 0] = [(in + 24) + 0];
+}

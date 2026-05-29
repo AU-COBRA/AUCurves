@@ -1,0 +1,954 @@
+export fn bn254_Fp2_felem_copy(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_felem_copy(out, x);
+  bn254_felem_copy((out + 32), (x + 32));
+}
+
+
+export fn bn254_Fp2_add(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_add(out, inx, iny);
+  bn254_add((out + 32), (inx + 32), (iny + 32));
+}
+
+
+export fn bn254_Fp2_sub(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_sub(out, inx, iny);
+  bn254_sub((out + 32), (inx + 32), (iny + 32));
+}
+
+
+export fn bn254_Fp2_mul(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[4] v0;
+  stack u64[4] v1;
+  stack u64[4] v2;
+  bn254_mul(v0, inx, iny);
+  bn254_mul(v1, (inx + 32), (iny + 32));
+  bn254_add(v2, inx, (inx + 32));
+  bn254_add((out + 32), iny, (iny + 32));
+  bn254_mul((out + 32), (out + 32), v2);
+  bn254_sub((out + 32), (out + 32), v0);
+  bn254_sub((out + 32), (out + 32), v1);
+  bn254_sub(out, v0, v1);
+}
+
+
+export fn bn254_Fp2_square(reg u64 out, reg u64 inx) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[4] v0;
+  stack u64[4] v1;
+  bn254_square(v0, inx);
+  bn254_square(v1, (inx + 32));
+  bn254_mul((out + 32), inx, (inx + 32));
+  bn254_add((out + 32), (out + 32), (out + 32));
+  bn254_sub(out, v0, v1);
+}
+
+
+export fn bn254_Fp2_mul_xi(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[4] tmp_a9;
+  stack u64[4] tmp_b9;
+  bn254_add(tmp_a9, x, x);
+  bn254_add(tmp_a9, tmp_a9, tmp_a9);
+  bn254_add(tmp_a9, tmp_a9, tmp_a9);
+  bn254_add(tmp_a9, tmp_a9, x);
+  bn254_add(tmp_b9, (x + 32), (x + 32));
+  bn254_add(tmp_b9, tmp_b9, tmp_b9);
+  bn254_add(tmp_b9, tmp_b9, tmp_b9);
+  bn254_add(tmp_b9, tmp_b9, (x + 32));
+  bn254_sub(out, tmp_a9, (x + 32));
+  bn254_add((out + 32), x, tmp_b9);
+}
+
+
+export fn bn254_Fp6_felem_copy(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp2_felem_copy(out, x);
+  bn254_Fp2_felem_copy((out + 64), (x + 64));
+  bn254_Fp2_felem_copy((out + 128), (x + 128));
+}
+
+
+export fn bn254_Fp6_add(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  stack u64[24] allocy;
+  bn254_Fp6_felem_copy(allocx, inx);
+  bn254_Fp6_felem_copy(allocy, iny);
+  bn254_Fp2_add(out, allocx, allocy);
+  bn254_Fp2_add((out + 64), (allocx + 64), (allocy + 64));
+  bn254_Fp2_add((out + 128), (allocx + 128), (allocy + 128));
+}
+
+
+export fn bn254_Fp6_sub(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  stack u64[24] allocy;
+  bn254_Fp6_felem_copy(allocx, inx);
+  bn254_Fp6_felem_copy(allocy, iny);
+  bn254_Fp2_sub(out, allocx, allocy);
+  bn254_Fp2_sub((out + 64), (allocx + 64), (allocy + 64));
+  bn254_Fp2_sub((out + 128), (allocx + 128), (allocy + 128));
+}
+
+
+export fn bn254_Fp6_opp(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  bn254_Fp6_felem_copy(allocx, x);
+  bn254_Fp2_opp(out, allocx);
+  bn254_Fp2_opp((out + 64), (allocx + 64));
+  bn254_Fp2_opp((out + 128), (allocx + 128));
+}
+
+
+export fn bn254_Fp6_mul(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  stack u64[24] allocy;
+  stack u64[8] a0b0;
+  stack u64[8] a1b1;
+  stack u64[8] a2b2;
+  stack u64[8] t;
+  stack u64[8] u;
+  bn254_Fp6_felem_copy(allocx, inx);
+  bn254_Fp6_felem_copy(allocy, iny);
+  bn254_Fp2_mul(a0b0, allocx, allocy);
+  bn254_Fp2_mul(a1b1, (allocx + 64), (allocy + 64));
+  bn254_Fp2_mul(a2b2, (allocx + 128), (allocy + 128));
+  bn254_Fp2_add(t, (allocx + 64), (allocx + 128));
+  bn254_Fp2_add(u, (allocy + 64), (allocy + 128));
+  bn254_Fp2_mul(t, t, u);
+  bn254_Fp2_sub(t, t, a1b1);
+  bn254_Fp2_sub(t, t, a2b2);
+  bn254_Fp2_mul_xi(t, t);
+  bn254_Fp2_add(out, a0b0, t);
+  bn254_Fp2_add(t, allocx, (allocx + 64));
+  bn254_Fp2_add(u, allocy, (allocy + 64));
+  bn254_Fp2_mul(t, t, u);
+  bn254_Fp2_sub(t, t, a0b0);
+  bn254_Fp2_sub(t, t, a1b1);
+  bn254_Fp2_mul_xi(u, a2b2);
+  bn254_Fp2_add((out + 64), t, u);
+  bn254_Fp2_add(t, allocx, (allocx + 128));
+  bn254_Fp2_add(u, allocy, (allocy + 128));
+  bn254_Fp2_mul(t, t, u);
+  bn254_Fp2_sub(t, t, a0b0);
+  bn254_Fp2_sub(t, t, a2b2);
+  bn254_Fp2_add((out + 128), t, a1b1);
+}
+
+
+export fn bn254_Fp6_square(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  stack u64[8] s0;
+  stack u64[8] s1;
+  stack u64[8] s2;
+  stack u64[8] s3;
+  stack u64[8] s4;
+  stack u64[8] t;
+  bn254_Fp6_felem_copy(allocx, x);
+  bn254_Fp2_square(s0, allocx);
+  bn254_Fp2_mul(t, allocx, (allocx + 64));
+  bn254_Fp2_add(s1, t, t);
+  bn254_Fp2_sub(t, allocx, (allocx + 64));
+  bn254_Fp2_add(t, t, (allocx + 128));
+  bn254_Fp2_square(s2, t);
+  bn254_Fp2_mul(t, (allocx + 64), (allocx + 128));
+  bn254_Fp2_add(s3, t, t);
+  bn254_Fp2_square(s4, (allocx + 128));
+  bn254_Fp2_mul_xi(t, s3);
+  bn254_Fp2_add(out, s0, t);
+  bn254_Fp2_mul_xi(t, s4);
+  bn254_Fp2_add((out + 64), s1, t);
+  bn254_Fp2_add(t, s1, s2);
+  bn254_Fp2_add(t, t, s3);
+  bn254_Fp2_sub(t, t, s0);
+  bn254_Fp2_sub((out + 128), t, s4);
+}
+
+
+export fn bn254_Fp6_inv(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] allocx;
+  stack u64[8] vA;
+  stack u64[8] vB;
+  stack u64[8] vC;
+  stack u64[8] t1;
+  stack u64[8] t2;
+  stack u64[8] t3;
+  bn254_Fp6_felem_copy(allocx, x);
+  bn254_Fp2_square(t1, allocx);
+  bn254_Fp2_mul(t2, (allocx + 64), (allocx + 128));
+  bn254_Fp2_mul_xi(t3, t2);
+  bn254_Fp2_sub(vA, t1, t3);
+  bn254_Fp2_square(t1, (allocx + 128));
+  bn254_Fp2_mul_xi(t3, t1);
+  bn254_Fp2_mul(t2, allocx, (allocx + 64));
+  bn254_Fp2_sub(vB, t3, t2);
+  bn254_Fp2_square(t1, (allocx + 64));
+  bn254_Fp2_mul(t2, allocx, (allocx + 128));
+  bn254_Fp2_sub(vC, t1, t2);
+  bn254_Fp2_mul(t1, allocx, vA);
+  bn254_Fp2_mul(t2, (allocx + 128), vB);
+  bn254_Fp2_mul(t3, (allocx + 64), vC);
+  bn254_Fp2_add(t2, t2, t3);
+  bn254_Fp2_mul_xi(t2, t2);
+  bn254_Fp2_add(t1, t1, t2);
+  bn254_Fp2_inv(t1, t1);
+  bn254_Fp2_mul(out, vA, t1);
+  bn254_Fp2_mul((out + 64), vB, t1);
+  bn254_Fp2_mul((out + 128), vC, t1);
+}
+
+
+export fn bn254_Fp6_add_nocopy(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp2_add(out, inx, iny);
+  bn254_Fp2_add((out + 64), (inx + 64), (iny + 64));
+  bn254_Fp2_add((out + 128), (inx + 128), (iny + 128));
+}
+
+
+export fn bn254_Fp6_sub_nocopy(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp2_sub(out, inx, iny);
+  bn254_Fp2_sub((out + 64), (inx + 64), (iny + 64));
+  bn254_Fp2_sub((out + 128), (inx + 128), (iny + 128));
+}
+
+
+export fn bn254_Fp6_mul_by_v(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] tmp;
+  bn254_Fp6_felem_copy(tmp, x);
+  bn254_Fp2_mul_xi(out, (tmp + 128));
+  bn254_Fp2_felem_copy((out + 64), tmp);
+  bn254_Fp2_felem_copy((out + 128), (tmp + 64));
+}
+
+
+export fn bn254_Fp12_felem_copy(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp6_felem_copy(out, x);
+  bn254_Fp6_felem_copy((out + 192), (x + 192));
+}
+
+
+export fn bn254_Fp12_add(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] ax;
+  stack u64[48] ay;
+  bn254_Fp12_felem_copy(ax, inx);
+  bn254_Fp12_felem_copy(ay, iny);
+  bn254_Fp6_add(out, ax, ay);
+  bn254_Fp6_add((out + 192), (ax + 192), (ay + 192));
+}
+
+
+export fn bn254_Fp12_sub(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] ax;
+  stack u64[48] ay;
+  bn254_Fp12_felem_copy(ax, inx);
+  bn254_Fp12_felem_copy(ay, iny);
+  bn254_Fp6_sub(out, ax, ay);
+  bn254_Fp6_sub((out + 192), (ax + 192), (ay + 192));
+}
+
+
+export fn bn254_Fp12_opp(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] allocx;
+  bn254_Fp12_felem_copy(allocx, x);
+  bn254_Fp6_opp(out, allocx);
+  bn254_Fp6_opp((out + 192), (allocx + 192));
+}
+
+
+export fn bn254_Fp12_conjugate(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] allocx;
+  bn254_Fp12_felem_copy(allocx, x);
+  bn254_Fp6_felem_copy(out, allocx);
+  bn254_Fp6_opp((out + 192), (allocx + 192));
+}
+
+
+export fn bn254_Fp12_mul(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] ax;
+  stack u64[48] ay;
+  bn254_Fp12_felem_copy(ax, inx);
+  bn254_Fp12_felem_copy(ay, iny);
+  stack u64[24] v0;
+  stack u64[24] v1;
+  stack u64[24] t;
+  stack u64[24] u;
+  bn254_Fp6_mul(v0, ax, ay);
+  bn254_Fp6_mul(v1, (ax + 192), (ay + 192));
+  bn254_Fp6_add(t, ax, (ax + 192));
+  bn254_Fp6_add(u, ay, (ay + 192));
+  bn254_Fp6_mul(t, t, u);
+  bn254_Fp6_mul_by_v(u, v1);
+  bn254_Fp6_add(out, v0, u);
+  bn254_Fp6_sub(t, t, v0);
+  bn254_Fp6_sub((out + 192), t, v1);
+}
+
+
+export fn bn254_Fp12_square(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] allocx;
+  bn254_Fp12_felem_copy(allocx, x);
+  stack u64[24] t0;
+  stack u64[24] t1;
+  stack u64[24] t2;
+  bn254_Fp6_square(t0, allocx);
+  bn254_Fp6_square(t1, (allocx + 192));
+  bn254_Fp6_mul(t2, allocx, (allocx + 192));
+  bn254_Fp6_mul_by_v(t1, t1);
+  bn254_Fp6_add(out, t0, t1);
+  bn254_Fp6_add((out + 192), t2, t2);
+}
+
+
+export fn bn254_Fp12_inv(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] allocx;
+  bn254_Fp12_felem_copy(allocx, x);
+  stack u64[24] t0;
+  stack u64[24] t1;
+  bn254_Fp6_square(t0, allocx);
+  bn254_Fp6_square(t1, (allocx + 192));
+  bn254_Fp6_mul_by_v(t1, t1);
+  bn254_Fp6_sub(t0, t0, t1);
+  bn254_Fp6_inv(t0, t0);
+  bn254_Fp6_mul(out, allocx, t0);
+  bn254_Fp6_mul((out + 192), (allocx + 192), t0);
+  bn254_Fp6_opp((out + 192), (out + 192));
+}
+
+
+export fn bn254_Fp12_add_nocopy(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp6_add(out, inx, iny);
+  bn254_Fp6_add((out + 192), (inx + 192), (iny + 192));
+}
+
+
+export fn bn254_Fp12_sub_nocopy(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp6_sub(out, inx, iny);
+  bn254_Fp6_sub((out + 192), (inx + 192), (iny + 192));
+}
+
+
+export fn bn254_Fp12_mul_nocopy(reg u64 out, reg u64 inx, reg u64 iny) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] v0;
+  stack u64[24] v1;
+  stack u64[24] t;
+  stack u64[24] u;
+  bn254_Fp6_mul(v0, inx, iny);
+  bn254_Fp6_mul(v1, (inx + 192), (iny + 192));
+  bn254_Fp6_add(t, inx, (inx + 192));
+  bn254_Fp6_add(u, iny, (iny + 192));
+  bn254_Fp6_mul(t, t, u);
+  bn254_Fp6_mul_by_v(u, v1);
+  bn254_Fp6_add(out, v0, u);
+  bn254_Fp6_sub(t, t, v0);
+  bn254_Fp6_sub((out + 192), t, v1);
+}
+
+
+export fn bn254_Fp2_conjugate(reg u64 out, reg u64 x) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_felem_copy(out, x);
+  bn254_opp((out + 32), (x + 32));
+}
+
+
+export fn bn254_Fp6_mul_fp2(reg u64 out, reg u64 x, reg u64 s) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[8] s_copy;
+  bn254_Fp2_felem_copy(s_copy, s);
+  bn254_Fp2_mul(out, x, s_copy);
+  bn254_Fp2_mul((out + 64), (x + 64), s_copy);
+  bn254_Fp2_mul((out + 128), (x + 128), s_copy);
+}
+
+
+export fn bn254_Fp6_frobenius(reg u64 out, reg u64 x, reg u64 gamma1, reg u64 gamma2) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[24] tmp;
+  bn254_Fp2_conjugate(tmp, x);
+  bn254_Fp2_conjugate((tmp + 64), (x + 64));
+  bn254_Fp2_conjugate((tmp + 128), (x + 128));
+  bn254_Fp2_felem_copy(out, tmp);
+  bn254_Fp2_mul((out + 64), (tmp + 64), gamma1);
+  bn254_Fp2_mul((out + 128), (tmp + 128), gamma2);
+}
+
+
+export fn bn254_Fp6_frobenius_p2(reg u64 out, reg u64 x, reg u64 gamma1_p2, reg u64 gamma2_p2) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp2_felem_copy(out, x);
+  bn254_Fp2_mul((out + 64), (x + 64), gamma1_p2);
+  bn254_Fp2_mul((out + 128), (x + 128), gamma2_p2);
+}
+
+
+export fn bn254_Fp12_frobenius(reg u64 out, reg u64 x, reg u64 gamma1, reg u64 gamma2, reg u64 w_frob_c1) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp6_frobenius(out, x, gamma1, gamma2);
+  bn254_Fp6_frobenius((out + 192), (x + 192), gamma1, gamma2);
+  bn254_Fp6_mul_fp2((out + 192), (out + 192), w_frob_c1);
+}
+
+
+export fn bn254_Fp12_frobenius_p2(reg u64 out, reg u64 x, reg u64 gamma1_p2, reg u64 gamma2_p2, reg u64 w_frob_p2_c1) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_Fp6_frobenius_p2(out, x, gamma1_p2, gamma2_p2);
+  bn254_Fp6_frobenius_p2((out + 192), (x + 192), gamma1_p2, gamma2_p2);
+  bn254_Fp6_mul_fp2((out + 192), (out + 192), w_frob_p2_c1);
+}
+
+
+export fn bn254_Fp12_frobenius_p3(reg u64 out, reg u64 x, reg u64 gamma1, reg u64 gamma2, reg u64 gamma1_p2, reg u64 gamma2_p2, reg u64 w_frob_c1, reg u64 w_frob_p2_c1) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] tmp;
+  bn254_Fp6_frobenius_p2(tmp, x, gamma1_p2, gamma2_p2);
+  bn254_Fp6_frobenius_p2((tmp + 192), (x + 192), gamma1_p2, gamma2_p2);
+  bn254_Fp6_mul_fp2((tmp + 192), (tmp + 192), w_frob_p2_c1);
+  bn254_Fp6_frobenius(out, tmp, gamma1, gamma2);
+  bn254_Fp6_frobenius((out + 192), (tmp + 192), gamma1, gamma2);
+  bn254_Fp6_mul_fp2((out + 192), (out + 192), w_frob_c1);
+}
+
+
+export fn bn254_Fp2_mul_fp(reg u64 out, reg u64 x, reg u64 s) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  bn254_mul(out, x, s);
+  bn254_mul((out + 32), (x + 32), s);
+}
+
+
+export fn bn254_make_line(reg u64 out, reg u64 lam, reg u64 x_t, reg u64 y_t, reg u64 x_p, reg u64 y_p) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[8] tmp;
+  bn254_Fp2_mul(out, lam, x_t);
+  bn254_Fp2_sub(out, out, y_t);
+  bn254_Fp2_mul_fp(tmp, lam, x_p);
+  bn254_Fp2_opp((out + 64), tmp);
+  bn254_from_word((out + 128), 0);
+  bn254_from_word(((out + 128) + 32), 0);
+  bn254_from_word((out + 192), 0);
+  bn254_from_word(((out + 192) + 32), 0);
+  bn254_felem_copy(((out + 192) + 64), y_p);
+  bn254_from_word((((out + 192) + 64) + 32), 0);
+  bn254_from_word(((out + 192) + 128), 0);
+  bn254_from_word((((out + 192) + 128) + 32), 0);
+}
+
+
+export fn bn254_make_line_corrected(reg u64 out, reg u64 lam, reg u64 x_t, reg u64 y_t, reg u64 x_p, reg u64 y_p) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[8] tmp;
+  bn254_felem_copy(out, y_p);
+  bn254_from_word((out + 32), 0);
+  bn254_from_word((out + 64), 0);
+  bn254_from_word(((out + 64) + 32), 0);
+  bn254_from_word((out + 128), 0);
+  bn254_from_word(((out + 128) + 32), 0);
+  bn254_Fp2_mul_fp(tmp, lam, x_p);
+  bn254_Fp2_opp((out + 192), tmp);
+  bn254_Fp2_mul(((out + 192) + 64), lam, x_t);
+  bn254_Fp2_sub(((out + 192) + 64), ((out + 192) + 64), y_t);
+  bn254_from_word(((out + 192) + 128), 0);
+  bn254_from_word((((out + 192) + 128) + 32), 0);
+}
+
+
+export fn bn254_load_gamma1_p2(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 3697675806616062876;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 9065277094688085689;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 6918009208039626314;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 2775033306905974752;
+  [(out + 24) + 0] = __wtmp__;
+  [(out + 32) + 0] = 0;
+  [(out + 40) + 0] = 0;
+  [(out + 48) + 0] = 0;
+  [(out + 56) + 0] = 0;
+}
+
+
+export fn bn254_load_gamma2_p2(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 8183898218631979349;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 12014359695528440611;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 12263358156045030468;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 3187210487005268291;
+  [(out + 24) + 0] = __wtmp__;
+  [(out + 32) + 0] = 0;
+  [(out + 40) + 0] = 0;
+  [(out + 48) + 0] = 0;
+  [(out + 56) + 0] = 0;
+}
+
+
+export fn bn254_load_w_frob_p2_c1(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 14595462726357228530;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 17349508522658994025;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 1017833795229664280;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 299787779797702374;
+  [(out + 24) + 0] = __wtmp__;
+  [(out + 32) + 0] = 0;
+  [(out + 40) + 0] = 0;
+  [(out + 48) + 0] = 0;
+  [(out + 56) + 0] = 0;
+}
+
+
+export fn bn254_load_gamma1(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 13075984984163199792;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 3782902503040509012;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 8791150885551868305;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 1825854335138010348;
+  [(out + 24) + 0] = __wtmp__;
+  __wtmp__ = 7963664994991228759;
+  [(out + 32) + 0] = __wtmp__;
+  __wtmp__ = 12257807996192067905;
+  [(out + 40) + 0] = __wtmp__;
+  __wtmp__ = 13179524609921305146;
+  [(out + 48) + 0] = __wtmp__;
+  __wtmp__ = 2767831111890561987;
+  [(out + 56) + 0] = __wtmp__;
+}
+
+
+export fn bn254_load_gamma2(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 8314163329781907090;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 11942187022798819835;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 11282677263046157209;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 1576150870752482284;
+  [(out + 24) + 0] = __wtmp__;
+  __wtmp__ = 6763840483288992073;
+  [(out + 32) + 0] = __wtmp__;
+  __wtmp__ = 7118829427391486816;
+  [(out + 40) + 0] = __wtmp__;
+  __wtmp__ = 4016233444936635065;
+  [(out + 48) + 0] = __wtmp__;
+  __wtmp__ = 2630958277570195709;
+  [(out + 56) + 0] = __wtmp__;
+}
+
+
+export fn bn254_load_w_frob_c1(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 12653890742059813127;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 14585784200204367754;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 1278438861261381767;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 212598772761311868;
+  [(out + 24) + 0] = __wtmp__;
+  __wtmp__ = 11683091849979440498;
+  [(out + 32) + 0] = __wtmp__;
+  __wtmp__ = 14992204589386555739;
+  [(out + 40) + 0] = __wtmp__;
+  __wtmp__ = 15866167890766973222;
+  [(out + 48) + 0] = __wtmp__;
+  __wtmp__ = 1200023580730561873;
+  [(out + 56) + 0] = __wtmp__;
+}
+
+
+export fn bn254_load_q1_y_const(reg u64 out) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  __wtmp__ = 16482010305593259561;
+  [out + 0] = __wtmp__;
+  __wtmp__ = 13488546290961988299;
+  [(out + 8) + 0] = __wtmp__;
+  __wtmp__ = 3578621962720924518;
+  [(out + 16) + 0] = __wtmp__;
+  __wtmp__ = 2681173117283399901;
+  [(out + 24) + 0] = __wtmp__;
+  __wtmp__ = 11661927080404088775;
+  [(out + 32) + 0] = __wtmp__;
+  __wtmp__ = 553939530661941723;
+  [(out + 40) + 0] = __wtmp__;
+  __wtmp__ = 7860678177968807019;
+  [(out + 48) + 0] = __wtmp__;
+  __wtmp__ = 3208568454732775116;
+  [(out + 56) + 0] = __wtmp__;
+}
+
+
+export fn bn254_Fp12_pow_u(reg u64 out, reg u64 base) {
+  reg u64 __mulx_tmp__;
+  #[spill] reg u64 i;
+  reg u64 __wtmp__;
+  #[spill] reg u64 bita_bp0;
+  #[spill] reg u64 bit;
+  stack u64[48] result;
+  bn254_Fp12_felem_copy(result, base);
+  i = 62;
+  while (i != 0) {
+    i = (i - 1);
+    bn254_Fp12_square(result, result);
+    __wtmp__ = 4965661367192848881;
+    bita_bp0 = __wtmp__;
+    bita_bp0 = (bita_bp0 >> i);
+    bit = bita_bp0;
+    bit = (bit & 1);
+    if bit {
+      bn254_Fp12_mul(result, result, base);
+    }
+  }
+  bn254_Fp12_felem_copy(out, result);
+}
+
+
+export fn bn254_final_exp_hard_dsd(reg u64 out, reg u64 f) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] t0;
+  stack u64[48] t1;
+  stack u64[48] t2;
+  stack u64[48] t3;
+  stack u64[8] gamma1;
+  stack u64[8] gamma2;
+  stack u64[8] w_frob_c1;
+  bn254_load_gamma1(gamma1);
+  bn254_load_gamma2(gamma2);
+  bn254_load_w_frob_c1(w_frob_c1);
+  bn254_Fp12_pow_u(t0, f);
+  bn254_Fp12_pow_u(t1, t0);
+  bn254_Fp12_pow_u(t2, t1);
+  bn254_Fp12_frobenius(t3, t2, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_mul(t2, t2, t3);
+  bn254_Fp12_conjugate(t2, t2);
+  bn254_Fp12_square(out, t2);
+  bn254_Fp12_frobenius(t3, t1, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_mul(t2, t0, t3);
+  bn254_Fp12_conjugate(t2, t2);
+  bn254_Fp12_mul(out, out, t2);
+  bn254_Fp12_conjugate(t1, t1);
+  bn254_Fp12_mul(out, out, t1);
+  bn254_Fp12_frobenius(t2, t0, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_conjugate(t2, t2);
+  bn254_Fp12_mul(t0, out, t2);
+  bn254_Fp12_mul(t0, t0, t1);
+  bn254_Fp12_frobenius(t1, t3, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_mul(out, out, t1);
+  bn254_Fp12_square(t1, t0);
+  bn254_Fp12_mul(t1, t1, out);
+  bn254_Fp12_square(t1, t1);
+  bn254_Fp12_frobenius(t0, f, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_frobenius(t2, t0, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_frobenius(t3, t2, gamma1, gamma2, w_frob_c1);
+  bn254_Fp12_mul(t0, t0, t2);
+  bn254_Fp12_mul(t0, t0, t3);
+  bn254_Fp12_mul(t2, t1, t0);
+  bn254_Fp12_conjugate(t0, f);
+  bn254_Fp12_mul(t0, t1, t0);
+  bn254_Fp12_square(t0, t0);
+  bn254_Fp12_mul(out, t0, t2);
+}
+
+
+export fn bn254_final_exp_dsd(reg u64 out, reg u64 f, reg u64 gamma1_p2, reg u64 gamma2_p2, reg u64 w_frob_p2_c1) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] result;
+  stack u64[48] tmp;
+  bn254_Fp12_conjugate(result, f);
+  bn254_Fp12_inv(tmp, f);
+  bn254_Fp12_mul(result, result, tmp);
+  bn254_Fp12_frobenius_p2(tmp, result, gamma1_p2, gamma2_p2, w_frob_p2_c1);
+  bn254_Fp12_mul(result, tmp, result);
+  bn254_final_exp_hard_dsd(out, result);
+}
+
+
+export fn bn254_miller_loop(reg u64 out, reg u64 p_x, reg u64 p_y, reg u64 q_x, reg u64 q_y) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  #[spill] reg u64 i;
+  #[spill] reg u64 word;
+  #[spill] reg u64 bita_bp0;
+  #[spill] reg u64 bit;
+  stack u64[48] f;
+  stack u64[8] t_x;
+  stack u64[8] t_y;
+  stack u64[8] lambda;
+  stack u64[8] tmp1;
+  stack u64[8] tmp2;
+  stack u64[48] line;
+  stack u64[1] u6p2;
+  bn254_from_word(f, 1);
+  bn254_from_word((f + 32), 0);
+  bn254_from_word((f + 64), 0);
+  bn254_from_word(((f + 64) + 32), 0);
+  bn254_from_word((f + 128), 0);
+  bn254_from_word(((f + 128) + 32), 0);
+  bn254_from_word((f + 192), 0);
+  bn254_from_word(((f + 192) + 32), 0);
+  bn254_from_word(((f + 192) + 64), 0);
+  bn254_from_word((((f + 192) + 64) + 32), 0);
+  bn254_from_word(((f + 192) + 128), 0);
+  bn254_from_word((((f + 192) + 128) + 32), 0);
+  bn254_Fp2_felem_copy(t_x, q_x);
+  bn254_Fp2_felem_copy(t_y, q_y);
+  __wtmp__ = 11347224129447541672;
+  [u6p2 + 0] = __wtmp__;
+  i = 64;
+  while (i != 0) {
+    i = (i - 1);
+    word = [u6p2 + 0];
+    bita_bp0 = word;
+    bita_bp0 = (bita_bp0 >> i);
+    bit = bita_bp0;
+    bit = (bit & 1);
+    bn254_Fp2_square(tmp1, t_x);
+    bn254_Fp2_add(lambda, tmp1, tmp1);
+    bn254_Fp2_add(lambda, lambda, tmp1);
+    bn254_Fp2_add(tmp1, t_y, t_y);
+    bn254_Fp2_inv(tmp1, tmp1);
+    bn254_Fp2_mul(lambda, lambda, tmp1);
+    bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+    bn254_Fp12_square(f, f);
+    bn254_Fp12_mul(f, f, line);
+    bn254_Fp2_square(tmp1, lambda);
+    bn254_Fp2_sub(tmp1, tmp1, t_x);
+    bn254_Fp2_sub(tmp2, tmp1, t_x);
+    bn254_Fp2_sub(tmp1, t_x, tmp2);
+    bn254_Fp2_mul(tmp1, lambda, tmp1);
+    bn254_Fp2_sub(t_y, tmp1, t_y);
+    bn254_Fp2_felem_copy(t_x, tmp2);
+    if bit {
+      bn254_Fp2_sub(tmp1, q_y, t_y);
+      bn254_Fp2_sub(tmp2, q_x, t_x);
+      bn254_Fp2_inv(tmp2, tmp2);
+      bn254_Fp2_mul(lambda, tmp1, tmp2);
+      bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+      bn254_Fp12_mul(f, f, line);
+      bn254_Fp2_square(tmp1, lambda);
+      bn254_Fp2_sub(tmp1, tmp1, t_x);
+      bn254_Fp2_sub(tmp2, tmp1, q_x);
+      bn254_Fp2_sub(tmp1, t_x, tmp2);
+      bn254_Fp2_mul(tmp1, lambda, tmp1);
+      bn254_Fp2_sub(t_y, tmp1, t_y);
+      bn254_Fp2_felem_copy(t_x, tmp2);
+    }
+  }
+  bn254_Fp12_felem_copy(out, f);
+}
+
+
+export fn bn254_miller_loop_optimal(reg u64 out, reg u64 p_x, reg u64 p_y, reg u64 q_x, reg u64 q_y) {
+  reg u64 __mulx_tmp__;
+  reg u64 __wtmp__;
+  #[spill] reg u64 i;
+  #[spill] reg u64 word;
+  #[spill] reg u64 bita_bp0;
+  #[spill] reg u64 bit;
+  stack u64[48] f;
+  stack u64[8] t_x;
+  stack u64[8] t_y;
+  stack u64[8] lambda;
+  stack u64[8] tmp1;
+  stack u64[8] tmp2;
+  stack u64[48] line;
+  stack u64[1] u6p2;
+  stack u64[8] q1_x;
+  stack u64[8] q1_y;
+  stack u64[8] const_g1;
+  stack u64[8] const_g_y;
+  stack u64[8] const_g1p2;
+  bn254_from_word(f, 1);
+  bn254_from_word((f + 32), 0);
+  bn254_from_word((f + 64), 0);
+  bn254_from_word(((f + 64) + 32), 0);
+  bn254_from_word((f + 128), 0);
+  bn254_from_word(((f + 128) + 32), 0);
+  bn254_from_word((f + 192), 0);
+  bn254_from_word(((f + 192) + 32), 0);
+  bn254_from_word(((f + 192) + 64), 0);
+  bn254_from_word((((f + 192) + 64) + 32), 0);
+  bn254_from_word(((f + 192) + 128), 0);
+  bn254_from_word((((f + 192) + 128) + 32), 0);
+  bn254_Fp2_felem_copy(t_x, q_x);
+  bn254_Fp2_felem_copy(t_y, q_y);
+  __wtmp__ = 11347224129447541672;
+  [u6p2 + 0] = __wtmp__;
+  i = 64;
+  while (i != 0) {
+    i = (i - 1);
+    word = [u6p2 + 0];
+    bita_bp0 = word;
+    bita_bp0 = (bita_bp0 >> i);
+    bit = bita_bp0;
+    bit = (bit & 1);
+    bn254_Fp2_square(tmp1, t_x);
+    bn254_Fp2_add(lambda, tmp1, tmp1);
+    bn254_Fp2_add(lambda, lambda, tmp1);
+    bn254_Fp2_add(tmp1, t_y, t_y);
+    bn254_Fp2_inv(tmp1, tmp1);
+    bn254_Fp2_mul(lambda, lambda, tmp1);
+    bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+    bn254_Fp12_square(f, f);
+    bn254_Fp12_mul(f, f, line);
+    bn254_Fp2_square(tmp1, lambda);
+    bn254_Fp2_sub(tmp1, tmp1, t_x);
+    bn254_Fp2_sub(tmp2, tmp1, t_x);
+    bn254_Fp2_sub(tmp1, t_x, tmp2);
+    bn254_Fp2_mul(tmp1, lambda, tmp1);
+    bn254_Fp2_sub(t_y, tmp1, t_y);
+    bn254_Fp2_felem_copy(t_x, tmp2);
+    if bit {
+      bn254_Fp2_sub(tmp1, q_y, t_y);
+      bn254_Fp2_sub(tmp2, q_x, t_x);
+      bn254_Fp2_inv(tmp2, tmp2);
+      bn254_Fp2_mul(lambda, tmp1, tmp2);
+      bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+      bn254_Fp12_mul(f, f, line);
+      bn254_Fp2_square(tmp1, lambda);
+      bn254_Fp2_sub(tmp1, tmp1, t_x);
+      bn254_Fp2_sub(tmp2, tmp1, q_x);
+      bn254_Fp2_sub(tmp1, t_x, tmp2);
+      bn254_Fp2_mul(tmp1, lambda, tmp1);
+      bn254_Fp2_sub(t_y, tmp1, t_y);
+      bn254_Fp2_felem_copy(t_x, tmp2);
+    }
+  }
+  bn254_load_gamma1(const_g1);
+  bn254_load_q1_y_const(const_g_y);
+  bn254_load_gamma1_p2(const_g1p2);
+  bn254_Fp2_conjugate(tmp1, q_x);
+  bn254_Fp2_mul(q1_x, tmp1, const_g1);
+  bn254_Fp2_conjugate(tmp1, q_y);
+  bn254_Fp2_mul(q1_y, tmp1, const_g_y);
+  bn254_Fp2_sub(tmp1, q1_y, t_y);
+  bn254_Fp2_sub(tmp2, q1_x, t_x);
+  bn254_Fp2_inv(tmp2, tmp2);
+  bn254_Fp2_mul(lambda, tmp1, tmp2);
+  bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+  bn254_Fp12_mul(f, f, line);
+  bn254_Fp2_square(tmp1, lambda);
+  bn254_Fp2_sub(tmp1, tmp1, t_x);
+  bn254_Fp2_sub(tmp2, tmp1, q1_x);
+  bn254_Fp2_sub(tmp1, t_x, tmp2);
+  bn254_Fp2_mul(tmp1, lambda, tmp1);
+  bn254_Fp2_sub(t_y, tmp1, t_y);
+  bn254_Fp2_felem_copy(t_x, tmp2);
+  bn254_Fp2_mul_fp(q1_x, q_x, const_g1p2);
+  bn254_Fp2_sub(tmp1, q_y, t_y);
+  bn254_Fp2_sub(tmp2, q1_x, t_x);
+  bn254_Fp2_inv(tmp2, tmp2);
+  bn254_Fp2_mul(lambda, tmp1, tmp2);
+  bn254_make_line_corrected(line, lambda, t_x, t_y, p_x, p_y);
+  bn254_Fp12_mul(f, f, line);
+  bn254_Fp12_felem_copy(out, f);
+}
+
+
+export fn bn254_pairing_dsd(reg u64 out, reg u64 p_x, reg u64 p_y, reg u64 q_x, reg u64 q_y) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] tmp;
+  stack u64[8] gamma1_p2;
+  stack u64[8] gamma2_p2;
+  stack u64[8] w_frob_p2_c1;
+  bn254_load_gamma1_p2(gamma1_p2);
+  bn254_load_gamma2_p2(gamma2_p2);
+  bn254_load_w_frob_p2_c1(w_frob_p2_c1);
+  bn254_miller_loop(tmp, p_x, p_y, q_x, q_y);
+  bn254_final_exp_dsd(out, tmp, gamma1_p2, gamma2_p2, w_frob_p2_c1);
+}
+
+
+export fn bn254_pairing_dsd_optimal(reg u64 out, reg u64 p_x, reg u64 p_y, reg u64 q_x, reg u64 q_y) {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  stack u64[48] tmp;
+  stack u64[8] gamma1_p2;
+  stack u64[8] gamma2_p2;
+  stack u64[8] w_frob_p2_c1;
+  bn254_load_gamma1_p2(gamma1_p2);
+  bn254_load_gamma2_p2(gamma2_p2);
+  bn254_load_w_frob_p2_c1(w_frob_p2_c1);
+  bn254_miller_loop_optimal(tmp, p_x, p_y, q_x, q_y);
+  bn254_final_exp_dsd(out, tmp, gamma1_p2, gamma2_p2, w_frob_p2_c1);
+}
+

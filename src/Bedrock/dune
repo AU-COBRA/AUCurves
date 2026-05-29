@@ -8,6 +8,7 @@
   (:standard
    \ ExtractSafeRust
      ExtractSafeTower
+     ExtractBN254TowerJasmin
      ExtractSafeTowerBLS12
      ExtractSafeTowerBLS12_Native
      ExtractSafeTowerBN256

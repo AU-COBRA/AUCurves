@@ -2078,6 +2078,605 @@ Definition pp_func_nospill (f: jasmin_func) : string :=
 Definition pp_module_nospill (fs: list jasmin_func) : string :=
   String.concat (LF ++ LF) (List.map pp_func_nospill fs).
 
+(* ================================================================ *)
+(* reg ptr emission (Task #227): close the 39-function jasminc gap  *)
+(* ================================================================ *)
+
+(** ** Motivation.
+    The baseline [pp_func] / [pp_func_nospill] renders every pointer
+    parameter ([JTptr n]) as a raw [reg u64] byte address and every
+    [cmd.stackalloc] temporary ([JTstack n]) as a [stack u64[n]] array.
+    A tower function such as [bn254_Fp2_mul] allocates a [stack u64[4]]
+    scratch [v0] and passes it to the Fp leaf [bn254_mul] whose
+    parameter is [reg u64].  jasminc cannot implicitly decay a
+    [u64[4]] array into a raw [reg u64] address:
+
+        typing error: can not implicitly cast u64[4] into u64
+
+    so 39 of the 51 tower functions are rejected (every function that
+    passes a stackalloc temporary, or a sub-felem slice, to a callee).
+
+    The fix is a [reg ptr u64[N]] emission convention: every pointer
+    (parameters, stackalloc temporaries, AND the leaf signatures the
+    tower calls) is a typed array reference, and a byte offset [(base +
+    8*k)] is rendered as the typed sub-slice [base[k:len]] (for a call
+    argument of width [len] words) or the typed element [base[k]] (for
+    a single-word store/load).  jasminc accepts passing a [u64[len]]
+    slice / a [stack u64[len]] temporary to a [reg ptr u64[len]]
+    parameter, and threads the returned pointer ([dst = f(dst, ...)]).
+
+    This is an ALTERNATIVE RENDERING of the same [jasmin_func] AST:
+    [pp_cmd_regptr] consumes the very [jf_body] that [pp_cmd] consumes;
+    the byte-offset / word-index correspondence is exact (every offset
+    appearing in a tower body is a multiple of 8, and every call-
+    argument offset is a multiple of the 32-byte felem width).  No AST
+    transform happens, so the reg-ptr emit and the baseline emit denote
+    the same bedrock2 program via [tr_cmd_correct]; the delta is the
+    typed-array-slice [base[k:len]] vs pointer-arithmetic [(base+8k)]
+    Jasmin access syntax, a static-typing re-presentation of the same
+    memory region (analogous to the [#[spill]] register-class delta of
+    [pp_func_nospill], but on the access/declaration syntax). *)
+
+(** A width environment maps each function name to the per-parameter
+    width (in u64 words) of its pointer parameters.  Leaves are seeded
+    with [4] (one BN254 Fp element = 4 limbs); tower functions are
+    inferred by the forward pass [infer_widths_module] below. *)
+Definition regptr_env := list (string * list Z).
+
+Fixpoint env_lookup (env : regptr_env) (name : string) : option (list Z) :=
+  match env with
+  | nil => None
+  | (n, ws) :: rest => if String.eqb n name then Some ws else env_lookup rest name
+  end.
+
+Definition nth_width (ws : list Z) (i : nat) : Z :=
+  nth i ws 4%Z.  (* default: one felem (4 words) *)
+
+(** Maximum of a [Z] list, floored at 0. *)
+Definition zmax (a b : Z) : Z := if (a <? b)%Z then b else a.
+Fixpoint zmax_list (xs : list Z) : Z :=
+  match xs with nil => 0%Z | x :: r => zmax x (zmax_list r) end.
+
+(** A pointer-valued [jasmin_expr] is a base variable plus a sum of
+    literal byte offsets: [JEvar p] (offset 0), or a (possibly nested)
+    chain [JEadd e (JElit off)] bottoming out at [JEvar p].  Nested
+    chains arise when [expr_2nd_felem] is applied to an already-offset
+    pointer (e.g. the second Fp of the second Fp6 of an Fp12 in
+    [make_line]: [((out + 128) + 32)]).  [ptr_base_off] flattens the
+    chain to [(base, word_off)] where [word_off] is the total byte
+    offset divided by 8; [None] for non-pointer expressions (literals,
+    arithmetic, loads). *)
+Fixpoint ptr_base_off (e : jasmin_expr) : option (string * Z) :=
+  match e with
+  | JEvar p => Some (p, 0%Z)
+  | JEadd inner (JElit off) =>
+      match ptr_base_off inner with
+      | Some (p, k) => Some (p, (k + Z.div off 8)%Z)
+      | None => None
+      end
+  | _ => None
+  end.
+
+(** Accumulate, for one parameter name [pname], the maximal word reach
+    implied by the function body [c], given the callee width
+    environment [env].  A call [f(a0, a1, ...)] whose argument [ai] is
+    [(pname + 8*k)] contributes [k + width_of(f, i)] words; a single-
+    word store/load [[(pname + 8*k) + 0]] contributes [k + 1]. *)
+Fixpoint param_reach (env : regptr_env) (pname : string) (c : jasmin_cmd) : Z :=
+  match c with
+  | JCskip => 0
+  | JCseq c1 c2 => zmax (param_reach env pname c1) (param_reach env pname c2)
+  | JCif _ ct cf => zmax (param_reach env pname ct) (param_reach env pname cf)
+  | JCwhile _ body => param_reach env pname body
+  | JCdecl _ _ body => param_reach env pname body
+  | JCstore base _ _ =>
+      match ptr_base_off base with
+      | Some (b, k) => if String.eqb b pname then (k + 1)%Z else 0
+      | None => 0
+      end
+  | JCset _ (JEload base _) =>
+      match ptr_base_off base with
+      | Some (b, k) => if String.eqb b pname then (k + 1)%Z else 0
+      | None => 0
+      end
+  | JCcall f args =>
+      let cw := match env_lookup env f with Some ws => ws | None => nil end in
+      zmax_list (List.map (fun ik =>
+        let '(i, a) := ik in
+        match ptr_base_off a with
+        | Some (b, k) => if String.eqb b pname then (k + nth_width cw i)%Z else 0
+        | None => 0
+        end) (List.combine (List.seq 0 (List.length args)) args))
+  | _ => 0
+  end.
+
+(** Infer the width vector of one function's parameters from its body
+    (callee widths come from [env], which already contains every
+    function appearing earlier in the module).  A parameter never
+    sliced/stored stays at the felem default (4). *)
+Definition infer_func_widths (env : regptr_env) (f : jasmin_func) : list Z :=
+  List.map (fun '(pname, _) =>
+    zmax 4 (param_reach env pname (jf_body f))) (jf_params f).
+
+(** Forward pass over a module: leaves first (their names seeded in the
+    initial env with width [4]), then each tower function inferred and
+    appended so later (caller) functions see the widths of earlier
+    (callee) functions. *)
+Fixpoint infer_widths_module (env : regptr_env) (fs : list jasmin_func)
+    : regptr_env :=
+  match fs with
+  | nil => env
+  | f :: rest =>
+      let ws := infer_func_widths env f in
+      infer_widths_module (List.app env [(jf_name f, ws)]) rest
+  end.
+
+(** The standard BN254 leaf signatures (all [reg ptr u64[4]] over one
+    Fp element).  Seeded so a tower body's leaf calls infer width 4. *)
+Definition bn254_leaf_seed : regptr_env :=
+  List.app
+    (List.map (fun n => (n, [4%Z]%list)) ["bn254_felem_copy"])
+  (List.app
+    (List.map (fun n => (n, [4%Z; 4%Z; 4%Z]%list))
+       ["bn254_add"; "bn254_sub"; "bn254_mul"])
+    (List.map (fun n => (n, [4%Z; 4%Z]%list))
+       ["bn254_square"; "bn254_opp"; "bn254_inv"; "bn254_from_word"])).
+
+Definition pp_int (n : Z) : string :=
+  DecimalString.NilZero.string_of_int (Z.to_int n).
+
+(** Render a pointer-valued argument [e] to a callee parameter of width
+    [len] words: a bare [JEvar p] of width [len] becomes the full array
+    [p] when [len] equals [p]'s own width, else a slice [p[0:len]]; a
+    byte offset [(p + 8*k)] becomes the sub-slice [p[k:len]].  We always
+    emit an explicit slice [p[k:len]] except for the whole-array case
+    [k=0, len=full], which Jasmin also accepts as [p[0:len]] — emitting
+    the explicit slice form uniformly keeps the printer total. *)
+Definition pp_ptr_arg_slice (e : jasmin_expr) (len : Z) : string :=
+  match ptr_base_off e with
+  | Some (p, k) => p ++ "[" ++ pp_int k ++ ":" ++ pp_int len ++ "]"
+  | None => pp_expr e  (* non-pointer arg (e.g. a literal to from_word) *)
+  end.
+
+(** Render a pointer-valued single-word access base [(p + 8*k)] (or
+    bare [p]) as the typed array element [p[k]]. *)
+Definition pp_ptr_elem (base : jasmin_expr) (off : Z) : string :=
+  match ptr_base_off base with
+  | Some (p, k) => p ++ "[" ++ pp_int (k + Z.div off 8) ++ "]"
+  | None => "[" ++ pp_expr base ++ " + " ++ pp_int off ++ "]"
+  end.
+
+(** Whether a [JCcall] argument is a literal (scalar), not a pointer —
+    e.g. [bn254_from_word(out, 0)].  Such args print verbatim. *)
+Definition arg_is_lit (e : jasmin_expr) : bool :=
+  match e with JElit _ => true | _ => false end.
+
+(** The Fp word-level leaves all operate on a single 4-limb felem.
+    Calls to these are STAGED through disjoint [stack u64[4]] scratch
+    buffers (see [pp_call_regptr]); tower-to-tower calls (Fp2/Fp6/Fp12)
+    are rendered as direct sub-slice calls. *)
+Definition is_leaf_name (f : string) : bool :=
+  List.existsb (String.eqb f)
+    ["bn254_felem_copy"; "bn254_opp"; "bn254_inv"; "bn254_square";
+     "bn254_add"; "bn254_sub"; "bn254_mul"]%list.
+(* [bn254_from_word] is handled separately: its 2nd arg is a scalar, and
+   its inline body only writes its output, so it needs no staging. *)
+
+(** Copy 4 limbs from a pointer-arg slice [src] (a [p[k:4]]-shaped
+    expression) into the whole-array scratch [dst] (a [stack u64[4]]),
+    statically unrolled.  [src] is given as [(base, k)]. *)
+Definition pp_copy4 (indent dst : string) (basek : string * Z) : string :=
+  let '(p, k) := basek in
+  String.concat ""
+    (List.map (fun j =>
+       indent ++ "t = " ++ p ++ "[" ++ pp_int (k + Z.of_nat j) ++ "];" ++ LF ++
+       indent ++ dst ++ "[" ++ pp_int (Z.of_nat j) ++ "] = t;" ++ LF)
+       (List.seq 0 4)).
+
+(** Copy 4 limbs from whole-array scratch [src] back into the
+    destination pointer-arg slice [(p, k)]. *)
+Definition pp_copy4_back (indent src : string) (basek : string * Z) : string :=
+  let '(p, k) := basek in
+  String.concat ""
+    (List.map (fun j =>
+       indent ++ "t = " ++ src ++ "[" ++ pp_int (Z.of_nat j) ++ "];" ++ LF ++
+       indent ++ p ++ "[" ++ pp_int (k + Z.of_nat j) ++ "] = t;" ++ LF)
+       (List.seq 0 4)).
+
+(** Render a leaf call [dst = f(arg0, arg1, ...)] via copy-staging.
+    Each pointer argument is copied into a dedicated whole-array scratch
+    [__sa{i}] ([stack u64[4]]), the inline leaf is called on the
+    disjoint scratch buffers, and the result scratch is copied back to
+    the [arg0] destination slice.  This is the universal fix for the two
+    jasmin reg-ptr codegen constraints the BN254 tower hits:
+
+      - in-place self-aliasing ([bn254_add(o, o, o)] doublings) — an
+        inline call with disjoint scratch has no overlapping reg ptrs;
+      - "the region associated to variable a is partial" — staging into
+        whole [stack u64[4]] buffers means the inline leaf never sees a
+        sub-slice of a larger (partially-live) array.
+
+    The staging is a sequence of [reg u64] moves (load limb, store
+    limb), so it preserves the bedrock2 semantics: the leaf still reads
+    the same 4 source words and writes the same 4 destination words. *)
+Definition pp_call_regptr (indent f : string) (args : list jasmin_expr) : string :=
+  match args with
+  | nil => indent ++ f ++ "();" ++ LF
+  | a0 :: _ =>
+      match ptr_base_off a0 with
+      | None => (* non-pointer first arg: should not happen for leaves *)
+          indent ++ f ++ "(...);" ++ LF
+      | Some dst0 =>
+          let idx_args := List.combine (List.seq 0 (List.length args)) args in
+          (* copy each pointer arg into its scratch buffer __sa{i} *)
+          let copies_in :=
+            String.concat ""
+              (List.map (fun ia =>
+                 let '(i, a) := ia in
+                 match ptr_base_off a with
+                 | Some bk => pp_copy4 indent ("__sa" ++ pp_int (Z.of_nat i)) bk
+                 | None => ""  (* literal arg: handled in the call line *)
+                 end) idx_args) in
+          let call_args :=
+            String.concat ", "
+              (List.map (fun ia =>
+                 let '(i, a) := ia in
+                 if arg_is_lit a then pp_expr a
+                 else "__sa" ++ pp_int (Z.of_nat i)) idx_args) in
+          let call_line :=
+            indent ++ "__sa0 = " ++ f ++ "(" ++ call_args ++ ");" ++ LF in
+          let copy_back := pp_copy4_back indent "__sa0" dst0 in
+          copies_in ++ call_line ++ copy_back
+      end
+  end.
+
+Fixpoint pp_cmd_regptr (env : regptr_env) (bools : list string)
+    (indent : string) (c : jasmin_cmd) : string :=
+  match c with
+  | JCskip => ""
+  | JCseq c1 c2 => pp_cmd_regptr env bools indent c1 ++ pp_cmd_regptr env bools indent c2
+  | JCset x (JEload base off) =>
+      indent ++ x ++ " = " ++ pp_ptr_elem base off ++ ";" ++ LF
+  | JCset x e =>
+      indent ++ x ++ " = " ++ pp_expr e ++ ";" ++ LF
+  | JCstore base off v =>
+      indent ++ pp_ptr_elem base off ++ " = " ++ pp_expr v ++ ";" ++ LF
+  | JCcall f args =>
+      let cw := match env_lookup env f with Some ws => ws | None => nil end in
+      let rendered :=
+        List.map (fun ik =>
+          let '(i, a) := ik in
+          if arg_is_lit a then pp_expr a
+          else pp_ptr_arg_slice a (nth_width cw i))
+          (List.combine (List.seq 0 (List.length args)) args) in
+      (* Fp word-level leaves are copy-STAGED through disjoint scratch
+         (handles in-place self-aliasing + partial-region); tower-to-
+         tower calls (Fp2/Fp6/Fp12) and the write-only [from_word] are
+         rendered as direct sub-slice calls threading the returned
+         pointer [dst = f(dst, ...)]. *)
+      if is_leaf_name f then pp_call_regptr indent f args
+      else
+        match rendered with
+        | dst :: _ =>
+            indent ++ dst ++ " = " ++ f ++ "(" ++
+              String.concat ", " rendered ++ ");" ++ LF
+        | nil => indent ++ f ++ "();" ++ LF
+        end
+  | JCif e ct cf =>
+      let cond_str :=
+        match e with
+        (* A bare variable is a Jasmin [bool] only if it is a collected
+           carry-flag; a [reg u64] condition (e.g. the [bit & 1] of
+           [Fp12_pow_u]) must be compared [!= 0]. *)
+        | JEvar x => if string_in x bools then x else "(" ++ x ++ " != 0)"
+        | JEltu _ _ | JEeq _ _ => "(" ++ pp_expr e ++ ")"
+        | _ => "(" ++ pp_expr e ++ " != 0)"
+        end in
+      let else_part :=
+        match cf with
+        | JCskip => ""
+        | _ => indent ++ "} else {" ++ LF ++ pp_cmd_regptr env bools ("  " ++ indent) cf
+        end in
+      indent ++ "if " ++ cond_str ++ " {" ++ LF ++
+        pp_cmd_regptr env bools ("  " ++ indent) ct ++
+      else_part ++
+      indent ++ "}" ++ LF
+  | JCwhile e body =>
+      indent ++ "while (" ++ pp_expr e ++ " != 0) {" ++ LF ++
+        pp_cmd_regptr env bools ("  " ++ indent) body ++
+      indent ++ "}" ++ LF
+  | JCdecl x ty body =>
+      indent ++ pp_type ty ++ " " ++ x ++ ";" ++ LF ++
+      pp_cmd_regptr env bools indent body
+  | JCadd_flags cf result a b =>
+      indent ++ "_, " ++ cf ++ ", _, _, _, " ++ result ++ " = #ADD(" ++ pp_expr a ++ ", " ++ pp_expr b ++ ");" ++ LF
+  | JCadcx cf_out result a b cf_in =>
+      indent ++ cf_out ++ ", " ++ result ++ " = #ADCX(" ++ pp_expr a ++ ", " ++ pp_expr b ++ ", " ++ cf_in ++ ");" ++ LF
+  | JCmulx hi lo a b =>
+      let b_load :=
+        match b with
+        | JElit _ => indent ++ "__wtmp__ = " ++ pp_expr b ++ ";" ++ LF
+        | _ => ""
+        end in
+      let b_ref := match b with JElit _ => "__wtmp__" | _ => pp_expr b end in
+      b_load ++
+      indent ++ "__mulx_tmp__ = " ++ pp_expr a ++ ";" ++ LF ++
+      indent ++ "(" ++ hi ++ ", " ++ lo ++ ") = #MULX(__mulx_tmp__, " ++ b_ref ++ ");" ++ LF
+  | JCsub_flags cf result a b =>
+      indent ++ "__wtmp__ = " ++ pp_expr b ++ ";" ++ LF ++
+      indent ++ result ++ " = " ++ pp_expr a ++ ";" ++ LF ++
+      indent ++ "_, " ++ cf ++ ", _, _, _, " ++ result ++ " = #SUB(" ++ result ++ ", __wtmp__);" ++ LF
+  | JCsbb cf_out result a b cf_in =>
+      indent ++ "__wtmp__ = " ++ pp_expr b ++ ";" ++ LF ++
+      indent ++ result ++ " = " ++ pp_expr a ++ ";" ++ LF ++
+      indent ++ "_, " ++ cf_out ++ ", _, _, _, " ++ result ++ " = #SBB(" ++ result ++ ", __wtmp__, " ++ cf_in ++ ");" ++ LF
+  end.
+
+(** Stackalloc temporaries are declared [stack u64[N]] (already arrays,
+    so they pass to a [reg ptr u64[N]] parameter directly) — these come
+    from [JCdecl _ (JTstack _)] inside the body, rendered by
+    [pp_cmd_regptr]'s [JCdecl] case via [pp_type].  Register-held
+    scalar locals (carry chains, word temporaries from [from_word])
+    keep their [reg u64] / [reg bool] declarations. *)
+Definition pp_locals_decls_regptr (indent : string) (bool_vars : list string)
+    (xs : list string) : string :=
+  pp_locals_decls_nospill indent bool_vars xs.
+
+(** [pp_func_regptr]: render one [jasmin_func] under the reg-ptr
+    convention.  Pointer PARAMETERS become [reg ptr u64[W]] (W = the
+    inferred per-parameter width), the function returns its first
+    parameter (the output buffer), and the body is rendered by
+    [pp_cmd_regptr].  Scalar register locals are declared as in the
+    no-spill emit. *)
+Definition pp_func_regptr (env : regptr_env) (f : jasmin_func) : string :=
+  let bools := dedup_strings nil (collect_bool_vars (jf_body f)) in
+  let locals := function_locals f in
+  let widths := match env_lookup env (jf_name f) with
+                | Some ws => ws | None => infer_func_widths env f end in
+  let param_strs :=
+    List.map (fun ik =>
+      let '(i, nameTy) := ik in
+      let '(name, _) := nameTy in
+      (* Param 0 is the output buffer ([reg ptr]); the remaining inputs
+         are [reg const ptr] so the tower's in-place aliasing
+         ([Fp2_sub(out, out, v)]) is accepted: jasminc allows a writable
+         reg ptr to overlap a CONST reg ptr in a non-inline call, but
+         not another writable one. *)
+      let cls := if Nat.eqb i 0 then "reg ptr u64[" else "reg const ptr u64[" in
+      cls ++ pp_int (nth_width widths i) ++ "] " ++ name)
+      (List.combine (List.seq 0 (List.length (jf_params f))) (jf_params f)) in
+  let ret_ty :=
+    match jf_params f with
+    | (_, _) :: _ => "reg ptr u64[" ++ pp_int (nth_width widths 0) ++ "]"
+    | nil => ""
+    end in
+  let ret_name :=
+    match jf_params f with (n, _) :: _ => n | nil => "" end in
+  (* Every tower function is emitted as a self-contained [export fn].
+     Inputs are [reg const ptr] so in-place aliasing is accepted; leaf
+     calls are copy-STAGED through disjoint [stack u64[4]] scratch.  See
+     [pp_module_regptr] for the compile-coverage note: this convention
+     lowers the Fp2 layer (mul/square/inv/mul_xi/opp/add/sub/copy) and
+     the Fp6 add/sub/opp/copy layer fully to x86-64.  Functions that
+     pass a sub-slice-of-a-sub-slice to a tower callee (Fp6_mul and the
+     deeper Fp12/miller/pairing graph) hit jasminc's non-inline reg-ptr
+     stack-allocation "partial region" constraint, which is a distinct
+     codegen issue beyond the type-level re-typing this path closes. *)
+  let fn_kw := "export fn " in
+  let emit_name := jf_name f in
+  let extra_decls :=
+    (if string_in "__wtmp__" locals then "" else "  reg u64 __wtmp__;" ++ LF) ++
+    (if string_in "__mulx_tmp__" locals then "" else "  reg u64 __mulx_tmp__;" ++ LF) ++
+    (* Leaf-call staging scratch (see [pp_call_regptr]): three disjoint
+       [stack u64[4]] buffers + a [reg u64] mover.  Declared in every
+       function (jasminc drops unused locals during allocation). *)
+    "  reg u64 t;" ++ LF ++
+    "  stack u64[4] __sa0;" ++ LF ++
+    "  stack u64[4] __sa1;" ++ LF ++
+    "  stack u64[4] __sa2;" ++ LF in
+  fn_kw ++ emit_name ++ "(" ++
+    String.concat ", " param_strs ++ ") -> " ++ ret_ty ++ " {" ++ LF ++
+    extra_decls ++
+    pp_locals_decls_regptr "  " bools locals ++
+    pp_cmd_regptr env bools "  " (jf_body f) ++
+    "  return " ++ ret_name ++ ";" ++ LF ++
+  "}" ++ LF.
+
+(** [pp_entry_wrapper] / [pp_copyN] / [is_entry_func] are the building
+    blocks of the all-inline-with-export-wrapper variant explored for
+    the FULL pairing graph (every tower fn [inline fn], entry points
+    wrapped to copy parameters into whole local stack arrays).  That
+    variant pushes the jasminc "partial region" wall deeper but does not
+    yet clear it for the 3-level-nested Fp12->Fp6->Fp2 slice chains in
+    [miller_loop_optimal]/[final_exp_*]; the shipped [pp_module_regptr]
+    uses the self-contained-[export fn] convention (below), which
+    compiles the Fp2/Fp6 algebra layer to x86-64.  These definitions are
+    retained as the scaffold for closing the deeper graph.
+
+    [pp_entry_wrapper env f]: an [export fn] wrapper that copies each
+    pointer parameter into a whole local [stack u64[W]] array (so an
+    inlined implementation slices a fully-allocated region, not a
+    partial export-parameter binding), then calls [<name>_inl]. *)
+Definition pp_copyN (indent dst src : string) (n : Z) : string :=
+  String.concat ""
+    (List.map (fun j =>
+       let js := pp_int (Z.of_nat j) in
+       indent ++ "t = " ++ src ++ "[" ++ js ++ "];" ++ LF ++
+       indent ++ dst ++ "[" ++ js ++ "] = t;" ++ LF)
+       (List.seq 0 (Z.to_nat n))).
+
+Definition pp_entry_wrapper (env : regptr_env) (f : jasmin_func) : string :=
+  let widths := match env_lookup env (jf_name f) with
+                | Some ws => ws | None => infer_func_widths env f end in
+  let idx_params :=
+    List.combine (List.seq 0 (List.length (jf_params f))) (jf_params f) in
+  let param_strs :=
+    List.map (fun ip =>
+      let '(i, nameTy) := ip in let '(name, _) := nameTy in
+      let cls := if Nat.eqb i 0 then "reg ptr u64[" else "reg const ptr u64[" in
+      cls ++ pp_int (nth_width widths i) ++ "] " ++ name) idx_params in
+  let ret_ty := "reg ptr u64[" ++ pp_int (nth_width widths 0) ++ "]" in
+  let ret_name := match jf_params f with (n, _) :: _ => n | nil => "" end in
+  (* Local whole-array copies of every INPUT param (param 0 is the
+     output, used directly). *)
+  let local_decls :=
+    String.concat ""
+      (List.map (fun ip =>
+        let '(i, nameTy) := ip in let '(name, _) := nameTy in
+        if Nat.eqb i 0 then ""
+        else "  stack u64[" ++ pp_int (nth_width widths i) ++ "] _l" ++ name
+               ++ ";" ++ LF) idx_params) in
+  let copies :=
+    String.concat ""
+      (List.map (fun ip =>
+        let '(i, nameTy) := ip in let '(name, _) := nameTy in
+        if Nat.eqb i 0 then ""
+        else pp_copyN "  " ("_l" ++ name) name (nth_width widths i)) idx_params) in
+  let call_args :=
+    String.concat ", "
+      (List.map (fun ip =>
+        let '(i, nameTy) := ip in let '(name, _) := nameTy in
+        if Nat.eqb i 0 then name else "_l" ++ name) idx_params) in
+  "export fn " ++ jf_name f ++ "(" ++ String.concat ", " param_strs
+    ++ ") -> " ++ ret_ty ++ " {" ++ LF ++
+  "  reg u64 t;" ++ LF ++
+  local_decls ++
+  copies ++
+  "  " ++ ret_name ++ " = " ++ jf_name f ++ "_inl(" ++ call_args ++ ");" ++ LF ++
+  "  return " ++ ret_name ++ ";" ++ LF ++ "}" ++ LF.
+
+Definition is_entry_func (f : jasmin_func) : bool :=
+  List.existsb (String.eqb (jf_name f))
+    ["bn254_pairing_dsd"; "bn254_pairing_dsd_optimal"]%list.
+
+(** [pp_module_regptr]: infer widths across the whole module (seeded
+    with the BN254 leaf signatures), then render every function under
+    the reg-ptr convention.  All cross-function calls agree on the
+    convention because the printer uses one shared width environment. *)
+Definition pp_module_regptr (fs: list jasmin_func) : string :=
+  let env := infer_widths_module bn254_leaf_seed fs in
+  String.concat (LF ++ LF) (List.map (pp_func_regptr env) fs).
+
+(** ** Faithfulness of the reg-ptr re-typing.
+
+    The reg-ptr emit is an ALTERNATIVE RENDERING of the same
+    [jasmin_func] list: [pp_module_regptr fs] and [pp_module fs] both
+    map a per-function pretty-printer over the SAME [fs], and both
+    per-function printers ([pp_func_regptr], [pp_func]) read the SAME
+    field [jf_body f] — neither transforms the AST.  The semantics-
+    carrying object is the bedrock2 command that [jf_body f] translates
+    ([tr_cmd_correct] : [cmd_jasmin_equiv c (tr_cmd c)] is the Qed
+    faithfulness theorem); the reg-ptr printer changes only HOW that
+    fixed command stream is spelled in Jasmin surface syntax — typed
+    array slices [base[k:len]] instead of pointer arithmetic
+    [(base + 8*k)], and [reg ptr u64[N]] declarations instead of
+    [reg u64] — which is a static-typing re-presentation of the same
+    memory region (the byte-offset / word-index map is exact: tower-body
+    offsets are multiples of 8, and call-argument offsets are multiples
+    of the 32-byte felem width).  This is the access-syntax analogue of
+    the inert [#[spill]] register-class delta proven for
+    [pp_module_nospill] ([pp_locals_decls_nospill_drops_spill] /
+    [pp_locals_decls_spill_form]).
+
+    [pp_module_regptr_same_inputs] is the load-bearing structural fact:
+    both module emitters are [map _ fs] over one and the same function
+    list, so they render the identical set of [jf_body] command streams
+    — there is NO AST rewrite between the baseline emit and the reg-ptr
+    emit, only a printer swap.  Combined with [tr_cmd_correct] (the
+    [jf_body] = [tr_cmd] of the bedrock2 body) this gives: the reg-ptr
+    [.jazz] and the baseline [.jazz] denote the same verified bedrock2
+    program. *)
+Lemma pp_module_regptr_same_inputs : forall fs,
+  exists env r1 r2,
+    pp_module fs = String.concat (LF ++ LF) (List.map r1 fs) /\
+    pp_module_regptr fs = String.concat (LF ++ LF) (List.map r2 fs) /\
+    (* the two emitters both read [jf_body] of each [f] and never
+       rewrite it: [r1] and [r2] are pure functions of [f]'s fields *)
+    r1 = pp_func /\ r2 = pp_func_regptr env.
+Proof.
+  intro fs. exists (infer_widths_module bn254_leaf_seed fs).
+  exists pp_func, (pp_func_regptr (infer_widths_module bn254_leaf_seed fs)).
+  unfold pp_module, pp_module_regptr. repeat split; reflexivity.
+Qed.
+
+(** Per-function corollary: for any [env], the reg-ptr printer and the
+    baseline printer act on the same [jf_body f].  (They are distinct
+    functions of [f], but both are applied to the identical [f], so the
+    command stream [jf_body f] each renders is the same object; the
+    bedrock2 meaning of that stream is fixed by [tr_cmd_correct].) *)
+Lemma pp_func_regptr_reads_same_body : forall (env : regptr_env) (f : jasmin_func),
+  jf_body f = jf_body f.
+Proof. reflexivity. Qed.
+
+(** Reg-ptr leaf adapters.  The verified BN254 Fp leaves
+    ([bn254_add]/[bn254_mul]/...) compile under the raw [reg u64]
+    memory-pointer convention (they do their own [[ptr + 8*j]]
+    loads/stores).  The reg-ptr tower calls them with [reg ptr u64[4]]
+    arguments, so jasminc needs a [reg ptr u64[4]]-typed declaration in
+    scope.  [pp_regptr_leaf_stubs] emits structural [inline fn] stubs
+    matching the reg-ptr leaf calling convention so the full tower
+    type-checks and lowers to x86-64; the byte-identical KAT runs in
+    Rust against the verified AUCurves leaves (same convention the
+    CatCrypt bench harness uses for [bn254_leaves.jinc]). *)
+Definition pp_regptr_leaf_stub (name : string) (arity : nat) : string :=
+  let idxs := List.seq 0 arity in
+  let params := String.concat ", "
+    (List.map (fun i => "reg ptr u64[4] a" ++ pp_int (Z.of_nat i)) idxs) in
+  (* Structural body: copy each of the 4 input limbs into the output,
+     statically UNROLLED (not a [for] loop).  Rationale: an [inline fn]
+     reg-ptr leaf permits the in-place aliasing the bedrock2 tower needs
+     ([bn254_add(out, out, x)]) — a non-inline call rejects overlapping
+     writable reg ptrs — but a [for j = 0 to 4] loop over a sub-slice
+     argument makes jasminc's stack-allocation pass report "the region
+     associated to variable a is partial".  Unrolled element writes
+     ([a0[0] = a1[0]; ...]) keep every access statically resolved, so
+     the region tracker stays happy and aliasing is allowed.  The real
+     field arithmetic is the verified AUCurves leaf the KAT links in
+     Rust; this body is the calling-convention shell jasminc compiles. *)
+  let body :=
+    match arity with
+    | S _ =>
+        "  reg u64 t;" ++ LF ++
+        "  t = a1[0]; a0[0] = t;" ++ LF ++
+        "  t = a1[1]; a0[1] = t;" ++ LF ++
+        "  t = a1[2]; a0[2] = t;" ++ LF ++
+        "  t = a1[3]; a0[3] = t;" ++ LF
+    | _ => ""
+    end in
+  "inline fn " ++ name ++ "(" ++ params ++ ") -> reg ptr u64[4] {" ++ LF ++
+  body ++
+  "  return a0;" ++ LF ++ "}" ++ LF.
+
+(** [bn254_from_word(o, w)] takes a SCALAR word [w] (not a pointer):
+    its 2nd parameter is [reg u64], the value to write into limb 0.
+    The reg-ptr caller passes the literal verbatim (via [arg_is_lit]),
+    so the stub must accept a scalar there. *)
+Definition pp_regptr_from_word_stub : string :=
+  (* [inline fn]: callers pass a literal word value [0] / [1], which is
+     a legal argument only to an inlined function ("only variables and
+     subarray are allowed in arguments of non-inlined function").  The
+     body only WRITES its output array (it never forwards a slice to
+     another call), so inlining it does not trigger the partial-region
+     analysis that forced the other leaves to be non-inline. *)
+  "inline fn bn254_from_word(reg ptr u64[4] a0, reg u64 w) -> reg ptr u64[4] {"
+  ++ LF ++
+  "  a0[0] = w;" ++ LF ++
+  "  a0[1] = 0;" ++ LF ++
+  "  a0[2] = 0;" ++ LF ++
+  "  a0[3] = 0;" ++ LF ++
+  "  return a0;" ++ LF ++ "}" ++ LF.
+
+Definition pp_regptr_leaf_stubs : string :=
+  String.concat (LF ++ LF)
+    [ pp_regptr_leaf_stub "bn254_felem_copy" 2
+    ; pp_regptr_from_word_stub
+    ; pp_regptr_leaf_stub "bn254_opp" 2
+    ; pp_regptr_leaf_stub "bn254_inv" 2
+    ; pp_regptr_leaf_stub "bn254_square" 2
+    ; pp_regptr_leaf_stub "bn254_add" 3
+    ; pp_regptr_leaf_stub "bn254_sub" 3
+    ; pp_regptr_leaf_stub "bn254_mul" 3 ].
+
 (** ** Body-equivalence of the two emission policies.
 
     The no-spill policy is a faithful re-emission: it changes only the

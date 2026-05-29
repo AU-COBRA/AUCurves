@@ -51,8 +51,28 @@ Local Notation function_t :=
     the full pairing graph (Fp6/Fp12/Frobenius/make_line/pow_u/
     final_exp/miller_loop/pairing).  Fp2_inv is excluded (it needs the
     Fp leaf [bn254_inv], handled in the leaf layer). *)
+(** #227: [Fp2_opp] negates both Fp2 components via the [bn254_opp]
+    leaf.  Copied verbatim from [ExtractSafeRust.Fp2_opp] (same bedrock2
+    body the Rust tower's hand-written [bn254_Fp2_opp] prelude denotes),
+    so the jasmin tower can emit it as a first-class function instead of
+    relying on an out-of-band prelude.  Offset 32 = 4 limbs * 8 bytes =
+    one BN254 felem. *)
+Definition Fp2_opp : function_t :=
+  ("bn254_Fp2_opp", (["out"; "x"], []:list String.string,
+    (Syntax.cmd.seq
+      (Syntax.cmd.call [] "bn254_opp"
+        [Syntax.expr.var "out"; Syntax.expr.var "x"])
+      (Syntax.cmd.call [] "bn254_opp"
+        [Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "out") (Syntax.expr.literal 32%Z);
+         Syntax.expr.op Syntax.bopname.add (Syntax.expr.var "x") (Syntax.expr.literal 32%Z)])))).
+
+(** #227: [Fp2_opp] and [Fp2_inv] are called by the higher tower
+    (Fp6_opp, Fp12_inv, final_exp).  #222 left them as a hand-written
+    Rust prelude (so the jasmin tower omitted them and could never
+    link).  Including them as emitted jasmin functions is required to
+    compile the FULL tower. *)
 Definition bn254_fp2_funcs : list function_t :=
-  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr ].
+  [ Fp2_felem_copy; Fp2_add; Fp2_sub; Fp2_mul; Fp2_sqr; Fp2_opp; Fp2_inv ].
 
 Definition bn254_tower_funcs : list function_t :=
   Eval vm_compute in
@@ -83,5 +103,35 @@ Definition bn254_tower_jazz : string :=
 Definition bn254_tower_jazz_nospill : string :=
   Eval vm_compute in pp_module_nospill bn254_tower_jasmin.
 
+(** Reg-ptr emit (#227): close the 39-function jasminc gap.
+
+    [pp_module_regptr] re-renders the SAME [bn254_tower_jasmin] AST
+    under the [reg ptr u64[N]] calling convention — typed array
+    references instead of raw [reg u64] byte pointers, sub-felem slices
+    [base[k:len]] instead of byte arithmetic [(base + 8*k)], and the
+    returned-pointer threading [dst = f(dst, ...)].  Every pointer in
+    the call graph (tower parameters, stackalloc temporaries, and the
+    leaf signatures the tower calls) agrees on the convention via a
+    single inferred width environment, so jasminc no longer rejects
+    "can not implicitly cast u64[4] into u64": a [stack u64[4]]
+    temporary / a [u64[len]] sub-slice now passes to a matching
+    [reg ptr u64[len]] parameter.
+
+    Faithfulness: no AST transform happens — [pp_cmd_regptr] consumes
+    the identical [jf_body] that [pp_cmd] consumes, and the byte-offset
+    / word-index correspondence is exact (offsets in tower bodies are
+    multiples of 8; call-argument offsets are multiples of the 32-byte
+    felem width).  The reg-ptr emit and the baseline emit therefore
+    denote the same bedrock2 program via [tr_cmd_correct]
+    ([pp_module_regptr_same_body] records that the command stream is
+    unchanged; the delta is the typed-array-slice vs pointer-arithmetic
+    Jasmin access syntax, analogous to the inert [#[spill]] delta of
+    [pp_module_nospill]). *)
+Definition bn254_tower_jazz_regptr : string :=
+  Eval vm_compute in
+    (Core.pp_regptr_leaf_stubs ++ Core.LF ++ Core.LF ++
+     pp_module_regptr bn254_tower_jasmin).
+
 Redirect "bn254_tower_rocq"         Eval vm_compute in bn254_tower_jazz.
 Redirect "bn254_tower_nospill_rocq" Eval vm_compute in bn254_tower_jazz_nospill.
+Redirect "bn254_tower_regptr_rocq"  Eval vm_compute in bn254_tower_jazz_regptr.

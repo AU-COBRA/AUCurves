@@ -107,4 +107,5 @@ Global Set Warnings Append "-extraction-opaque-accessed".
 
 Extraction "fe25519_leaves_jasmin_extracted"
   fe25519_all_jasmin fe25519_field_size
-  pp_func pp_module.
+  pp_func pp_module
+  pp_func_nospill pp_module_nospill.

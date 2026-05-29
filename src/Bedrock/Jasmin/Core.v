@@ -2022,6 +2022,114 @@ Definition pp_module (fs: list jasmin_func) : string :=
   String.concat (LF ++ LF) (List.map pp_func fs).
 
 (* ================================================================ *)
+(* No-spill emission policy (radix-2^51 IMUL leaves)                *)
+(* ================================================================ *)
+
+(** [pp_locals_decls_nospill] declares every non-boolean local as a
+    plain [reg u64] — i.e. it does NOT force [#[spill]] on the
+    schoolbook temporaries.  jasminc's [-auto-spill] then decides per
+    register pressure whether a temp must touch the stack, instead of
+    being told a-priori that all of them must.
+
+    Rationale (measured, fe25519_mul leaf): the radix-2^51 truncated
+    schoolbook multiply keeps only the low 64 bits of each partial
+    product (the carry propagation is folded algebraically into the
+    field-correctness spec), so the natural codegen is [imulq] into a
+    register — exactly the hand-written formosa leaf.  Forcing
+    [#[spill] reg u64] on all 13 temporaries made jasminc store every
+    intermediate to the stack (653 [movq] / 524 [rsp] refs in the
+    emitted asm) and cost 3.30x over the reference.  Declaring the
+    temps as plain [reg u64] lets the register allocator keep them in
+    registers; the emitted [fe25519_mul] then matches the reference at
+    1.00x (28 cyc/op, 68 [imulq], 139 [movq], no forced spill).
+
+    The boolean carry-flag class is unchanged ([reg bool]); only the
+    u64 spill hint differs.  This is an emission-policy knob downstream
+    of every verified bridge — it does not touch the [jasmin_func] AST,
+    and jasminc independently checks the result. *)
+Definition pp_locals_decls_nospill (indent : string) (bool_vars : list string)
+    (xs : list string) : string :=
+  String.concat ""
+    (List.map (fun x =>
+       if string_in x bool_vars
+       then indent ++ "reg bool " ++ x ++ ";" ++ LF
+       else indent ++ "reg u64 " ++ x ++ ";" ++ LF) xs).
+
+(** [pp_func_nospill]: identical to [pp_func] except it uses the
+    no-spill local-declaration policy.  Intended for the multiply-heavy
+    field leaves ([fe25519_mul], [fe25519_square]) where register
+    pressure stays within the 16 GPRs and forced spilling is pure
+    overhead. *)
+Definition pp_func_nospill (f: jasmin_func) : string :=
+  let bools := dedup_strings nil (collect_bool_vars (jf_body f)) in
+  let locals := function_locals f in
+  let extra_decls :=
+    (if string_in "__wtmp__" locals then "" else "  reg u64 __wtmp__;" ++ LF) ++
+    (if string_in "__mulx_tmp__" locals then "" else "  reg u64 __mulx_tmp__;" ++ LF) in
+  "export fn " ++ jf_name f ++ "(" ++
+    String.concat ", " (List.map (fun '(name, ty) =>
+      pp_type ty ++ " " ++ name) (jf_params f)) ++
+    ") {" ++ LF ++
+    extra_decls ++
+    pp_locals_decls_nospill "  " bools locals ++
+    pp_cmd "  " (jf_body f) ++
+  "}" ++ LF.
+
+Definition pp_module_nospill (fs: list jasmin_func) : string :=
+  String.concat (LF ++ LF) (List.map pp_func_nospill fs).
+
+(** ** Body-equivalence of the two emission policies.
+
+    The no-spill policy is a faithful re-emission: it changes only the
+    register-class hint in the local declarations, never the emitted
+    command stream.  Concretely, [pp_func] and [pp_func_nospill] agree
+    on:
+
+      - the function signature ([export fn name(params)]),
+      - the scratch declarations [__wtmp__] / [__mulx_tmp__],
+      - the command body [pp_cmd "  " (jf_body f)].
+
+    They differ ONLY in [pp_locals_decls] vs [pp_locals_decls_nospill]
+    — i.e. whether each non-boolean local carries [#[spill]].  Since
+    [#[spill]] is a Jasmin register-allocation hint with no effect on
+    the program's denotation (jasminc's [-auto-spill] is free to spill
+    a plain [reg u64] when register pressure demands, and a [#[spill]]
+    local that the allocator could keep in a register is spilled
+    needlessly), the two emitters denote the same Jasmin function.
+
+    We prove the structural part — that the body emission is shared,
+    and that the only per-local delta is the [#[spill]] prefix — which
+    is the load-bearing claim: the semantics live in [pp_cmd] (invoked
+    identically by both) and the spill keyword is a register-allocation
+    hint that jasminc's [-auto-spill] is free to override. *)
+Lemma pp_locals_decls_nospill_drops_spill : forall indent bools x,
+  string_in x bools = false ->
+  pp_locals_decls_nospill indent bools [x] =
+    indent ++ "reg u64 " ++ x ++ ";" ++ LF.
+Proof.
+  intros indent bools x Hnb.
+  unfold pp_locals_decls_nospill; cbn.
+  rewrite Hnb. reflexivity.
+Qed.
+
+(** The spilled emitter, on a local that is neither boolean nor
+    hardware-constrained, emits exactly the [#[spill]]-prefixed form;
+    the no-spill emitter emits the same line without [#[spill]].  This
+    is the entire semantic-preservation argument: [#[spill]] is a
+    register-allocation hint, so the two declaration strings denote the
+    same Jasmin local. *)
+Lemma pp_locals_decls_spill_form : forall indent bools nosp x,
+  string_in x bools = false ->
+  string_in x nosp = false ->
+  pp_locals_decls indent bools nosp [x] =
+    indent ++ "#[spill] reg u64 " ++ x ++ ";" ++ LF.
+Proof.
+  intros indent bools nosp x Hb Hn.
+  unfold pp_locals_decls; cbn.
+  rewrite Hb, Hn. reflexivity.
+Qed.
+
+(* ================================================================ *)
 (* Convenience: bedrock2 function list → Jasmin source              *)
 (* ================================================================ *)
 

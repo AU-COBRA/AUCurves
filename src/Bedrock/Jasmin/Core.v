@@ -2330,27 +2330,44 @@ Definition pp_call_regptr (indent f : string) (args : list jasmin_expr) : string
       end
   end.
 
-(** #241: width-[n] generalization of [pp_copy4] / [pp_copy4_back].
+(** #241 / #259: width-[n] generalization of [pp_copy4] / [pp_copy4_back].
     [pp_copyN_in] copies [n] words from a pointer-arg slice [(p,k)]
     (i.e. [p[k:n]]) into the whole-array scratch [dst] ([stack u64[n]]);
-    [pp_copyN_back] copies them from [dst] back into [p[k:n]].  Both are
-    statically unrolled [reg u64] move chains, so they preserve the
-    bedrock2 semantics (the callee reads/writes the same [n] words). *)
+    [pp_copyN_back] copies them from [dst] back into [p[k:n]].
+
+    #259 (register-allocation wall): the staging copies are emitted as a
+    RUNTIME [while]-loop over a single counter [__cpj__] rather than a
+    statically-unrolled [reg u64] move chain.  Both forms move the same
+    [n] words [p[k .. k+n-1]] through the single mover [__mv__]; the loop
+    form keeps the per-function instruction count (and hence jasminc's
+    register-allocation live/temp set) O(1) per staged copy instead of
+    O(n).  This is what lets the largest wrappers
+    ([final_exp_hard_dsd] ~11 k lines of unrolled moves) clear jasminc's
+    [regalloc.ml] "no more free register" exhaustion.  jasmin does NOT
+    unroll [while] (unlike [for]), so the bound is genuine.
+
+    The loop counter [j] runs [0 <= j < n]; the source word is indexed at
+    [k + j] (matching the direct sub-slice [p[k:n]]) and the scratch word
+    at [j] — the identical word-index map the unrolled form used (recorded
+    by [pp_copyN_index_correspondence]).  The [(int)] cast is jasminc's
+    required form for a register (non-literal) array index. *)
 Definition pp_copyN_in (indent dst : string) (basek : string * Z) (n : Z) : string :=
   let '(p, k) := basek in
-  String.concat ""
-    (List.map (fun j =>
-       indent ++ "__mv__ = " ++ p ++ "[" ++ pp_int (k + Z.of_nat j) ++ "];" ++ LF ++
-       indent ++ dst ++ "[" ++ pp_int (Z.of_nat j) ++ "] = __mv__;" ++ LF)
-       (List.seq 0 (Z.to_nat n))).
+  indent ++ "__cpj__ = 0;" ++ LF ++
+  indent ++ "while (__cpj__ < " ++ pp_int n ++ ") {" ++ LF ++
+  indent ++ "  __mv__ = " ++ p ++ "[(int) (" ++ pp_int k ++ " + __cpj__)];" ++ LF ++
+  indent ++ "  " ++ dst ++ "[(int) __cpj__] = __mv__;" ++ LF ++
+  indent ++ "  __cpj__ += 1;" ++ LF ++
+  indent ++ "}" ++ LF.
 
 Definition pp_copyN_back (indent src : string) (basek : string * Z) (n : Z) : string :=
   let '(p, k) := basek in
-  String.concat ""
-    (List.map (fun j =>
-       indent ++ "__mv__ = " ++ src ++ "[" ++ pp_int (Z.of_nat j) ++ "];" ++ LF ++
-       indent ++ p ++ "[" ++ pp_int (k + Z.of_nat j) ++ "] = __mv__;" ++ LF)
-       (List.seq 0 (Z.to_nat n))).
+  indent ++ "__cpj__ = 0;" ++ LF ++
+  indent ++ "while (__cpj__ < " ++ pp_int n ++ ") {" ++ LF ++
+  indent ++ "  __mv__ = " ++ src ++ "[(int) __cpj__];" ++ LF ++
+  indent ++ "  " ++ p ++ "[(int) (" ++ pp_int k ++ " + __cpj__)] = __mv__;" ++ LF ++
+  indent ++ "  __cpj__ += 1;" ++ LF ++
+  indent ++ "}" ++ LF.
 
 (** #241: the scratch-buffer name for staging call-argument [i] of width
     [w] words: [__sg<w>_<i>].  A disjoint [stack u64[w]] buffer per
@@ -2656,6 +2673,11 @@ Definition pp_func_regptr (env : regptr_env) (f : jasmin_func) : string :=
        (e.g. Fp6_mul's [stack u64[8] t]), so a [reg u64 t] mover would
        collide on redeclaration. *)
     "  reg u64 __mv__;" ++ LF ++
+    (* #259: the staging copy loop counter (see [pp_copyN_in] /
+       [pp_copyN_back]).  A single [reg u64] reused across every staged
+       copy in the function, so the register allocator sees O(1) copy
+       temporaries regardless of how many words are staged. *)
+    "  reg u64 __cpj__;" ++ LF ++
     "  stack u64[4] __sa0;" ++ LF ++
     "  stack u64[4] __sa1;" ++ LF ++
     "  stack u64[4] __sa2;" ++ LF ++
@@ -2825,13 +2847,23 @@ Proof. reflexivity. Qed.
     additional proof obligation #241 incurs over #227.  The obligation is
     discharged at the level of the limb indices:
 
-      [pp_copyN_in indent dst (p,k) n] emits, for each [j < n], the pair
+      [pp_copyN_in indent dst (p,k) n] emits a [while] loop over the
+      counter [__cpj__] that, for each [j] with [0 <= j < n], performs
         [__mv__ = p[k+j];  dst[j] = __mv__]
       so after copy-in [dst[j] = p[k+j]] for all [j < n] — the scratch
       [dst] holds exactly the [n] source words [p[k .. k+n-1]].
 
-      [pp_copyN_back indent src (p,k) n] emits [__mv__ = src[j]; p[k+j] =
-      __mv__], so after copy-out [p[k+j] = src[j]] for all [j < n].
+      [pp_copyN_back indent src (p,k) n] emits the loop body
+      [__mv__ = src[j]; p[k+j] = __mv__], so after copy-out [p[k+j] =
+      src[j]] for all [j < n].
+
+    #259 (register-allocation wall): the copies are emitted as a runtime
+    [while] loop rather than [n] statically-unrolled [reg u64] move pairs.
+    The word-index map ([k+j] in the source, [j] in the scratch) is
+    identical — the loop iterates [__cpj__ = j] over the same range
+    [0 <= j < n] — so the correspondence below is unchanged; only the
+    jasminc instruction count (and hence the register-allocator live set)
+    shrinks from O(n) to O(1) per staged copy.
 
     [pp_copyN_index_correspondence] below records this index map: copy-in
     followed by copy-out is the identity on words [p[k .. k+n-1]], and

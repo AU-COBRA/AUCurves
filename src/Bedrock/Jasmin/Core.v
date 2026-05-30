@@ -2387,12 +2387,15 @@ Definition sg_name (w : Z) (i : nat) : string :=
     semantics to the direct sub-slice call. *)
 (** #241: a name -> width (in u64 words) map for the WHOLE arrays in
     scope inside a function: every stack temporary [JCdecl x (JTstack n)]
-    plus the function's pointer parameters (their inferred widths).  Used
-    by [pp_call_tower_staged] to SKIP staging an argument that is already
-    a whole array ([p[0:width(p)]]) — such an argument is passed directly,
-    which avoids the partial-region constraint (a whole array is never a
-    partial sub-region) AND keeps the emit small.  Only genuine partial
-    sub-slices ([p[8:8]] of a 48-array) are copy-staged. *)
+    plus the function's pointer parameters (their inferred widths).
+    [arg_is_whole]/[amap] were introduced for a whole-array-skip
+    optimization (pass a whole-array argument directly, stage only
+    genuine partial sub-slices), but that skip was DISABLED for coverage:
+    a whole [stack u64[8]] sliced at offset 4 anywhere (the second Fp of
+    an Fp2) is still tracked "partial" across a non-inline boundary, so
+    the deep Fp12 graph needs uniform staging of EVERY argument.  The map
+    is retained for the structural note and possible future use; the
+    shipped [pp_call_tower_staged] stages all pointer arguments. *)
 Fixpoint collect_array_widths (c : jasmin_cmd) : list (string * Z) :=
   match c with
   | JCdecl x (JTstack n) body => (x, n) :: collect_array_widths body

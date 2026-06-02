@@ -2,11 +2,17 @@
 
 (coq.theory
  (name Theory)
- (mode vo)
- ; -native-compiler off: Theory has no native_compute calls — skip the
- ;   on-demand ocamlopt cascade triggered by fiat-crypto/Rewriter deps.
+ (mode native)
+ ; Native artifacts are required: the Bedrock theory is built (mode native),
+ ;   so its curve files (e.g. Curve.PallasCurve_G1, Secp256k1Curve_G1) emit
+ ;   native code that references the Theory constants they vm_compute-inline
+ ;   (e.g. MontgomeryCurveSpecs.three_b_list).  With Theory built
+ ;   -native-compiler off those NTheory_* modules don't exist and the
+ ;   consumer's native compile fails with "Unbound module NTheory_...".
+ ;   Theory itself has no native_compute calls, so the only cost of native
+ ;   here is the per-file ocamlopt pass on 16 files (fiat-crypto native is
+ ;   already built), not a fiat/Rewriter rebuild cascade.
  ; -time: per-sentence timing in build output, negligible overhead,
  ;   makes slow sentences immediately visible without re-runs.
- ; Bedrock/Curve/*_prime_certif.v keep native (use native_cast_no_check).
- (flags -native-compiler off -time -profile-ltac -profile-ltac-cutoff 1)
+ (flags -time -profile-ltac -profile-ltac-cutoff 1)
  (theories Stdlib Crypto Coqprime))

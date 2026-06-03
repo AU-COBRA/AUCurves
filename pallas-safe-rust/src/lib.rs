@@ -48,5 +48,10 @@ pub fn invert_raw(out: &mut [u64; 4], x: &[u64; 4]) {
     safegcd::safegcd_pallas::pallas_invert_divstep_sat(out, x);
 }
 
+/// C-ABI surface for the verified field leaves (used by the CatCrypt
+/// Halo2 Pasta MSM bench to route its Montgomery reduce + field inverse
+/// through the fiat WordByWordMontgomery / Bernstein-Yang divstep leaves).
+pub mod ffi;
+
 #[cfg(test)]
 mod kat;

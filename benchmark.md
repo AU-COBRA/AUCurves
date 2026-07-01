@@ -23,10 +23,10 @@ the upstream library's own constant-time inverter for the same prime.
 | BLS24-509 Fp     |               3.51 µs  | (no CT reference installed)                             | —                             |
 | BW6-761 Fp       |               5.85 µs  | (no CT reference installed)                             | —                             |
 
-The four `_noref` rows have no CT reference impl available in any
+The four `_noref` rows have no CT reference impl in any
 pure-Rust crate we could install: arkworks (`ark-{bn254,bls12-377,
 bw6-761}`) is variable-time (BEA), `ark-bls24-509` does not exist,
-and `blst` covers BLS12-381 only. These rows still serve to measure
+and `blst` covers BLS12-381 only. These rows still measure
 how OUR safegcd scales across prime sizes: 254 → 377 → 509 → 761
 bits at 4/6/8/12 saturated u64 limbs.
 

@@ -141,6 +141,6 @@ laptop:
 | `ed25519_sign`   | 65.5 µs  | 17.6 µs | 3.7× |
 | `ed25519_verify` | 164.7 µs | 30.4 µs | 5.4× |
 
-The verify ratio is dominated by the recompute path above. Once the
+The recompute path above dominates the verify ratio. Once the
 `bytes_equal_32` argument is fixed, the wrapper drops the recompute and the
 ratio should fall to about 2.7×, matching the sign-path leaf coverage.

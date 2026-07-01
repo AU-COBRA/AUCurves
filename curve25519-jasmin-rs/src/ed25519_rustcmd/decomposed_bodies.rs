@@ -26,6 +26,12 @@
 
 #![allow(non_snake_case, unused_assignments, unused_mut, unused_variables, unused_parens, dead_code)]
 
+// These byte-ABI leaf declarations are consumed only by the
+// `not(tfp25519_limbs)` byte bodies below.  Under `tfp25519_limbs` the
+// real symbols are limb-typed (declared in `decomposed_bodies_limbs.rs`),
+// so gate this block to that config to avoid a clashing extern
+// re-declaration of `fe25519_*` with mismatched pointer types.
+#[cfg(not(feature = "tfp25519_limbs"))]
 unsafe extern "C" {
     fn fe25519_add(out: *mut u8, a: *const u8, b: *const u8);
     fn fe25519_sub(out: *mut u8, a: *const u8, b: *const u8);
@@ -41,6 +47,12 @@ unsafe extern "C" {
                             ta: *mut u8, tb: *mut u8, p: *const u8);
     fn fe25519_pack_xyzt5(out: *mut u8, x: *const u8, y: *const u8,
                           z: *const u8, ta: *const u8, tb: *const u8);
+}
+
+// `fe25519_xyzt_copy` is byte-ABI in every config (no limb-typed
+// counterpart in `decomposed_bodies_limbs.rs`) and is used by the
+// always-compiled `xyzt_copy` below, so it stays ungated.
+unsafe extern "C" {
     fn fe25519_xyzt_copy(out: *mut u8, src: *const u8);
 }
 

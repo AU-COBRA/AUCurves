@@ -69,12 +69,13 @@ Measured on AMD Ryzen 7 PRO 7840U (container, vm_compute):
 | 381-bit, N=1075 | **~50 min** | **~1-5 min** | ~4 GB |
 | 381-bit, N=1101 | ~55 min | ~1-5 min | ~4 GB |
 
-**Strongly recommended**: use native_compute. Requires Coq/Rocq built with
-`-native-compiler yes` on OCaml 4.14 (OCaml 5 support coming in Rocq 9.3):
+**Strongly recommended**: use `native_compute`. It needs a Rocq built with the
+native compiler enabled (`-native-compiler yes`), which the standard Rocq 9
+opam switch provides:
 ```bash
-opam switch create rocq-native ocaml-base-compiler.4.14.2
+opam switch create aucurves ocaml-base-compiler.4.14.2
 eval $(opam env)
-opam install rocq-native rocq-core.9.1.1
+opam install coq-rocq-prover
 ```
 
 ## References

@@ -7,6 +7,9 @@ Rocq verification of elliptic curve cryptography using the
 [Jasmin](https://github.com/jasmin-lang/jasmin) as a verified-assembly
 back-end for the curve leaves.
 
+New here? Read [START-HERE.md](START-HERE.md) first — it maps the work onto
+its three papers and tells you what to read in what order.
+
 ## What is verified
 
 Pairing-friendly curves paper:
@@ -98,8 +101,8 @@ regenerate any of the wrapper / skeleton crates from their templates.
 
 ## Building
 
-Requires Rocq 9 with the fiat-crypto and bedrock2 dependencies.
-Clone with `--recursive` to get the fiat-crypto submodule.
+The build needs Rocq 9 with the fiat-crypto and bedrock2 dependencies.
+Clone with `--recursive`, then:
 
 ```bash
 ulimit -s unlimited
@@ -107,8 +110,9 @@ export OCAMLRUNPARAM="b,l=1000000000"
 dune build
 ```
 
-Only one `dune build` can hold `_build/.lock` at a time.
-For heavy files use `-j 1` to avoid memory exhaustion.
+Only one `dune build` can hold `_build/.lock` at a time; for the heaviest
+files, add `-j 1` to avoid exhausting memory. [INSTALL.md](INSTALL.md) covers
+the opam toolchain, the submodule layout, and single-target builds.
 
 ## Papers
 

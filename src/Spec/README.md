@@ -9,7 +9,7 @@ and the XEdDSA/X25519 protocol stack.
 
 ## Hash-to-curve
 
-Files implement the IETF hash-to-curve standard (RFC 9380) for G1 and G2:
+These files implement the IETF hash-to-curve standard (RFC 9380) for G1 and G2:
 
 | File pattern | Role |
 |---|---|

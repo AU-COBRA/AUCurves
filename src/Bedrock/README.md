@@ -24,7 +24,6 @@ using separation logic.
 
 | File | What |
 |------|------|
-| `RustJasmin.md` | rust_cmd design, gap analysis vs libcrux, toy rust_cmd→jasmin evaluation |
 | `BLS12_MSM.v` | Multi-scalar multiplication WP proof (L2–L5 composition) |
 | `BLS12_MSM_Extract.v` | OCaml extraction of the MSM implementation |
 | `BLS12_PairingRustConcrete.v` | Concrete safe-Rust extraction for BLS12-381 pairing |

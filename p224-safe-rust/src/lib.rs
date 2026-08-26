@@ -43,6 +43,8 @@ pub fn fp_inv(out: &mut Fp, x: &Fp) {
 
 pub mod group;
 pub mod extracted_leaves;
+#[cfg(feature = "extracted")]
+pub mod g1_extracted;
 
 #[cfg(test)]
 mod kat;

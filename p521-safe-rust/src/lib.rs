@@ -15,6 +15,8 @@
 
 pub mod group;
 pub mod extracted_leaves;
+#[cfg(feature = "extracted")]
+pub mod g1_extracted;
 
 pub use fiat_crypto::p521_64::fiat_p521_tight_field_element  as FpT;
 pub use fiat_crypto::p521_64::fiat_p521_loose_field_element  as FpL;

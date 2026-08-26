@@ -13,6 +13,9 @@
 
 #![allow(non_snake_case, non_camel_case_types)]
 
+pub mod group;
+pub mod extracted_leaves;
+
 pub use fiat_crypto::p521_64::fiat_p521_tight_field_element  as FpT;
 pub use fiat_crypto::p521_64::fiat_p521_loose_field_element  as FpL;
 

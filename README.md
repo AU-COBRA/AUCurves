@@ -54,10 +54,10 @@ bls24-509-safe-rust/       fiat-rust wrapper + fp_inv, 4 KAT tests pass
 bw6-761-safe-rust/         fiat-rust wrapper + fp_inv, 4 KAT tests pass
 
 # Non-pairing curves (field ops via fiat-rust + safegcd CT inverse)
-p224-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
-p256-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
-p384-safe-rust/            fiat-rust wrapper + fp_inv, 4 KAT tests pass
-p521-safe-rust/            fiat-rust wrapper (Solinas) + fp_inv, 4 KAT tests pass
+p224-safe-rust/            field + fp_inv + G1 group ops (RCB add, CT scalar mul), 11 tests pass
+p256-safe-rust/            field + fp_inv + G1 group ops (RCB add, CT scalar mul), 11 tests pass
+p384-safe-rust/            field + fp_inv + G1 group ops (RCB add, CT scalar mul), 13 tests pass
+p521-safe-rust/            field (Solinas) + fp_inv + G1 group ops (RCB add, CT scalar mul), 11 tests pass
 secp256k1-safe-rust/       fiat-rust wrapper + fp_inv, 4 KAT tests pass
 pallas-safe-rust/          fiat-rust wrapper + fp_inv, 4 KAT tests pass
 vesta-safe-rust/           fiat-rust wrapper + fp_inv, 4 KAT tests pass
@@ -83,7 +83,14 @@ Crate status:
   Solinas).  Each exposes a `fp_inv` that round-trips through the
   Bernstein–Yang divstep core in `safegcd-rs/`, and ships 4 KAT tests
   (`add_zero_identity`, `sub_self_is_zero`, `mul_one_identity`,
-  `invert_roundtrip`) — all passing.  Pallas / Vesta primes were added
+  `invert_roundtrip`) — all passing.  The four NIST P-curve crates
+  additionally ship a `group` module (2026-08-26): projective G1 with
+  the RCB-2015 complete addition (general a≠0, transcribed from the
+  Qed-proved bedrock2 body in `src/Bedrock/Curve/P256_G1_Add_Spec.v`),
+  affine conversions, and fixed-length constant-time scalar
+  multiplication, validated by on-curve / n·G = O / group-law tests
+  (see `HAND_WRITTEN_AUDIT.md` for status and the verified-emission
+  replacement path in `src/Bedrock/Curve/NistG1AddRustCmd.v`).  Pallas / Vesta primes were added
   to fiat-crypto by registering them in `fiat-crypto/Makefile.examples`
   via `add_curve_keys WORD_BY_WORD_MONTGOMERY`; the generated
   `pallas_64.rs` / `vesta_64.rs` are checked into `fiat-crypto/fiat-rust/src/`.

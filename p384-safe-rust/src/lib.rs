@@ -41,5 +41,8 @@ pub fn fp_inv(out: &mut Fp, x: &Fp) {
     fp_to_montgomery(out, &FpRaw(raw_inv));
 }
 
+pub mod group;
+pub mod extracted_leaves;
+
 #[cfg(test)]
 mod kat;

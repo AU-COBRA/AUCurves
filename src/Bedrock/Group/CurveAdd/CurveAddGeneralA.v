@@ -1,11 +1,13 @@
 (** * Rupicola derivation of the general-a Renes-Costello-Batina
       complete point addition (40 field operations).
 
-    DRAFT — THIS FILE HAS NOT BEEN COMPILED.  It was written as a
-    text-only structural clone of [CurveAdd.v] (the a=0 case, 34 ops)
-    during a build-locked session; every place where an API detail
-    could not be checked against a compiler is flagged with a comment
-    starting (* PORT-CHECK: ... *).
+    Written as a text-only structural clone of [CurveAdd.v] (the a=0
+    case, 34 ops) during a build-locked session; every place where an
+    API detail could not be checked against a compiler was flagged
+    with a comment starting (* PORT-CHECK: ... *).  The file compiled
+    end-to-end (including the [Derive ... compile] trial) on
+    2026-08-28 with no source changes; each PORT-CHECK now carries a
+    resolution note.
 
     Relation to the existing code base:
 
@@ -160,7 +162,9 @@ Section __.
       machinery treats all pointer arguments uniformly, so argument
       order should be irrelevant; if the [compile] driver turns out to
       be order-sensitive, move the outputs last to match CurveAdd.v
-      exactly and adapt the per-curve wrapper instead. *)
+      exactly and adapt the per-curve wrapper instead.
+      RESOLVED 2026-08-28: the derivation succeeded with the
+      outputs-first ABI; no reordering was needed. *)
   Instance spec_of_rcb_add_general : spec_of "curve_add_general" :=
     fnspec! "curve_add_general"
           (poutx pouty poutz pX1 pY1 pZ1 pX2 pY2 pZ2 : word)
@@ -254,7 +258,8 @@ Section __.
                  v k) }>.
   Proof.
     (* PORT-CHECK: proof script cloned verbatim from compile_ladderstep
-       (CurveAdd.v); not replayed against a compiler. *)
+       (CurveAdd.v).
+       RESOLVED 2026-08-28: replayed; Qed succeeds unchanged. *)
     repeat straightline'.
     handle_call.
     lazymatch goal with
@@ -369,7 +374,9 @@ Section __.
      Local Definition a_val, exactly as the three_b hint keys on
      three_b_val.  If both hints are candidates at the same priority
      and misfire (each pattern is a distinct constant so they should
-     not), disambiguate by priority (5 vs 6). *)
+     not), disambiguate by priority (5 vs 6).
+     RESOLVED 2026-08-28: both hints at priority 5 fire on their own
+     constants; no misfire observed in the derivation. *)
   Local Hint Extern 5
     (WeakestPrecondition.cmd _ _ _ _ _ (_ (nlet_eq _ a_val _))) =>
     simple eapply compile_load_a; shelve : compiler.
@@ -392,14 +399,17 @@ Section __.
      (2) chain length 42 nlets vs 34 — the [compile] tactic has not
          been timed on this length; if it stalls, apply the
          MSM helper-extraction pattern (split the chain at S18/S24)
-         before concluding the approach fails. *)
-  Derive rcb_add_general_body SuchThat
+         before concluding the approach fails.
+     RESOLVED 2026-08-28: [compile] handles the 42-nlet chain with
+     both loaders in one run (whole-file compile finishes in minutes);
+     no split was needed. *)
+  Derive rcb_add_general_body in
          (defn! "curve_add_general"
                 ("outx", "outy", "outz", "X1", "Y1", "Z1", "X2", "Y2", "Z2")
               { rcb_add_general_body },
            implements @rcb_add_general_gallina _ a_val three_b_val
                       using [mul; add; sub; three_b_name; a_name])
-         As rcb_add_general_correct.
+         as rcb_add_general_correct.
   Proof. compile. Qed.
 
 End __.

@@ -71,3 +71,12 @@
 #  (NB: earlier draft of these lines wrongly attributed them to GnarkDoubleCorrect.v — the -time log's
 #   nearest File marker was GnarkDoubleCorrect's line-30 warning, but the slow sentences are ZModTest's.)
   OOM      ~6GB   src/Spec/HashToCurveSWUProof_G2.v                     killed here: worker hit ~6GB RSS at -j1 (memory hog — isolate or build with more RAM)
+
+# 2026-08-27 correction: the P256/Secp256k1 _G1_Add_Spec entries above are
+# time-to-ERROR records, not successful compiles (Secp is Admitted past the
+# prologue; P256's main proof first executed 2026-08-27).  Per-sentence -time
+# streams + the five defect classes found during first execution are in
+# scripts/logs/p256_g1_add_debug_notes.md.  Measured on first execution:
+#   repeat-straightline prologue sentence   >90 min (diverges; fixed: singles)
+#   single straightline step (late allocs)  ~1-3 min under load
+#   first store ecancel (26-atom chain)     < 600 s via ecancel_assumption_fast

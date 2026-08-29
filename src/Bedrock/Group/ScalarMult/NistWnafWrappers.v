@@ -24,15 +24,15 @@
     states the adapter lemmas.
 
     Honesty ledger (this file): proved — [FElem2_elim_frame],
-    [FElem2_intro_frame], [curve_add_g_of_gallina],
-    [felem_copy_HFelemCopy], [opp_HOpp].  Admitted — the three
-    wrapper-body lemmas ([curve_add_inplace_general_ok],
-    [curve_double_general_ok], [opp_inplace_ok]) and
-    [store_zero_from_word_ok]: each needs a function-body entry
-    (start_func + per-call plumbing, and for the first three the
-    stackalloc/dealloc cascade), which no wrapper proof in this
-    repository has carried out yet — [CurveAddInplaceWrapper.v] gives
-    its template in comments only.  Proof templates:
+    [FElem2_intro_frame], [FElem2_intro3], [FElem2_intro3R],
+    [symmetry_iff1], [curve_add_g_of_gallina],
+    [felem_copy_HFelemCopy], [opp_HOpp], [store_zero_from_word_ok].
+    Admitted — the three wrapper-body lemmas
+    ([curve_add_inplace_general_ok], [curve_double_general_ok],
+    [opp_inplace_ok]): each needs the stackalloc/dealloc cascade on top
+    of the function entry, which no wrapper proof in this repository has
+    carried out yet — [CurveAddInplaceWrapper.v] gives its template in
+    comments only.  Proof templates:
     CurveAddInplaceWrapper.v (stack temps + copy back),
     CurveAddGeneralA_P256_Loaders.v (start_func / straightline),
     wNAF_Single_Proof.v (per-call letexists / weaken_call pattern).
@@ -318,6 +318,53 @@ Section Specs.
     split; [split; [exact Hfe | exact Hbd] | exact H1].
   Qed.
 
+  (** Three leaves at once, with the separation hypothesis FIRST so that
+      [eapply ...; [ecancel_assumption | ..]] fixes the three witnesses
+      before the value/bounds side conditions are seen. *)
+  Lemma FElem2_intro3 (b : bounds) (p1 p2 p3 : word) (x1 x2 x3 : felem)
+        (v1 v2 v3 : F) (R : mem -> Prop) (m : mem) :
+    (Field.FElem p1 x1 * Field.FElem p2 x2 * Field.FElem p3 x3 * R)%sep m ->
+    feval x1 = v1 -> bounded_by b x1 ->
+    feval x2 = v2 -> bounded_by b x2 ->
+    feval x3 = v3 -> bounded_by b x3 ->
+    (FElem (Some b) p1 v1 * FElem (Some b) p2 v2 * FElem (Some b) p3 v3
+     * R)%sep m.
+  Proof.
+    intros Hsep Hf1 Hb1 Hf2 Hb2 Hf3 Hb3.
+    assert (H1 : (FElem (Some b) p1 v1
+                  * (Field.FElem p2 x2 * (Field.FElem p3 x3 * R)))%sep m)
+      by (apply (FElem2_intro_frame b p1 x1 v1 _ _ Hf1 Hb1); ecancel_assumption).
+    assert (H2 : (FElem (Some b) p2 v2
+                  * (FElem (Some b) p1 v1 * (Field.FElem p3 x3 * R)))%sep m)
+      by (apply (FElem2_intro_frame b p2 x2 v2 _ _ Hf2 Hb2); ecancel_assumption).
+    assert (H3 : (FElem (Some b) p3 v3
+                  * (FElem (Some b) p1 v1 * (FElem (Some b) p2 v2 * R)))%sep m)
+      by (apply (FElem2_intro_frame b p3 x3 v3 _ _ Hf3 Hb3); ecancel_assumption).
+    ecancel_assumption.
+  Qed.
+
+  (** The same conclusion, right-associated.  [sep] is not
+      definitionally associative, so an [eapply] of [FElem2_intro3]
+      against a right-associated goal fails in unification (measured:
+      the [store_zero] rebuild's only failure).  Which association the
+      goal carries after the call plumbing is not predictable, so both
+      shapes are available and the caller tries them in turn. *)
+  Lemma FElem2_intro3R (b : bounds) (p1 p2 p3 : word) (x1 x2 x3 : felem)
+        (v1 v2 v3 : F) (R : mem -> Prop) (m : mem) :
+    (Field.FElem p1 x1 * Field.FElem p2 x2 * Field.FElem p3 x3 * R)%sep m ->
+    feval x1 = v1 -> bounded_by b x1 ->
+    feval x2 = v2 -> bounded_by b x2 ->
+    feval x3 = v3 -> bounded_by b x3 ->
+    (FElem (Some b) p1 v1
+     * (FElem (Some b) p2 v2 * (FElem (Some b) p3 v3 * R)))%sep m.
+  Proof.
+    intros Hsep Hf1 Hb1 Hf2 Hb2 Hf3 Hb3.
+    assert (H : (FElem (Some b) p1 v1 * FElem (Some b) p2 v2
+                 * FElem (Some b) p3 v3 * R)%sep m)
+      by (eapply FElem2_intro3; eassumption).
+    ecancel_assumption.
+  Qed.
+
   (* ---- HFelemCopy (shape adapter, G4) ----------------------------- *)
 
   (** The chain's copy spec has an FElem destination; fiat-crypto's
@@ -482,6 +529,111 @@ Section Specs.
       [(F.of_Z 0, F.of_Z 1, F.of_Z 0)] tight.  From [spec_of_from_word]:
       [feval X = F.of_Z _ (word.unsigned (word.of_Z 0))] and
       [word.unsigned_of_Z_0]; [FElem None] -> bytes for the destination. *)
+
+  (** [iff1] symmetry: coqutil defines [Lift1Prop.iff1] but this
+      bedrock2 exports no named symmetry lemma, and [seprewrite_in <- H]
+      is not accepted here — so state it locally and pass it explicitly. *)
+  Lemma symmetry_iff1 {T} (P Q : T -> Prop) :
+    Lift1Prop.iff1 P Q -> Lift1Prop.iff1 Q P.
+  Proof. intros H x; split; apply H. Qed.
+
+  (** Locals lookups in a [map.put] chain, and the argument-list
+      evaluation of a call whose arguments mix variables and literals —
+      which [straightline] does not consume, leaving the goal as the
+      existential [exists args, dexprs .. args /\ Semantics.call ..]. *)
+  Local Ltac solve_mapget :=
+    first [ apply map.get_put_same
+          | (rewrite !map.get_put_diff by congruence;
+             first [ apply map.get_put_same | eassumption | reflexivity ])
+          | eassumption
+          | reflexivity ].
+
+  Local Ltac eval_call_args :=
+    (* The locals map after a call is a LET-BOUND variable
+       ([l' := #{ ... }#]); [map.get] cannot see the put-chain through
+       the binder, so unfold every locals let before looking up. *)
+    repeat match goal with
+           | x := _ : @Interface.map.rep _ _ _ |- _ => subst x
+           end;
+    cbv [dexprs list_map list_map_body
+         WeakestPrecondition.dexpr
+         WeakestPrecondition.expr WeakestPrecondition.expr_body
+         WeakestPrecondition.get WeakestPrecondition.literal dlet.dlet];
+    repeat (first
+      [ exact eq_refl
+      | (eexists; split; [ solve [ solve_mapget ] | ])
+      | (eexists; split; [ exact eq_refl | ]) ]).
+
+  (** One [from_word] call: re-expose the command head (the entry [cbv]
+      leaves [cmd.seq] folded), let [straightline] resolve what it can,
+      discharge the argument existential, then apply the callee spec.
+      The callee-goal head is matched both as [WeakestPrecondition.call]
+      and as [Semantics.call], and the fallback FAILS rather than
+      skipping: a silent skip here looks like a successful body and only
+      shows up much later, at the postcondition, as untouched buffers. *)
+  Local Ltac wp_from_word_call Hspec :=
+    try (unfold1_cmd_goal;
+         cbv beta match delta [WeakestPrecondition.cmd_body]);
+    repeat straightline;
+    try (lazymatch goal with
+         | |- exists _, _ /\ _ =>
+             eexists; split; [ solve [ eval_call_args ] | ]
+         end);
+    lazymatch goal with
+    | |- WeakestPrecondition.call _ _ _ _ _ _ =>
+        first
+          [ (straightline_call;
+             try (solve [ split;
+                          [ ecancel_assumption | apply ws2bs_felem_length ] ]))
+          | (eapply Semantics.weaken_call;
+             [ eapply Hspec;
+               split; [ ecancel_assumption | apply ws2bs_felem_length ]
+             | intros ? ? ? ? ]) ]
+    | |- Semantics.call _ _ _ _ _ _ =>
+        eapply Semantics.weaken_call;
+        [ eapply Hspec;
+          split; [ ecancel_assumption | apply ws2bs_felem_length ]
+        | intros ? ? ? ? ]
+    | |- ?G => fail 1 "wp_from_word_call: no call goal exposed, got:" G
+    end;
+    (* The callee returns nothing, so its postcondition carries
+       [rets = []].  Flatten the postcondition and substitute that
+       equation SPECIFICALLY: a bare [subst] aborts (and, under [try],
+       silently does nothing) if any other equation in context is not
+       substitutable.  Once [rets] is [[]], [map.putmany_of_list_zip []
+       [] l] computes to [Some l], so the locals stay the concrete
+       [map.put] chain for the next call. *)
+    repeat match goal with
+           | H : _ /\ _ |- _ => destruct H
+           | H : exists _, _ |- _ => destruct H
+           | H : ?x = nil |- _ => is_var x; subst x
+           | H : nil = ?x |- _ => is_var x; subst x
+           end;
+    repeat match goal with
+           | H : map.putmany_of_list_zip [] [] ?l = Some ?l2 |- _ =>
+               cbn [map.putmany_of_list_zip] in H;
+               first [ (injection H as H; subst)
+                     | (inversion H; subst; clear H) ]
+           end;
+    repeat straightline.
+
+  (** Side conditions of the final rebuild, split out so a failure names
+      which one failed rather than reporting the whole [eapply].
+      [from_word] states its result as
+      [feval X = F.of_Z _ (word.unsigned (word.of_Z c))]; the
+      [etransitivity] branch normalises that to [F.of_Z _ c] on the fly,
+      so it does not depend on the earlier rewrite pass having fired. *)
+  Local Ltac solve_feval :=
+    first [ eassumption
+          | (etransitivity; [ eassumption | ];
+             rewrite ?word.unsigned_of_Z_0, ?word.unsigned_of_Z_1;
+             reflexivity)
+          | (rewrite ?word.unsigned_of_Z_0, ?word.unsigned_of_Z_1;
+             eassumption)
+          | reflexivity ].
+
+  Local Ltac solve_bounded := first [ eassumption | assumption ].
+
   Lemma store_zero_from_word_ok :
     forall functions,
       map.get functions "store_zero" = Some (snd store_zero_from_word_func) ->
@@ -489,6 +641,82 @@ Section Specs.
       @StoreZero.spec_of_store_zero _ _ _ _ _ _
         field_parameters field_representation functions.
   Proof.
-  Admitted.
+    intros functions Henv Hfw.
+    cbv [StoreZero.spec_of_store_zero].
+    intros pX pY pZ X Y Z R tr m0 Hpre.
+    change CompilationAbstract.FElem with Compilation2.FElem in Hpre.
+    (* Peel the three output buffers down to byte arrays, which is what
+       [spec_of_from_word] writes into.  [maybe_bounded None] carries no
+       information, so the witnesses' side conditions are dropped. *)
+    assert (HX : (FElem None pX X
+                  * (FElem None pY Y * (FElem None pZ Z * R)))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ HX) as (xX & _ & _ & HX').
+    assert (HY : (FElem None pY Y
+                  * (Field.FElem pX xX * (FElem None pZ Z * R)))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ HY) as (xY & _ & _ & HY').
+    assert (HZ : (FElem None pZ Z
+                  * (Field.FElem pX xX * (Field.FElem pY xY * R)))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ HZ) as (xZ & _ & _ & HZ').
+    seprewrite_in (felem_to_bytes pX xX) HZ'.
+    seprewrite_in (felem_to_bytes pY xY) HZ'.
+    seprewrite_in (felem_to_bytes pZ xZ) HZ'.
+    clear HX HY HZ HX' HY'.
+    (* Function entry, then the three [from_word] calls. *)
+    eapply WeakestPreconditionProperties.start_func;
+      [ exact Henv | clear Henv ].
+    cbv match beta delta
+      [WeakestPrecondition.func store_zero_from_word_func snd].
+    eexists. split. { reflexivity. }
+    wp_from_word_call Hfw.
+    wp_from_word_call Hfw.
+    wp_from_word_call Hfw.
+    (* [from_word] returns [F.of_Z _ (word.unsigned (word.of_Z c))];
+       normalise to the [F.of_Z _ 0] / [F.of_Z _ 1] of the store_zero
+       postcondition. *)
+    repeat match goal with
+           | H : context [word.unsigned (word.of_Z 0)] |- _ =>
+               rewrite word.unsigned_of_Z_0 in H
+           | H : context [word.unsigned (word.of_Z 1)] |- _ =>
+               rewrite word.unsigned_of_Z_1 in H
+           end.
+    (* Drop the pre-call facts.  They speak about the same three
+       pointers at the OLD memory with the original witnesses, so they
+       are matched FIRST both by the reverse transport below and by
+       [ecancel_assumption]. *)
+    try clear HZ'.
+    try clear Hpre.
+    (* Safety net, now that only post-call hypotheses remain: fold any
+       buffer still held as a byte array back into a [Field.FElem]
+       leaf.  A no-op once the three calls have written their results. *)
+    repeat match goal with
+           | H : sep _ _ _ |- _ =>
+               progress (first [ seprewrite_in (symmetry_iff1 (felem_to_bytes pX xX)) H
+                               | seprewrite_in (symmetry_iff1 (felem_to_bytes pY xY)) H
+                               | seprewrite_in (symmetry_iff1 (felem_to_bytes pZ xZ)) H ])
+           end.
+    change CompilationAbstract.FElem with Compilation2.FElem.
+    ssplit; try reflexivity.
+    (* Rebuild the three [FElem] leaves at the post-call witnesses.  Try
+       both associations of the goal's sep tree; [eapply] cannot
+       reassociate [sep], and which shape the call plumbing leaves is
+       not predictable. *)
+    first
+      [ eapply FElem2_intro3R;
+          [ ecancel_assumption
+          | solve_feval | solve_bounded
+          | solve_feval | solve_bounded
+          | solve_feval | solve_bounded ]
+      | eapply FElem2_intro3;
+          [ ecancel_assumption
+          | solve_feval | solve_bounded
+          | solve_feval | solve_bounded
+          | solve_feval | solve_bounded ]
+      | lazymatch goal with
+        | |- ?G => fail 99 "store_zero: final FElem rebuild failed on:" G
+        end ].
+  Qed.
 
 End Specs.

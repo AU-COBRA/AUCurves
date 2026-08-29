@@ -25,9 +25,13 @@
     - diagnostic [idtac] sentences removed; one [Show.] kept before
       the landing split (prints the post-defrag goal at compile time).
 
-    Honesty ledger: exactly one [Admitted] — the closure algebra
-    tail of [P256f_G1_add_func_ok] (TODO(ring-final)).  Everything
-    before it executed in the 2026-08-28 r7 run. *)
+    Honesty ledger: no [Admitted].  The closure algebra tail of
+    [P256f_G1_add_func_ok] is [RcbGeneralAChain.rcb_general_a_chain_Z]
+    (Qed) applied by [eapply] plus fixed-input [eassumption] rounds.
+    Build status (2026-08-29): everything through the 2026-08-28 r7
+    run executed; the [eapply] took 0.2 s; the discharge rounds were
+    at 11 of 12 (about 7 min each) when the build was stopped for
+    other work, so this file's final [Qed] has not yet been observed. *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -524,6 +528,21 @@ Section P256_G1_Add_Functor_Instance.
     | _ => idtac
     end.
 
+  (* Closure premise discharge: only a call-equation goal whose two
+     INPUT lists are already fixed is matched against the context (an
+     all-evar goal would let [eassumption] pick an arbitrary hypothesis
+     and mis-instantiate the output evar; measured 2160 s of
+     backtracking).  Iterated under [all:] to a fixpoint: each round
+     fixes the outputs whose inputs were fixed, so the DAG depth (8)
+     bounds the round count. *)
+  Ltac not_evar t := tryif is_evar t then fail else idtac.
+  Ltac discharge_fixed :=
+    lazymatch goal with
+    | |- montmul _ ?a ?b => not_evar a; not_evar b; eassumption
+    | |- montadd _ ?a ?b => not_evar a; not_evar b; eassumption
+    | |- montsub _ ?a ?b => not_evar a; not_evar b; eassumption
+    end.
+
   Ltac remember_mont x := lazymatch goal with
   | H1 : valid' x |- _ =>
     let p := (fresh "p") in
@@ -872,16 +891,40 @@ Section P256_G1_Add_Functor_Instance.
     Timeout 300 (eapply (RcbGeneralAChain.rcb_general_a_chain_Z
                   m bw n r' m' a_val three_b_val a_small three_b_small
                   r'_correct m'_correct bw_big n_nz m_small m_big)).
-    all: try (Timeout 60 eassumption).
+    (* Call-equation premises: fixpoint rounds over fixed-input goals
+       (DAG depth 8; 12 rounds). *)
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    (* [valid'] witnesses of the (now fixed) intermediates. *)
+    all: try (timeout 60 (lazymatch goal with
+                          | |- valid' ?x => not_evar x; eassumption
+                          end)).
     (* The two remaining goals identify the [a_const] / [three_b]
        buffers with the spec constants. *)
-    all: Timeout 300 (first
-      [ exact (eq_sym (f_equal (val m bw n) (a_mont_rewrite Hva)))
-      | exact (eq_sym (f_equal (val m bw n) (three_b_mont_rewrite Hv3b)))
-      | (rewrite (f_equal (val m bw n) (a_mont_rewrite Hva));
-         vm_compute; reflexivity)
-      | (rewrite (f_equal (val m bw n) (three_b_mont_rewrite Hv3b));
-         vm_compute; reflexivity) ]).
+    all: timeout 1800 (lazymatch goal with
+      | |- _ = val _ _ _ (MontgomeryCurveG1Equiv.a_mont _ _ _ _ _ _ _ _ _ _ _ _ _) =>
+        rewrite (f_equal (val m bw n) (a_mont_rewrite Hva)); cbn [val]
+      | |- _ = val _ _ _ (MontgomeryCurveG1Equiv.three_b_mont _ _ _ _ _ _ _ _ _ _ _ _ _) =>
+        rewrite (f_equal (val m bw n) (three_b_mont_rewrite Hv3b)); cbn [val]
+      | |- ?G => fail 99 "P3-CLOSURE-RESIDUAL" G
+      end).
+    (* Both sides are now [toZ <buffer list>]; equal syntactically or
+       after unfolding the literal buffer. *)
+    all: timeout 1800 (first [ reflexivity
+                            | (cbv [P256f_a_mont P256f_three_b_mont
+                                    P256Curve_G1.p256_a_mont_list
+                                    P256Curve_G1.p256_three_b_mont List.map];
+                               reflexivity) ]).
   Qed.
 
 End P256_G1_Add_Functor_Instance.

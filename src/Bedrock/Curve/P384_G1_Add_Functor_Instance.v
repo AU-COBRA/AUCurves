@@ -19,8 +19,11 @@
     [BLS12_add_Gallina_spec], local re-derivations of the ring-bridge
     lemmas, diagnostics removed.
 
-    Honesty ledger: exactly one [Admitted] — the closure algebra
-    tail of [P384f_G1_add_func_ok] (TODO(ring-final)). *)
+    Honesty ledger: no [Admitted].  The closure algebra tail of
+    [P384f_G1_add_func_ok] is [RcbGeneralAChain.rcb_general_a_chain_Z]
+    (Qed) applied by [eapply] plus fixed-input [eassumption] rounds,
+    as at P-256.  Build status (2026-08-29): this tail has not yet been
+    executed at P-384; the file's final [Qed] is unobserved. *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -51,6 +54,7 @@ Require Import Bedrock.Curve.P384Curve_G1.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveSpecs.
 Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
 Require Import Theory.WordByWordMontgomery.MontgomeryCurveG1Equiv.
+Require Import Theory.WordByWordMontgomery.RcbGeneralAChain.
 
 Require Import coqutil.Map.Properties.
 Require Import bedrock2.Lift1Prop.
@@ -516,6 +520,21 @@ Section P384_G1_Add_Functor_Instance.
     | _ => idtac
     end.
 
+  (* Closure premise discharge: only a call-equation goal whose two
+     INPUT lists are already fixed is matched against the context (an
+     all-evar goal would let [eassumption] pick an arbitrary hypothesis
+     and mis-instantiate the output evar; measured 2160 s of
+     backtracking at P-256).  Iterated under [all:] to a fixpoint: each
+     round fixes the outputs whose inputs were fixed, so the DAG depth
+     (8) bounds the round count. *)
+  Ltac not_evar t := tryif is_evar t then fail else idtac.
+  Ltac discharge_fixed :=
+    lazymatch goal with
+    | |- montmul _ ?a ?b => not_evar a; not_evar b; eassumption
+    | |- montadd _ ?a ?b => not_evar a; not_evar b; eassumption
+    | |- montsub _ ?a ?b => not_evar a; not_evar b; eassumption
+    end.
+
   Ltac remember_mont x := lazymatch goal with
   | H1 : valid' x |- _ =>
     let p := (fresh "p") in
@@ -855,66 +874,53 @@ Section P384_G1_Add_Functor_Instance.
     | H : context[(_ mod m - _) mod m] |- _ => rewrite Zminus_mod_idemp_l in H
     | H : context[(_ - (_ mod m)) mod m] |- _ => rewrite Zminus_mod_idemp_r in H
     end).
-    (* Rewrite the output enc_monts into their mont_mul/add/sub form. *)
-    Timeout 600 (lazymatch goal with
-    | [ |- BLS12_add_mont_spec ?a1 ?a2 ?a3 ?a4 ?a5 ?a6 ?a7 ?a8 ?a9 ?a10
-            ?a11 ?a12 ?a13 ?a14 ?a15 ?ox ?oy ?oz ] =>
-      this_mod' ox; this_mod' oy; this_mod' oz;
-      lazymatch goal with
-      | |- context [ {| val := toZ ?xv; Hvalid := _ |} ] =>
-        try (this_mod' (toZ xv))
-      end
-    | [ |- @MontgomeryCurveSpecs.BLS12_add_mont_spec ?mx ?bwx ?nx ?r'x ?m'x
-            ?ax ?tbx ?asx ?tbsx ?r'cx ?m'cx ?bwbx ?nnzx ?msx ?mbx
-            ?a1 ?a2 ?a3 ?a4 ?a5 ?a6 ?ox ?oy ?oz ] =>
-      this_mod' ox; this_mod' oy; this_mod' oz;
-      lazymatch goal with
-      | |- context [ {| val := toZ ?xv; Hvalid := _ |} ] =>
-        try (this_mod' (toZ xv))
-      end
-    | _ =>
-      match goal with
-      | [ H_outx : montmul ?ox _ _ |- _ ] => this_mod' ox
-      | [ H_outx : montadd ?ox _ _ |- _ ] => this_mod' ox
-      | [ H_outx : montsub ?ox _ _ |- _ ] => this_mod' ox
-      | _ => idtac
-      end;
-      match goal with
-      | [ H_outy : montmul ?oy _ _ |- context[?oy] ] => this_mod' oy
-      | [ H_outy : montadd ?oy _ _ |- context[?oy] ] => this_mod' oy
-      | [ H_outy : montsub ?oy _ _ |- context[?oy] ] => this_mod' oy
-      | _ => idtac
-      end;
-      match goal with
-      | [ H_outz : montmul ?oz _ _ |- context[?oz] ] => this_mod' oz
-      | [ H_outz : montadd ?oz _ _ |- context[?oz] ] => this_mod' oz
-      | [ H_outz : montsub ?oz _ _ |- context[?oz] ] => this_mod' oz
-      | _ => idtac
-      end
-    end).
-    unfold BLS12_add_mont_spec.
-    unfold MontgomeryCurveG1Equiv.BLS12_add_mont_spec.
-    (* Rewrite spec's three_b_mont to match WP's three_b bignum. *)
-    Timeout 300 (let Hv3b := fresh "Hv3b" in
+    (* Closure algebra: the standalone chain lemma
+       [RcbGeneralAChain.rcb_general_a_chain_Z].  Its conclusion is the
+       goal; its premises are the forty call equations (each fixing its
+       output list from inputs already fixed), the [valid'] witnesses of
+       the intermediates, and the two constant-buffer identifications.
+       No rewriting into the goal takes place. *)
     assert (Hv3b : valid' (toZ (List.map wordof_Z P384f_three_b_mont)))
-      by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_three_b_mont);
-    first [ rewrite (three_b_mont_rewrite Hv3b)
-          | rewrite <- (three_b_mont_rewrite Hv3b) ]).
-    (* Rewrite spec's a_mont to match WP's a_const bignum. *)
-    Timeout 300 (let Hva := fresh "Hva" in
+      by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_three_b_mont).
     assert (Hva : valid' (toZ (List.map wordof_Z P384f_a_mont)))
-      by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_a_mont);
-    first [ rewrite (a_mont_rewrite Hva)
-          | rewrite <- (a_mont_rewrite Hva) ]).
-    (* Everything above is the script validated at P-256 (r7,
-       2026-08-28) through the constant rewrites; at n = 6 the store,
-       fold6 and 40-call phases executed clean (pre-fix run).  The
-       remaining goal is the closure algebra: 40 call equations to be
-       rewritten into the mont_enc ring ([this_mod'] singles) and
-       closed by [ring]; the first sentence-level [this_mod'] exceeds
-       300 s at P-256. *)
-  Admitted. (* TODO(ring-final): closure algebra — see debug notes
-               classes 12-15; the Rupicola bridge route supersedes
-               this. *)
+      by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_a_mont).
+    Timeout 300 (eapply (RcbGeneralAChain.rcb_general_a_chain_Z
+                  m bw n r' m' a_val three_b_val a_small three_b_small
+                  r'_correct m'_correct bw_big n_nz m_small m_big)).
+    (* Call-equation premises: fixpoint rounds over fixed-input goals
+       (DAG depth 8; 12 rounds). *)
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    all: try (timeout 60 discharge_fixed).
+    (* [valid'] witnesses of the (now fixed) intermediates. *)
+    all: try (timeout 60 (lazymatch goal with
+                          | |- valid' ?x => not_evar x; eassumption
+                          end)).
+    (* The two remaining goals identify the [a_const] / [three_b]
+       buffers with the spec constants. *)
+    all: timeout 1800 (lazymatch goal with
+      | |- _ = val _ _ _ (MontgomeryCurveG1Equiv.a_mont _ _ _ _ _ _ _ _ _ _ _ _ _) =>
+        rewrite (f_equal (val m bw n) (a_mont_rewrite Hva)); cbn [val]
+      | |- _ = val _ _ _ (MontgomeryCurveG1Equiv.three_b_mont _ _ _ _ _ _ _ _ _ _ _ _ _) =>
+        rewrite (f_equal (val m bw n) (three_b_mont_rewrite Hv3b)); cbn [val]
+      | |- ?G => fail 99 "P3-CLOSURE-RESIDUAL" G
+      end).
+    (* Both sides are now [toZ <buffer list>]; equal syntactically or
+       after unfolding the literal buffer. *)
+    all: timeout 1800 (first [ reflexivity
+                            | (cbv [P384f_a_mont P384f_three_b_mont
+                                    P384Curve_G1.p384_a_mont_list
+                                    P384Curve_G1.p384_three_b_mont List.map];
+                               reflexivity) ]).
+  Qed.
 
 End P384_G1_Add_Functor_Instance.

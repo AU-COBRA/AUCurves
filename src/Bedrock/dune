@@ -25,6 +25,17 @@
      ; (only the Jacobian analogue exists, Jacobian/Jacobian.v:144).
      ; The projective facts it was reaching for are proved in
      ; Group/CurveAdd/RcbProjectiveLaws.v.
+     ; The hand-written WP pathfinder specs: superseded by the Rupicola
+     ; route (CurveAddGeneralA*, CurveDoubleGeneralA*) and by the functor
+     ; instances (P*_G1_Add_Functor_Instance), all of which compile.  These
+     ; three have never compiled -- at HEAD or since -- because their
+     ; closure tail (this_mod' substitution + ring over the 40-op chain)
+     ; does not terminate; scripts/logs/p256_g1_add_debug_notes.md records
+     ; the fifteen defect classes found while executing them.  Excluded so
+     ; a whole-tree build is meaningful.
+     Curve.P256_G1_Add_Spec
+     Curve.P384_G1_Add_Spec
+     Curve.P224_G1_Add_Spec
      Curve.P256Curve_G1_bedrock
      Curve.PallasCurve_G1_bedrock
      Curve.VestaCurve_G1_bedrock

@@ -792,6 +792,41 @@ Section P384_G1_Add.
     eapply WeakestPreconditionProperties.start_func;
       [exact EnvContains | clear EnvContains].
     cbv match beta delta [WeakestPrecondition.func P384_G1_add].
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
+    straightline.
     repeat straightline.
     (* Convert byte arrays to Bignum for each of the 8 stackallocs *)
     repeat

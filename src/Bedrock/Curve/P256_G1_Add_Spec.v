@@ -609,25 +609,25 @@ Section P256_G1_Add.
 
   Lemma three_b_mont_rewrite
         (H : valid' (toZ (map wordof_Z three_b_mont))) :
-    ((MontgomeryCurveSpecs.three_b_mont m bw n r' m' three_b
+    ((MontgomeryCurveG1Equiv.three_b_mont m bw n r' m' three_b
        three_b_small r'_correct m'_correct bw_big n_nz m_small m_big)
      = {| val := toZ (map wordof_Z three_b_mont); Hvalid := H |}).
   Proof.
     apply mont_enc_irr. rewrite !mont_enc_val.
     rewrite (toZ_ofZ_eq three_b_mont p256_three_b_mont_valid).
-    cbv [MontgomeryCurveSpecs.three_b_mont]. rewrite mont_enc_val.
+    cbv [MontgomeryCurveG1Equiv.three_b_mont]. rewrite mont_enc_val.
     (* three_b_mont_correct: P256_three_b_mont = to_montgomerymod ... three_b_list *)
     vm_compute. reflexivity.
   Qed.
 
   Lemma a_mont_rewrite (H : valid' (toZ (map wordof_Z P256_a_mont))) :
-    ((MontgomeryCurveSpecs.a_mont m bw n r' m' a_val a_small
+    ((MontgomeryCurveG1Equiv.a_mont m bw n r' m' a_val a_small
        r'_correct m'_correct bw_big n_nz m_small m_big)
      = {| val := toZ (map wordof_Z P256_a_mont); Hvalid := H |}).
   Proof.
     apply mont_enc_irr. rewrite !mont_enc_val.
     rewrite (toZ_ofZ_eq P256_a_mont p256_a_mont_valid).
-    cbv [MontgomeryCurveSpecs.a_mont]. rewrite mont_enc_val.
+    cbv [MontgomeryCurveG1Equiv.a_mont]. rewrite mont_enc_val.
     vm_compute. reflexivity.
   Qed.
 
@@ -785,6 +785,59 @@ Section P256_G1_Add.
         3. Defragment memory, prove the Gallina postcondition using
            BLS12_add_specs_equiv' with the P-256 a and three_b constants. *)
 
+  (* Deterministic 4-scalar -> Bignum fold: the exact nested subtree
+     the store phase leaves in the sep chain.  seprewrite_in with this
+     iff1 replaces the searching ecancel-based reassembly. *)
+  Local Lemma fold4_scalars_Bignum aa v0 v1 v2 v3 :
+    @Lift1Prop.iff1 (@Interface.map.rep _ _ BasicC64Semantics.mem)
+      (Scalars.scalar aa v0 *
+       (Scalars.scalar (word.add (word.of_Z word_size_in_bytes) aa) v1 *
+        (Scalars.scalar (word.add (word.of_Z word_size_in_bytes)
+                           (word.add (word.of_Z word_size_in_bytes) aa)) v2 *
+         (Scalars.scalar (word.add (word.of_Z word_size_in_bytes)
+                            (word.add (word.of_Z word_size_in_bytes)
+                               (word.add (word.of_Z word_size_in_bytes) aa))) v3 *
+          emp True))))%sep
+      (Bignum 4%nat aa [v0; v1; v2; v3]).
+  Proof.
+    etransitivity.
+    2: { symmetry. apply Bignum_n_Scalar. }
+    cbn [many_Scalars hd tl].
+    intro m; split; intro Hm'.
+    - apply sep_emp_l. split; [reflexivity| exact Hm'].
+    - apply sep_emp_l in Hm'. apply Hm'.
+  Qed.
+
+  Lemma fold4_scalars_Bignum_flat (aa : word.rep) (v0 v1 v2 v3 : word.rep) :
+    @Lift1Prop.iff1 (@Interface.map.rep _ _ BasicC64Semantics.mem)
+      ((Scalars.scalar aa v0 *
+        (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+         (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+          Scalars.scalar (word.add aa (wordof_Z 24)) v3)))%sep)
+      (Bignum 4%nat aa [v0; v1; v2; v3]).
+  Proof.
+    etransitivity.
+    2: { symmetry. apply Bignum_n_Scalar. }
+    cbn [many_Scalars hd tl].
+    repeat (rewrite next_word'; try rewrite word_add_0).
+    intro m0; split; intro Hm.
+    - apply sep_emp_l. split; [reflexivity|]. ecancel_assumption.
+    - apply sep_emp_l in Hm. destruct Hm as [_ Hm]. ecancel_assumption.
+  Qed.
+
+  Lemma fold4_scalars_Bignum_flat_desc (aa : word.rep) (v0 v1 v2 v3 : word.rep) :
+    @Lift1Prop.iff1 (@Interface.map.rep _ _ BasicC64Semantics.mem)
+      ((Scalars.scalar (word.add aa (wordof_Z 24)) v3 *
+        (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+         (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+          Scalars.scalar aa v0)))%sep)
+      (Bignum 4%nat aa [v0; v1; v2; v3]).
+  Proof.
+    etransitivity.
+    2: { apply fold4_scalars_Bignum_flat. }
+    intro m0; split; intro Hm; ecancel_assumption.
+  Qed.
+
   Theorem P256_G1_add_func_ok :
     program_logic_goal_for_function! P256_G1_add.
   Proof.
@@ -793,18 +846,88 @@ Section P256_G1_Add.
     eapply WeakestPreconditionProperties.start_func;
       [exact EnvContains | clear EnvContains].
     cbv match beta delta [WeakestPrecondition.func P256_G1_add].
-    repeat straightline.
+    eexists. split.
+    { reflexivity. }
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    try straightline'.
+    (* This bedrock2's [straightline] consumes the stackalloc intros itself,
+       leaving raw [anybytes]/[msplit] pairs.  Convert each to a byte ARRAY
+       (keeping the [length bs = Z.to_nat 32] facts the store script keys on)
+       and merge into the ambient sep chain; the original byte->Bignum
+       conversion block below then applies unchanged. *)
+    repeat
+      lazymatch goal with
+      | Hany : anybytes ?aa _ ?mS, Hsplit : msplit ?mnew ?minit ?mS,
+        Hminit : ?mcond ?minit |- _ =>
+        let bs := fresh "bs" in
+        let Harr := fresh "Harr" in
+        let Hlen := fresh "Hlen" in
+        let R := fresh "R" in
+        let Hmnew := fresh "Hmnew" in
+        apply anybytes_to_array_1 in Hany;
+        destruct Hany as [bs [Harr Hlen]];
+        destruct (alloc_seps_alt mnew minit mS mcond
+                   (array ptsto (@word.of_Z 64 BasicC64Semantics.word 1) aa bs)
+                   Hsplit
+                   (empty_frame mcond minit Hminit)
+                   (empty_frame (array ptsto (@word.of_Z 64 BasicC64Semantics.word 1) aa bs)
+                      mS Harr))
+          as [R Hmnew];
+        clear Hsplit Harr
+      end.
+    eexists; split;
+    [ cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.literal
+           dlet.dlet]; reflexivity | ].
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
     (* Convert byte arrays to Bignum for each of the 8 stackallocs *)
     repeat
       (lazymatch goal with
        | Hmem : context[array ptsto _ ?ptr ?bs] |- _ =>
          lazymatch goal with
-         | _ : context[Bignum 4 ptr _] |- _ => fail
+         | _ : context[Bignum 4%nat ptr _] |- _ => fail
          | _ =>
            let Hiff := fresh "Hiff" in
            assert (Hiff : Lift1Prop.iff1
                    (array ptsto (@word.of_Z 64 BasicC64Semantics.word 1) ptr bs)
-                   (Bignum 4 ptr (ArrayCasts.bs2ws (Z.to_nat word_size_in_bytes) bs)))
+                   (Bignum 4%nat ptr (ArrayCasts.bs2ws (Z.to_nat word_size_in_bytes) bs)))
            by (apply Bignum_of_bytes;
                match goal with
                | Hl : Datatypes.length bs = Z.to_nat 32 |- _ =>
@@ -828,7 +951,7 @@ Section P256_G1_Add.
     lazymatch goal with
     | |- WeakestPrecondition.store _ _ ?p _ _ =>
       lazymatch goal with
-      | Hmem : context[Bignum 4 p ?wsl] |- _ =>
+      | Hmem : context[Bignum 4%nat p ?wsl] |- _ =>
         let len_lem := fresh "Hlen_tb" in
         assert (len_lem : Datatypes.length wsl = 4%nat)
           by (match goal with
@@ -855,43 +978,100 @@ Section P256_G1_Add.
     end.
     (* Phase 1a: Unfold the three_b Bignum into scalars *)
     lazymatch goal with
-    | H : context[Bignum 4 ?p [r; r0; r1; r2]] |- _ =>
+    | H : context[Bignum 4%nat ?p [r; r0; r1; r2]] |- _ =>
       let Hiff := fresh "Hiff" in
       pose proof (Bignum_n_Scalar 4%nat p [r; r0; r1; r2]) as Hiff;
       cbn [many_Scalars hd tl] in Hiff;
       seprewrite_in Hiff H; clear Hiff
     end.
     (* Perform the 4 word stores for three_b_mont *)
-    repeat (eapply Scalars.store_word_of_sep;
-            [ repeat match goal with
-              | |- ((Scalars.scalar ?addr _) * _)%sep _ =>
-                subst addr
-              | _ => idtac
-              end;
-              repeat (rewrite next_word'; try rewrite word_add_0);
-              ecancel_assumption
-            | intros ? ?; repeat straightline ]).
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 240 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
     (* Substitute let-bindings *)
     repeat match reverse goal with
     | x := _ |- _ => subst x
     end.
     (* Rebuild the three_b Bignum from 4 scalars *)
-    eassert (Hbignum3b :
-      (Bignum 4 a (List.map wordof_Z P256_three_b_mont) * _)%sep _).
-    { unfold Bignum; sepsimpl; [cbv; reflexivity|];
-      unfold array; cbv [P256_three_b_mont List.map];
-      repeat rewrite (word_add_comm _ (word.of_Z word_size_in_bytes));
-      match goal with
-      | [ H : (_ * _)%sep _ |- _ ] =>
-        repeat (rewrite next_word' in H; try rewrite word_add_0 in H);
-        ecancel_assumption
-      end. }
+    match goal with
+    | [ Hc : (_ * _)%sep _ |- _ ] =>
+      seprewrite_in fold4_scalars_Bignum Hc
+    end.
     clear_old_seps.
     (* Phase 1b: Destructure a_const Bignum and store a_mont values *)
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
     lazymatch goal with
     | |- WeakestPrecondition.store _ _ ?p _ _ =>
       lazymatch goal with
-      | Hmem : context[Bignum 4 p ?wsl] |- _ =>
+      | Hmem : context[Bignum 4%nat p ?wsl] |- _ =>
         let len_lem := fresh "Hlen_ac" in
         assert (len_lem : Datatypes.length wsl = 4%nat)
           by (match goal with
@@ -917,36 +1097,83 @@ Section P256_G1_Add.
       end
     end.
     lazymatch goal with
-    | H : context[Bignum 4 ?p [s; s0; s1; s2]] |- _ =>
+    | H : context[Bignum 4%nat ?p [s; s0; s1; s2]] |- _ =>
       let Hiff := fresh "Hiff" in
       pose proof (Bignum_n_Scalar 4%nat p [s; s0; s1; s2]) as Hiff;
       cbn [many_Scalars hd tl] in Hiff;
       seprewrite_in Hiff H; clear Hiff
     end.
-    (* Perform the 4 word stores for a_mont *)
-    repeat (eapply Scalars.store_word_of_sep;
-            [ repeat match goal with
-              | |- ((Scalars.scalar ?addr _) * _)%sep _ =>
-                subst addr
-              | _ => idtac
-              end;
-              repeat (rewrite next_word'; try rewrite word_add_0);
-              ecancel_assumption
-            | intros ? ?; repeat straightline ]).
+    (* Perform the 4 word stores for a_mont (decomposed) *)
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.get WeakestPrecondition.literal
+           Semantics.interp_binop dlet.dlet];
+      eexists; split; [reflexivity|]; reflexivity. }
+    eexists; split.
+    { cbv [dexpr WeakestPrecondition.expr WeakestPrecondition.expr_body
+           WeakestPrecondition.literal dlet.dlet]; reflexivity. }
+    repeat match goal with x := _ : word.rep |- _ => subst x end.
+    eapply Scalars.store_word_of_sep.
+    { repeat match goal with
+             | |- ((Scalars.scalar ?addr _) * _)%sep _ => subst addr
+             | _ => idtac
+             end.
+      repeat (rewrite next_word'; try rewrite word_add_0).
+      Timeout 600 ecancel_assumption. }
+    intros ? ?.
     repeat match reverse goal with
     | x := _ |- _ => subst x
     end.
-    (* Rebuild the a_const Bignum *)
-    eassert (Hbignuma :
-      (Bignum 4 a0 (List.map wordof_Z P256_a_mont) * _)%sep _).
-    { unfold Bignum; sepsimpl; [cbv; reflexivity|];
-      unfold array; cbv [P256_a_mont List.map];
-      repeat rewrite (word_add_comm _ (word.of_Z word_size_in_bytes));
-      match goal with
-      | [ H : (_ * _)%sep _ |- _ ] =>
-        repeat (rewrite next_word' in H; try rewrite word_add_0 in H);
-        ecancel_assumption
-      end. }
+    (* Rebuild the a_const Bignum (deterministic fold) *)
+    match goal with
+    | [ Hc : (_ * _)%sep _ |- _ ] =>
+      seprewrite_in fold4_scalars_Bignum Hc
+    end.
     clear_old_seps.
     (* Bring validity of three_b_mont and a_mont Bignums into context *)
     pose proof valid_toZ_wordofZ_three_b_mont as H3b.
@@ -964,7 +1191,148 @@ Section P256_G1_Add.
       ];
       [ eassumption | eassumption | solve_bignum_length
       | repeat straightline'; normalize_mont_hyps ].
-    repeat (do_binop_call; repeat straightline).
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    (* Fold both constant buffers (flat scalar quads) into Bignums. *)
+    match goal with
+    | Hc : (_ * _)%sep _ |- _ =>
+      first [ seprewrite_in fold4_scalars_Bignum_flat_desc Hc
+            | seprewrite_in fold4_scalars_Bignum_flat Hc ];
+      first [ seprewrite_in fold4_scalars_Bignum_flat_desc Hc
+            | seprewrite_in fold4_scalars_Bignum_flat Hc ]
+    end.
+    lazymatch goal with
+    | H : context [Scalars.scalar] |- _ => fail 99 "SCALARS-REMAIN"
+    | _ => idtac
+    end.
+    Timeout 600 straightline_call.
+    4: ecancel_assumption.
+    4: ecancel_assumption.
+    4: ecancel_assumption.
+    1: eassumption.
+    1: eassumption.
+    1: solve_bignum_length.
+    1: repeat straightline'. 1: normalize_mont_hyps.
+    Timeout 300 (repeat straightline). clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
+    try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
+    Timeout 180 (repeat straightline).
+    do_binop_call. repeat straightline. clear_old_seps.
     (* Phase 3: Postcondition — defragment memory and prove Gallina spec *)
     repeat defrag_in_context'.
     repeat straightline.
@@ -1023,6 +1391,21 @@ Section P256_G1_Add.
                 Hvalid5 Hvalid6 Hvalid7)
       as [Heq _].
     apply Heq; clear Heq.
+    (* Align the Wired-spec m' projection with the literal 1 so the
+       montsub/montadd/montmul notation patterns match the hyps. *)
+    replace (@Crypto.Bedrock.Specs.Field.m' 64 p256_prime.p256_field_parameters)
+      with 1%Z in * by (vm_compute; reflexivity).
+    (* Global inner-mod stripping so montmul/montadd/montsub notations
+       match every call-equation hypothesis (context-based, terminating). *)
+    repeat match goal with
+    | H : context[(_ mod m) mod m] |- _ => rewrite Zmod_mod in H
+    | H : context[(_ mod m * _) mod m] |- _ => rewrite Zmult_mod_idemp_l in H
+    | H : context[(_ * (_ mod m)) mod m] |- _ => rewrite Zmult_mod_idemp_r in H
+    | H : context[(_ mod m + _) mod m] |- _ => rewrite Zplus_mod_idemp_l in H
+    | H : context[(_ + (_ mod m)) mod m] |- _ => rewrite Zplus_mod_idemp_r in H
+    | H : context[(_ mod m - _) mod m] |- _ => rewrite Zminus_mod_idemp_l in H
+    | H : context[(_ - (_ mod m)) mod m] |- _ => rewrite Zminus_mod_idemp_r in H
+    end.
     (* Phase 3: polynomial identity over the mont_enc ring.
        Strategy:
        1. Use this_mod' to rewrite the output enc_monts (outx, outy, outz) into
@@ -1034,11 +1417,29 @@ Section P256_G1_Add.
     lazymatch goal with
     | [ |- BLS12_add_mont_spec ?a1 ?a2 ?a3 ?a4 ?a5 ?a6 ?a7 ?a8 ?a9 ?a10
             ?a11 ?a12 ?a13 ?a14 ?a15 ?ox ?oy ?oz ] =>
-      this_mod' ox; this_mod' oy; this_mod' oz
+      this_mod' ox; this_mod' oy; this_mod' oz;
+      match goal with
+      | |- context [ {| val := ?v; Hvalid := _ |} ] => idtac "RECMATCH" v
+      | _ => idtac "RECMATCH-NONE"
+      end;
+      lazymatch goal with
+      | |- context [ {| val := toZ ?xv; Hvalid := _ |} ] =>
+        first [ this_mod' (toZ xv); idtac "REC-OK" xv
+              | idtac "REC-FAIL" xv ]
+      end
     | [ |- @MontgomeryCurveSpecs.BLS12_add_mont_spec ?mx ?bwx ?nx ?r'x ?m'x
             ?ax ?tbx ?asx ?tbsx ?r'cx ?m'cx ?bwbx ?nnzx ?msx ?mbx
             ?a1 ?a2 ?a3 ?a4 ?a5 ?a6 ?ox ?oy ?oz ] =>
-      this_mod' ox; this_mod' oy; this_mod' oz
+      this_mod' ox; this_mod' oy; this_mod' oz;
+      match goal with
+      | |- context [ {| val := ?v; Hvalid := _ |} ] => idtac "RECMATCH" v
+      | _ => idtac "RECMATCH-NONE"
+      end;
+      lazymatch goal with
+      | |- context [ {| val := toZ ?xv; Hvalid := _ |} ] =>
+        first [ this_mod' (toZ xv); idtac "REC-OK" xv
+              | idtac "REC-FAIL" xv ]
+      end
     | _ =>
       (* Fallback: try to match any form *)
       match goal with
@@ -1061,25 +1462,256 @@ Section P256_G1_Add.
       end
     end.
     unfold BLS12_add_mont_spec.
+    unfold MontgomeryCurveG1Equiv.BLS12_add_mont_spec.
     (* Rewrite spec's three_b_mont to match WP's three_b bignum *)
     let Hv3b := fresh "Hv3b" in
     assert (Hv3b : valid' (toZ (List.map wordof_Z P256_three_b_mont)))
       by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_three_b_mont);
-    rewrite <- (three_b_mont_rewrite Hv3b).
+    first [ rewrite (three_b_mont_rewrite Hv3b)
+          | rewrite <- (three_b_mont_rewrite Hv3b) ].
     (* Rewrite spec's a_mont to match WP's a_const bignum *)
     let Hva := fresh "Hva" in
     assert (Hva : valid' (toZ (List.map wordof_Z P256_a_mont)))
       by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_a_mont);
-    rewrite <- (a_mont_rewrite Hva).
+    first [ rewrite (a_mont_rewrite Hva)
+          | rewrite <- (a_mont_rewrite Hva) ].
     (* Remember all input ring elements *)
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
+    try match goal with
+        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
+        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
+        end.
     remember_mont (toZ wX1).
     remember_mont (toZ wX2).
     remember_mont (toZ wY1).
     remember_mont (toZ wY2).
     remember_mont (toZ wZ1).
     remember_mont (toZ wZ2).
-    (* Close by ring equality *)
-    apply pair_equal_spec; split; [apply pair_equal_spec; split; ring | ring].
+    (* Close by ring equality (diagnosed variant) *)
+    apply pair_equal_spec; split; [ apply pair_equal_spec; split | ].
+    1: match goal with |- @eq ?T _ _ => idtac "RINGCARRIER" T end.
+    all: try ring.
+    Set Printing Width 250. Show.
   Qed.
 
 End P256_G1_Add.

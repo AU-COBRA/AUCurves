@@ -58,10 +58,12 @@ Section DoubleZSpec.
   (** Z-level RCB Algorithm 3, in the variable names of the paper
       (t0..t3, X3, Y3, Z3), one line per D-step of
       [rcb_double_general_gallina]. *)
-  Definition rcb_double_general_Z_spec (X Y Z outx outy outz : list Z) : Prop :=
-    let X := evfrom X in
-    let Y := evfrom Y in
-    let Z := evfrom Z in
+  (* The coordinate binders are X1 Y1 Z1, not X Y Z: a binder named
+     [Z] shadows the type [BinNums.Z] for the rest of the binder list. *)
+  Definition rcb_double_general_Z_spec (X1 Y1 Z1 outx outy outz : list Z) : Prop :=
+    let X := evfrom X1 in
+    let Y := evfrom Y1 in
+    let Z := evfrom Z1 in
     let t0 := X*'X in                                                  (* D1 *)
     let t1 := Y*'Y in                                                  (* D2 *)
     let t2 := Z*'Z in                                                  (* D3 *)
@@ -132,21 +134,24 @@ Section GallinaToZ.
       are the [F.to_Z] of the six field values, and the [eval] of the
       two constant partitions are the [F.to_Z] of the two constant
       field values.  Argument order after [Hm]:
-        aF tbF X Y Z ox oy oz  lX lY lZ lox loy loz  (8 + 6 premises)
+        aF tbF X1 Y1 Z1 ox oy oz  lX lY lZ lox loy loz  (8 + 6 premises)
       i.e. 22 underscores before [Hgal] in a per-curve [refine].
+
+      The coordinates are named X1 Y1 Z1: a binder [Z : F] shadows
+      the type [Z] in the following binder group.
 
       PORT-CHECK (Z): proof script is the addition script with the
       argument lists shortened; the [ring] goals are the three
       components of Algorithm 3 with every atom a generalized
       variable, as in the addition. *)
   Theorem rcb_double_general_gallina_to_Z
-          (aF tbF X Y Z ox oy oz : F)
+          (aF tbF X1 Y1 Z1 ox oy oz : F)
           (lX lY lZ lox loy loz : list Z) :
-    evfrom lX = F.to_Z X -> evfrom lY = F.to_Z Y -> evfrom lZ = F.to_Z Z ->
+    evfrom lX = F.to_Z X1 -> evfrom lY = F.to_Z Y1 -> evfrom lZ = F.to_Z Z1 ->
     evfrom lox = F.to_Z ox -> evfrom loy = F.to_Z oy -> evfrom loz = F.to_Z oz ->
     eval (MontgomeryCurveSpecs.a_list bw n a) = F.to_Z aF ->
     eval (MontgomeryCurveSpecs.three_b_list bw n three_b) = F.to_Z tbF ->
-    @rcb_double_general_gallina field_parameters aF tbF X Y Z
+    @rcb_double_general_gallina field_parameters aF tbF X1 Y1 Z1
     = \<ox, oy, oz\> ->
     rcb_double_general_Z_spec m bw n m' a three_b lX lY lZ lox loy loz.
   Proof.
@@ -169,8 +174,8 @@ Section GallinaToZ.
                              | rewrite to_Z_sub_m ].
     (* every atom is now [F.to_Z v] for a variable [v]; name them *)
     generalize (F.to_Z aF) as ca; generalize (F.to_Z tbF) as cb;
-    generalize (F.to_Z X) as x; generalize (F.to_Z Y) as y;
-    generalize (F.to_Z Z) as z;
+    generalize (F.to_Z X1) as x; generalize (F.to_Z Y1) as y;
+    generalize (F.to_Z Z1) as z;
     intros z y x cb ca.
     Timeout 600 repeat first
       [ rewrite Zdiv.Zmult_mod_idemp_l | rewrite Zdiv.Zmult_mod_idemp_r

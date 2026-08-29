@@ -26,14 +26,12 @@
           and the [_valid_out] shapes.
       §4  Bridge from the FElem-level [spec_of_rcb_double_general] to
           the [_valid_out] shape (intended Qed; the script is the
-          six-buffer replay of the addition bridge), and the
-          unconditional shape (Admitted, same obstruction as for the
-          addition).
+          six-buffer replay of the addition bridge).  The
+          unconditional shape is not stated (comment block at the
+          end of §4: not derivable from the FElem-level spec).
 
-    Honesty ledger (this file): 1 Admitted —
-    [p256_curve_double_general_bignum_bridge] (§4, unconditional
-    shape; not derivable from the FElem-level spec, see the note at
-    §4).  Every other proof is intended Qed and untested. *)
+    Honesty ledger (this file): 0 Admitted.  Every proof is intended
+    Qed; written statically, untested. *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.

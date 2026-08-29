@@ -9,9 +9,8 @@
     Compile status: deferred together with CurveAddGeneralA_P384.v
     (this file depends on it).
 
-    Honesty ledger (this file): 1 Admitted —
-    [p384_curve_double_general_bignum_bridge] (unconditional shape;
-    see CurveDoubleGeneralA_P256.v §4). *)
+    Honesty ledger (this file): 0 Admitted.  The unconditional bridge
+    shape is not stated (comment block at the end of §4). *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -292,23 +291,38 @@ Section P384_DoubleGeneralA.
          P384Curve_G1.m P384Curve_G1.bw P384Curve_G1.n P384Curve_G1.m'
          P384Curve_G1.a P384Curve_G1.three_b p384_M_eq
          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ Hgal).
-    all: timeout 600
-      (first [ apply p384_feval_evfrom_valid; assumption
-             | match goal with
-               | H : feval ?w = _ |- G_evfrom (toZ ?w) = _ =>
-                   rewrite <- H; apply p384_feval_evfrom_valid; assumption
-               end
-             | exact p384_a_toZ
-             | exact p384_three_b_toZ ]).
+    Show.
+    (* Per-goal dispatch to a single term; see CurveDoubleGeneralA_P256.v. *)
+    all: timeout 60
+      (lazymatch goal with
+       | |- G_evfrom (toZ ?w) = F.to_Z (feval ?w) =>
+           exact (p384_feval_evfrom_valid w ltac:(assumption))
+       | |- G_evfrom (toZ ?w) = F.to_Z ?o =>
+           lazymatch goal with
+           | H : feval w = o |- _ =>
+               exact (eq_trans (p384_feval_evfrom_valid w ltac:(assumption))
+                               (f_equal F.to_Z H))
+           end
+       | |- @WordByWordMontgomery.eval _ _ (MontgomeryCurveSpecs.a_list _ _ _) = _ =>
+           exact p384_a_toZ
+       | |- @WordByWordMontgomery.eval _ _ (MontgomeryCurveSpecs.three_b_list _ _ _) = _ =>
+           exact p384_three_b_toZ
+       | |- ?G => fail 99 "BRIDGE-RESIDUAL" G
+       end).
   Qed.
 
-  (** Unconditional shape; same obstruction as
-      [p384_curve_add_general_bignum_bridge]. *)
-  Theorem p384_curve_double_general_bignum_bridge :
-    forall functions,
-      spec_of_rcb_double_general p384_three_b_felem p384_a_felem functions ->
-      spec_of_p384_curve_double_general_bignum functions.
-  Proof.
-  Admitted.
+  (** The unconditional shape, NOT stated as a theorem.
+
+      <<
+      Theorem p384_curve_double_general_bignum_bridge :
+        forall functions,
+          spec_of_rcb_double_general p384_three_b_felem p384_a_felem functions ->
+          spec_of_p384_curve_double_general_bignum functions.
+      >>
+
+      is not derivable from [spec_of_rcb_double_general] (canonical
+      output buffers are required on entry by the FElem-level spec);
+      see the note in CurveDoubleGeneralA_P256.v.  Downstream users
+      take [p384_curve_double_general_bignum_bridge_valid_out]. *)
 
 End P384_DoubleGeneralA.

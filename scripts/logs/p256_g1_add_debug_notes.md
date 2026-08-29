@@ -114,6 +114,41 @@ general-a ADDITION on P-256/P-384/P-224 — `CurveAddGeneralA.v` (derivation,
 hand-written WP route (`P256_G1_Add_Spec.v` and the functor instances) is
 paused; its closure lemma `RcbGeneralAChain.v` is Qed and reusable.
 
+Wrapper-body WP proofs — RESOLVED 2026-08-29 (all four Qed, commit
+be20f7b).  Four findings beyond the six listed below:
+
+- `sep` is not definitionally associative: `eapply` cannot bridge a
+  left-associated lemma conclusion to a right-associated goal, and
+  `straightline` right-associates goals (`flatten_seps_in_goal`,
+  ProgramLogic.v:358).  State the rebuild lemma in both associations.
+- Neither stackalloc conversion path works for a SYMBOLIC size:
+  `BignumStoreFold.stackalloc_anybytes_to_arrays` is hard-wired to
+  BasicC64Semantics, and bedrock2's `straightline` branch needs
+  `isZcst n` while `straightline_stackalloc` closes its size obligation
+  with `Z.max 0 n = n`, true only for a literal.  Width-generic
+  `stackalloc_FElem` / `FElem_dealloc` now live in NistWnafWrappers.v.
+- `CompilationAbstract.FElem` is a delta-alias of `Compilation2.FElem`
+  (CompilationAbstract.v:24) and `ecancel` compares reified atoms
+  SYNTACTICALLY, so nothing cancels and `ecancel_assumption`'s
+  multimatch exhausts with "No matching clauses for match" — which reads
+  like a shape error but is an ordinary cancellation failure.  Precede
+  any cancellation against a spec from a CompilationAbstract importer
+  with `change CompilationAbstract.FElem with Compilation2.FElem in H`,
+  on the whole hypothesis so its postcondition leaves are fixed too.
+- Order the single pre-deallocation `assert` in deallocation order
+  (innermost-first): each dealloc then hands back a remainder headed by
+  the next buffer, so N temporaries cost one cancellation, not N.
+
+Also (WnafTableBuild.v and other RcbProjectiveLaws consumers):
+`ring`/`fsatz` emit `abstract`ed subproofs that generalise over the
+WHOLE section context, so imported lemmas carry constants their
+statements never mention (`b`, `three_b`) and `apply` cannot invent
+them — pin with `eapply L with (b := ...) (three_b := ...)`.  And do NOT
+add a local `prime` instance: a second opaque proof breaks
+convertibility with the field instance baked into the imported theorems.
+
+Original notes from the attempt:
+
 Wrapper-body WP proofs (2026-08-29, from the `store_zero_from_word_ok`
 attempt in ScalarMult/NistWnafWrappers.v; the attempt is stashed, the
 file's committed state keeps it Admitted):

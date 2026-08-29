@@ -5,6 +5,21 @@ edition = "2021"
 description = "BN254 pairing extracted from verified bedrock2, with safe Rust API"
 license = "Apache-2.0"
 
+[features]
+# Opt out of the Bernstein-Yang (safegcd) Fp inversion and fall back to the
+# Fermat ladder x^(p-2).  Both are hand-written Rust in src/stubs.rs; the
+# Fermat ladder is several times slower.  Kept as the cross-check oracle for
+# the KAT in src/stubs.rs and for builds that do not want the `safegcd`
+# dependency.
+fermat_inv = []
+
+[dependencies]
+# Bernstein-Yang constant-time modular inversion.  Hand-written Rust (a port
+# of libsecp256k1's secp256k1_modinv64); the divstep convergence bound it
+# instantiates is proved in AUCurves/src/Arithmetic/safegcd/, but the Rust
+# code itself is NOT extracted from Rocq.  See HAND_WRITTEN_AUDIT.md.
+safegcd = { path = "../safegcd-rs" }
+
 [lib]
 name = "bn254"
 path = "src/lib.rs"

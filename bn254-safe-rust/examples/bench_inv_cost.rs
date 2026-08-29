@@ -4,6 +4,14 @@
 //! (~70 steps for BN254 with loop param 6u+2). If fp2_inv dominates,
 //! switching to projective is worth the refactor cost; if it doesn't,
 //! the gap is elsewhere.
+//!
+//! It does not dominate.  With `_bn254_inv` as the Fermat ladder over the
+//! local Rust `mont_mul`, fp2_inv cost ~20 us and was 57-68% of the Miller
+//! loop.  Against safegcd it costs ~1.5 us, which is ~23%.  Read the
+//! "projective ceiling" printed below with that in mind: it is computed
+//! from the measured inversion cost, and the affine loop already runs
+//! faster than the ceiling the 20 us figure produced.  See
+//! HAND_WRITTEN_AUDIT.md, `_bn254_inv`.
 use bn254::*;
 use std::time::Instant;
 

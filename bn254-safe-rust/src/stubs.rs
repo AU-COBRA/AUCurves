@@ -205,19 +205,9 @@ pub unsafe extern "C" fn _bn254_from_word(out: *mut u64, w: u64) {
                 *out.add(i) = 0;
             }
         } else if w == 1 {
-            // R mod p
-            *out.add(0) = 0xd35d438dc58f0d9d;
-            *out.add(1) = 0x0a78eb28f5c70b3d;
-            *out.add(2) = 0x666ea36f7879462c;
-            *out.add(3) = 0x0e0a77c19a07df2f;
+            write4(out, MONT_ONE);
         } else {
             // General case: mont_mul([w,0,0,0], R^2)
-            const R2: [u64; 4] = [
-                0xf32cfc5b538afa89,
-                0xb5e71911d44501fb,
-                0x47ab1eff0a417ff6,
-                0x06d89f71cab8351f,
-            ];
             let r = mont_mul([w, 0, 0, 0], R2);
             write4(out, r);
         }
@@ -239,33 +229,175 @@ pub unsafe extern "C" fn _bn254_select_znz(
     }
 }
 
-/// Fp inversion via Fermat's little theorem: x^(p-2) mod p.
+/// R^2 mod p (R = 2^256), used to re-enter the Montgomery domain after the
+/// divstep inversion.  Same constant as the one inlined in
+/// `_bn254_from_word`'s general case.
+const R2: [u64; 4] = [
+    0xf32cfc5b538afa89,
+    0xb5e71911d44501fb,
+    0x47ab1eff0a417ff6,
+    0x06d89f71cab8351f,
+];
+
+/// 1 in Montgomery form (R mod p).
+const MONT_ONE: [u64; 4] = [
+    0xd35d438dc58f0d9d,
+    0x0a78eb28f5c70b3d,
+    0x666ea36f7879462c,
+    0x0e0a77c19a07df2f,
+];
+
+/// The crate's Fp multiply/square leaves, referred to by symbol so that this
+/// module gets whichever implementation is actually linked: the CryptOpt
+/// assembly under `feature = "jasmin"` (see `generated/jasmin_aliases.s`,
+/// which routes both `_bn254_mul` and `_bn254_square` to `fiat_bn254_mul`),
+/// otherwise the `mont_mul` CIOS code above.  Before this indirection the
+/// inversion ladder used `mont_mul` directly and so never benefited from the
+/// CryptOpt leaves that every other multiply in the crate uses.
+mod leaf {
+    unsafe extern "C" {
+        #[link_name = "_bn254_mul"]
+        pub fn mul(o: *mut u64, x: *const u64, y: *const u64);
+        #[link_name = "_bn254_square"]
+        pub fn square(o: *mut u64, x: *const u64);
+        #[link_name = "_bn254_select_znz"]
+        pub fn select_znz(o: *mut u64, c: u64, x: *const u64, y: *const u64);
+    }
+}
+
+/// `x != 0` as a 0/1 mask, without branching on the limbs.
+#[inline(always)]
+fn nonzero_mask(v: &[u64; 4]) -> u64 {
+    let acc = v[0] | v[1] | v[2] | v[3];
+    (acc | acc.wrapping_neg()) >> 63
+}
+
+/// Inversion via Fermat: `x^(p-2)`.
 /// p-2 = 0x30644e72e131a029 b85045b68181585d 97816a916871ca8d 3c208c16d87cfd45
-#[no_mangle]
-pub unsafe extern "C" fn _bn254_inv(out: *mut u64, x: *const u64) {
+///
+/// Hand-written Rust.  Retained as the `fermat_inv` fallback and as the
+/// cross-check oracle for the safegcd path below; the two are KAT'd against
+/// each other in this module's tests.
+fn inv_fermat(xv: [u64; 4]) -> [u64; 4] {
     const P_MINUS_2: [u64; 4] = [
         0x3c208c16d87cfd45,
         0x97816a916871ca8d,
         0xb85045b68181585d,
         0x30644e72e131a029,
     ];
-    // Montgomery 1 = R mod p (verified: Python confirms 2^256 mod p)
-    let mut result: [u64; 4] = [
-        0xd35d438dc58f0d9d,
-        0x0a78eb28f5c70b3d,
-        0x666ea36f7879462c,
-        0x0e0a77c19a07df2f,
-    ];
-    let mut base = read4(x);
+    let mut result = MONT_ONE;
+    let mut base = xv;
     for limb_idx in 0..4 {
         let mut bits = P_MINUS_2[limb_idx];
         for _ in 0..64 {
             if bits & 1 == 1 {
-                result = mont_mul(result, base);
+                let t = result;
+                unsafe { leaf::mul(result.as_mut_ptr(), t.as_ptr(), base.as_ptr()) };
             }
-            base = mont_mul(base, base);
+            let b = base;
+            unsafe { leaf::square(base.as_mut_ptr(), b.as_ptr()) };
             bits >>= 1;
         }
     }
-    write4(out, result);
+    result
+}
+
+/// Fp inversion, used by `Fp2_inv` (called from the tower).
+///
+/// # Provenance
+///
+/// **Not verified-extracted.**  The default path calls
+/// `safegcd::safegcd_bn254::bn254_invert_divstep_sat`, a hand-written Rust
+/// port of libsecp256k1's `secp256k1_modinv64` Bernstein-Yang divstep
+/// inversion.  Its divstep convergence bound is proved in
+/// `AUCurves/src/Arithmetic/safegcd/divsteps_bn254*.v`, but the Rust code
+/// itself is not emitted from Rocq.  Same code, same provenance, and now the
+/// same `safegcd-rs` crate as `bls12-381-safe-rust`'s `_bls12_inv`.
+///
+/// The alternative is the Fermat ladder `x^(p-2)` (still
+/// available as `--features fermat_inv`), which costs 256 squarings plus
+/// ~130 multiplies, *executed with the local `mont_mul` rather than the
+/// CryptOpt leaf*.  Because the affine Miller loop in the generated tower
+/// performs one `Fp2_inv` per doubling and per addition step — 80 per
+/// pairing — that ladder was the largest single cost in the pairing.
+///
+/// Domain: input and output are both in Montgomery form (R = 2^256).  The
+/// divstep core inverts the integer it is handed, so `inv(xR) = x^-1 R^-1`;
+/// two Montgomery multiplies by `R^2` lift that back to `x^-1 R`.
+///
+/// `x = 0` returns `0`, matching the Fermat ladder's `0^(p-2) = 0`.  The
+/// selection uses the constant-time `_bn254_select_znz` leaf, not a branch.
+#[no_mangle]
+pub unsafe extern "C" fn _bn254_inv(out: *mut u64, x: *const u64) {
+    let xv = read4(x);
+
+    #[cfg(feature = "fermat_inv")]
+    let result = inv_fermat(xv);
+
+    #[cfg(not(feature = "fermat_inv"))]
+    let result = {
+        let mut t = [0u64; 4];
+        safegcd::safegcd_bn254::bn254_invert_divstep_sat(&mut t, &xv);
+        let mut tmp = [0u64; 4];
+        unsafe {
+            leaf::mul(tmp.as_mut_ptr(), t.as_ptr(), R2.as_ptr());
+            leaf::mul(t.as_mut_ptr(), tmp.as_ptr(), R2.as_ptr());
+        }
+        t
+    };
+
+    let zero = [0u64; 4];
+    unsafe { leaf::select_znz(out, nonzero_mask(&xv), result.as_ptr(), zero.as_ptr()) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inv(x: [u64; 4]) -> [u64; 4] {
+        let mut o = [0u64; 4];
+        unsafe { _bn254_inv(o.as_mut_ptr(), x.as_ptr()) };
+        o
+    }
+
+    fn mul(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
+        let mut o = [0u64; 4];
+        unsafe { leaf::mul(o.as_mut_ptr(), a.as_ptr(), b.as_ptr()) };
+        o
+    }
+
+    /// Montgomery-form elements to exercise both inversion paths.  Generated
+    /// as the orbit of R^2 under multiplication, which spreads over the field
+    /// without needing an RNG dependency.
+    fn samples() -> Vec<[u64; 4]> {
+        let mut v = vec![MONT_ONE, R2];
+        let mut x = MONT_ONE;
+        for _ in 0..256 {
+            x = mul(x, R2);
+            v.push(x);
+        }
+        v
+    }
+
+    /// Cross-checks the default safegcd path against the Fermat ladder.
+    /// Vacuous under `--features fermat_inv` (both sides are then the ladder);
+    /// `inv_is_a_left_inverse` is the check that still bites in that build.
+    #[test]
+    fn inv_agrees_with_fermat() {
+        for x in samples() {
+            assert_eq!(inv(x), inv_fermat(x), "inv disagrees with Fermat on {x:?}");
+        }
+    }
+
+    #[test]
+    fn inv_is_a_left_inverse() {
+        for x in samples() {
+            assert_eq!(mul(x, inv(x)), MONT_ONE, "x * x^-1 != 1 for {x:?}");
+        }
+    }
+
+    #[test]
+    fn inv_of_zero_is_zero() {
+        assert_eq!(inv([0u64; 4]), [0u64; 4]);
+    }
 }

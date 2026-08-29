@@ -10,6 +10,11 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    // `jasmin` is set below as a cfg, not declared in [features], because it
+    // reflects whether build.sh succeeded rather than anything the caller
+    // chooses.  Declare it to --check-cfg so it does not read as a typo.
+    println!("cargo:rustc-check-cfg=cfg(feature, values(\"jasmin\"))");
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let script = manifest.join("build.sh");

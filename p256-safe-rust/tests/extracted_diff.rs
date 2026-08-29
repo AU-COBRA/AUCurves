@@ -9,7 +9,6 @@
 
 use p256::group::*;
 use p256::g1_extracted::p256_g1_add_extracted;
-use p256::Fp;
 
 fn ser(p: &G1) -> [u8; 96] {
     let mut out = [0u8; 96];

@@ -93,3 +93,6 @@
 # For comparison the WP-replay functor instances take ~6 min of tactic
 # time through the closure preamble, plus ~7 min per premise-discharge
 # round (12 rounds) in the RcbGeneralAChain-based closure.
+#   Group/CurveAdd/CurveDoubleGeneralA.v           minutes (Derive/compile, 33 nlets, RCB Alg. 3)
+#   Group/CurveAdd/CurveDoubleGeneralA_GallinaToZ.v minutes
+#   Group/CurveAdd/CurveDoubleGeneralA_P{256,384,224}.v  ~5-10 min each

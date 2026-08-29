@@ -135,7 +135,7 @@ fn main() {
         // The Rocq-emitted w=4 wNAF driver (variable time; see
         // src/scalar_mul_extracted.rs).  Compare against the
         // "g1_scalar_mul (256-bit)" line above, which is the
-        // constant-time width-1 double-and-add-always ladder.
+        // constant-time 4-bit windowed ladder.
         use p256::wnaf::{g1_scalar_mul_wnaf, wnaf_digits_w4};
         time("wnaf digit encode (glue)", 200_000, || {
             black_box(wnaf_digits_w4(black_box(&k)));

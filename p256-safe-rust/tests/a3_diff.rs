@@ -243,7 +243,18 @@ fn scalar_mul_matches_reference_ladder() {
     for k in [1u64, 2, 3, 7, 1023, u64::MAX] {
         let s = scalar(k);
         let want = ref_mul(&s, &g);
-        assert!(eq(&g1_scalar_mul(&s, &g), &want), "ladder differs at k = {k}");
+        // The width-1 ladder mirrors `ref_mul` step for step, so it
+        // reaches the identical projective triple.
+        assert!(
+            eq(&g1_scalar_mul_width1(&s, &g), &want),
+            "width-1 ladder differs at k = {k}"
+        );
+        // The windowed default path takes a different addition chain, so
+        // it is projectively equal, not triple-equal.
+        assert!(
+            proj_eq(&g1_scalar_mul(&s, &g), &want),
+            "windowed ladder differs at k = {k}"
+        );
         // The fixed-base path is projectively equal, not triple-equal.
         let base = g1_scalar_mul_base(&s);
         assert!(

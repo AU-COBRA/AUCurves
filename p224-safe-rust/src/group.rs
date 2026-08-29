@@ -519,7 +519,7 @@ fn g1_cmov(mask: u64, a: &G1, b: &G1) -> G1 {
     }
 }
 
-/// Constant-time scalar multiplication k * P.
+/// Constant-time width-1 scalar multiplication k * P.
 ///
 /// The scalar `k` is given as 4 little-endian u64 limbs and must be
 /// less than 2^224 (bits 224..255 are ignored — the loop covers exactly
@@ -527,7 +527,13 @@ fn g1_cmov(mask: u64, a: &G1, b: &G1) -> G1 {
 /// iteration performs one complete addition-as-doubling, one complete
 /// addition, and a limb-masked conditional select; there are no
 /// secret-dependent branches or memory indices.
-pub fn g1_scalar_mul(k: &[u64; 4], p: &G1) -> G1 {
+///
+/// Retained as the differential-test reference for the windowed
+/// [`g1_scalar_mul`], which is the default path.
+/// Kept as the differential-test reference (`windowed_matches_width1_*`
+/// below): it is the simplest correct constant-time ladder in the crate,
+/// so it is what the faster one is checked against.
+pub fn g1_scalar_mul_width1(k: &[u64; 4], p: &G1) -> G1 {
     let mut acc = g1_identity();
     let mut i: i32 = 223;
     while i >= 0 {
@@ -537,6 +543,123 @@ pub fn g1_scalar_mul(k: &[u64; 4], p: &G1) -> G1 {
         let mask = 0u64.wrapping_sub(bit);
         acc = g1_cmov(mask, &sum, &acc);
         i -= 1;
+    }
+    acc
+}
+
+// ---------------------------------------------------------------------------
+// Constant-time windowed variable-base scalar multiplication
+// ---------------------------------------------------------------------------
+//
+// Same windowing technique as `g1_scalar_mul_base` below, with the table
+// built at run time from the input point instead of read from `g_table`.
+//
+// Operation counts at 224 bits (D = doubling, A = addition):
+//
+//   width 1     224 D + 224 A                       = 6048 field mul
+//   W = 4        (7 + 220) D + (7 + 55) A           = 3819 field mul
+//   W = 5       (15 + 220) D + (15 + 44) A          = 3881 field mul
+//
+// counting `g1_double` at 13 multiplications and `g1_add` at 14, and
+// charging the table build 2^(W-1)-1 doublings and 2^(W-1)-1 additions.
+// W = 4 also scans fewer table entries (56 x 15 = 840 against
+// 45 x 31 = 1395), so it wins on both counts; the sibling P-256 crate's
+// `examples/bench_width.rs` measured the same ordering directly.
+
+/// Window width of the variable-base ladder, in bits.
+pub const VAR_W: usize = 4;
+
+/// Number of windows, `ceil(224 / VAR_W)`.
+pub const VAR_WINDOWS: usize = (224 + VAR_W - 1) / VAR_W;
+
+/// Non-zero digits per window, `2^VAR_W - 1`; also the number of
+/// precomputed multiples of the input point.
+pub const VAR_TSIZE: usize = (1 << VAR_W) - 1;
+
+/// The `i`-th `VAR_W`-bit digit of the scalar, LSB-first window order
+/// (window `i` carries weight `2^(VAR_W*i)`).  `i` is a loop counter,
+/// never secret.
+#[inline]
+fn var_digit(k: &[u64; 4], i: usize) -> u64 {
+    let mut d = 0u64;
+    let mut b = 0;
+    while b < VAR_W {
+        let idx = i * VAR_W + b;
+        if idx < 224 {
+            d |= ((k[idx / 64] >> (idx % 64)) & 1) << b;
+        }
+        b += 1;
+    }
+    d
+}
+
+/// Constant-time scalar multiplication: `k * P`, variable base.
+///
+/// `k` is 4 little-endian u64 limbs and must be less than `2^224`, the
+/// same convention as [`g1_scalar_mul_width1`]; bits 224..255 are
+/// ignored.
+///
+/// Fixed `VAR_W`-bit window, MSB first.  `T[j] = j * P` for
+/// `j = 1 ..= VAR_TSIZE` is built once with the complete `g1_add` /
+/// `g1_double`; then, from the most significant window down, the
+/// accumulator is doubled `VAR_W` times and one table entry is added.
+///
+/// Constant-time, on the same argument as [`g1_scalar_mul_base`]:
+///
+/// * the table entry is chosen by a **full linear scan** of all
+///   `VAR_TSIZE` entries with [`ct_eq_mask`] / [`fp_cmov`], so the table
+///   is never indexed by a digit and the addresses touched are the same
+///   for every scalar;
+/// * digit `0` matches no entry and leaves the identity in `sel`, which
+///   the complete addition formula absorbs with no special case;
+/// * every branch is on `i`, `j` or `b`, loop counters derived from the
+///   public constants `VAR_W` and `VAR_WINDOWS`;
+/// * there is no early exit and no data-dependent iteration count.
+pub fn g1_scalar_mul(k: &[u64; 4], p: &G1) -> G1 {
+    // T[j - 1] = j * P, j = 1 ..= VAR_TSIZE.  Even j is one doubling of
+    // T[j/2], odd j is one addition of P to T[j-1]; `j` is public.
+    let mut t = [*p; VAR_TSIZE];
+    let mut j = 2usize;
+    while j <= VAR_TSIZE {
+        t[j - 1] = if j % 2 == 0 {
+            g1_double(&t[j / 2 - 1])
+        } else {
+            g1_add(&t[j - 2], p)
+        };
+        j += 1;
+    }
+
+    let mut acc = g1_identity();
+    let mut i = VAR_WINDOWS;
+    while i > 0 {
+        i -= 1;
+        let top = i + 1 == VAR_WINDOWS;
+        // `top` is a function of the loop counter, hence public.  The
+        // accumulator is the identity before the first window, so the
+        // VAR_W doublings and the addition are both skipped there.
+        if !top {
+            let mut d = 0;
+            while d < VAR_W {
+                acc = g1_double(&acc);
+                d += 1;
+            }
+        }
+        let digit = var_digit(k, i);
+        // Full scan of the table: identity when digit == 0.
+        let mut sx = fp_zero();
+        let mut sy = ONE_MONT;
+        let mut sz = fp_zero();
+        let mut j = 1usize;
+        while j <= VAR_TSIZE {
+            let e = &t[j - 1];
+            let m = ct_eq_mask(digit, j as u64);
+            sx = fp_cmov(m, &e.x, &sx);
+            sy = fp_cmov(m, &e.y, &sy);
+            sz = fp_cmov(m, &e.z, &sz);
+            j += 1;
+        }
+        let sel = G1 { x: sx, y: sy, z: sz };
+        acc = if top { sel } else { g1_add(&acc, &sel) };
     }
     acc
 }
@@ -756,6 +879,124 @@ mod tests {
     fn generator_is_on_curve() {
         // Validates b, Gx, Gy jointly.
         assert!(is_on_curve_affine(&P224_GX, &P224_GY));
+    }
+
+    // -----------------------------------------------------------------
+    // Windowed variable-base ladder vs the width-1 ladder it replaced
+    // -----------------------------------------------------------------
+
+    /// Checked little-endian subtraction; panics on borrow-out.
+    fn scalar_sub_checked(a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
+        let mut out = [0u64; 4];
+        let mut borrow = 0u64;
+        for i in 0..4 {
+            let (d1, b1) = a[i].overflowing_sub(b[i]);
+            let (d2, b2) = d1.overflowing_sub(borrow);
+            out[i] = d2;
+            borrow = (b1 as u64) + (b2 as u64);
+        }
+        assert_eq!(borrow, 0, "scalar subtraction borrowed out");
+        out
+    }
+
+    /// The structured scalars both ladders must agree on.  Everything
+    /// here stays below `2^224`, the input convention of both ladders.
+    fn structured_scalars() -> Vec<[u64; 4]> {
+        let one = scalar(1);
+        let mut v = vec![
+            [0u64; 4],                              // k = 0
+            scalar(1),                              // k = 1
+            scalar(2),                              // k = 2
+            scalar_sub_checked(&P224_N, &one),      // k = n - 1
+            P224_N,                                 // k = n
+            scalar_add_checked(&P224_N, &one),      // k = n + 1
+            [u64::MAX, u64::MAX, u64::MAX, 0xffff_ffff], // 2^224 - 1
+        ];
+        // A single bit set at each of the 224 positions.
+        for bit in 0..224usize {
+            let mut k = [0u64; 4];
+            k[bit / 64] = 1u64 << (bit % 64);
+            v.push(k);
+        }
+        v
+    }
+
+    #[test]
+    fn windowed_matches_width1_structured() {
+        let g = g1_generator();
+        let pts = [g1_identity(), g, g1_double(&g), g1_neg(&g)];
+        for (pi, p) in pts.iter().enumerate() {
+            for (si, k) in structured_scalars().iter().enumerate() {
+                assert!(
+                    g1_eq(&g1_scalar_mul(k, p), &g1_scalar_mul_width1(k, p)),
+                    "windowed != width-1 at point {pi}, scalar #{si}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn windowed_matches_width1_random() {
+        // Deterministic xorshift, so a failure is reproducible.
+        let mut state: u64 = 0xdead_beef_1234_5678;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let g = g1_generator();
+        let pts = [
+            g,
+            g1_double(&g),
+            g1_scalar_mul_width1(&scalar(0x5eed_1234_5678_9abc), &g),
+        ];
+        for p in pts.iter() {
+            for i in 0..128 {
+                let mut k = [next(), next(), next(), next()];
+                k[3] &= 0xffff_ffff; // keep k < 2^224
+                assert!(
+                    g1_eq(&g1_scalar_mul(&k, p), &g1_scalar_mul_width1(&k, p)),
+                    "windowed != width-1 on random scalar #{i}"
+                );
+            }
+        }
+    }
+
+    /// The exact input of `examples/bench.rs`: the reported speedup must
+    /// be on the same answer the width-1 ladder gave.
+    #[test]
+    fn windowed_matches_width1_on_bench_input() {
+        let k: [u64; 4] = [
+            0x0f1e_2d3c_4b5a_6978,
+            0x8796_a5b4_c3d2_e1f0,
+            0x1a2b_3c4d_5e6f_7081,
+            0x0000_0000_02a3_b4c5,
+        ];
+        let g = g1_generator();
+        let g2 = g1_double(&g);
+        assert!(g1_eq(&g1_scalar_mul(&k, &g), &g1_scalar_mul_width1(&k, &g)));
+        assert!(g1_eq(&g1_scalar_mul(&k, &g2), &g1_scalar_mul_width1(&k, &g2)));
+    }
+
+    /// Every digit value `1 ..= VAR_TSIZE` must select `j * P`: run the
+    /// windowed ladder on the one-digit scalars and compare against
+    /// repeated addition.  This is the table-scan invariant, isolated.
+    #[test]
+    fn windowed_selects_every_digit() {
+        let g = g1_generator();
+        for p in [g, g1_double(&g)] {
+            let mut want = p;
+            for j in 1..=VAR_TSIZE {
+                assert!(
+                    g1_eq(&g1_scalar_mul(&scalar(j as u64), &p), &want),
+                    "digit {j} does not select {j} * P"
+                );
+                want = g1_add(&want, &p);
+            }
+        }
+        // Digit 0 in every window: the scan must leave the identity.
+        assert!(g1_is_identity(&g1_scalar_mul(&[0u64; 4], &g)));
     }
 
     #[test]

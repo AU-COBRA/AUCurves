@@ -17,16 +17,17 @@
 //!   to us too and are simply not what the proved body implements.  A slower
 //!   number here is a formula-choice gap, not a field-arithmetic gap.
 //!
-//! * `g1_scalar_mul`.  **Both arms are variable-base.**  Ours is a fixed-length
-//!   MSB-first double-and-add-always over all 256 bits: 256 doublings plus 256
-//!   additions, every one of them executed, the conditional accumulate done by
-//!   a limb-mask `cmov`.  Width is 1; there is no windowing and no wNAF, and no
-//!   table of any kind is precomputed.  RustCrypto is a **4-bit fixed window**
-//!   (`primeorder::ProjectivePoint::mul`): it builds a 16-entry table of
-//!   multiples of *the input point* on every call, then does 256 doublings plus
-//!   64 additions, reading the table by a constant-time linear scan with
-//!   `conditional_assign` over all 16 entries.  Roughly a 4x advantage in
-//!   additions before any formula difference is counted.
+//! * `g1_scalar_mul`.  **Both arms are variable-base, and both are now a
+//!   4-bit fixed window.**  Ours builds a 15-entry table of multiples of the
+//!   input point per call, then runs 64 windows of 4 doublings and one
+//!   complete addition, selecting the table entry by a full linear scan with
+//!   `ct_eq_mask` / limb-mask select.  RustCrypto
+//!   (`primeorder::ProjectivePoint::mul`) builds a 16-entry table and does
+//!   256 doublings plus 64 additions, reading the table by a constant-time
+//!   linear scan with `conditional_assign` over all 16 entries.  The
+//!   algorithms now match; what remains is the formula and field difference.
+//!   `group::g1_scalar_mul_width1` keeps the width-1 double-and-add-always
+//!   ladder this arm used to run, as the differential-test reference.
 //!
 //! * Neither arm is a fixed-base benchmark.  `primeorder` 0.13.6 has no
 //!   precomputed generator tables at all -- its `MulByGenerator` impl is
@@ -107,10 +108,10 @@ fn main() {
     println!();
 
     // ---------------------------------------------------------------
-    // This work: proved RCB Algorithm 1 (general a) + width-1 CT ladder
+    // This work: RCB Alg.4 / Alg.6 (a = -3) + 4-bit windowed CT ladder
     // ---------------------------------------------------------------
     println!("=== p256-safe-rust (this work: RCB Alg.4/Alg.6 a=-3, fiat-crypto leaves) ===");
-    let (ours_add, ours_dbl, ours_mul) = {
+    let (ours_add, ours_dbl, ours_mul, ours_mul_w1) = {
         use p256::group::*;
 
         let g = g1_generator();
@@ -128,10 +129,23 @@ fn main() {
         let mul = bench(N_MUL, || acc = g1_scalar_mul(black_box(&k), black_box(&g2)));
         black_box(&acc);
 
+        // The width-1 double-and-add-always ladder it replaced, timed in
+        // the same process so the windowing speedup is a ratio measured
+        // under identical conditions rather than across two runs.
+        let mut acc = g2;
+        let mul_w1 = bench(N_MUL, || {
+            acc = g1_scalar_mul_width1(black_box(&k), black_box(&g2))
+        });
+        black_box(&acc);
+
         println!("  g1_add:        {:>12.1} ns/op   ({} iters)", add, N_ADD);
         println!("  g1_double:     {:>12.1} ns/op   ({} iters)", dbl, N_DBL);
         println!("  g1_scalar_mul: {:>12.1} ns/op   ({} iters)", mul, N_MUL);
-        (add, dbl, mul)
+        println!(
+            "  g1_scalar_mul_width1 (reference): {:>12.1} ns/op   ({} iters)",
+            mul_w1, N_MUL
+        );
+        (add, dbl, mul, mul_w1)
     };
 
     // The Rocq-emitted w = 4 wNAF driver, when it is compiled in.
@@ -209,6 +223,7 @@ fn main() {
     row("add", ours_add, rc_add);
     row("double", ours_dbl, rc_dbl);
     row("scalar_mul (var-base)", ours_mul, rc_mul);
+    row("  ^ width-1, reference", ours_mul_w1, rc_mul);
     if let Some(w) = ours_wnaf {
         row("  ^ wNAF, var-time", w, rc_mul);
     }
@@ -219,11 +234,12 @@ fn main() {
     println!("  - add/double: BOTH arms now use the a = -3 specialisation (RCB Alg.4 /");
     println!("    Alg.6).  Ours is the Rocq-derived body of CurveAddA3.v / CurveDoubleA3.v;");
     println!("    group::g1_add_general_a keeps the 40-op Alg.1 chain for reference.");
-    println!("  - scalar_mul: BOTH arms are variable-base.  Ours is width-1");
-    println!("    double-and-add-always (256 dbl + 256 add).  Theirs is a 4-bit fixed");
-    println!("    window with a per-call 16-entry table of the input point");
-    println!("    (256 dbl + 64 add).  primeorder 0.13.6 has no precomputed generator");
-    println!("    tables, so no fixed-base path is being compared here.");
+    println!("  - scalar_mul: BOTH arms are variable-base 4-bit fixed windows with a");
+    println!("    per-call table of multiples of the input point, read by a full");
+    println!("    constant-time linear scan.  Ours: 15 entries, 259 dbl + 70 add");
+    println!("    (table build included).  Theirs: 16 entries, 256 dbl + 64 add.");
+    println!("    primeorder 0.13.6 has no precomputed generator tables, so no");
+    println!("    fixed-base path is being compared here.");
     println!("  - BOTH arms are constant time in the scalar and the coordinates -- EXCEPT");
     println!("    the `wNAF, var-time` row, which is the Rocq-emitted w=4 wNAF driver of");
     println!("    src/scalar_mul_extracted.rs.  That one branches on each digit and reads");

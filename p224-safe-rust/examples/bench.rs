@@ -134,7 +134,7 @@ fn main() {
         // The Rocq-emitted w=4 wNAF driver (variable time; see
         // src/scalar_mul_extracted.rs).  Compare against the
         // "g1_scalar_mul" line above, which is the constant-time
-        // width-1 double-and-add-always ladder.
+        // 4-bit windowed ladder.
         use p224::wnaf::g1_scalar_mul_wnaf;
         time("g1_scalar_mul wNAF (extr)", 2_000, || {
             acc = g1_scalar_mul_wnaf(black_box(&k), black_box(&g))

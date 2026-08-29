@@ -133,8 +133,19 @@ Section P384_DoubleGeneralA.
       spec_of_rcb_double_general p384_three_b_felem p384_a_felem functions.
   Proof.
     intros functions Hdbl_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p384_curve_double_general_ok; eauto using
-      p384_three_b_loader_ok_dbl, p384_a_loader_ok_dbl.
+    (* Explicit discharge, the same fix as in P384_wNAF_Instance.v.  The
+       former [eapply p384_curve_double_general_ok; eauto using
+       p384_three_b_loader_ok_dbl, p384_a_loader_ok_dbl] measured 910.5 s;
+       the cost is [eapply]'s unification of the conclusion
+       [spec_of_rcb_double_general p384_three_b_felem p384_a_felem] over
+       the six-limb felem constants, which a fully applied term avoids.
+       The environment premise is the single hole, discharged by the
+       following [exact] -- the shape [p384_curve_double_general_ok]
+       itself uses. *)
+    pose proof (p384_three_b_loader_ok_dbl functions Htb_env) as Htb.
+    pose proof (p384_a_loader_ok_dbl functions Ha_env) as Ha.
+    refine (p384_curve_double_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hdbl_env.
   Qed.
 
   (* ============================================================== *)

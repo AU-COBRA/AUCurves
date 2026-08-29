@@ -133,8 +133,13 @@ Section P224_DoubleGeneralA.
       spec_of_rcb_double_general p224_three_b_felem p224_a_felem functions.
   Proof.
     intros functions Hdbl_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p224_curve_double_general_ok; eauto using
-      p224_three_b_loader_ok_dbl, p224_a_loader_ok_dbl.
+    (* Explicit discharge, as in CurveDoubleGeneralA_P384.v.  The former
+       sentence measured 93.0 s here, 910.5 s at the six-limb P-384
+       instance. *)
+    pose proof (p224_three_b_loader_ok_dbl functions Htb_env) as Htb.
+    pose proof (p224_a_loader_ok_dbl functions Ha_env) as Ha.
+    refine (p224_curve_double_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hdbl_env.
   Qed.
 
   (* ============================================================== *)

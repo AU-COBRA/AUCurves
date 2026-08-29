@@ -169,8 +169,15 @@ Section P256_DoubleGeneralA.
       spec_of_rcb_double_general p256_three_b_felem p256_a_felem functions.
   Proof.
     intros functions Hdbl_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p256_curve_double_general_ok; eauto using
-      p256_three_b_loader_ok_dbl, p256_a_loader_ok_dbl.
+    (* Explicit discharge, as in CurveDoubleGeneralA_P384.v: name the two
+       loader facts and supply every argument, so no [eauto] search and no
+       [eapply] unification against [spec_of_rcb_double_general] takes
+       place.  The former sentence measured 100.1 s here, 910.5 s at the
+       six-limb P-384 instance. *)
+    pose proof (p256_three_b_loader_ok_dbl functions Htb_env) as Htb.
+    pose proof (p256_a_loader_ok_dbl functions Ha_env) as Ha.
+    refine (p256_curve_double_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hdbl_env.
   Qed.
 
   (* ============================================================== *)

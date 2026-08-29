@@ -26,16 +26,36 @@
      ; The projective facts it was reaching for are proved in
      ; Group/CurveAdd/RcbProjectiveLaws.v.
      ; The hand-written WP pathfinder specs: superseded by the Rupicola
-     ; route (CurveAddGeneralA*, CurveDoubleGeneralA*) and by the functor
-     ; instances (P*_G1_Add_Functor_Instance), all of which compile.  These
-     ; three have never compiled -- at HEAD or since -- because their
-     ; closure tail (this_mod' substitution + ring over the 40-op chain)
-     ; does not terminate; scripts/logs/p256_g1_add_debug_notes.md records
-     ; the fifteen defect classes found while executing them.  Excluded so
-     ; a whole-tree build is meaningful.
+     ; route (CurveAddGeneralA*, CurveDoubleGeneralA*, CurveA3_*), which
+     ; does compile and is what the emitted Rust comes from.  These three
+     ; have never compiled -- at HEAD or since -- because their closure
+     ; tail (this_mod' substitution + ring over the 40-op chain) does not
+     ; terminate; scripts/logs/p256_g1_add_debug_notes.md records the
+     ; fifteen defect classes found while executing them.  Excluded so a
+     ; whole-tree build is meaningful.
      Curve.P256_G1_Add_Spec
      Curve.P384_G1_Add_Spec
      Curve.P224_G1_Add_Spec
+     ; The functor instances replay that same WP script over the functor
+     ; body.  Measured 2026-08-29: P-256 runs 1 h 49 min and then fails,
+     ; not times out -- the twelve blanket [discharge_fixed] rounds leave
+     ; the FIRST call equation with an unresolved output evar and the
+     ; guard fires, [Tactic failure: P3-CLOSURE-RESIDUAL (montmul ?x1
+     ; (toZ wX1) (toZ wX2))].  More rounds do not help; the closure is
+     ; not converging.  P-384/P-224 are the same script.  Nothing Requires
+     ; them (only a comment in Theory/WordByWordMontgomery/RcbGeneralAChain.v
+     ; mentions them), and the Rupicola route above already delivers the
+     ; verified add/double for all three curves.
+     Curve.P256_G1_Add_Functor_Instance
+     Curve.P384_G1_Add_Functor_Instance
+     Curve.P224_G1_Add_Functor_Instance
+     ; Emission driver: writes Rust text to /tmp via [Redirect], like
+     ; ExtractSafeRust above.  Run by hand, not part of the build.
+     Curve.EmitA3Rust
+     ; RCB Algorithm 9 (a = 0 doubling).  The algebra is Qed; the final
+     ; Rupicola [Derive] reports "Compilation incomplete" and its [Qed]
+     ; fails.  See the honesty ledger at the head of the file.
+     Group.CurveAdd.PointDoubleA0
      Curve.P256Curve_G1_bedrock
      Curve.PallasCurve_G1_bedrock
      Curve.VestaCurve_G1_bedrock

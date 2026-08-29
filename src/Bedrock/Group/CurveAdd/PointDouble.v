@@ -4,7 +4,53 @@
     than calling the complete addition with P1 = P2.
 
     Uses F.pow x 2 for squaring (triggers Rupicola's compile_square),
-    and F.mul for the one non-square multiplication. *)
+    and F.mul for the one non-square multiplication.
+
+    ** DEFECT: WRONG COORDINATE SYSTEM.  SUPERSEDED BY PointDoubleA0.v. **
+
+    dbl-2009-l is a JACOBIAN formula: it reads (X : Y : Z) as
+    (X/Z², Y/Z³).  Every other component of the a = 0 chain is
+    HOMOGENEOUS -- [CurveAdd.ladderstep_gallina] is fiat-crypto's
+    [Projective.add] ([BN254_wNAF_Laws.bn254_curve_add_is_cadd]),
+    [StoreZero] writes the homogeneous identity, and
+    [RcbProjectiveLaws.oncurve] is the homogeneous curve equation.
+    Fed a genuine Jacobian representative (X t², Y t³, t) of a point
+    P, [point_double_gallina] returns 2P for every t, as dbl-2009-l
+    should.  Fed the homogeneous representative (X t, Y t, t) that the
+    a = 0 chain actually produces, it returns a triple that is 2P in
+    NEITHER reading, for every t <> 1 -- while
+    [ladderstep_gallina P P] returns 2P for every t.
+
+    The output Z is 2YZ, a Jacobian Z, so reading the result
+    homogeneously fails even at t = 1: a Z = 1 vector read in the
+    chain's own coordinates does expose this.  What hides it is
+    reading the output as Jacobian, which is correct at every t.
+    So it is not a missing equivalence proof but a wrong answer, and
+    [BN254_wNAF_Instance.HCurveDouble], whose postcondition is
+    literally [curve_add (X,Y,Z) (X,Y,Z)], cannot be discharged from
+    it.
+
+    Reach: [bn254_point_double], [bn256_point_double] and
+    [bn446_point_double] bind [point_double_body] to the
+    "curve_double" key of their function tables, and
+    [bn254_point_double_correct] is Qed -- but it only proves the body
+    computes [point_double_gallina], never that
+    [point_double_gallina] doubles.  Nothing downstream consumes it:
+    no Rust or Jasmin artifact in this tree contains a
+    "curve_double", so the defect has not shipped.
+
+    Replacement: [PointDoubleA0.v] derives RCB 2015 Algorithm 9, the
+    homogeneous a = 0 doubling, and proves
+    [rcb_double_a0_eq_ladderstep] -- equality with the addition on a
+    repeated argument, coordinate for coordinate, for every on-curve
+    input.  It is also cheaper than this body (18 field operations /
+    9 multiplications against 24 / 8), and much cheaper than the
+    addition on a repeated argument (33 / 14).
+
+    This file is kept, unmodified apart from this note, because
+    [point_double_correct] is a Qed'd Rupicola derivation whose
+    aliased-binop shapes [PointDoubleA0.v]'s PORT-CHECK (A) cites as
+    precedent.  Do not wire it into a homogeneous chain. *)
 
 Require Import Rupicola.Lib.Api. Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.

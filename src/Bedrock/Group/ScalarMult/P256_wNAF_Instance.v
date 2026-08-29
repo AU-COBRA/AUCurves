@@ -17,28 +17,42 @@
       §4  Callee-spec discharges from the function table.
       §5  [p256_wnaf_single_full]: the end-to-end statement.
 
-    What remains hypothetical in §5 and why (docs/nist_scalar_mult_plan.md):
-      - G5  [HOppInplace]: the chain hard-wires the FieldParameters name
-            [opp] for the aliased negation; fiat-crypto's synthesized
-            opp has no aliasing spec.  Discharged once the four generic
-            files take an [opp_name] parameter (then
-            [NistWnafWrappers.opp_inplace_ok] applies).
-      - G6  Leibniz group laws on projective triples
-            ([curve_add_assoc], [curve_add_comm], identities,
-            [point_opp_inverse], and [Htable]).  These are FALSE for
-            the raw RCB formula (BLS12_wNAF_PointOppInverse.v) and are
-            kept as hypotheses, not Admitted.  Closing them needs the
-            projective-equivalence refactor of the chain (phase 2).
-      - G7  Digit array and table contents are caller-supplied.
+    Status of the plan items (docs/nist_scalar_mult_plan.md):
+      - G5  CLOSED at the interface.  The four generic files now take an
+            [opp_name] parameter, and this file passes "opp_inplace" —
+            the name of [NistWnafWrappers.opp_inplace_func], the
+            aliasing-tolerant wrapper.  (fiat-crypto's synthesized
+            [p256_coord_opp] has no aliasing spec, so the wrapper name,
+            not the [FieldParameters] field [opp], is the right value.)
+            [NistWnafWrappers.opp_inplace_ok] is still Admitted, so the
+            negation spec is imported-Admitted rather than proved.
+      - G6  DISCHARGED from RcbProjectiveLaws.v, not assumed.  The chain
+            is now quotiented by [RcbProjectiveLaws.pt_eq] and carries
+            [RcbProjectiveLaws.oncurve]; §1b below proves every group
+            hypothesis the chain asks for.
+            HONESTY: this trades the (false) Leibniz laws for five
+            genuine side conditions on the curve, taken as hypotheses
+            here: the curve constant [p256_b_val] with
+            [three_b = 3b], the characteristic bound [27 < M],
+            non-vanishing of the discriminant, and totality of
+            [Projective.add] ([p256_Hexcept]).  The last is the one that
+            is not a routine computation: it says the P-256 curve has no
+            F-rational point of order two.  It corresponds to
+            RcbProjectiveLaws' single Admitted
+            ([not_exceptional_of_no_two_torsion]), which this file does
+            NOT use — it takes the conclusion as a hypothesis instead.
+      - G7  Digit array and table contents are caller-supplied.  The
+            table hypothesis is now STRONGER than before: each entry
+            must be on the curve as well as [pt_eq] to the odd multiple.
 
     Honesty ledger (this file): 1 Admitted —
     [p256_wnaf_single_full] (composition into [wnaf_single_full]).
-    [p256_Hhorner_step] is proved from
-    [wNAF_Single_HornerAlgebra.horner_step_single].  Imported
-    Admitteds: the four function-body wrapper lemmas of
-    NistWnafWrappers.v. *)
+    [p256_Hhorner_step] / [p256_Hhorner_oncurve] are proved from
+    [wNAF_Single_HornerAlgebra].  Imported Admitteds: the four
+    function-body wrapper lemmas of NistWnafWrappers.v. *)
 
 From Stdlib Require Import ZArith Lia List.
+From Stdlib Require Import RelationClasses.
 Require Import Rupicola.Lib.Api.
 Import bedrock2.WeakestPrecondition.
 Require Import coqutil.Word.Bitwidth64.
@@ -63,6 +77,14 @@ Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_LoopBody.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_Proof.
 Require Import Bedrock.Field.Synthesis.Examples.wNAF_Single_HornerAlgebra.
 Require Import Bedrock.Field.Synthesis.Examples.BN254_wNAF_Instance.
+Require Import Crypto.Algebra.Hierarchy.
+Require Import Crypto.Algebra.Ring.
+Require Import Crypto.Algebra.Group.
+Require Import Crypto.Algebra.Field.
+Require Import Crypto.Spec.WeierstrassCurve.
+Require Import Crypto.Curves.Weierstrass.Projective.
+Require Import Crypto.Util.Decidable.
+Require Import Bedrock.Group.CurveAdd.RcbProjectiveLaws.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.WNAFTable.
 Require Import Bedrock.Group.CurveAdd.CurveAddGeneralA.
@@ -103,12 +125,324 @@ Section P256_wNAF.
   Definition p256_three_b_val : F := feval (proj1_sig p256_three_b_felem).
 
   (** The chain's [curve_add] at P-256: the derived RCB formula on
-      plain triples. *)
+      plain triples.  [RcbProjectiveLaws.cadd] is the same forty-step
+      chain as [NistWnafWrappers.curve_add_general_triple] (see
+      [p256_curve_add_is_wrapper] below); it is used here so that the
+      group laws of RcbProjectiveLaws.v apply without a transport. *)
   Definition p256_curve_add : F * F * F -> F * F * F -> F * F * F :=
-    curve_add_general_triple p256_a_val p256_three_b_val.
+    RcbProjectiveLaws.cadd p256_a_val p256_three_b_val.
+
+  Lemma p256_curve_add_is_wrapper :
+    p256_curve_add = curve_add_general_triple p256_a_val p256_three_b_val.
+  Proof. reflexivity. Qed.
 
   Definition p256_point_opp : F * F * F -> F * F * F :=
-    @point_opp_triple p256_field_parameters.
+    RcbProjectiveLaws.point_opp_triple.
+
+  (* ============================================================== *)
+  (* §1b. G6: the projective equivalence and the group laws          *)
+  (* ============================================================== *)
+
+  (** The side conditions of RcbProjectiveLaws.v, as hypotheses.
+
+      [p256_b_val] is the curve constant b (the chain only ever sees
+      [three_b]); [p256_M_gt_27] is the characteristic bound the
+      [Ring.char_ge] instances need; [p256_Hdisc] is
+      4a^3 + 27b^2 <> 0 in the expanded form Projective.v expects;
+      [p256_Hexcept] is totality of [Projective.add], equivalently that
+      the curve has no F-rational point of order two. *)
+  Context (p256_b_val : F).
+  Context (p256_M_gt_27 : (27 < M_pos)%positive).
+  Context (p256_Hthree_b :
+    p256_three_b_val = (p256_b_val + p256_b_val + p256_b_val)%F).
+  Context (p256_Hdisc : id
+    ((((1 + 1 + 1 + 1) * p256_a_val * p256_a_val * p256_a_val
+       + ((1 + 1 + 1 + 1) * (1 + 1 + 1 + 1) + (1 + 1 + 1 + 1)
+          + (1 + 1 + 1 + 1) + 1 + 1 + 1) * p256_b_val * p256_b_val) <> 0)%F)).
+
+  Local Instance p256_char_ge_3 :
+    @Ring.char_ge F eq F.zero F.one F.opp F.add F.sub F.mul 3%positive :=
+    RcbProjectiveLaws.char_ge_3 p256_M_gt_27.
+
+  Local Notation P256_Ppoint :=
+    (@Projective.point F eq F.zero F.add F.mul p256_a_val p256_b_val).
+
+  Local Notation P256_not_exceptional :=
+    (@Projective.not_exceptional F eq F.zero F.one F.opp F.add F.sub
+       F.mul F.inv F.div p256_a_val p256_b_val _ p256_char_ge_3 _).
+
+  Context (p256_Hexcept : forall P Q : P256_Ppoint, P256_not_exceptional P Q).
+
+  (** The chain's [pt_eq] and [oncurve] at P-256. *)
+  Definition p256_pt_eq : F * F * F -> F * F * F -> Prop :=
+    RcbProjectiveLaws.pt_eq.
+
+  Definition p256_oncurve : F * F * F -> Prop :=
+    RcbProjectiveLaws.oncurve p256_a_val p256_b_val.
+
+  (** No local [prime] instance is declared here: RcbProjectiveLaws
+      exports [prime_M_pos], and a second, opaque proof of the same
+      Prop would make [F.field_modulo]'s instance argument differ from
+      the one baked into that file's theorems — [Znumtheory.prime] is
+      an ordinary Prop, so the two would not be convertible.  The ring
+      below needs no primality; it exists only for the [ring] fallback
+      of [p256_oncurve_id]. *)
+  Add Ring Fp_ring_p256 : (F.ring_theory M_pos)
+    (morphism (F.ring_morph M_pos),
+     constants [F.is_constant],
+     div (F.morph_div_theory M_pos),
+     power_tac (F.power_theory M_pos) [F.is_pow_constant]).
+
+  Local Ltac rcb :=
+    unfold p256_pt_eq, p256_oncurve, p256_curve_add, p256_point_opp in *.
+
+  (** The curve constants [b] and [three_b] must be pinned by hand at
+      every discharge below.  A RcbProjectiveLaws theorem is generalised
+      over every Section variable its PROOF TERM mentions, not only
+      those in its statement, and [ring] / [fsatz] emit [abstract]ed
+      subproof constants that Coq generalises over the WHOLE ambient
+      section context.  So e.g. [pt_eq_Equivalence], whose statement
+      mentions neither [b] nor [three_b], still takes both — and
+      [apply] / [eapply] cannot invent them ("Unable to find an
+      instance for the variables b, three_b").
+
+      The alternation tries the pinnings from most to least specific; a
+      binding name absent from a given lemma makes that branch fail and
+      the next one run.  The alternations are written out per lemma
+      rather than factored into a tactic taking the lemma as an
+      argument, because a [with (x := t)] binding name must be resolved
+      against a concrete constant.  This is the §3a pattern of
+      WnafTableBuild.v, which compiles against the same file. *)
+  Local Ltac rcb_ctx :=
+    first [ eassumption
+          | exact p256_M_gt_27 | exact p256_Hthree_b
+          | exact p256_Hdisc   | exact p256_Hexcept ].
+
+  Lemma p256_pt_eq_refl : forall p, p256_pt_eq p p.
+  Proof.
+    intros p. rcb.
+    first
+      [ eapply RcbProjectiveLaws.pt_eq_refl
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_refl
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_refl
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_refl with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_refl; rcb_ctx ].
+  Qed.
+
+  Lemma p256_pt_eq_sym : forall p q, p256_pt_eq p q -> p256_pt_eq q p.
+  Proof.
+    intros p q H. rcb.
+    first
+      [ eapply RcbProjectiveLaws.pt_eq_sym
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_sym
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_sym
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_sym with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_sym; rcb_ctx ].
+  Qed.
+
+  Lemma p256_pt_eq_trans : forall p q r,
+    p256_pt_eq p q -> p256_pt_eq q r -> p256_pt_eq p r.
+  Proof.
+    intros p q r H1 H2. rcb.
+    first
+      [ eapply RcbProjectiveLaws.pt_eq_trans
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_trans
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_trans
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_trans with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.pt_eq_trans; rcb_ctx ].
+  Qed.
+
+  Lemma p256_pt_eq_equiv : Equivalence p256_pt_eq.
+  Proof.
+    constructor;
+      [ exact p256_pt_eq_refl | exact p256_pt_eq_sym | exact p256_pt_eq_trans ].
+  Qed.
+
+  Lemma p256_oncurve_id : p256_oncurve (Fzero,Fone,Fzero).
+  Proof.
+    rcb.
+    first
+      [ eapply RcbProjectiveLaws.oncurve_id
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_id
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_id
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_id with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_id; rcb_ctx
+      | (* Independent of the discharge shape: [oncurve] and [id_pt] are
+           plain definitions, so unfold and compute.  This is the script
+           of [RcbProjectiveLaws.oncurve_id] itself. *)
+        cbv [RcbProjectiveLaws.oncurve RcbProjectiveLaws.id_pt];
+        split; [ ring | intros _; fsatz ] ].
+  Qed.
+
+  Lemma p256_oncurve_curve_add : forall P Q,
+    p256_oncurve P -> p256_oncurve Q -> p256_oncurve (p256_curve_add P Q).
+  Proof.
+    intros P Q HP HQ. rcb.
+    first
+      [ eapply RcbProjectiveLaws.oncurve_cadd
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_cadd
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_cadd
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_cadd with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_cadd; rcb_ctx ].
+  Qed.
+
+  Lemma p256_oncurve_point_opp : forall P,
+    p256_oncurve P -> p256_oncurve (p256_point_opp P).
+  Proof.
+    intros P HP. rcb.
+    first
+      [ eapply RcbProjectiveLaws.oncurve_opp
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_opp
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_opp
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_opp with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.oncurve_opp; rcb_ctx ].
+  Qed.
+
+  Lemma p256_curve_add_Proper : forall P P' Q Q',
+    p256_oncurve P -> p256_oncurve P' -> p256_oncurve Q -> p256_oncurve Q' ->
+    p256_pt_eq P P' -> p256_pt_eq Q Q' ->
+    p256_pt_eq (p256_curve_add P Q) (p256_curve_add P' Q').
+  Proof.
+    intros P P' Q Q' Hp Hp' Hq Hq' E1 E2. rcb.
+    first
+      [ eapply RcbProjectiveLaws.cadd_Proper
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_Proper
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_Proper
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_Proper with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_Proper; rcb_ctx ].
+  Qed.
+
+  Lemma p256_point_opp_Proper : forall P P',
+    p256_oncurve P -> p256_oncurve P' -> p256_pt_eq P P' ->
+    p256_pt_eq (p256_point_opp P) (p256_point_opp P').
+  Proof.
+    intros P P' Hp Hp' E. rcb.
+    first
+      [ eapply RcbProjectiveLaws.point_opp_Proper
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_Proper
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_Proper
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_Proper with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_Proper; rcb_ctx ].
+  Qed.
+
+  Lemma p256_curve_add_id_r : forall x y z,
+    p256_oncurve (x,y,z) ->
+    p256_pt_eq (p256_curve_add (x,y,z) (Fzero,Fone,Fzero)) (x,y,z).
+  Proof.
+    intros x y z Hp. rcb.
+    first
+      [ eapply RcbProjectiveLaws.cadd_id_r
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_r
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_r
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_r with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_r; rcb_ctx ].
+  Qed.
+
+  Lemma p256_curve_add_id_l : forall x y z,
+    p256_oncurve (x,y,z) ->
+    p256_pt_eq (p256_curve_add (Fzero,Fone,Fzero) (x,y,z)) (x,y,z).
+  Proof.
+    intros x y z Hp. rcb.
+    first
+      [ eapply RcbProjectiveLaws.cadd_id_l
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_l
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_l
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_l with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_id_l; rcb_ctx ].
+  Qed.
+
+  Lemma p256_curve_add_assoc : forall P Q R,
+    p256_oncurve P -> p256_oncurve Q -> p256_oncurve R ->
+    p256_pt_eq (p256_curve_add P (p256_curve_add Q R))
+               (p256_curve_add (p256_curve_add P Q) R).
+  Proof.
+    intros P Q R Hp Hq Hr. rcb.
+    first
+      [ eapply RcbProjectiveLaws.cadd_assoc
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_assoc
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_assoc
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_assoc with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_assoc; rcb_ctx ].
+  Qed.
+
+  Lemma p256_curve_add_comm : forall P Q,
+    p256_oncurve P -> p256_oncurve Q ->
+    p256_pt_eq (p256_curve_add P Q) (p256_curve_add Q P).
+  Proof.
+    intros P Q Hp Hq. rcb.
+    first
+      [ eapply RcbProjectiveLaws.cadd_comm
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_comm
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_comm
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_comm with (b := p256_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.cadd_comm; rcb_ctx ].
+  Qed.
+
+  Lemma p256_point_opp_inverse : forall P,
+    p256_oncurve P ->
+    p256_pt_eq (p256_curve_add P (p256_point_opp P)) (Fzero,Fone,Fzero).
+  Proof.
+    intros P Hp. rcb.
+    first
+      [ eapply RcbProjectiveLaws.point_opp_inverse
+          with (a := p256_a_val) (b := p256_b_val)
+               (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_inverse
+          with (b := p256_b_val) (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_inverse
+          with (three_b := p256_three_b_val); rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_inverse with (b := p256_b_val);
+        rcb_ctx
+      | eapply RcbProjectiveLaws.point_opp_inverse; rcb_ctx ].
+  Qed.
 
   (** [scmul] of BLS12_GLV_LoopInvariant.v, the chain's [scmul_s].
       Qualified: WNAFTable.v (imported later) also exports a [scmul]
@@ -149,7 +483,8 @@ Section P256_wNAF.
        "auxx"; "auxy"; "auxz"],
       []%list,
       wnaf_single_func_body "curve_add" "curve_double" "store_zero"
-        felem_copy opp (Z.of_nat p256_num_digits) felem_size_in_bytes
+        felem_copy "opp_inplace" (Z.of_nat p256_num_digits)
+        felem_size_in_bytes
         "digits_k" "table_P")).
 
   (** Function-table membership bundle used by the discharges below.
@@ -163,6 +498,8 @@ Section P256_wNAF.
     /\ map.get functions "curve_add" = Some (snd p256_curve_add_inplace_func)
     /\ map.get functions "curve_double" = Some (snd p256_curve_double_func)
     /\ map.get functions "store_zero" = Some (snd p256_store_zero_func)
+    (* G5: the aliasing-tolerant negation wrapper the chain now calls *)
+    /\ map.get functions "opp_inplace" = Some (snd p256_opp_inplace_func)
     /\ map.get functions felem_copy = Some p256_coord_felem_copy.
 
   Definition p256_wnaf_leaf_specs (functions : Semantics.env) : Prop :=
@@ -281,7 +618,7 @@ Section P256_wNAF.
       p256_wnaf_leaf_specs functions ->
       spec_of_rcb_add_general p256_three_b_felem p256_a_felem functions.
   Proof.
-    intros functions (Hadd & Htb & Ha & _ & _ & _ & _) (Hmul & Hfadd & Hsub & _ & _).
+    intros functions (Hadd & Htb & Ha & _ & _ & _ & _ & _) (Hmul & Hfadd & Hsub & _ & _).
     eapply p256_curve_add_general_full; eassumption.
   Qed.
 
@@ -290,7 +627,7 @@ Section P256_wNAF.
       p256_wnaf_table_ok functions ->
       spec_of_felem_copy functions.
   Proof.
-    intros functions (_ & _ & _ & _ & _ & _ & Hcopy).
+    intros functions (_ & _ & _ & _ & _ & _ & _ & Hcopy).
     (* [p256_felem_copy_ok : program_logic_goal_for_function! p256_coord_felem_copy]
        unfolds to [map.get functions felem_copy = Some p256_coord_felem_copy ->
        spec_of_felem_copy functions] (bedrock2 program_logic_goal_for). *)
@@ -311,7 +648,7 @@ Section P256_wNAF.
       spec_of_curve_add_inplace_general p256_three_b_felem p256_a_felem functions.
   Proof.
     intros functions Htab Hleaf.
-    pose proof Htab as (_ & _ & _ & Hca & _ & _ & _).
+    pose proof Htab as (_ & _ & _ & Hca & _ & _ & _ & _).
     eapply curve_add_inplace_general_ok;
       eauto using p256_rcb_add_general_spec, p256_felem_copy_spec.
   Qed.
@@ -323,7 +660,7 @@ Section P256_wNAF.
       spec_of_curve_double_general p256_three_b_felem p256_a_felem functions.
   Proof.
     intros functions Htab Hleaf.
-    pose proof Htab as (_ & _ & _ & _ & Hcd & _ & _).
+    pose proof Htab as (_ & _ & _ & _ & Hcd & _ & _ & _).
     eapply curve_double_general_ok;
       eauto using p256_rcb_add_general_spec, p256_felem_copy_spec.
   Qed.
@@ -335,7 +672,7 @@ Section P256_wNAF.
       @StoreZero.spec_of_store_zero _ _ _ _ _ _
         p256_field_parameters p256_frep functions.
   Proof.
-    intros functions (_ & _ & _ & _ & _ & Hsz & _) (_ & _ & _ & _ & Hfw).
+    intros functions (_ & _ & _ & _ & _ & Hsz & _ & _) (_ & _ & _ & _ & Hfw).
     (* After Section discharge [store_zero_from_word_ok] takes, before
        [functions]: 6 implicits (width, BW, word, mem, locals,
        ext_spec), the four ok-hypotheses (word.ok, map.ok mem,
@@ -374,45 +711,43 @@ Section P256_wNAF.
   (* §5. End-to-end statement                                        *)
   (* ============================================================== *)
 
-  (** Leibniz group laws on projective triples (plan G6).  Bundled so
-      that the final theorem names the residual trust in one place.
-      These do NOT hold for the raw RCB formula; they are the
-      hypotheses that the phase-2 projective-equivalence refactor
-      replaces. *)
-  Definition p256_leibniz_group_laws : Prop :=
-    (forall x y z, p256_curve_add (x,y,z) (Fzero,Fone,Fzero) = (x,y,z))
-    /\ (forall x y z, p256_curve_add (Fzero,Fone,Fzero) (x,y,z) = (x,y,z))
-    /\ (forall P Q R, p256_curve_add P (p256_curve_add Q R)
-                      = p256_curve_add (p256_curve_add P Q) R)
-    /\ (forall P Q, p256_curve_add P Q = p256_curve_add Q P)
-    /\ (forall P, p256_curve_add P (p256_point_opp P) = (Fzero,Fone,Fzero)).
+  (** Table correctness, in the chain's quotiented form (plan G7).
 
-  (** Table correctness in the chain's (Leibniz) form. *)
+      HONESTY: this is STRICTLY STRONGER than the Leibniz version it
+      replaces on the [oncurve] conjunct, and strictly weaker on the
+      equation ([pt_eq] instead of [=]).  Both changes are forced: the
+      RCB table produced by any doubling/addition chain is only
+      projectively equal to the odd multiples, and [oncurve] does not
+      follow from [pt_eq] (e.g. [pt_eq (0,0,0) (0,1,0)] holds and
+      (0,0,0) is not a projective point). *)
   Definition p256_table_ok (Px Py Pz : F) (table_entries : list (F * F * F)) : Prop :=
     length table_entries = 4%nat /\
     forall i, (i < 4)%nat ->
-      nth i table_entries (Fzero,Fone,Fzero) = p256_scmul (2 * i + 1) (Px, Py, Pz).
+      p256_oncurve (nth i table_entries (Fzero,Fone,Fzero))
+      /\ p256_pt_eq (nth i table_entries (Fzero,Fone,Fzero))
+                    (p256_scmul (2 * i + 1) (Px, Py, Pz)).
 
   (** Horner step, from [wNAF_Single_HornerAlgebra.horner_step_single]
       (whose [sm] is definitionally [p256_scmul] and whose
       [digit_point_local] is definitionally ProcessDigits' [digit_point]
       at [point_opp := p256_point_opp]). *)
   Lemma p256_Hhorner_step :
-    p256_leibniz_group_laws ->
     forall k, 0 <= k < 2 ^ 256 ->
     forall Px Py Pz table_entries,
+      p256_oncurve (Px,Py,Pz) ->
       p256_table_ok Px Py Pz table_entries ->
       forall n (Ox Oy Oz : F),
         (n < p256_num_digits)%nat ->
         let ws_old := weighted_sum (skipn (S n) (p256_digits k)) 0 in
-        (Ox,Oy,Oz) = p256_scmul (Z.to_nat (2 * ws_old)) (Px,Py,Pz) ->
+        p256_oncurve (Ox,Oy,Oz) ->
+        p256_pt_eq (Ox,Oy,Oz) (p256_scmul (Z.to_nat (2 * ws_old)) (Px,Py,Pz)) ->
         let d := nth n (p256_digits k) 0 in
-        (if d =? 0 then (Ox,Oy,Oz)
-         else p256_curve_add (Ox,Oy,Oz) (digit_point d table_entries))
-        = p256_scmul (Z.to_nat (weighted_sum (skipn n (p256_digits k)) 0)) (Px,Py,Pz).
+        p256_pt_eq
+          (if d =? 0 then (Ox,Oy,Oz)
+           else p256_curve_add (Ox,Oy,Oz) (digit_point d table_entries))
+          (p256_scmul (Z.to_nat (weighted_sum (skipn n (p256_digits k)) 0)) (Px,Py,Pz)).
   Proof.
-    intros Hlaws k Hk Px Py Pz tab Htab n Ox Oy Oz Hn ws_old Hacc d.
-    destruct Hlaws as (Hid_r & Hid_l & Hassoc & Hcomm & Hinv).
+    intros k Hk Px Py Pz tab HPoc Htab n Ox Oy Oz Hn ws_old Hoc Hacc d.
     destruct Htab as (Hlen4 & Hcorr).
     assert (Hlen : length (p256_digits k) = p256_num_digits)
       by apply p256_digits_length.
@@ -430,35 +765,91 @@ Section P256_wNAF.
     (* [sm] of wNAF_Single_HornerAlgebra.v is [p256_scmul] and its
        [digit_point_local] is ProcessDigits' [digit_point] by
        conversion (same fixpoint / same [point_opp]), so the
-       instantiated statement is the goal up to delta. *)
+       instantiated statement is the goal up to delta.  The argument
+       order is the Section declaration order of [SingleHornerAlgebra]. *)
     pose proof (horner_step_single
                   Fzero Fone p256_curve_add p256_point_opp
-                  Hid_r Hid_l Hassoc Hcomm Hinv
+                  p256_pt_eq p256_pt_eq_equiv p256_oncurve
+                  p256_oncurve_id p256_oncurve_curve_add
+                  p256_oncurve_point_opp
+                  p256_curve_add_Proper p256_point_opp_Proper
+                  p256_curve_add_id_r p256_curve_add_id_l
+                  p256_curve_add_assoc p256_curve_add_comm
+                  p256_point_opp_inverse
                   (p256_digits k) Px Py Pz tab
-                  Hlen4 Hcorr Hodd Hb Hws
-                  n Ox Oy Oz Hn' Hacc) as Hstep.
+                  HPoc Hlen4 Hcorr Hodd Hb Hws
+                  n Ox Oy Oz Hn' Hoc Hacc) as Hstep.
     first [ exact Hstep | apply Hstep ].
   Qed.
 
+  (** On-curve closure of one Horner step: the [oncurve] half of the
+      chain's [Hhorner_oncurve], from [digit_point_local_oncurve]. *)
+  Lemma p256_Hhorner_oncurve :
+    forall k, 0 <= k ->
+    forall Px Py Pz table_entries,
+      p256_table_ok Px Py Pz table_entries ->
+      forall n (Ox Oy Oz : F),
+        (n < p256_num_digits)%nat ->
+        p256_oncurve (Ox,Oy,Oz) ->
+        let d := nth n (p256_digits k) 0 in
+        p256_oncurve
+          (if d =? 0 then (Ox,Oy,Oz)
+           else p256_curve_add (Ox,Oy,Oz) (digit_point d table_entries)).
+  Proof.
+    intros k Hk Px Py Pz tab Htab n Ox Oy Oz Hn Hoc d.
+    destruct Htab as (Hlen4 & Hcorr).
+    assert (Hdoc : p256_oncurve (digit_point d tab)).
+    { assert (Hentries : forall i, (i < 4)%nat ->
+                p256_oncurve (nth i tab (Fzero,Fone,Fzero)))
+        by (intros i Hi; exact (proj1 (Hcorr i Hi))).
+      pose proof (digit_point_oncurve_full
+                    Fzero Fone p256_curve_add p256_point_opp
+                    p256_pt_eq p256_pt_eq_equiv p256_oncurve
+                    p256_oncurve_id p256_oncurve_curve_add
+                    p256_oncurve_point_opp
+                    p256_curve_add_Proper p256_point_opp_Proper
+                    p256_curve_add_id_r p256_curve_add_id_l
+                    p256_curve_add_assoc p256_curve_add_comm
+                    p256_point_opp_inverse
+                    tab d Hlen4 Hentries
+                    (p256_digits_odd k Hk n Hn)
+                    (p256_digits_bounded k Hk n Hn)) as Hdp.
+      first [ exact Hdp | apply Hdp ]. }
+    destruct (d =? 0); [exact Hoc | apply p256_oncurve_curve_add; assumption].
+  Qed.
+
   (** The citable statement.  Under the function table and the field
-      leaf specs, plus the three residual hypothesis groups (G5, G6,
-      G7), the body of [p256_wnaf_single_func] computes [k * P] in the
-      chain's sense ([p256_scmul (Z.to_nat k) P]). *)
+      leaf specs, plus the residual hypothesis groups (G5's negation
+      spec at the wrapper name, and G7's caller-supplied data), the body
+      of [p256_wnaf_single_func] computes [k * P] in the chain's sense
+      ([p256_scmul (Z.to_nat k) P]) UP TO PROJECTIVE EQUIVALENCE, and
+      the result is on the curve.
+
+      HONESTY: the conclusion is weaker than a Leibniz equation between
+      triples — it is [p256_pt_eq], i.e. equality of the projective
+      points the triples represent.  A consumer that needs a canonical
+      representative must normalise (divide through by Z, mapping Z = 0
+      to (0,1,0)); [pt_eq] is exactly the equivalence under which that
+      normalisation is sound.  The G6 group laws are no longer assumed;
+      the curve-level side conditions they rest on ([p256_b_val],
+      [p256_M_gt_27], [p256_Hthree_b], [p256_Hdisc], [p256_Hexcept])
+      are Section hypotheses of this file. *)
   Theorem p256_wnaf_single_full :
     forall functions,
       p256_wnaf_table_ok functions ->
       p256_wnaf_leaf_specs functions ->
-      (* G5: aliased negation on the FieldParameters name [opp]. *)
+      (* G5: aliased negation at the wrapper name "opp_inplace"
+         ([NistWnafWrappers.spec_of_opp_inplace], second conjunct). *)
       (forall p (Y : F) R0 tr0 m0,
           (FElem (Some tight_bounds) p Y ⋆ R0) m0 ->
-          Semantics.call functions opp tr0 m0 [p; p]
+          Semantics.call functions "opp_inplace" tr0 m0 [p; p]
             (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
               (FElem (Some tight_bounds) p (F.opp Y) ⋆ R0) m')) ->
-      (* G6 *)
-      p256_leibniz_group_laws ->
       forall k, 0 <= k < 2 ^ 256 ->
       forall Px Py Pz table_entries,
-        (* G7: the caller's table holds [1P;3P;5P;7P] *)
+        (* G7: the base point is on the curve *)
+        p256_oncurve (Px,Py,Pz) ->
+        (* G7: the caller's table holds on-curve points ~ [1P;3P;5P;7P] *)
         p256_table_ok Px Py Pz table_entries ->
       forall pOx pOy pOz pAx pAy pAz pT pDK
         (Ox0 Oy0 Oz0 Ax0 Ay0 Az0 : F)
@@ -478,14 +869,14 @@ Section P256_wNAF.
         tr m l
         (fun t m' l' =>
           exists Rx Ry Rz Ax' Ay' Az',
-          (Rx,Ry,Rz) = p256_scmul (Z.to_nat k) (Px,Py,Pz)
+          p256_oncurve (Rx,Ry,Rz)
+          /\ p256_pt_eq (Rx,Ry,Rz) (p256_scmul (Z.to_nat k) (Px,Py,Pz))
           /\ (Point3 (Some tight_bounds) pOx pOy pOz Rx Ry Rz
               ⋆ Point3 (Some tight_bounds) pAx pAy pAz Ax' Ay' Az'
               ⋆ DigitArray pDK (p256_digits k) ⋆ Table4 pT table_entries
               ⋆ Rinner) m').
   Proof.
-    intros functions Htab Hleaf HOppInplace Hlaws k Hk Px Py Pz tab Htable.
-    pose proof Hlaws as (Hid_r & Hid_l & Hassoc & Hcomm & Hinv).
+    intros functions Htab Hleaf HOppInplace k Hk Px Py Pz tab HPoc Htable.
     pose proof Hleaf as (_ & _ & _ & Hopp & _).
     (* Intended script:
          intros; cbv [p256_wnaf_single_func snd].
@@ -493,16 +884,28 @@ Section P256_wNAF.
                    (curve_add := p256_curve_add)
                    (curve_add_name := "curve_add")
                    (curve_double_name := "curve_double")
+                   (opp_name := "opp_inplace")
+                   (pt_eq := p256_pt_eq) (oncurve := p256_oncurve)
                    (dk := p256_digits k) (num_iters := p256_num_digits)
                    (table_entries := tab) (Px := Px) (Py := Py) (Pz := Pz)
                    (k := k)); try eassumption.
          - exact p256_bounds_eq.
+         (* G6 interface, all proved in §1b from RcbProjectiveLaws.v *)
+         - exact p256_pt_eq_equiv.
+         - exact p256_oncurve_id.
+         - exact p256_oncurve_curve_add.
+         - exact p256_curve_add_Proper.
+         - exact p256_curve_add_id_l.
+         - exact p256_curve_add_assoc.
+         (* callee specs *)
          - exact (p256_HCurveDouble functions Htab Hleaf).      (* HCurveDouble *)
          - exact (p256_HCurveAddInplace functions Htab Hleaf).  (* HCurveAddInplace *)
          - exact (felem_copy_HFelemCopy _ (p256_felem_copy_spec functions Htab)).
-         - exact (opp_HOpp p256_bounds_eq _ Hopp).             (* HOpp *)
+         - exact (opp_HOpp p256_bounds_eq _ Hopp).             (* HOpp, at "opp_inplace" *)
          - exact HOppInplace.
          - exact (p256_HStoreZero functions Htab Hleaf).
+         (* data *)
+         - exact HPoc.
          - exact (p256_digits_length k).
          - exact p256_Hnbound.
          - exact (p256_digits_bounded k ltac:(lia)).
@@ -510,12 +913,21 @@ Section P256_wNAF.
          - exact (proj1 Htable).
          - exact (p256_Hdigit_load (p256_digits k)).
          - exact (p256_digits_Hws_nn k Hk).
-         - exact (p256_Hhorner_step Hlaws k Hk Px Py Pz tab Htable).
+         - exact (p256_Hhorner_step k Hk Px Py Pz tab HPoc Htable).
+         - exact (p256_Hhorner_oncurve k ltac:(lia) Px Py Pz tab Htable).
          - exact (p256_digits_wsum k Hk).  - lia.
-       [wnaf_single_full]'s Section variables (BN254_wNAF_Instance.v)
-       become explicit arguments in declaration order; the named-argument
-       form above avoids committing to that order but still needs a
-       compiler to confirm the names survive Section discharge. *)
+
+       Two residual mismatches remain and are why this is still
+       Admitted:
+       (i)  [opp_HOpp] proves the non-aliased negation spec at the
+            [FieldParameters] name [opp], but the chain now calls
+            [opp_name = "opp_inplace"]; the correct source is
+            [NistWnafWrappers.opp_inplace_ok] (itself Admitted), whose
+            [spec_of_opp_inplace] supplies BOTH shapes at that name.
+       (ii) [wnaf_single_full]'s Section variables become explicit
+            arguments in declaration order; the named-argument form
+            above avoids committing to that order but still needs a
+            compiler to confirm the names survive Section discharge. *)
   Admitted.
 
 End P256_wNAF.
@@ -534,5 +946,10 @@ End P256_wNAF.
                                       -> both negation shapes at "opp_inplace" (needs G5 rename)
       store_zero_from_word_ok        spec_of_from_word -> StoreZero.spec_of_store_zero
     This file
-      p256_Hhorner_step              proved from horner_step_single (Leibniz laws as hypothesis)
+      §1b group laws                 PROVED from RcbProjectiveLaws.v, under the
+                                      curve side conditions p256_b_val /
+                                      p256_M_gt_27 / p256_Hthree_b / p256_Hdisc /
+                                      p256_Hexcept (Section hypotheses)
+      p256_Hhorner_step              proved from horner_step_single (quotiented)
+      p256_Hhorner_oncurve           proved from digit_point_oncurve_full
       p256_wnaf_single_full          Admitted: composition into wnaf_single_full *)

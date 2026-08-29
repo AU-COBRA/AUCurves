@@ -62,8 +62,13 @@
 
     ** Honesty ledger **
 
-    0 Admitted, 0 Axiom -- but the file DOES NOT COMPILE, so that
-    counts nothing yet.  First compiler run 2026-08-29:
+    0 Admitted, 0 Axiom.  Compiler run 2026-08-29 (after the fix
+    below): the whole file compiles, [compile] closes the [Derive] in
+    6.7 s and [Qed] takes 0.3 s.  [Print Assumptions] reports "Closed
+    under the global context" for both [rcb_double_a0_eq_ladderstep]
+    and [rcb_double_a0_correct].  In the dune build.
+
+    Compiler run 2026-08-29 (before the fix):
 
       * the algebra closes.  [rcb_double_a0_eq_ladderstep] (the
         Leibniz bridge: RCB Algorithm 9 equals [ladderstep_gallina]
@@ -71,17 +76,38 @@
         on-curve input) is Qed, as are [compile_rcb_double_a0] and
         [compile_load_three_b_a0];
 
-      * the bedrock2 derivation does not.  The final
-        [Derive rcb_double_a0_body ... As rcb_double_a0_correct.
-        Proof. compile. Qed.] runs [compile] for 15.7 s, backtracks,
-        and reports "Compilation incomplete" -- Rupicola wants a
-        compilation lemma for a binding shape it cannot dispatch.
-        [Qed] then fails with "Attempt to save an incomplete proof".
+      * the bedrock2 derivation did not.  [compile] ran for 15.7 s,
+        backtracked, and reported "Compilation incomplete"; [Qed]
+        then failed with "Attempt to save an incomplete proof".
 
-    So the mathematical content is proved and the extraction body is
-    not.  Excluded from the dune build until [compile] closes; do not
-    cite this file as a verified doubling.  Unverified API details are
-    flagged (* PORT-CHECK: ... *).
+    Diagnosis (2026-08-29): the output binders were named
+    outx/outy/outz while the [defn!] argument list names the output
+    buffers "Xout", "Yout", "Zout".  Rupicola takes the [let/n]
+    binder as the bedrock2 variable name, so the first non-[stack]
+    output binding, D2 [let/n outz := (t0 +F t0)], produced the
+    side condition [map.get l "outz" = Some ?p] against a locals map
+    holding only Xin/Yin/Zin/Xout/Yout/Zout and the stack temporaries
+    -- unsolvable, hence the backtracking.  See PORT-CHECK (N).
+    The mechanism was reproduced in isolation on Rupicola's own
+    [Rupicola.Examples.Cells.Swap]: renaming its output binders c1/c2
+    to d1/d2 while leaving [defn! "swap"("c1","c2")] alone leaves
+    exactly [map.get #{"c1" => c1_ptr; "c2" => c2_ptr; ...}# "d1" =
+    Some c1_ptr] open and makes [Qed] fail the same way.
+
+    Fix: the binders now read Xout/Yout/Zout, matching the
+    [defn!] arguments.  This is an alpha-renaming of the Gallina body
+    -- the [nlet] var-name strings change, nothing else -- so
+    Section 2 is untouched in content.
+
+    Not yet re-verified: neither the [Derive] nor
+    [rcb_double_a0_eq_ladderstep] has been re-run.  Interactive
+    checking through rocq-mcp is unavailable for this file: the only
+    `pet` binary on this machine belongs to the vc-sf opam switch, and
+    loading fiat-crypto's [coq-rewriter] plugin from rocq-9 into it
+    fails at Dynlink ("implementation mismatch on Proofview").
+    `opam install coq-lsp --switch=rocq-9` would remove that
+    limitation.  Unverified API details are flagged
+    (* PORT-CHECK: ... *).
 
     Source: Renes, Costello, Batina, "Complete addition formulas for
     prime order elliptic curves", EUROCRYPT 2016 / ePrint 2015/1060,
@@ -124,12 +150,29 @@ Context {three_b_val : F}.
 
   (** a = 0 RCB complete doubling, Algorithm 9, 18 field operations.
       Paper variable -> binder: t0..t2 -> t0..t2 (stack),
-      X3 -> outx, Y3 -> outy, Z3 -> outz, b3 -> three_b (stack).
+      X3 -> Xout, Y3 -> Yout, Z3 -> Zout, b3 -> three_b (stack).
 
       [stack] marks the FIRST binding of each stack-allocated
-      temporary (three_b, t0..t2); outx/outy/outz are the caller's
+      temporary (three_b, t0..t2); Xout/Yout/Zout are the caller's
       output buffers, so their first bindings (D8, D9, D2) are plain
       [let/n].
+
+      PORT-CHECK (N): the output binder names are NOT free.  Rupicola
+      reads the [let/n] binder as the bedrock2 variable name --
+      [compile_binop]'s conclusion is [pred (nlet_eq [out_var] v k)]
+      and its side condition [map.get l out_var = Some out_ptr] -- so
+      a plain (non-[stack]) binding must name a variable that already
+      exists in [locals], i.e. one of the [defn!] argument names
+      ("Xin", "Yin", "Zin", "Xout", "Yout", "Zout").  Input binders
+      (X1, Y1, Z1) are unconstrained, because [compile_binop] leaves
+      [x_var]/[y_var] as evars and finds them by pointer lookup;
+      [PointDouble.v] relies on exactly that, with gallina inputs
+      X/Y/Z against arguments "Xin"/"Yin"/"Zin".  The first draft of
+      this body used outx/outy/outz, which left the unsolvable goal
+      [map.get l "outz" = Some ?p] at D2 and made [compile] report
+      "Compilation incomplete".  [CurveDoubleA3.v] keeps the other
+      half of the same convention: it names its arguments
+      ("outx", "outy", "outz", "X1", "Y1", "Z1") to match its binders.
 
       PORT-CHECK (A): the aliased binops (D3, D4, D7, D10, D12, D13,
       D14, D15, D18) are the shapes already attested by
@@ -140,24 +183,24 @@ Context {three_b_val : F}.
              (X1 Y1 Z1 : F) : \<< F, F, F \>> :=
     let/n three_b := stack three_b_val in
     let/n t0 := stack (Y1 *F Y1) in       (* D1  t0 = Y^2 *)
-    let/n outz := (t0 +F t0) in           (* D2 *)
-    let/n outz := (outz +F outz) in       (* D3 *)
-    let/n outz := (outz +F outz) in       (* D4  outz = 8Y^2 *)
+    let/n Zout := (t0 +F t0) in           (* D2 *)
+    let/n Zout := (Zout +F Zout) in       (* D3 *)
+    let/n Zout := (Zout +F Zout) in       (* D4  Zout = 8Y^2 *)
     let/n t1 := stack (Y1 *F Z1) in       (* D5  t1 = YZ *)
     let/n t2 := stack (Z1 *F Z1) in       (* D6  t2 = Z^2 *)
     let/n t2 := (three_b *F t2) in        (* D7  t2 = 3b Z^2 *)
-    let/n outx := (t2 *F outz) in         (* D8 *)
-    let/n outy := (t0 +F t2) in           (* D9  outy = Y^2 + 3b Z^2 *)
-    let/n outz := (t1 *F outz) in         (* D10 outz = 8 Y^3 Z *)
+    let/n Xout := (t2 *F Zout) in         (* D8 *)
+    let/n Yout := (t0 +F t2) in           (* D9  Yout = Y^2 + 3b Z^2 *)
+    let/n Zout := (t1 *F Zout) in         (* D10 Zout = 8 Y^3 Z *)
     let/n t1 := (t2 +F t2) in             (* D11 *)
     let/n t2 := (t1 +F t2) in             (* D12 t2 = 9b Z^2 *)
     let/n t0 := (t0 -F t2) in             (* D13 t0 = Y^2 - 9b Z^2 *)
-    let/n outy := (t0 *F outy) in         (* D14 *)
-    let/n outy := (outx +F outy) in       (* D15 Y3 *)
+    let/n Yout := (t0 *F Yout) in         (* D14 *)
+    let/n Yout := (Xout +F Yout) in       (* D15 Y3 *)
     let/n t1 := (X1 *F Y1) in             (* D16 t1 = XY *)
-    let/n outx := (t0 *F t1) in           (* D17 *)
-    let/n outx := (outx +F outx) in       (* D18 X3 *)
-    \<outx, outy, outz\>.
+    let/n Xout := (t0 *F t1) in           (* D17 *)
+    let/n Xout := (Xout +F Xout) in       (* D18 X3 *)
+    \<Xout, Yout, Zout\>.
 
 End Gallina.
 

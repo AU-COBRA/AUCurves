@@ -52,10 +52,6 @@
      ; Emission driver: writes Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust
-     ; RCB Algorithm 9 (a = 0 doubling).  The algebra is Qed; the final
-     ; Rupicola [Derive] reports "Compilation incomplete" and its [Qed]
-     ; fails.  See the honesty ledger at the head of the file.
-     Group.CurveAdd.PointDoubleA0
      Curve.P256Curve_G1_bedrock
      Curve.PallasCurve_G1_bedrock
      Curve.VestaCurve_G1_bedrock

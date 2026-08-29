@@ -684,12 +684,12 @@ pub mod group {
     /// `ladderstep_gallina three_b X X Y Y Z Z` for every on-curve
     /// input.
     ///
-    /// Status caveat: that bridge lemma is Qed, but the file's final
-    /// Rupicola `Derive` is not, so `PointDoubleA0.v` produces no .vo
-    /// and is excluded from the dune build.  What is proved is that
-    /// this formula doubles; what is not yet proved is that a bedrock2
-    /// body implements it.  `kat.rs` checks the Rust transcription
-    /// against `g1_proj_add(P, P)` directly.
+    /// That file compiles with 0 Admitted and 0 Axiom, and its
+    /// `Derive` of the bedrock2 body (`rcb_double_a0_correct`) is Qed,
+    /// so both the formula and a body implementing it are verified.
+    /// This Rust function is a hand transcription of the Gallina one
+    /// and is not itself extracted, so `kat.rs` checks it against
+    /// `g1_proj_add(P, P)` directly.
     pub fn g1_proj_double(P: &G1Proj, b3: &TFp) -> G1Proj {
         let (x, y, z) = (P.x, P.y, P.z);
         let mut u = TFp::zero();

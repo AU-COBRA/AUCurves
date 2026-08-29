@@ -32,11 +32,12 @@
           derived general-a RCB addition.
       §4  What this does and does not discharge.
 
-    Honesty ledger: no [Admitted] and no [Axiom] in this file.  It
-    inherits, through [Require], the single [Admitted] of
-    RcbProjectiveLaws ([not_exceptional_of_no_two_torsion]); nothing
-    below depends on it, because the totality of [Projective.add] enters
-    here — as there — only through the [Hexcept] hypothesis of §3. *)
+    Honesty ledger: no [Admitted] and no [Axiom] in this file, and none
+    inherited: RcbProjectiveLaws is now [Admitted]-free
+    ([not_exceptional_of_no_two_torsion] is Qed).  The totality of
+    [Projective.add] still enters here — as there — only through the
+    [Hexcept] hypothesis of §3, which a caller may discharge from
+    [RcbProjectiveLaws.not_exceptional_of_no_two_torsion]. *)
 
 From Stdlib Require Import ZArith Znumtheory Lia List.
 From Stdlib Require Import RelationClasses Morphisms Setoid.

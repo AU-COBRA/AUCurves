@@ -26,15 +26,16 @@
 
     ** Honesty ledger **
 
-    Admitted: [not_exceptional_of_no_two_torsion] (§0b) — the derivation
-    of fiat-crypto's [Projective.not_exceptional] side condition from
-    "the curve has no F-rational point of order two".  The mathematics is
-    three lines (2p = 2q => 2(p-q) = 0 => p-q = 0 when 2-torsion is
-    trivial); the Rocq cost is the group rearrangement over the setoid
-    [W.eq].  The main section takes [Hexcept] as a HYPOTHESIS, so nothing
-    below silently depends on that admit.
+    No [Admitted] and no [Axiom].  [not_exceptional_of_no_two_torsion]
+    (§0b) derives fiat-crypto's [Projective.not_exceptional] side
+    condition from "the curve has no F-rational point of order two"
+    (2p = 2q => 2(p-q) = 0 => p-q = 0 when 2-torsion is trivial); the
+    group rearrangement it needs is §0a, proved once over an abstract
+    [Hierarchy.commutative_group] rather than against [W.add] / [W.opp].
+    The main section still takes [Hexcept] as a HYPOTHESIS, so consumers
+    are free to supply totality some other way.
 
-    Everything else in §1-§4 is intended to be Qed.
+    Everything in §0a-§4 is Qed.
 
     ** What is genuinely missing upstream (a =/= 0) **
 
@@ -57,7 +58,11 @@
       a projective point at all, exactly when P - Q has order two.  For a
       prime-order curve no such point exists, but fiat-crypto proves no
       such thing ([Curves/Weierstrass/P256.p256_mul_mod_n] is itself
-      [Admitted]).
+      [Admitted]).  §0b reduces the side condition to the single
+      arithmetic fact [no_two_torsion] (x^3 + a x + b has no root in F);
+      what remains open is that fact for a NAMED curve, which is a
+      number-theoretic statement about the concrete modulus, not
+      anything about the addition law.
 
     ** Location **
 
@@ -86,6 +91,76 @@ Require Import Crypto.Bedrock.Specs.Field.
 Require Import Bedrock.Group.CurveAdd.CurveAddGeneralA.
 
 Local Open Scope F_scope.
+
+(* ================================================================== *)
+(** ** 0a. Two rearrangements in an arbitrary abelian group            *)
+(* ================================================================== *)
+
+(** The only new algebra §0b needs.  It is done here, over an abstract
+    [Hierarchy.commutative_group], so that the setoid rewrites run
+    against the class projections instead of against [W.add] / [W.opp]
+    (whose implicit arguments carry the curve constants, the field
+    instance and the characteristic instance, and whose unfolding drags
+    in the [abstract]ed obligations of [W.commutative_group]).  Nothing
+    in this section knows about curves. *)
+
+Section AbelianRearrangement.
+
+  Context {T : Type} {Teq : T -> T -> Prop} {Top : T -> T -> T}
+          {Tid : T} {Tinv : T -> T}
+          {Tgroup : @Hierarchy.commutative_group T Teq Top Tid Tinv}.
+
+  (** [(x*y)^2 = x^2 * y^2].  Five rewrites; the group is abelian. *)
+  Lemma op_square (x y : T) :
+    Teq (Top (Top x y) (Top x y)) (Top (Top x x) (Top y y)).
+  Proof.
+    rewrite <- (@Hierarchy.associative T Teq Top _ x y (Top x y)).
+    rewrite (@Hierarchy.associative T Teq Top _ y x y).
+    rewrite (@Hierarchy.commutative T Teq Top _ y x).
+    rewrite <- (@Hierarchy.associative T Teq Top _ x y y).
+    rewrite (@Hierarchy.associative T Teq Top _ x x (Top y y)).
+    reflexivity.
+  Qed.
+
+  (** [2p = 2q  ->  2(p - q) = 0]. *)
+  Lemma double_diff_id (p q : T) :
+    Teq (Top p p) (Top q q) ->
+    Teq (Top (Top p (Tinv q)) (Top p (Tinv q))) Tid.
+  Proof.
+    intro Hpq.
+    rewrite (op_square p (Tinv q)).
+    rewrite <- (@Crypto.Algebra.Group.inv_op T Teq Top Tid Tinv _ q q).
+    rewrite Hpq.
+    apply (@Hierarchy.right_inverse T Teq Top Tid Tinv _ (Top q q)).
+  Qed.
+
+  (** [p - q = 0  ->  p = q]. *)
+  Lemma eq_of_diff_id (p q : T) :
+    Teq (Top p (Tinv q)) Tid -> Teq p q.
+  Proof.
+    intro Hr.
+    apply (proj1 (@Crypto.Algebra.Group.cancel_right
+                    T Teq Top Tid Tinv _ (Tinv q) p q)).
+    rewrite Hr. symmetry.
+    apply (@Hierarchy.right_inverse T Teq Top Tid Tinv _ q).
+  Qed.
+
+  (** Doubling is injective as soon as the only element of order
+      dividing two is the identity.  [Group.inv_unique] turns
+      [r + r = 0] into [r = -r], which is the form §0b can read off
+      affine coordinates. *)
+  Lemma cancel_double (p q : T) :
+    (forall r : T, Teq r (Tinv r) -> Teq r Tid) ->
+    Teq (Top p p) (Top q q) -> Teq p q.
+  Proof.
+    intros Hord2 Hpq.
+    apply eq_of_diff_id.
+    apply Hord2.
+    apply (@Crypto.Algebra.Group.inv_unique T Teq Top Tid Tinv _).
+    apply double_diff_id. exact Hpq.
+  Qed.
+
+End AbelianRearrangement.
 
 Section RcbProjectiveLaws.
 
@@ -173,24 +248,48 @@ Section RcbProjectiveLaws.
       affine images.  It fails exactly when [p - q] is an F-rational
       point of order two, i.e. when x^3 + a x + b has a root in F.  For
       the prime-order NIST curves there is no such root; that is a
-      per-curve number-theoretic fact, assumed here. *)
+      per-curve number-theoretic fact about the concrete modulus, and it
+      is the hypothesis of [not_exceptional_of_no_two_torsion] below. *)
   Definition no_two_torsion : Prop :=
     forall x : F, ((x * x * x + a * x + b) <> 0)%F.
 
-  (** ADMITTED.  Intended proof:
-        1. [order2_trivial]: [W.add r r = W.zero -> r = W.zero].  Group
-           cancellation on [r + r = r + (-r)] gives [r = -r]; reading
-           coordinates, [r = inl (x,y)] forces [y + y = 0], hence [y = 0]
-           (char <> 2), hence [x^3 + a x + b = y^2 = 0], contradicting
-           [no_two_torsion].
-        2. From [2p = 2q], commutativity and [Group.inv_op] give
-           [(p - q) + (p - q) = (p + p) + (-(q + q)) = W.zero].
-        3. Step 1 applied to [p - q], then [Group.eq_r_opp_r_inv], gives
-           [p = q].
-      The whole cost is the setoid rearrangement in step 2. *)
+  (** Step 1 of the argument: an affine point equal to its own negative
+      is the identity.  Reading coordinates, [r = inl (x,y)] and
+      [r = -r] force [y = -y], hence [y = 0] (characteristic <> 2),
+      hence [x^3 + a x + b = y^2 = 0], contradicting [no_two_torsion].
+      The point at infinity is the identity outright. *)
+  Lemma W_self_opp_zero (Hno : no_two_torsion) (r : Wpoint) :
+    W.eq r (W.opp r) -> W.eq r W.zero.
+  Proof.
+    cbv [no_two_torsion] in Hno.
+    destruct r as [[[x y] | []] Hr];
+      cbv [W.eq W.opp W.zero W.coordinates proj1_sig] in *.
+    - intros [_ Hy].
+      assert (Hy0 : y = 0%F) by fsatz.
+      apply (Hno x). fsatz.
+    - intros _. exact I.
+  Qed.
+
+  (** Steps 2 and 3: [2p = 2q] gives [2(p - q) = 0] ([double_diff_id]),
+      hence [p - q = -(p - q)] ([Group.inv_unique]), hence [p - q = 0]
+      by step 1, hence [p = q] ([eq_of_diff_id]).  That chain is
+      [cancel_double] of §0a, instantiated at the affine group
+      [Wgroup]; [Projective.not_exceptional] IS its hypothesis-to-
+      conclusion shape, by [cbv]/zeta over the two [let]s. *)
   Lemma not_exceptional_of_no_two_torsion :
     no_two_torsion -> forall P Q : Ppoint, Pnot_exceptional P Q.
-  Proof. Admitted.
+  Proof.
+    intros Hno P Q.
+    cbv [Projective.not_exceptional].
+    intro Hdbl.
+    first
+      [ exact (@cancel_double Wpoint _ _ _ _ Wgroup _ _
+                 (W_self_opp_zero Hno) Hdbl)
+      | eapply (cancel_double (Tgroup := Wgroup));
+        [ exact (W_self_opp_zero Hno) | exact Hdbl ]
+      | eapply cancel_double;
+        [ exact (W_self_opp_zero Hno) | exact Hdbl ] ].
+  Qed.
 
   (** The rest of the file is parametric in totality. *)
   Context (Hexcept : forall P Q : Ppoint, Pnot_exceptional P Q).
@@ -272,8 +371,8 @@ Section RcbProjectiveLaws.
 
   (** The chain's Gallina model on plain triples.  Syntactically the same
       definition as [NistWnafWrappers.curve_add_general_triple], repeated
-      here so that this file does not depend on that (still partly
-      Admitted) wrapper file. *)
+      here so that this file does not depend on that (bedrock2-heavy)
+      wrapper file. *)
   Definition cadd (P Q : F * F * F) : F * F * F :=
     let '(X1, Y1, Z1) := P in
     let '(X2, Y2, Z2) := Q in

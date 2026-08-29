@@ -2,14 +2,49 @@
 //!
 //! Run pinned to one core for stability:
 //!   taskset -c 2 cargo run --release --example bench_compare
+//!
+//! Every Fp-multiply timing loop below is a serial latency chain — the output
+//! of iteration i is an operand of iteration i+1, with `black_box` on the
+//! operands — so no arm can have its multiply hoisted out of its loop.
+//! Cycles are reported alongside ns because ns is distorted by background
+//! load and by frequency scaling.
 
+use std::hint::black_box;
 use std::time::Instant;
+
+#[inline(always)]
+fn rdtsc() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    unsafe { core::arch::x86_64::_rdtsc() }
+    #[cfg(not(target_arch = "x86_64"))]
+    { 0 }
+}
+
+fn report_mul(ns: f64, cycles: f64, label: &str) {
+    println!("  {label} {ns:.1} ns  ({cycles:.0} cyc)");
+}
 
 fn main() {
     let n_mul = 1_000_000;
     let n_pair = 100;
 
-    println!("=== bls12-381-safe-rust (this work, CryptOpt mul + stub other leaves) ===");
+    // Leaf provenance for the arm below:
+    //   mul, square      CryptOpt assembly, SMT-validated against fiat-crypto
+    //                    (generated/bls12_*_cryptopt.asm)
+    //   add, sub, opp,   hand-written Rust CIOS in src/stubs.rs
+    //   copy, select,
+    //   from_word
+    //   inv              hand-written Rust Bernstein-Yang divstep
+    //                    (safegcd-rs), NOT extracted from Rocq; see
+    //                    HAND_WRITTEN_AUDIT.md.  `--features fermat_inv`
+    //                    swaps in the x^(p-2) ladder instead (~2x slower
+    //                    pairing).
+    //   tower, Miller    generated from the Qed'd bedrock2 programs
+    //   loop, final exp  (generated/bls12_safe_tower.rs)
+    println!("=== bls12-381-safe-rust (this work) ===");
+    println!("    leaves: CryptOpt asm mul/square; Rust stubs add/sub/copy/select;");
+    println!("    safegcd (hand-written Rust, not Rocq-extracted) Fp inversion;");
+    println!("    tower + affine Miller loop + final exp from the bedrock2 extraction");
     {
         use bls12_381::*;
         let p_x = Fp([6679831729115696150, 8653662730902241269, 1535610680227111361,
@@ -32,11 +67,16 @@ fn main() {
         let mut out = Fp12::zero();
         pairing(&mut out, &p_x, &p_y, &q_x, &q_y);
 
+        // Serial latency chain: x <- x * p_y.
+        let mut x = p_x;
         let mut c = Fp::zero();
+        let c0 = rdtsc();
         let t = Instant::now();
-        for _ in 0..n_mul { fp_mul(&mut c, &p_x, &p_y); }
+        for _ in 0..n_mul { fp_mul(&mut c, black_box(&x), black_box(&p_y)); x = c; }
         let mul_ns = t.elapsed().as_nanos() as f64 / n_mul as f64;
-        println!("  Fp mul:  {:.1} ns", mul_ns);
+        let mul_cyc = (rdtsc() - c0) as f64 / n_mul as f64;
+        black_box(&x);
+        report_mul(mul_ns, mul_cyc, "Fp mul:");
 
         let t = Instant::now();
         for _ in 0..n_pair { pairing(&mut out, &p_x, &p_y, &q_x, &q_y); }
@@ -61,13 +101,20 @@ fn main() {
             blst_p2_to_affine(&mut q_aff, &q1);
         }
 
-        let a = blst_fp { l: [1, 2, 3, 4, 5, 6] };
+        // Serial latency chain: a <- a * b.
+        let mut a = blst_fp { l: [1, 2, 3, 4, 5, 6] };
         let b = blst_fp { l: [7, 8, 9, 10, 11, 12] };
         let mut c = blst_fp::default();
+        let c0 = rdtsc();
         let t = Instant::now();
-        for _ in 0..n_mul { unsafe { blst_fp_mul(&mut c, &a, &b); } }
+        for _ in 0..n_mul {
+            unsafe { blst_fp_mul(&mut c, black_box(&a), black_box(&b)); }
+            a = c;
+        }
         let mul_ns = t.elapsed().as_nanos() as f64 / n_mul as f64;
-        println!("  Fp mul:  {:.1} ns", mul_ns);
+        let mul_cyc = (rdtsc() - c0) as f64 / n_mul as f64;
+        black_box(&a);
+        report_mul(mul_ns, mul_cyc, "Fp mul:");
 
         let mut out = blst_fp12::default();
         let t = Instant::now();
@@ -84,24 +131,23 @@ fn main() {
         use ark_bls12_381::{Bls12_381, Fq, G1Affine, G2Affine};
         use ark_ec::pairing::Pairing;
         use ark_ec::AffineRepr;
-        use ark_ff::{Field, UniformRand};
+        use ark_ff::UniformRand;
         use ark_std::rand::SeedableRng;
 
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(0xdead);
-        let a: Fq = Fq::rand(&mut rng);
+        let mut acc: Fq = Fq::rand(&mut rng);
         let b: Fq = Fq::rand(&mut rng);
-        let a_p: *const Fq = &a;
-        let b_p: *const Fq = &b;
-        let mut acc = Fq::ONE;
+        // Serial latency chain: acc <- acc * b, operands through black_box so
+        // the multiply cannot be hoisted out of the loop.
+        let c0 = rdtsc();
         let t = Instant::now();
         for _ in 0..n_mul {
-            let av = unsafe { std::ptr::read_volatile(a_p) };
-            let bv = unsafe { std::ptr::read_volatile(b_p) };
-            acc = av * bv;
+            acc = *black_box(&acc) * *black_box(&b);
         }
-        std::hint::black_box(acc);
         let mul_ns = t.elapsed().as_nanos() as f64 / n_mul as f64;
-        println!("  Fq mul:  {:.1} ns", mul_ns);
+        let mul_cyc = (rdtsc() - c0) as f64 / n_mul as f64;
+        black_box(acc);
+        report_mul(mul_ns, mul_cyc, "Fq mul:");
 
         let p = G1Affine::generator();
         let q = G2Affine::generator();

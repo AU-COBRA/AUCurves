@@ -210,55 +210,301 @@ Section G1Specs.
         | setoid_rewrite evfrom_val_sub in H
         | setoid_rewrite evfrom_val_mul in H].
 
-    (* BLS12_add_specs_equiv: verified via coq-lsp / MCP interactive (40 tactics,
-       proof_finished: true, check_time_ms: 4074). coqc hangs on
-       `rewrite <- (valid'_mod ...) in H1` in tactic execution (not Qed) due to
-       a performance discrepancy between coq-lsp and coqc on large hypothesis
-       contexts with nested mont operations. Historical builds (commit dc774e2)
-       took 25-30 min; current coqc hangs indefinitely. Admitting here; the
-       tactic script below is the LSP-verified proof.
+    (** ** [BLS12_add_specs_equiv], restructured for [coqc].
 
+        The earlier script (LSP-verified, but 25-30 min under [coqc] at
+        commit dc774e2 and non-terminating afterwards) worked inside the
+        laden context: it destructed the three output records, rewrote
+        [valid'_mod] backwards inside hypotheses whose right-hand sides
+        are the 133-node zeta-normal form of the mont chain, and then ran
+        [push_mont_in] — a [repeat progress first [setoid_rewrite ...]]
+        that restarts a setoid search over a growing term once per
+        Montgomery operation.
+
+        The restructuring follows [RcbGeneralAChain]: the algebra is
+        stated once over fresh names with a small context, closed by
+        [subst; reflexivity], and the main proof only transports
+        equalities.
+
+        - [gallina_chain] is the Z-level chain: forty fresh intermediates
+          [z1..z40] with one defining equation each, concluding the
+          Gallina spec.  Proof: [subst] into the spec's own zeta-normal
+          form, then [reflexivity].  No mont_enc record occurs in it.
+        - [evm_mul_eq] / [evm_add_eq] / [evm_sub_eq] / [evm_mulA_eq] /
+          [evm_mulB_eq] are the five one-step homomorphism facts, each
+          over three abstract [mont_enc] variables and each its own
+          [Qed].
+        - [add_chain_gallina] is the mont-level chain: it is
+          [gallina_chain] instantiated at [evm x1 .. evm x40], with the
+          forty premises discharged by one fully applied [exact] each.
+        - [BLS12_add_specs_equiv] instantiates [add_chain_gallina] with
+          forty [eq_refl]s (so the [xi] evars are assigned the spec's own
+          zeta-normal subterms) and then transports: forward by
+          [rewrite]ing the three output equalities into the goal,
+          backward by [evm_eq_mont_eq] on the three coordinate
+          equalities.  No tactic rewrites inside a large hypothesis. *)
+
+    Local Notation evm x := (eval (from_mont (val m bw n x))).
+
+    (** *** One-step homomorphism facts (small context, one [Qed] each). *)
+
+    Lemma evm_mul_eq (u x y : mont_enc) :
+        u = (x *mont y) -> evm u = ((evm x) *' (evm y)).
+    Proof. intros ->. unfold my_mul. apply evfrom_val_mul. Qed.
+
+    Lemma evm_add_eq (u x y : mont_enc) :
+        u = (x +mont y) -> evm u = ((evm x) +' (evm y)).
+    Proof. intros ->. unfold my_add. apply evfrom_val_add. Qed.
+
+    Lemma evm_sub_eq (u x y : mont_enc) :
+        u = (x -mont y) -> evm u = ((evm x) -' (evm y)).
+    Proof. intros ->. unfold my_sub. apply evfrom_val_sub. Qed.
+
+    Lemma evm_mulA_eq (u y : mont_enc) :
+        u = (a_mont *mont y) -> evm u = ((eval a_list) *' (evm y)).
     Proof.
-      split; intros.
-      { unfold BLS12_add_Gallina_spec.
-        unfold BLS12_add_mont_spec in H.
-        apply pair_equal_spec in H; destruct H.
-        apply pair_equal_spec in H; destruct H.
-        apply (f_equal (fun y => evfrom (val _ _ _ y))) in H, H0, H1.
-        destruct outx as [outx Hx], outy as [outy Hy], outz as [outz Hz].
-        rewrite !mont_enc_val in H, H0, H1.
-        rewrite !mont_enc_val.
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hx) in H.
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hx).
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hy) in H1.
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hy).
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hz) in H0 at 1.
-        rewrite <- (valid'_mod m bw n r' m' r'_correct m'_correct bw_big n_nz m_small m_big Hz).
-        push_mont_in H.
-        push_mont_in H0; push_mont_in H1.
-        rewrite H, H0, H1.
-        apply pair_equal_spec; split.
-        apply pair_equal_spec; split.
-        3: { unfold my_mul, my_add, my_sub; rewrite ?ev_three_b, ?ev_a; rpull_Zmod. }
-        2: { unfold my_mul, my_add, my_sub; rewrite ?ev_three_b, ?ev_a; rpull_Zmod. }
-        1: { unfold my_mul, my_add, my_sub; rewrite ?ev_three_b, ?ev_a; rpull_Zmod. } }
-      { unfold BLS12_add_mont_spec.
-        destruct outx as [x Hx], outy as [y Hy], outz as [z Hz].
-        rewrite !mont_enc_val in H.
-        unfold BLS12_add_Gallina_spec, my_mul, my_add, my_sub in H.
-        apply pair_equal_spec in H; destruct H as [H H1].
-        apply pair_equal_spec in H; destruct H as [H H0].
-        apply pair_equal_spec; split.
-        apply pair_equal_spec; split.
-        { apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod. }
-        { apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H0. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod. }
-        { apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto; rewrite mont_enc_val, H1. push_mont. rewrite ?ev_three_b, ?ev_a; rpull_Zmod. } }
+        intros ->. unfold my_mul. rewrite evfrom_val_mul.
+        rewrite <- ev_a. reflexivity.
     Qed.
-    *)
+
+    Lemma evm_mulB_eq (u y : mont_enc) :
+        u = (three_b_mont *mont y) -> evm u = ((eval three_b_list) *' (evm y)).
+    Proof.
+        intros ->. unfold my_mul. rewrite evfrom_val_mul.
+        rewrite <- ev_three_b. reflexivity.
+    Qed.
+
+    Lemma evm_eq_mont_eq (x y : mont_enc) : evm x = evm y -> x = y.
+    Proof.
+        intros H. apply eval_from_mont_mod_inj with (r' := r') (m' := m'); auto.
+        rewrite H; reflexivity.
+    Qed.
+
+    (** *** The Z-level chain.
+
+        [z1..z40] name the forty intermediate values of
+        [BLS12_add_Gallina_spec]'s let-chain; the spec reuses the
+        bedrock2 temporaries [t0..t5], [X3], [Y3], [Z3] in place, so the
+        mapping is
+        z1=t0 z2=t1 z3=t2 z4=t3 z5=t4 z6=t3 z7=t4 z8=t3 z9=t4 z10=t5
+        z11=t4 z12=t5 z13=t4 z14=t5 z15=X3 z16=t5 z17=X3 z18=t5 z19=Z3
+        z20=X3 z21=Z3 z22=X3 z23=Z3 z24=Y3 z25=t1 z26=t1 z27=t2 z28=t4
+        z29=t1 z30=t2 z31=t2 z32=t4 z33=t0 z34=Y3 z35=t0 z36=X3 z37=X3
+        z38=t0 z39=Z3 z40=Z3, with the result at (z37, z34, z40). *)
+    Lemma gallina_chain
+        (X1 Y1 Z1 X2 Y2 Z2 outx outy outz : list Z)
+        (z1 z2 z3 z4 z5 z6 z7 z8 z9 z10
+         z11 z12 z13 z14 z15 z16 z17 z18 z19 z20
+         z21 z22 z23 z24 z25 z26 z27 z28 z29 z30
+         z31 z32 z33 z34 z35 z36 z37 z38 z39 z40 : Z)
+        (E1  : z1  = ((evfrom X1) *' (evfrom X2)))
+        (E2  : z2  = ((evfrom Y1) *' (evfrom Y2)))
+        (E3  : z3  = ((evfrom Z1) *' (evfrom Z2)))
+        (E4  : z4  = ((evfrom X1) +' (evfrom Y1)))
+        (E5  : z5  = ((evfrom X2) +' (evfrom Y2)))
+        (E6  : z6  = (z4 *' z5))
+        (E7  : z7  = (z1 +' z2))
+        (E8  : z8  = (z6 -' z7))
+        (E9  : z9  = ((evfrom X1) +' (evfrom Z1)))
+        (E10 : z10 = ((evfrom X2) +' (evfrom Z2)))
+        (E11 : z11 = (z9 *' z10))
+        (E12 : z12 = (z1 +' z3))
+        (E13 : z13 = (z11 -' z12))
+        (E14 : z14 = ((evfrom Y1) +' (evfrom Z1)))
+        (E15 : z15 = ((evfrom Y2) +' (evfrom Z2)))
+        (E16 : z16 = (z14 *' z15))
+        (E17 : z17 = (z2 +' z3))
+        (E18 : z18 = (z16 -' z17))
+        (E19 : z19 = ((eval a_list) *' z13))
+        (E20 : z20 = ((eval three_b_list) *' z3))
+        (E21 : z21 = (z20 +' z19))
+        (E22 : z22 = (z2 -' z21))
+        (E23 : z23 = (z2 +' z21))
+        (E24 : z24 = (z22 *' z23))
+        (E25 : z25 = (z1 +' z1))
+        (E26 : z26 = (z25 +' z1))
+        (E27 : z27 = ((eval a_list) *' z3))
+        (E28 : z28 = ((eval three_b_list) *' z13))
+        (E29 : z29 = (z26 +' z27))
+        (E30 : z30 = (z1 -' z27))
+        (E31 : z31 = ((eval a_list) *' z30))
+        (E32 : z32 = (z28 +' z31))
+        (E33 : z33 = (z29 *' z32))
+        (E34 : z34 = (z24 +' z33))
+        (E35 : z35 = (z18 *' z32))
+        (E36 : z36 = (z8 *' z22))
+        (E37 : z37 = (z36 -' z35))
+        (E38 : z38 = (z8 *' z29))
+        (E39 : z39 = (z18 *' z23))
+        (E40 : z40 = (z39 +' z38))
+        (Ex : (evfrom outx) = z37)
+        (Ey : (evfrom outy) = z34)
+        (Ez : (evfrom outz) = z40) :
+        BLS12_add_Gallina_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz.
+    Proof.
+        unfold BLS12_add_Gallina_spec.
+        Timeout 120 (cbv beta zeta).
+        Timeout 120 (rewrite Ex, Ey, Ez).
+        clear Ex Ey Ez.
+        Timeout 120 (subst z1 z2 z3 z4 z5 z6 z7 z8 z9 z10
+                           z11 z12 z13 z14 z15 z16 z17 z18 z19 z20
+                           z21 z22 z23 z24 z25 z26 z27 z28 z29 z30
+                           z31 z32 z33 z34 z35 z36 z37 z38 z39 z40).
+        Timeout 120 reflexivity.
+    Qed.
+
+    (** *** The mont-level chain: [gallina_chain] at [evm x1 .. evm x40].
+
+        Premise order matches [BLS12_add_mont_spec]'s let-chain exactly,
+        so no commutation step is needed. *)
+    Lemma add_chain_gallina
+        (X1 Y1 Z1 X2 Y2 Z2 : mont_enc)
+        (x1 x2 x3 x4 x5 x6 x7 x8 x9 x10
+         x11 x12 x13 x14 x15 x16 x17 x18 x19 x20
+         x21 x22 x23 x24 x25 x26 x27 x28 x29 x30
+         x31 x32 x33 x34 x35 x36 x37 x38 x39 x40 : mont_enc)
+        (H1  : x1  = (X1  *mont X2))
+        (H2  : x2  = (Y1  *mont Y2))
+        (H3  : x3  = (Z1  *mont Z2))
+        (H4  : x4  = (X1  +mont Y1))
+        (H5  : x5  = (X2  +mont Y2))
+        (H6  : x6  = (x4  *mont x5))
+        (H7  : x7  = (x1  +mont x2))
+        (H8  : x8  = (x6  -mont x7))
+        (H9  : x9  = (X1  +mont Z1))
+        (H10 : x10 = (X2  +mont Z2))
+        (H11 : x11 = (x9  *mont x10))
+        (H12 : x12 = (x1  +mont x3))
+        (H13 : x13 = (x11 -mont x12))
+        (H14 : x14 = (Y1  +mont Z1))
+        (H15 : x15 = (Y2  +mont Z2))
+        (H16 : x16 = (x14 *mont x15))
+        (H17 : x17 = (x2  +mont x3))
+        (H18 : x18 = (x16 -mont x17))
+        (H19 : x19 = (a_mont *mont x13))
+        (H20 : x20 = (three_b_mont *mont x3))
+        (H21 : x21 = (x20 +mont x19))
+        (H22 : x22 = (x2  -mont x21))
+        (H23 : x23 = (x2  +mont x21))
+        (H24 : x24 = (x22 *mont x23))
+        (H25 : x25 = (x1  +mont x1))
+        (H26 : x26 = (x25 +mont x1))
+        (H27 : x27 = (a_mont *mont x3))
+        (H28 : x28 = (three_b_mont *mont x13))
+        (H29 : x29 = (x26 +mont x27))
+        (H30 : x30 = (x1  -mont x27))
+        (H31 : x31 = (a_mont *mont x30))
+        (H32 : x32 = (x28 +mont x31))
+        (H33 : x33 = (x29 *mont x32))
+        (H34 : x34 = (x24 +mont x33))
+        (H35 : x35 = (x18 *mont x32))
+        (H36 : x36 = (x8  *mont x22))
+        (H37 : x37 = (x36 -mont x35))
+        (H38 : x38 = (x8  *mont x29))
+        (H39 : x39 = (x18 *mont x23))
+        (H40 : x40 = (x39 +mont x38)) :
+        BLS12_add_Gallina_spec
+            (val m bw n X1) (val m bw n Y1) (val m bw n Z1)
+            (val m bw n X2) (val m bw n Y2) (val m bw n Z2)
+            (val m bw n x37) (val m bw n x34) (val m bw n x40).
+    Proof.
+        Timeout 120 (apply (gallina_chain
+            (val m bw n X1) (val m bw n Y1) (val m bw n Z1)
+            (val m bw n X2) (val m bw n Y2) (val m bw n Z2)
+            (val m bw n x37) (val m bw n x34) (val m bw n x40)
+            (evm x1)  (evm x2)  (evm x3)  (evm x4)  (evm x5)
+            (evm x6)  (evm x7)  (evm x8)  (evm x9)  (evm x10)
+            (evm x11) (evm x12) (evm x13) (evm x14) (evm x15)
+            (evm x16) (evm x17) (evm x18) (evm x19) (evm x20)
+            (evm x21) (evm x22) (evm x23) (evm x24) (evm x25)
+            (evm x26) (evm x27) (evm x28) (evm x29) (evm x30)
+            (evm x31) (evm x32) (evm x33) (evm x34) (evm x35)
+            (evm x36) (evm x37) (evm x38) (evm x39) (evm x40))).
+        exact (evm_mul_eq  _ _ _ H1).
+        exact (evm_mul_eq  _ _ _ H2).
+        exact (evm_mul_eq  _ _ _ H3).
+        exact (evm_add_eq  _ _ _ H4).
+        exact (evm_add_eq  _ _ _ H5).
+        exact (evm_mul_eq  _ _ _ H6).
+        exact (evm_add_eq  _ _ _ H7).
+        exact (evm_sub_eq  _ _ _ H8).
+        exact (evm_add_eq  _ _ _ H9).
+        exact (evm_add_eq  _ _ _ H10).
+        exact (evm_mul_eq  _ _ _ H11).
+        exact (evm_add_eq  _ _ _ H12).
+        exact (evm_sub_eq  _ _ _ H13).
+        exact (evm_add_eq  _ _ _ H14).
+        exact (evm_add_eq  _ _ _ H15).
+        exact (evm_mul_eq  _ _ _ H16).
+        exact (evm_add_eq  _ _ _ H17).
+        exact (evm_sub_eq  _ _ _ H18).
+        exact (evm_mulA_eq _ _ H19).
+        exact (evm_mulB_eq _ _ H20).
+        exact (evm_add_eq  _ _ _ H21).
+        exact (evm_sub_eq  _ _ _ H22).
+        exact (evm_add_eq  _ _ _ H23).
+        exact (evm_mul_eq  _ _ _ H24).
+        exact (evm_add_eq  _ _ _ H25).
+        exact (evm_add_eq  _ _ _ H26).
+        exact (evm_mulA_eq _ _ H27).
+        exact (evm_mulB_eq _ _ H28).
+        exact (evm_add_eq  _ _ _ H29).
+        exact (evm_sub_eq  _ _ _ H30).
+        exact (evm_mulA_eq _ _ H31).
+        exact (evm_add_eq  _ _ _ H32).
+        exact (evm_mul_eq  _ _ _ H33).
+        exact (evm_add_eq  _ _ _ H34).
+        exact (evm_mul_eq  _ _ _ H35).
+        exact (evm_mul_eq  _ _ _ H36).
+        exact (evm_sub_eq  _ _ _ H37).
+        exact (evm_mul_eq  _ _ _ H38).
+        exact (evm_mul_eq  _ _ _ H39).
+        exact (evm_add_eq  _ _ _ H40).
+        reflexivity.
+        reflexivity.
+        reflexivity.
+    Qed.
+
     Lemma BLS12_add_specs_equiv : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz,
         BLS12_add_mont_spec X1 Y1 Z1 X2 Y2 Z2 outx outy outz <->
             BLS12_add_Gallina_spec (val _ _ _ X1) (val _ _ _ Y1) (val _ _ _ Z1) (val _ _ _ X2) (val _ _ _ Y2) (val _ _ _ Z2) (val _ _ _ outx) (val _ _ _ outy) (val _ _ _ outz).
-    Admitted.
+    Proof.
+        intros X1 Y1 Z1 X2 Y2 Z2 outx outy outz.
+        (* Instantiate the chain at the spec's own zeta-normal subterms:
+           each [eq_refl] assigns one [xi] evar. *)
+        Timeout 120 (epose proof (add_chain_gallina X1 Y1 Z1 X2 Y2 Z2
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+            _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl
+            eq_refl eq_refl eq_refl eq_refl eq_refl) as HG).
+        split.
+        - intros H.
+          unfold BLS12_add_mont_spec in H.
+          Timeout 120 (cbv beta zeta in H).
+          apply pair_equal_spec in H; destruct H as [H Hz].
+          apply pair_equal_spec in H; destruct H as [Hx Hy].
+          Timeout 120 (rewrite Hx, Hy, Hz).
+          Timeout 120 (exact HG).
+        - intros H.
+          unfold BLS12_add_Gallina_spec in H, HG.
+          Timeout 120 (cbv beta zeta in H, HG).
+          apply pair_equal_spec in H; destruct H as [H Hz].
+          apply pair_equal_spec in H; destruct H as [Hx Hy].
+          apply pair_equal_spec in HG; destruct HG as [HG HGz].
+          apply pair_equal_spec in HG; destruct HG as [HGx HGy].
+          pose proof (evm_eq_mont_eq _ _ (eq_trans Hx (eq_sym HGx))) as Ex.
+          pose proof (evm_eq_mont_eq _ _ (eq_trans Hy (eq_sym HGy))) as Ey.
+          pose proof (evm_eq_mont_eq _ _ (eq_trans Hz (eq_sym HGz))) as Ez.
+          unfold BLS12_add_mont_spec.
+          Timeout 120 (cbv beta zeta).
+          Timeout 120 (rewrite Ex, Ey, Ez; reflexivity).
+    Qed.
 
     Lemma BLS12_add_specs_equiv' : forall X1 Y1 Z1 X2 Y2 Z2 outx outy outz
         (HX1 : valid' _ _ _ X1) (HX2 : valid' _ _ _ X2) (HY1 : valid' _ _ _ Y1) (HY2 : valid' _ _ _ Y2) (HZ1 : valid' _ _ _ Z1) (HZ2 : valid' _ _ _ Z2)

@@ -1,11 +1,9 @@
-(** * P-224 (secp224r1) prime modulus + axiomatized primality.
+(** * P-224 (secp224r1) prime modulus and primality.
 
-    Minimal "prime cert" file for the Track Q divstep-inversion chain.
-    Per the Track Q shortcut policy, primality is AXIOMATIZED rather
-    than discharged via a Pocklington certificate — the certificate
-    for [2^224 - 2^96 + 1] is straightforward to produce externally
-    but is not blocking for the divstep chain (the chain only needs
-    [Z.gcd x p = 1] as a hypothesis, which the user supplies).
+    Prime cert file for the Track Q divstep-inversion chain.  Primality
+    is discharged by the Coqprime Pocklington certificate in
+    [p224_prime_certif.v]; this file only restates it at the [Z] modulus
+    used downstream.
 
     Sibling files in the chain:
       - [P224_FpInv.v]                       (Gallina divstep + iter_invariant)
@@ -16,6 +14,7 @@
 
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import ZArith.Znumtheory.
+Require Import Bedrock.Field.Synthesis.Examples.p224_prime_certif.
 
 Local Open Scope Z_scope.
 
@@ -29,12 +28,8 @@ Definition p224_prime_pos : positive :=
 Lemma p224_modulus_pos : p224_modulus = Z.pos p224_prime_pos.
 Proof. vm_compute. reflexivity. Qed.
 
-(** Axiomatized primality.  The full Pocklington certificate is
-    straightforward (p-1 factors with a single ~190-bit cofactor)
-    but is left out per the Track Q "no prime-cert engineering"
-    shortcut.  The divstep convergence + Fp inverse correctness
-    proofs in [P224_FpInv*.v] do not reduce through this axiom;
-    they only need primality to derive [Z.gcd x p = 1] from
-    [0 < x < p], and [P224_FpInv_closed.fp_inv_correct_closed]
-    takes the gcd hypothesis directly. *)
-Axiom prime_p224 : prime p224_modulus.
+(** Primality, from the Pocklington certificate in [p224_prime_certif.v].
+    Here [p - 1 = 2^96 * (2^128 - 1)] factors completely, so the
+    certificate is an exact-cofactor chain. *)
+Lemma prime_p224 : prime p224_modulus.
+Proof. rewrite p224_modulus_pos. exact prime_p224_cert. Qed.

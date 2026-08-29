@@ -1,10 +1,9 @@
-(** * P-384 (secp384r1) prime modulus + axiomatized primality.
+(** * P-384 (secp384r1) prime modulus and primality.
 
-    Minimal "prime cert" file for the Track Q divstep-inversion chain.
-    Per the Track Q shortcut policy, primality is AXIOMATIZED rather
-    than discharged via a Pocklington certificate — producing a fresh
-    cert for [2^384 - 2^128 - 2^96 + 2^32 - 1] is not blocking for
-    the divstep chain (which only needs [Z.gcd x p = 1] as a hypothesis).
+    Prime cert file for the Track Q divstep-inversion chain.  Primality
+    is discharged by the Coqprime Pocklington certificate in
+    [p384_prime_certif.v]; this file only restates it at the [Z] modulus
+    used downstream.
 
     Sibling files in the chain:
       - [P384_FpInv.v]                       (Gallina divstep + iter_invariant)
@@ -15,6 +14,7 @@
 
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import ZArith.Znumtheory.
+Require Import Bedrock.Field.Synthesis.Examples.p384_prime_certif.
 
 Local Open Scope Z_scope.
 
@@ -28,5 +28,6 @@ Definition p384_prime_pos : positive :=
 Lemma p384_modulus_pos : p384_modulus = Z.pos p384_prime_pos.
 Proof. vm_compute. reflexivity. Qed.
 
-(** Axiomatized primality.  See [p224_prime.v] header for rationale. *)
-Axiom prime_p384 : prime p384_modulus.
+(** Primality, from the Pocklington certificate in [p384_prime_certif.v]. *)
+Lemma prime_p384 : prime p384_modulus.
+Proof. rewrite p384_modulus_pos. exact prime_p384_cert. Qed.

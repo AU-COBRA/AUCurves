@@ -4,8 +4,8 @@
 
     P-384 analogue of [p256_prime.v].  Differences from the P-256 file:
       - 6 limbs of 64 bits instead of 4;
-      - primality comes from the axiom [prime_p384] in [p384_prime.v]
-        (repo policy for P-384: no Pocklington certificate);
+      - primality comes from [prime_p384] in [p384_prime.v], proved by
+        the Pocklington certificate in [p384_prime_certif.v];
       - the synthesis step uses a local native_compute variant of
         [make_computed_op], copied from [bls12_377_prime.v] — the
         upstream vm_compute tactic is too slow on 6-limb primes. *)

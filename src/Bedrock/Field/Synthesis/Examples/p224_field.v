@@ -3,8 +3,8 @@
     over the NIST P-224 prime: p = 2^224 - 2^96 + 1.
 
     P-224 analogue of [p256_prime.v].  Differences from the P-256 file:
-      - primality comes from the axiom [prime_p224] in [p224_prime.v]
-        (repo policy for P-224: no Pocklington certificate);
+      - primality comes from [prime_p224] in [p224_prime.v], proved by
+        the Pocklington certificate in [p224_prime_certif.v];
       - same 4 limbs of 64 bits, so the upstream vm_compute
         [make_computed_op] tactic is used unchanged (the native_compute
         variant of [p384_field.v] is only needed at 6 limbs). *)

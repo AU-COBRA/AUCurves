@@ -18,14 +18,16 @@
       §5  [p256_wnaf_single_full]: the end-to-end statement.
 
     Status of the plan items (docs/nist_scalar_mult_plan.md):
-      - G5  CLOSED at the interface.  The four generic files now take an
-            [opp_name] parameter, and this file passes "opp_inplace" —
-            the name of [NistWnafWrappers.opp_inplace_func], the
-            aliasing-tolerant wrapper.  (fiat-crypto's synthesized
-            [p256_coord_opp] has no aliasing spec, so the wrapper name,
-            not the [FieldParameters] field [opp], is the right value.)
-            [NistWnafWrappers.opp_inplace_ok] is still Admitted, so the
-            negation spec is imported-Admitted rather than proved.
+      - G5  CLOSED.  The four generic files take an [opp_name]
+            parameter, and this file passes "opp_inplace" — the name of
+            [NistWnafWrappers.opp_inplace_func], the aliasing-tolerant
+            wrapper.  (fiat-crypto's synthesized [p256_coord_opp] has
+            no aliasing spec, so the wrapper name, not the
+            [FieldParameters] field [opp], is the right value.)
+            [NistWnafWrappers.opp_inplace_ok] is now Qed, so
+            [p256_HOppInplace_spec] DISCHARGES both negation shapes
+            from the function table; the final theorem no longer takes
+            a negation hypothesis.
       - G6  DISCHARGED from RcbProjectiveLaws.v, not assumed.  The chain
             is now quotiented by [RcbProjectiveLaws.pt_eq] and carries
             [RcbProjectiveLaws.oncurve]; §1b below proves every group
@@ -45,11 +47,24 @@
             table hypothesis is now STRONGER than before: each entry
             must be on the curve as well as [pt_eq] to the odd multiple.
 
-    Honesty ledger (this file): 1 Admitted —
-    [p256_wnaf_single_full] (composition into [wnaf_single_full]).
-    [p256_Hhorner_step] / [p256_Hhorner_oncurve] are proved from
-    [wNAF_Single_HornerAlgebra].  Imported Admitteds: the four
-    function-body wrapper lemmas of NistWnafWrappers.v. *)
+    Honesty ledger (this file): 0 Admitted.
+    [p256_wnaf_single_full] is Qed, on the Section hypotheses listed
+    under G6 above plus the caller's G7 data.  [p256_Hhorner_step] /
+    [p256_Hhorner_oncurve] are proved from
+    [wNAF_Single_HornerAlgebra]; the four function-body wrapper lemmas
+    of NistWnafWrappers.v are Qed as of be20f7b.  What the theorem
+    still RESTS ON, and what a reader should check:
+      - the five curve-level hypotheses of §1b, of which
+        [p256_Hexcept] (no F-rational 2-torsion) is the only
+        non-routine one;
+      - [p256_wnaf_table_ok] / [p256_wnaf_leaf_specs] — the caller's
+        function table and fiat-crypto's synthesized field leaves;
+      - G7: the caller's digit array and table buffers hold
+        [wnaf_digits 4 k 257] and on-curve points [pt_eq] to
+        [1P;3P;5P;7P].  [WnafTableBuild.rcb_table4_ok] (Qed) supplies
+        the Gallina half of the table obligation; the memory-level
+        half (that a bedrock2 function POPULATES the buffer) is not
+        claimed by any file yet. *)
 
 From Stdlib Require Import ZArith Lia List.
 From Stdlib Require Import RelationClasses.
@@ -707,6 +722,46 @@ Section P256_wNAF.
           | solve [ typeclasses eauto | exact _ ] ] ].
   Qed.
 
+  (** G5: both shapes of the negation the chain needs, at the wrapper
+      name "opp_inplace".  [NistWnafWrappers.opp_inplace_ok] is Qed, so
+      this is a discharge and not an assumption.  Same three-way
+      alternation as [p256_HStoreZero]: the Section variables of
+      NistWnafWrappers' [Specs] section become leading arguments
+      ([Hbounds_eq] and the two constant felems among them), and the
+      alternation avoids committing to how many. *)
+  Lemma p256_HOppInplace_spec :
+    forall functions,
+      p256_wnaf_table_ok functions ->
+      p256_wnaf_leaf_specs functions ->
+      spec_of_opp_inplace functions.
+  Proof.
+    intros functions Htab Hleaf.
+    pose proof Htab as (_ & _ & _ & _ & _ & _ & Hoi & _).
+    pose proof Hleaf as (_ & _ & _ & Hopp & _).
+    pose proof (p256_felem_copy_spec functions Htab) as Hcopy.
+    first
+      [ exact (@opp_inplace_ok _ _ _ _ _ _ _ _ _ _ _ _ _ _
+                 p256_bounds_eq p256_three_b_felem p256_a_felem
+                 functions Hoi Hopp Hcopy)
+      | eapply opp_inplace_ok with (functions := functions);
+        [ solve [ typeclasses eauto | exact _ ] ..
+        | exact p256_bounds_eq
+        | exact p256_three_b_felem
+        | exact p256_a_felem
+        | exact Hoi
+        | exact Hopp
+        | exact Hcopy ]
+      | eapply opp_inplace_ok with (functions := functions);
+        repeat first
+          [ exact p256_bounds_eq
+          | exact p256_three_b_felem
+          | exact p256_a_felem
+          | exact Hoi
+          | exact Hopp
+          | exact Hcopy
+          | solve [ typeclasses eauto | exact _ ] ] ].
+  Qed.
+
   (* ============================================================== *)
   (* §5. End-to-end statement                                        *)
   (* ============================================================== *)
@@ -818,10 +873,9 @@ Section P256_wNAF.
     destruct (d =? 0); [exact Hoc | apply p256_oncurve_curve_add; assumption].
   Qed.
 
-  (** The citable statement.  Under the function table and the field
-      leaf specs, plus the residual hypothesis groups (G5's negation
-      spec at the wrapper name, and G7's caller-supplied data), the body
-      of [p256_wnaf_single_func] computes [k * P] in the chain's sense
+  (** The citable statement.  Under the function table, the field leaf
+      specs, and G7's caller-supplied data, the body of
+      [p256_wnaf_single_func] computes [k * P] in the chain's sense
       ([p256_scmul (Z.to_nat k) P]) UP TO PROJECTIVE EQUIVALENCE, and
       the result is on the curve.
 
@@ -838,13 +892,9 @@ Section P256_wNAF.
     forall functions,
       p256_wnaf_table_ok functions ->
       p256_wnaf_leaf_specs functions ->
-      (* G5: aliased negation at the wrapper name "opp_inplace"
-         ([NistWnafWrappers.spec_of_opp_inplace], second conjunct). *)
-      (forall p (Y : F) R0 tr0 m0,
-          (FElem (Some tight_bounds) p Y ⋆ R0) m0 ->
-          Semantics.call functions "opp_inplace" tr0 m0 [p; p]
-            (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
-              (FElem (Some tight_bounds) p (F.opp Y) ⋆ R0) m')) ->
+      (* G5 is no longer a hypothesis: both shapes of the negation come
+         from [p256_HOppInplace_spec], i.e. from the function table's
+         "opp_inplace" entry plus the field leaf specs. *)
       forall k, 0 <= k < 2 ^ 256 ->
       forall Px Py Pz table_entries,
         (* G7: the base point is on the curve *)
@@ -876,59 +926,86 @@ Section P256_wNAF.
               ⋆ DigitArray pDK (p256_digits k) ⋆ Table4 pT table_entries
               ⋆ Rinner) m').
   Proof.
-    intros functions Htab Hleaf HOppInplace k Hk Px Py Pz tab HPoc Htable.
-    pose proof Hleaf as (_ & _ & _ & Hopp & _).
-    (* Intended script:
-         intros; cbv [p256_wnaf_single_func snd].
-         eapply (wnaf_single_full
-                   (curve_add := p256_curve_add)
-                   (curve_add_name := "curve_add")
-                   (curve_double_name := "curve_double")
-                   (opp_name := "opp_inplace")
-                   (pt_eq := p256_pt_eq) (oncurve := p256_oncurve)
-                   (dk := p256_digits k) (num_iters := p256_num_digits)
-                   (table_entries := tab) (Px := Px) (Py := Py) (Pz := Pz)
-                   (k := k)); try eassumption.
-         - exact p256_bounds_eq.
-         (* G6 interface, all proved in §1b from RcbProjectiveLaws.v *)
-         - exact p256_pt_eq_equiv.
-         - exact p256_oncurve_id.
-         - exact p256_oncurve_curve_add.
-         - exact p256_curve_add_Proper.
-         - exact p256_curve_add_id_l.
-         - exact p256_curve_add_assoc.
-         (* callee specs *)
-         - exact (p256_HCurveDouble functions Htab Hleaf).      (* HCurveDouble *)
-         - exact (p256_HCurveAddInplace functions Htab Hleaf).  (* HCurveAddInplace *)
-         - exact (felem_copy_HFelemCopy _ (p256_felem_copy_spec functions Htab)).
-         - exact (opp_HOpp p256_bounds_eq _ Hopp).             (* HOpp, at "opp_inplace" *)
-         - exact HOppInplace.
-         - exact (p256_HStoreZero functions Htab Hleaf).
-         (* data *)
-         - exact HPoc.
-         - exact (p256_digits_length k).
-         - exact p256_Hnbound.
-         - exact (p256_digits_bounded k ltac:(lia)).
-         - exact p256_Hfs_pos.  - exact p256_Hfs_small.
-         - exact (proj1 Htable).
-         - exact (p256_Hdigit_load (p256_digits k)).
-         - exact (p256_digits_Hws_nn k Hk).
-         - exact (p256_Hhorner_step k Hk Px Py Pz tab HPoc Htable).
-         - exact (p256_Hhorner_oncurve k ltac:(lia) Px Py Pz tab Htable).
-         - exact (p256_digits_wsum k Hk).  - lia.
+    intros functions Htab Hleaf k Hk Px Py Pz tab HPoc Htable.
+    intros pOx pOy pOz pAx pAy pAz pT pDK
+           Ox0 Oy0 Oz0 Ax0 Ay0 Az0 Rinner tr m l
+           Hlox Hloy Hloz Hlax Hlay Hlaz Hlt Hldk Hsep.
+    assert (Hknn : 0 <= k) by lia.
 
-       Two residual mismatches remain and are why this is still
-       Admitted:
-       (i)  [opp_HOpp] proves the non-aliased negation spec at the
-            [FieldParameters] name [opp], but the chain now calls
-            [opp_name = "opp_inplace"]; the correct source is
-            [NistWnafWrappers.opp_inplace_ok] (itself Admitted), whose
-            [spec_of_opp_inplace] supplies BOTH shapes at that name.
-       (ii) [wnaf_single_full]'s Section variables become explicit
-            arguments in declaration order; the named-argument form
-            above avoids committing to that order but still needs a
-            compiler to confirm the names survive Section discharge. *)
-  Admitted.
+    (* Every hypothesis [wnaf_single_full] asks for, as a named term in
+       the context, so that the discharge below is [eassumption] and
+       does not depend on the order in which Section discharge presents
+       [wnaf_single_full]'s arguments. *)
+    pose proof p256_bounds_eq as Hbe.
+    (* G6: the group interface, proved in §1b from RcbProjectiveLaws.v *)
+    pose proof p256_pt_eq_equiv as Heqv.
+    pose proof p256_oncurve_id as Hoid.
+    pose proof p256_oncurve_curve_add as Hoadd.
+    pose proof p256_curve_add_Proper as HcaP.
+    pose proof p256_curve_add_id_l as Hidl.
+    pose proof p256_curve_add_assoc as Hass.
+    (* callee specs, from the function table and the field leaves *)
+    pose proof (p256_HCurveDouble functions Htab Hleaf) as HDbl.
+    pose proof (p256_HCurveAddInplace functions Htab Hleaf) as HAdd.
+    pose proof (felem_copy_HFelemCopy functions
+                  (p256_felem_copy_spec functions Htab)) as HCopy.
+    pose proof (p256_HOppInplace_spec functions Htab Hleaf) as HOI.
+    cbv [spec_of_opp_inplace] in HOI.
+    destruct HOI as [HOppNonAliased HOppAliased].
+    pose proof (p256_HStoreZero functions Htab Hleaf) as HSZ.
+    (* data *)
+    pose proof (p256_digits_length k) as Hlen.
+    pose proof p256_Hnbound as Hnb.
+    pose proof (p256_digits_bounded k Hknn) as Hdb.
+    pose proof p256_Hfs_pos as Hfp.
+    pose proof p256_Hfs_small as Hfsm.
+    pose proof (proj1 Htable) as Htl.
+    pose proof (p256_Hdigit_load (p256_digits k)) as Hdl.
+    pose proof (p256_digits_Hws_nn k Hk) as Hws.
+    pose proof (p256_Hhorner_step k Hk Px Py Pz tab HPoc Htable) as Hhs.
+    pose proof (p256_Hhorner_oncurve k Hknn Px Py Pz tab Htable) as Hho.
+    pose proof (p256_digits_wsum k Hk) as Hwsum.
+
+    (* The two callee specs are [Definition]s; unfold them so that
+       [eassumption] meets the raw shape the chain declares. *)
+    cbv [spec_of_curve_double_general spec_of_curve_add_inplace_general]
+      in HDbl, HAdd.
+
+    (* Expose the function body and the chain's [scmul]. *)
+    cbv [p256_wnaf_single_func snd].
+    unfold p256_scmul.
+
+    first
+      [ eapply wnaf_single_full
+          with (curve_add_name := "curve_add")
+               (curve_double_name := "curve_double")
+               (opp_name := "opp_inplace")
+               (curve_add := p256_curve_add)
+               (pt_eq := p256_pt_eq)
+               (oncurve := p256_oncurve)
+               (dk := p256_digits k)
+               (num_iters := p256_num_digits)
+               (table_entries := tab)
+               (Px := Px) (Py := Py) (Pz := Pz)
+               (k := k)
+      | eapply wnaf_single_full
+          with (curve_add := p256_curve_add)
+               (pt_eq := p256_pt_eq)
+               (oncurve := p256_oncurve)
+               (k := k)
+      | eapply wnaf_single_full ].
+
+    all: try eassumption.
+    all: try ecancel_assumption.
+    all: try lia.
+    all: try (unfold p256_pt_eq, p256_oncurve, p256_curve_add,
+                     p256_point_opp in *; eassumption).
+    (* Anything left prints itself instead of surfacing as an opaque
+       "incomplete proof" at [Qed]. *)
+    all: lazymatch goal with
+         | |- ?G => fail 99 "P256-FULL-RESIDUAL" G
+         end.
+  Qed.
 
 End P256_wNAF.
 
@@ -938,18 +1015,19 @@ End P256_wNAF.
       felem_copy_HFelemCopy          spec_of_felem_copy (bytes dst) -> FElem-dst shape
       opp_HOpp                       spec_of_UnOp un_opp -> HOpp shape (loose->tight by Hbounds_eq)
       FElem2_elim_frame / _intro_frame   one-leaf transport across the FElem layers
-    NistWnafWrappers.v — Admitted (each needs a function-body entry)
+    NistWnafWrappers.v — proved (all four wrapper bodies, be20f7b)
       curve_add_inplace_general_ok   spec_of_rcb_add_general + spec_of_felem_copy
                                       -> HCurveAddInplace shape at "curve_add"
       curve_double_general_ok        same inputs -> HCurveDouble shape at "curve_double"
       opp_inplace_ok                 spec_of_UnOp un_opp + spec_of_felem_copy
-                                      -> both negation shapes at "opp_inplace" (needs G5 rename)
+                                      -> both negation shapes at "opp_inplace"
       store_zero_from_word_ok        spec_of_from_word -> StoreZero.spec_of_store_zero
     This file
       §1b group laws                 PROVED from RcbProjectiveLaws.v, under the
                                       curve side conditions p256_b_val /
                                       p256_M_gt_27 / p256_Hthree_b / p256_Hdisc /
                                       p256_Hexcept (Section hypotheses)
+      p256_HOppInplace_spec          PROVED from opp_inplace_ok (G5)
       p256_Hhorner_step              proved from horner_step_single (quotiented)
       p256_Hhorner_oncurve           proved from digit_point_oncurve_full
-      p256_wnaf_single_full          Admitted: composition into wnaf_single_full *)
+      p256_wnaf_single_full          PROVED: composition into wnaf_single_full *)

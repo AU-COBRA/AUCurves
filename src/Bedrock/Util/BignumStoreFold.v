@@ -58,10 +58,10 @@
       [flatten_seps] + [cancel_seps_at_indices] recipe
       (memory: reference_slow_proofs_fiat, H3 worked example). *)
 
-Require Import Coq.Init.Byte.
-Require Import Coq.ZArith.ZArith.
-Require Import Coq.Lists.List.
-Require Import Coq.micromega.Lia.
+Require Import Stdlib.Init.Byte.
+Require Import Stdlib.ZArith.ZArith.
+Require Import Stdlib.Lists.List.
+Require Import Stdlib.micromega.Lia.
 Require Import bedrock2.Map.Separation.
 Require Import bedrock2.Map.SeparationLogic.
 Require Import bedrock2.Lift1Prop.
@@ -171,6 +171,95 @@ Section folds.
   Qed.
 
 End folds.
+
+(* ================================================================ *)
+(* §1b. Flat-form fold lemmas (BasicC64)                             *)
+(*      After the call phase the constant buffers appear as FLAT     *)
+(*      scalar chains with [word.add aa (word.of_Z k)] addresses     *)
+(*      (ascending or descending nesting); these variants are what   *)
+(*      [seprewrite_in] matches there.  4-limb versions transcribed  *)
+(*      from [Bedrock.Util.Fold4Scratch] (validated in the P-256     *)
+(*      campaign); 6-limb versions are the mechanical extension.     *)
+(* ================================================================ *)
+
+Section flat_folds.
+  Local Notation word := BasicC64Semantics.word.
+  Local Notation wordof_Z := (@word.of_Z 64 word).
+  Local Open Scope Z_scope.
+
+  (* Ascending flat form: scalar aa v0 * (aa+8) v1 * (aa+16) v2 * (aa+24) v3. *)
+  Lemma fold4_scalars_Bignum_flat (aa : word) (v0 v1 v2 v3 : word) :
+    Lift1Prop.iff1
+      ((Scalars.scalar aa v0 *
+        (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+         (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+          Scalars.scalar (word.add aa (wordof_Z 24)) v3)))%sep
+        : @Interface.map.rep _ _ BasicC64Semantics.mem -> Prop)
+      (Bignum 4%nat aa [v0; v1; v2; v3]).
+  Proof.
+    etransitivity.
+    2: { symmetry. apply Bignum_n_Scalar. }
+    cbn [many_Scalars hd tl].
+    repeat (rewrite next_word'; try rewrite word_add_0).
+    intro m; split; intro Hm.
+    - apply sep_emp_l. split; [reflexivity|]. ecancel_assumption.
+    - apply sep_emp_l in Hm. destruct Hm as [_ Hm]. ecancel_assumption.
+  Qed.
+
+  (* Descending flat form (the nesting order the store phase leaves). *)
+  Lemma fold4_scalars_Bignum_flat_desc (aa : word) (v0 v1 v2 v3 : word) :
+    Lift1Prop.iff1
+      ((Scalars.scalar (word.add aa (wordof_Z 24)) v3 *
+        (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+         (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+          Scalars.scalar aa v0)))%sep
+        : @Interface.map.rep _ _ BasicC64Semantics.mem -> Prop)
+      (Bignum 4%nat aa [v0; v1; v2; v3]).
+  Proof.
+    etransitivity.
+    2: { apply fold4_scalars_Bignum_flat. }
+    intro m; split; intro Hm; ecancel_assumption.
+  Qed.
+
+  (* 6-limb ascending flat form (P-384). *)
+  Lemma fold6_scalars_Bignum_flat (aa : word) (v0 v1 v2 v3 v4 v5 : word) :
+    Lift1Prop.iff1
+      ((Scalars.scalar aa v0 *
+        (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+         (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+          (Scalars.scalar (word.add aa (wordof_Z 24)) v3 *
+           (Scalars.scalar (word.add aa (wordof_Z 32)) v4 *
+            Scalars.scalar (word.add aa (wordof_Z 40)) v5)))))%sep
+        : @Interface.map.rep _ _ BasicC64Semantics.mem -> Prop)
+      (Bignum 6%nat aa [v0; v1; v2; v3; v4; v5]).
+  Proof.
+    etransitivity.
+    2: { symmetry. apply Bignum_n_Scalar. }
+    cbn [many_Scalars hd tl].
+    repeat (rewrite next_word'; try rewrite word_add_0).
+    intro m; split; intro Hm.
+    - apply sep_emp_l. split; [reflexivity|]. ecancel_assumption.
+    - apply sep_emp_l in Hm. destruct Hm as [_ Hm]. ecancel_assumption.
+  Qed.
+
+  (* 6-limb descending flat form. *)
+  Lemma fold6_scalars_Bignum_flat_desc (aa : word) (v0 v1 v2 v3 v4 v5 : word) :
+    Lift1Prop.iff1
+      ((Scalars.scalar (word.add aa (wordof_Z 40)) v5 *
+        (Scalars.scalar (word.add aa (wordof_Z 32)) v4 *
+         (Scalars.scalar (word.add aa (wordof_Z 24)) v3 *
+          (Scalars.scalar (word.add aa (wordof_Z 16)) v2 *
+           (Scalars.scalar (word.add aa (wordof_Z 8)) v1 *
+            Scalars.scalar aa v0)))))%sep
+        : @Interface.map.rep _ _ BasicC64Semantics.mem -> Prop)
+      (Bignum 6%nat aa [v0; v1; v2; v3; v4; v5]).
+  Proof.
+    etransitivity.
+    2: { apply fold6_scalars_Bignum_flat. }
+    intro m; split; intro Hm; ecancel_assumption.
+  Qed.
+
+End flat_folds.
 
 (* ================================================================ *)
 (* §2. Stackalloc-intro conversion pass (debug-note defect class 2)  *)
@@ -302,14 +391,17 @@ Ltac destruct_store_target_bignum nlimbs nbytes :=
   end.
 
 (** Unfold the store-target [Bignum] (now over a concrete cons-list)
-    into the nested scalar chain via [Bignum_n_Scalar], in place. *)
+    into the nested scalar chain via [Bignum_n_Scalar], in place.
+    Keyed on the current store goal's target pointer and a cons-list
+    argument — matching any [Bignum] hypothesis picks a stale
+    [bs2ws]-form buffer first (first-execution fix, 2026-08-28). *)
 Ltac unfold_bignum_to_scalars nlimbs :=
   lazymatch goal with
-  | H : context[Bignum nlimbs ?p ?l] |- _ =>
-    lazymatch l with
-    | _ :: _ =>
+  | |- WeakestPrecondition.store _ _ ?p _ _ =>
+    lazymatch goal with
+    | H : context[Bignum nlimbs p (?v0 :: ?vs)] |- _ =>
       let Hiff := fresh "Hiff" in
-      pose proof (Bignum_n_Scalar nlimbs p l) as Hiff;
+      pose proof (Bignum_n_Scalar nlimbs p (v0 :: vs)) as Hiff;
       cbn [many_Scalars hd tl] in Hiff;
       seprewrite_in Hiff H; clear Hiff
     end

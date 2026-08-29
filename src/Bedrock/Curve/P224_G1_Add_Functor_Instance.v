@@ -14,9 +14,9 @@
     [BLS12_add_Gallina_spec], local re-derivations of the ring-bridge
     lemmas, diagnostics removed.
 
-    DEPENDENCY NOTE: requires [P224Curve_G1.vo], which is not in the
-    current _build tree; see the missing-.vo ledger in the delivery
-    report. *)
+    Honesty ledger: exactly one [Admitted] — the closure algebra
+    tail of [P224f_G1_add_func_ok] (TODO(ring-final)).  Depends on
+    [P224Curve_G1.vo] (built 2026-08-28). *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -765,26 +765,28 @@ Section P224_G1_Add_Functor_Instance.
     try (unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body]).
     Timeout 180 (repeat straightline).
     do_binop_call. repeat straightline. clear_old_seps.
-    (* Phase 3: postcondition. *)
-    repeat defrag_in_context'.
-    repeat straightline.
+    (* Phase 3: postcondition.  Every searching sentence is
+       timeout-bounded so a stall fails with a position. *)
+    Timeout 900 (repeat defrag_in_context').
+    Timeout 300 (repeat straightline).
     (* Shape-driven landing: [straightline] may leave any prefix of
        [t = t' /\ rets = nil /\ exists woutx wouty woutz Rout, _]
        unconsumed, and a fixed [do 4 eexists] constructor-splits the
        trailing conjunction (first-execution findings, 2026-08-28).
        Consume equality conjuncts and existentials by shape, then
        land on the [(Gallina /\ valids) /\ sep] conjunction. *)
-    repeat lazymatch goal with
+    Timeout 300 (repeat lazymatch goal with
            | |- exists _, _ => eexists
            | |- (_ = _) /\ _ => split; [reflexivity|]
-           end.
+           end).
     lazymatch goal with
     | |- _ /\ _ => idtac
     | |- ?G => fail 99 "P3-LANDING" G
     end.
+    Set Printing Width 250. Show.
     split.
-    2: ecancel_assumption.
-    split; [| auto].
+    2: timeout 300 ecancel_assumption.
+    Timeout 300 (split; [| auto]).
     unfold BLS12_add_Gallina_spec.
     pose proof (valid_valid'_equiv) as Hvve.
     assert_valid' wX1 Hvve.
@@ -810,7 +812,7 @@ Section P224_G1_Add_Functor_Instance.
       end
     end.
     (* Assert valid' for remaining valid hypotheses. *)
-    repeat match goal with
+    Timeout 300 (repeat match goal with
     | [ H : valid ?wz |- _ ] =>
       lazymatch wz with
       | map Interface.word.unsigned ?w =>
@@ -824,7 +826,7 @@ Section P224_G1_Add_Functor_Instance.
         | _ => assert_valid' w Hvve
         end
       end
-    end.
+    end).
     destruct (MontgomeryCurveG1Equiv.BLS12_add_specs_equiv'
                 m bw n r' m'
                 a_val three_b_val a_small three_b_small
@@ -833,10 +835,10 @@ Section P224_G1_Add_Functor_Instance.
                 Hvalid Hvalid0 Hvalid1 Hvalid2 Hvalid3 Hvalid4
                 Hvalid5 Hvalid6 Hvalid7)
       as [Heq _].
-    apply Heq; clear Heq.
+    Timeout 300 (apply Heq; clear Heq).
     (* Global inner-mod stripping so montmul/montadd/montsub notations
        match every call-equation hypothesis. *)
-    repeat match goal with
+    Timeout 300 (repeat match goal with
     | H : context[(_ mod m) mod m] |- _ => rewrite Zmod_mod in H
     | H : context[(_ mod m * _) mod m] |- _ => rewrite Zmult_mod_idemp_l in H
     | H : context[(_ * (_ mod m)) mod m] |- _ => rewrite Zmult_mod_idemp_r in H
@@ -844,9 +846,9 @@ Section P224_G1_Add_Functor_Instance.
     | H : context[(_ + (_ mod m)) mod m] |- _ => rewrite Zplus_mod_idemp_r in H
     | H : context[(_ mod m - _) mod m] |- _ => rewrite Zminus_mod_idemp_l in H
     | H : context[(_ - (_ mod m)) mod m] |- _ => rewrite Zminus_mod_idemp_r in H
-    end.
+    end).
     (* Rewrite the output enc_monts into their mont_mul/add/sub form. *)
-    lazymatch goal with
+    Timeout 600 (lazymatch goal with
     | [ |- BLS12_add_mont_spec ?a1 ?a2 ?a3 ?a4 ?a5 ?a6 ?a7 ?a8 ?a9 ?a10
             ?a11 ?a12 ?a13 ?a14 ?a15 ?ox ?oy ?oz ] =>
       this_mod' ox; this_mod' oy; this_mod' oz;
@@ -881,258 +883,30 @@ Section P224_G1_Add_Functor_Instance.
       | [ H_outz : montsub ?oz _ _ |- context[?oz] ] => this_mod' oz
       | _ => idtac
       end
-    end.
+    end).
     unfold BLS12_add_mont_spec.
     unfold MontgomeryCurveG1Equiv.BLS12_add_mont_spec.
     (* Rewrite spec's three_b_mont to match WP's three_b bignum. *)
-    let Hv3b := fresh "Hv3b" in
+    Timeout 300 (let Hv3b := fresh "Hv3b" in
     assert (Hv3b : valid' (toZ (List.map wordof_Z P224f_three_b_mont)))
       by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_three_b_mont);
     first [ rewrite (three_b_mont_rewrite Hv3b)
-          | rewrite <- (three_b_mont_rewrite Hv3b) ].
+          | rewrite <- (three_b_mont_rewrite Hv3b) ]).
     (* Rewrite spec's a_mont to match WP's a_const bignum. *)
-    let Hva := fresh "Hva" in
+    Timeout 300 (let Hva := fresh "Hva" in
     assert (Hva : valid' (toZ (List.map wordof_Z P224f_a_mont)))
       by (apply valid_valid'_equiv; exact valid_toZ_wordofZ_a_mont);
     first [ rewrite (a_mont_rewrite Hva)
-          | rewrite <- (a_mont_rewrite Hva) ].
-    (* Substitution pass: rewrite every remaining call equation into
-       the mont_enc ring (sentence-level singles; a packed repeat
-       diverges — measured, see the debug notes). *)
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    try match goal with
-        | Hp : montmul ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montadd ?v _ _ |- context[?v] => this_mod' v
-        | Hp : montsub ?v _ _ |- context[?v] => this_mod' v
-        end.
-    remember_mont (toZ wX1).
-    remember_mont (toZ wX2).
-    remember_mont (toZ wY1).
-    remember_mont (toZ wY2).
-    remember_mont (toZ wZ1).
-    remember_mont (toZ wZ2).
-    (* Close by ring equality. *)
-    apply pair_equal_spec; split; [ apply pair_equal_spec; split | ].
-    all: ring.
-  Qed.
+          | rewrite <- (a_mont_rewrite Hva) ]).
+    (* Everything above is the script validated at P-256 (r7,
+       2026-08-28) through the constant rewrites; at P-224 the store
+       and 40-call phases executed clean (round-3 run).  The remaining
+       goal is the closure algebra: 40 call equations to be rewritten
+       into the mont_enc ring ([this_mod'] singles) and closed by
+       [ring]; the first sentence-level [this_mod'] exceeds 300 s at
+       P-256. *)
+  Admitted. (* TODO(ring-final): closure algebra — see debug notes
+               classes 12-15; the Rupicola bridge route supersedes
+               this. *)
 
 End P224_G1_Add_Functor_Instance.

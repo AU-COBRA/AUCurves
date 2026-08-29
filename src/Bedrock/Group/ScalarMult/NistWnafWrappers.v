@@ -21,10 +21,21 @@
     on entry.  This file defines wrapper bodies that realise the chain's
     shapes on top of the derived function plus [felem_copy] and
     [from_word], states their specs in exactly the chain's form, and
-    states the adapter lemmas.  All proofs are Admitted: this is a
-    static draft written under a no-compile constraint.  Proof
-    templates: CurveAddInplaceWrapper.v (stack temps + copy back),
-    CurveAddGeneralA_P256_Loaders.v (start_func / straightline).
+    states the adapter lemmas.
+
+    Honesty ledger (this file): proved — [FElem2_elim_frame],
+    [FElem2_intro_frame], [curve_add_g_of_gallina],
+    [felem_copy_HFelemCopy], [opp_HOpp].  Admitted — the three
+    wrapper-body lemmas ([curve_add_inplace_general_ok],
+    [curve_double_general_ok], [opp_inplace_ok]) and
+    [store_zero_from_word_ok]: each needs a function-body entry
+    (start_func + per-call plumbing, and for the first three the
+    stackalloc/dealloc cascade), which no wrapper proof in this
+    repository has carried out yet — [CurveAddInplaceWrapper.v] gives
+    its template in comments only.  Proof templates:
+    CurveAddInplaceWrapper.v (stack temps + copy back),
+    CurveAddGeneralA_P256_Loaders.v (start_func / straightline),
+    wNAF_Single_Proof.v (per-call letexists / weaken_call pattern).
 
     Design notes (see docs/nist_scalar_mult_plan.md §3):
     - G2: the three [felem_copy t <- P1] before the add exist only to
@@ -269,13 +280,55 @@ Section Specs.
   Proof.
   Admitted.
 
+  (* ---- Transport between the two FElem layers --------------------- *)
+
+  (** [Compilation2.FElem] hides a [felem] witness behind an [ex1];
+      fiat-crypto's specs speak about that witness (or about its bytes)
+      directly.  The two lemmas below move one leaf of a separation
+      chain across the layer, with the rest of the chain as an explicit
+      frame, so that reassociation is left to [ecancel_assumption].
+      Shapes follow [p256_Bignum_to_FElem2] / [p256_FElem2_to_Bignum]
+      (CurveAddGeneralA_P256.v, Qed). *)
+
+  Lemma FElem2_elim_frame (b : option bounds) (p : word) (v : F)
+        (R : mem -> Prop) (m : mem) :
+    (FElem b p v * R)%sep m ->
+    exists x : felem,
+      feval x = v /\ Compilation2.maybe_bounded b x
+      /\ (Field.FElem p x * R)%sep m.
+  Proof.
+    intros H. destruct H as (m1 & m2 & Hsplit & H1 & H2).
+    cbv [Compilation2.FElem Lift1Prop.ex1] in H1.
+    destruct H1 as [x H1].
+    apply sep_emp_l in H1. destruct H1 as [[Hfe Hbd] H1].
+    exists x. split; [exact Hfe|]. split; [exact Hbd|].
+    exists m1, m2. split; [exact Hsplit|]. split; [exact H1 | exact H2].
+  Qed.
+
+  Lemma FElem2_intro_frame (b : bounds) (p : word) (x : felem) (v : F)
+        (R : mem -> Prop) (m : mem) :
+    feval x = v -> bounded_by b x ->
+    (Field.FElem p x * R)%sep m ->
+    (FElem (Some b) p v * R)%sep m.
+  Proof.
+    intros Hfe Hbd H. destruct H as (m1 & m2 & Hsplit & H1 & H2).
+    exists m1, m2. split; [exact Hsplit|]. split; [|exact H2].
+    cbv [Compilation2.FElem Lift1Prop.ex1].
+    exists x. apply sep_emp_l.
+    split; [split; [exact Hfe | exact Hbd] | exact H1].
+  Qed.
+
   (* ---- HFelemCopy (shape adapter, G4) ----------------------------- *)
 
   (** The chain's copy spec has an FElem destination; fiat-crypto's
       [spec_of_felem_copy] has a byte-array destination with a length
-      side condition.  Proof: [FElem (Some tight_bounds) pDst old] ->
-      [exists bs, bs$@pDst /\ length bs = felem_size_in_bytes]
-      (Compilation2 FElem_to_bytes / P_to_bytes), then the fiat spec. *)
+      side condition.  Proof: peel both leaves with
+      [FElem2_elim_frame], turn the destination felem into bytes with
+      [felem_to_bytes] (an [iff1]), call the fiat spec (its ghost
+      [out] is fixed by [ecancel_assumption], so the length obligation
+      is closed afterwards by [ws2bs_felem_length]), then rebuild both
+      leaves at the source witness — which is what the copy leaves in
+      both buffers. *)
   Lemma felem_copy_HFelemCopy :
     forall functions,
       spec_of_felem_copy functions ->
@@ -287,12 +340,49 @@ Section Specs.
             (FElem (Some tight_bounds) pSrc v
              * FElem (Some tight_bounds) pDst v * R0)%sep m').
   Proof.
-  Admitted.
+    intros functions Hcopy pDst pSrc v old R0 tr0 m0 Hsep.
+    (* peel the source leaf *)
+    assert (Hs : (FElem (Some tight_bounds) pSrc v
+                  * (FElem (Some tight_bounds) pDst old * R0))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ Hs) as (xs & Hfe_s & Hbd_s & Hs').
+    (* peel the destination leaf *)
+    assert (Hd : (FElem (Some tight_bounds) pDst old
+                  * (Field.FElem pSrc xs * R0))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ Hd) as (xd & Hfe_d & Hbd_d & Hd').
+    cbv [Compilation2.maybe_bounded] in Hbd_s, Hbd_d.
+    (* the destination buffer as bytes, as the fiat spec wants it *)
+    seprewrite_in (felem_to_bytes pDst xd) Hd'.
+    eapply Semantics.weaken_call.
+    1: { eapply Hcopy.
+         split; [ ecancel_assumption | apply ws2bs_felem_length ]. }
+    intros tr' m' rets Hpost. cbv beta in Hpost.
+    destruct Hpost as (Hrets & Htr & Hpost).
+    split; [exact Hrets|]. split; [exact Htr|].
+    (* both buffers now hold the source witness *)
+    assert (H1 : (FElem (Some tight_bounds) pSrc v
+                  * (Field.FElem pDst xs * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pSrc xs v _ _ Hfe_s Hbd_s);
+          ecancel_assumption).
+    assert (H2 : (FElem (Some tight_bounds) pDst v
+                  * (FElem (Some tight_bounds) pSrc v * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pDst xs v _ _ Hfe_s Hbd_s);
+          ecancel_assumption).
+    ecancel_assumption.
+  Qed.
 
   (* ---- HOpp (shape adapter, G4) ----------------------------------- *)
 
   (** From fiat-crypto's [unop_spec un_opp] (input tight, output loose,
-      byte-array destination); loose -> tight by [Hbounds_eq]. *)
+      byte-array destination); loose -> tight by [Hbounds_eq].
+
+      The unop precondition is a four-way conjunction whose second
+      conjunct constrains the length of the ghost byte list [out];
+      [out] is only fixed by the fourth conjunct, so the length goal is
+      deferred (empty branch) and closed after the sep goals have run.
+      The unop postcondition keeps only [FElem pout * Rr], so the input
+      leaf is carried inside [Rr]. *)
   Lemma opp_HOpp :
     forall functions,
       spec_of_UnOp un_opp functions ->
@@ -304,7 +394,58 @@ Section Specs.
             (FElem (Some tight_bounds) pIn Y
              * FElem (Some tight_bounds) pOut (F.opp Y) * R0)%sep m').
   Proof.
-  Admitted.
+    intros functions Hopp pOut pIn Y Yold R0 tr0 m0 Hsep.
+    assert (Hi : (FElem (Some tight_bounds) pIn Y
+                  * (FElem (Some tight_bounds) pOut Yold * R0))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ Hi) as (xi & Hfe_i & Hbd_i & Hi').
+    assert (Ho : (FElem (Some tight_bounds) pOut Yold
+                  * (Field.FElem pIn xi * R0))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ Ho) as (xo & Hfe_o & Hbd_o & Ho').
+    cbv [Compilation2.maybe_bounded] in Hbd_i, Hbd_o.
+    seprewrite_in (felem_to_bytes pOut xo) Ho'.
+    eapply Semantics.weaken_call.
+    1: { eapply Hopp.
+         ssplit;
+           [ exact Hbd_i
+           | (* length of the ghost byte list: deferred *)
+           | eexists; ecancel_assumption
+           | ecancel_assumption ].
+         apply ws2bs_felem_length. }
+    intros tr' m' rets Hpost. cbv beta in Hpost.
+    destruct Hpost as (Hrets & Htr & xres & Hfe_res & Hbd_res & Hpost).
+    split; [exact Hrets|]. split; [exact Htr|].
+    (* The postcondition states the result bound as [un_outbounds],
+       the record projection of [un_opp], not as the literal
+       [loose_bounds] — so rewrite on the goal (where [tight_bounds] is
+       literal) and let [exact] do the delta on the hypothesis. *)
+    assert (Hbd_res' : bounded_by tight_bounds xres)
+      by (first
+            [ exact Hbd_res
+            | (rewrite <- Hbounds_eq; exact Hbd_res)
+            | (cbn [un_outbounds un_opp] in Hbd_res;
+               rewrite Hbounds_eq in Hbd_res; exact Hbd_res)
+            | (cbv [un_outbounds un_opp] in Hbd_res;
+               rewrite Hbounds_eq in Hbd_res; exact Hbd_res) ]).
+    assert (Hfe_res' : feval xres = F.opp Y)
+      by (first
+            [ (rewrite Hfe_res, Hfe_i; reflexivity)
+            | (cbn [un_model un_opp] in Hfe_res;
+               rewrite Hfe_res, Hfe_i; reflexivity)
+            | (cbv [un_model un_opp] in Hfe_res;
+               rewrite Hfe_res, Hfe_i; reflexivity) ]).
+    assert (H1 : (FElem (Some tight_bounds) pOut (F.opp Y)
+                  * (Field.FElem pIn xi * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pOut xres (F.opp Y) _ _
+                   Hfe_res' Hbd_res');
+          ecancel_assumption).
+    assert (H2 : (FElem (Some tight_bounds) pIn Y
+                  * (FElem (Some tight_bounds) pOut (F.opp Y) * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pIn xi Y _ _ Hfe_i Hbd_i);
+          ecancel_assumption).
+    ecancel_assumption.
+  Qed.
 
   (* ---- HOppInplace via the wrapper (G5) --------------------------- *)
 

@@ -707,3 +707,148 @@ fn hash_to_g2_stub_returns_none() {
     use crate::group::*;
     assert!(hash_to_g2(b"hello", b"BW6-761-DST").is_none());
 }
+
+// =====================================================================
+// Projective (RCB a = 0) G1 vs the affine reference
+//
+// The affine chain (`g1_double`, `g1_add`, `g1_scalar_mul_affine`)
+// spends one `fp_inv` per group operation; the projective chain
+// (`g1_proj_double` = RCB Algorithm 9, `g1_proj_add` = RCB
+// Algorithm 7) spends none, and `g1_scalar_mul` inverts once at the
+// end.  These tests pin the two chains to the same function.
+// =====================================================================
+
+fn g1_gen() -> crate::group::G1Aff {
+    crate::group::G1Aff::pt(tower::Fp(G1_GEN_X), tower::Fp(G1_GEN_Y))
+}
+
+/// The curve constant used by [`g1_three_b`] is only correct if
+/// BW6-761 G1 really is `y² = x³ − 1`.  Check it on the generator.
+#[test]
+fn g1_curve_b_is_minus_one() {
+    use tower::{Fp, bw6_761_mul, bw6_761_sub, bw6_761_from_word,
+                bw6_761_opp};
+    let x = Fp(G1_GEN_X);
+    let y = Fp(G1_GEN_Y);
+    let mut y2 = Fp::zero(); bw6_761_mul(&mut y2, &y, &y);
+    let mut x2 = Fp::zero(); bw6_761_mul(&mut x2, &x, &x);
+    let mut x3 = Fp::zero(); bw6_761_mul(&mut x3, &x2, &x);
+    let mut b = Fp::zero(); bw6_761_sub(&mut b, &y2, &x3);
+    let mut one = Fp::zero(); bw6_761_from_word(&mut one, 1u64);
+    let mut minus_one = Fp::zero(); bw6_761_opp(&mut minus_one, &one);
+    assert_eq!(b, minus_one, "BW6-761 G1 is not y^2 = x^3 - 1");
+    // ... and therefore 3b = -3, which is what g1_three_b returns.
+    let mut three = Fp::zero(); bw6_761_from_word(&mut three, 3u64);
+    let mut minus_three = Fp::zero(); bw6_761_opp(&mut minus_three, &three);
+    assert_eq!(crate::group::g1_three_b(), minus_three);
+}
+
+/// Algorithm 9 against the affine doubling, on 2^k·G for k = 0..15.
+#[test]
+fn g1_proj_double_matches_affine() {
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let mut aff = g1_gen();
+    let mut proj = g1_to_proj(&aff);
+    for k in 0..16 {
+        aff = g1_double(&aff);
+        proj = g1_proj_double(&proj, &b3);
+        assert_eq!(g1_from_proj(&proj), aff, "doubling mismatch at k={k}");
+    }
+}
+
+/// Algorithm 9 against Algorithm 7 applied to a repeated argument —
+/// the Rust image of `rcb_double_a0_eq_ladderstep`.  On-curve inputs,
+/// so the two agree coordinate for coordinate, rather than only up to
+/// the projective equivalence.
+#[test]
+fn g1_alg9_equals_alg7_self_add_on_the_nose() {
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let mut p = g1_to_proj(&g1_gen());
+    for k in 0..16 {
+        let by_double = g1_proj_double(&p, &b3);
+        let by_self_add = g1_proj_add(&p, &p, &b3);
+        assert_eq!(by_double, by_self_add,
+                   "Alg 9 != Alg 7(P,P) at k={k}");
+        p = by_double;
+    }
+    // Also at the identity, where Z = 0.
+    let inf = g1_proj_inf();
+    assert_eq!(g1_proj_double(&inf, &b3), g1_proj_add(&inf, &inf, &b3));
+}
+
+/// Algorithm 7 against the affine addition.
+#[test]
+fn g1_proj_add_matches_affine() {
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let g = g1_gen();
+    let mut acc_aff = g;
+    let mut acc_proj = g1_to_proj(&g);
+    for k in 0..16 {
+        acc_aff = g1_add(&acc_aff, &g);
+        acc_proj = g1_proj_add(&acc_proj, &g1_to_proj(&g), &b3);
+        assert_eq!(g1_from_proj(&acc_proj), acc_aff,
+                   "addition mismatch at k={k}");
+    }
+}
+
+/// Completeness: the projective formulas need no special case for the
+/// identity or for `P + (−P)`, where the affine chain branches.
+#[test]
+fn g1_proj_add_is_complete() {
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let g = g1_gen();
+    let gp = g1_to_proj(&g);
+    let inf = g1_proj_inf();
+    assert_eq!(g1_from_proj(&g1_proj_add(&inf, &gp, &b3)), g);
+    assert_eq!(g1_from_proj(&g1_proj_add(&gp, &inf, &b3)), g);
+    assert_eq!(g1_from_proj(&g1_proj_double(&inf, &b3)), G1Aff::Inf);
+    let neg_gp = g1_to_proj(&g1_neg(&g));
+    assert_eq!(g1_from_proj(&g1_proj_add(&gp, &neg_gp, &b3)), G1Aff::Inf);
+}
+
+/// The headline differential test: projective and affine scalar
+/// multiplication agree on a spread of scalars.
+#[test]
+fn g1_scalar_mul_projective_matches_affine() {
+    use crate::group::*;
+    let g = g1_gen();
+    let scalars: [&[u8]; 8] = [
+        &[0u8],
+        &[1u8],
+        &[2u8],
+        &[0xff],
+        &[0x01, 0x00],
+        &[0xde, 0xad, 0xbe, 0xef],
+        &[0x00, 0x00, 0x12, 0x34, 0x56, 0x78],
+        &[0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+          0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef],
+    ];
+    for s in scalars {
+        assert_eq!(g1_scalar_mul(s, &g), g1_scalar_mul_affine(s, &g),
+                   "scalar mul mismatch on {s:02x?}");
+    }
+}
+
+/// `(m + n)·G = m·G + n·G` through the projective path.
+#[test]
+fn g1_scalar_mul_projective_is_additive() {
+    use crate::group::*;
+    let g = g1_gen();
+    let m = g1_scalar_mul(&[0x00, 0x2a], &g);   // 42
+    let n = g1_scalar_mul(&[0x00, 0x64], &g);   // 100
+    let sum = g1_scalar_mul(&[0x00, 0x8e], &g); // 142
+    assert_eq!(g1_add(&m, &n), sum);
+}
+
+#[test]
+fn g1_scalar_mul_projective_zero_and_one() {
+    use crate::group::*;
+    let g = g1_gen();
+    assert_eq!(g1_scalar_mul(&[0u8; 4], &g), G1Aff::Inf);
+    assert_eq!(g1_scalar_mul(&[1u8], &g), g);
+    assert_eq!(g1_scalar_mul(&[2u8], &g), g1_double(&g));
+}

@@ -567,9 +567,17 @@ pub mod group {
         }
     }
 
-    /// G1 scalar multiplication (binary, MSB-first, double-and-add).
-    /// `scalar_be` is the scalar in big-endian bytes.  NOT constant-time.
-    pub fn g1_scalar_mul(scalar_be: &[u8], P: &G1Aff) -> G1Aff {
+    /// G1 scalar multiplication in AFFINE coordinates (binary,
+    /// MSB-first, double-and-add).  `scalar_be` is the scalar in
+    /// big-endian bytes.  NOT constant-time.
+    ///
+    /// Retained as the differential reference for
+    /// [`g1_scalar_mul`], which computes the same function
+    /// projectively.  It pays one [`fp_inv`] per doubling and one per
+    /// addition — roughly 570 inversions for a 377-bit scalar — so it
+    /// is about an order of magnitude slower; see
+    /// `examples/bench_g1.rs`.
+    pub fn g1_scalar_mul_affine(scalar_be: &[u8], P: &G1Aff) -> G1Aff {
         let mut acc = G1Aff::Inf;
         let mut started = false;
         for &byte in scalar_be {
@@ -583,6 +591,179 @@ pub mod group {
             }
         }
         acc
+    }
+
+    // ──────────── G1 homogeneous projective (RCB, a = 0) ──────────────
+
+    /// Homogeneous projective G1 point `(X : Y : Z)`; `Z = 0` is the
+    /// identity and the affine image is `(X/Z, Y/Z)`.
+    ///
+    /// HOMOGENEOUS, not Jacobian.  This is the coordinate system of
+    /// `ladderstep_gallina` in
+    /// `src/Bedrock/Group/CurveAdd/CurveAdd.v` and of
+    /// `rcb_double_a0_gallina` in
+    /// `src/Bedrock/Group/CurveAdd/PointDoubleA0.v`; the two bodies
+    /// below are line-by-line transcriptions of those, so the Gallina
+    /// equality `rcb_double_a0_eq_ladderstep` (proved in
+    /// `PointDoubleA0.v`) is a statement about exactly this code.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct G1Proj { pub x: TFp, pub y: TFp, pub z: TFp }
+
+    /// `3b` for BW6-761 G1: the curve is `y² = x³ − 1`, so `b = −1`
+    /// and `3b = −3`.  (`kat.rs::g1_curve_b_is_minus_one` checks that
+    /// the generator satisfies `y² = x³ − 1`.)
+    pub fn g1_three_b() -> TFp {
+        let mut three = TFp::zero(); fp_from_word_t(&mut three, 3u64);
+        let mut out = TFp::zero(); fp_opp_t(&mut out, &three);
+        out
+    }
+
+    /// Complete projective addition for `a = 0` (Renes–Costello–Batina
+    /// 2015, Algorithm 7): 12 M + 2 m_3b + 19 add/sub.
+    ///
+    /// Transcribed line by line from `ladderstep_gallina`
+    /// (`src/Bedrock/Group/CurveAdd/CurveAdd.v`), which
+    /// `BN254_wNAF_Laws.bn254_curve_add_is_cadd` proves equal to
+    /// fiat-crypto's `Projective.add`.  Complete: no special case for
+    /// the identity or for `P + (−P)`.
+    pub fn g1_proj_add(P: &G1Proj, Q: &G1Proj, b3: &TFp) -> G1Proj {
+        let (x1, y1, z1) = (P.x, P.y, P.z);
+        let (x2, y2, z2) = (Q.x, Q.y, Q.z);
+        let mut u = TFp::zero();
+        let mut t0 = TFp::zero(); fp_mul_t(&mut t0, &x1, &x2);
+        let mut t1 = TFp::zero(); fp_mul_t(&mut t1, &y1, &y2);
+        let mut t2 = TFp::zero(); fp_mul_t(&mut t2, &z1, &z2);
+        let mut t3 = TFp::zero(); fp_add_t(&mut t3, &x1, &y1);
+        let mut t4 = TFp::zero(); fp_add_t(&mut t4, &x2, &y2);
+        fp_mul_t(&mut u, &t3, &t4); t3 = u;
+        fp_add_t(&mut u, &t0, &t1); t4 = u;
+        fp_sub_t(&mut u, &t3, &t4); t3 = u;
+        fp_add_t(&mut u, &x1, &z1); t4 = u;
+        let mut t5 = TFp::zero(); fp_add_t(&mut t5, &x2, &z2);
+        fp_mul_t(&mut u, &t4, &t5); t4 = u;
+        fp_add_t(&mut u, &t0, &t2); t5 = u;
+        fp_sub_t(&mut u, &t4, &t5); t4 = u;
+        fp_add_t(&mut u, &y1, &z1); t5 = u;
+        let mut xo = TFp::zero(); fp_add_t(&mut xo, &y2, &z2);
+        fp_mul_t(&mut u, &t5, &xo); t5 = u;
+        fp_add_t(&mut u, &t1, &t2); xo = u;
+        fp_sub_t(&mut u, &t5, &xo); t5 = u;
+        let mut zo = TFp::zero(); fp_mul_t(&mut zo, b3, &t2);
+        fp_sub_t(&mut u, &t1, &zo); xo = u;
+        fp_add_t(&mut u, &zo, &t1); zo = u;
+        let mut yo = TFp::zero(); fp_mul_t(&mut yo, &xo, &zo);
+        fp_add_t(&mut u, &t0, &t0); t1 = u;
+        fp_add_t(&mut u, &t1, &t0); t1 = u;
+        fp_mul_t(&mut u, b3, &t4); t4 = u;
+        fp_mul_t(&mut u, &t1, &t4); t0 = u;
+        fp_add_t(&mut u, &yo, &t0); yo = u;
+        fp_mul_t(&mut u, &t5, &t4); t0 = u;
+        fp_mul_t(&mut u, &t3, &xo); xo = u;
+        fp_sub_t(&mut u, &xo, &t0); xo = u;
+        fp_mul_t(&mut u, &t3, &t1); t0 = u;
+        fp_mul_t(&mut u, &t5, &zo); zo = u;
+        fp_add_t(&mut u, &zo, &t0); zo = u;
+        G1Proj { x: xo, y: yo, z: zo }
+    }
+
+    /// Complete projective DOUBLING for `a = 0` (Renes–Costello–Batina
+    /// 2015, Algorithm 9): 8 M + 1 m_3b + 9 add/sub — 18 field
+    /// operations against the 33 of `g1_proj_add(P, P)`, and 9
+    /// multiplications against 14.
+    ///
+    /// Steps 1 and 6 are squarings written as `mul`, following
+    /// `CurveDoubleA3.v`'s PORT-CHECK (S): it keeps the callee list at
+    /// `[mul; add; sub; b3_loader]`, and BW6-761's `fp_square` leaf is
+    /// in fact 13% SLOWER than `fp_mul` (230 ns against 203 ns; see
+    /// `examples/bench_g1.rs`), so nothing is given up here.
+    ///
+    /// Transcribed from `rcb_double_a0_gallina`
+    /// (`src/Bedrock/Group/CurveAdd/PointDoubleA0.v`), where
+    /// `rcb_double_a0_eq_ladderstep` proves it equal — coordinate for
+    /// coordinate, rather than only projectively — to
+    /// `ladderstep_gallina three_b X X Y Y Z Z` for every on-curve
+    /// input.
+    ///
+    /// Status caveat: that bridge lemma is Qed, but the file's final
+    /// Rupicola `Derive` is not, so `PointDoubleA0.v` produces no .vo
+    /// and is excluded from the dune build.  What is proved is that
+    /// this formula doubles; what is not yet proved is that a bedrock2
+    /// body implements it.  `kat.rs` checks the Rust transcription
+    /// against `g1_proj_add(P, P)` directly.
+    pub fn g1_proj_double(P: &G1Proj, b3: &TFp) -> G1Proj {
+        let (x, y, z) = (P.x, P.y, P.z);
+        let mut u = TFp::zero();
+        let mut t0 = TFp::zero(); fp_mul_t(&mut t0, &y, &y);     // 1
+        let mut z3 = TFp::zero(); fp_add_t(&mut z3, &t0, &t0);   // 2
+        fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 3
+        fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 4
+        let mut t1 = TFp::zero(); fp_mul_t(&mut t1, &y, &z);     // 5
+        let mut t2 = TFp::zero(); fp_mul_t(&mut t2, &z, &z);     // 6
+        fp_mul_t(&mut u, b3, &t2); t2 = u;                       // 7
+        let mut x3 = TFp::zero(); fp_mul_t(&mut x3, &t2, &z3);   // 8
+        let mut y3 = TFp::zero(); fp_add_t(&mut y3, &t0, &t2);   // 9
+        fp_mul_t(&mut u, &t1, &z3); z3 = u;                      // 10
+        fp_add_t(&mut u, &t2, &t2); t1 = u;                      // 11
+        fp_add_t(&mut u, &t1, &t2); t2 = u;                      // 12
+        fp_sub_t(&mut u, &t0, &t2); t0 = u;                      // 13
+        fp_mul_t(&mut u, &t0, &y3); y3 = u;                      // 14
+        fp_add_t(&mut u, &x3, &y3); y3 = u;                      // 15
+        fp_mul_t(&mut u, &x, &y); t1 = u;                        // 16
+        fp_mul_t(&mut u, &t0, &t1); x3 = u;                      // 17
+        fp_add_t(&mut u, &x3, &x3); x3 = u;                      // 18
+        G1Proj { x: x3, y: y3, z: z3 }
+    }
+
+    /// The projective identity `(0 : 1 : 0)`.
+    pub fn g1_proj_inf() -> G1Proj {
+        let mut one = TFp::zero(); fp_one_t(&mut one);
+        G1Proj { x: TFp::zero(), y: one, z: TFp::zero() }
+    }
+
+    pub fn g1_to_proj(P: &G1Aff) -> G1Proj {
+        match P {
+            G1Aff::Inf => g1_proj_inf(),
+            G1Aff::Pt(x, y) => {
+                let mut one = TFp::zero(); fp_one_t(&mut one);
+                G1Proj { x: *x, y: *y, z: one }
+            }
+        }
+    }
+
+    /// Projective → affine.  The ONE inversion of a scalar
+    /// multiplication.
+    pub fn g1_from_proj(P: &G1Proj) -> G1Aff {
+        if fp_is_zero(&P.z) { return G1Aff::Inf; }
+        let mut zi = TFp::zero(); fp_inv_t(&mut zi, &P.z);
+        let mut x = TFp::zero(); fp_mul_t(&mut x, &P.x, &zi);
+        let mut y = TFp::zero(); fp_mul_t(&mut y, &P.y, &zi);
+        G1Aff::Pt(x, y)
+    }
+
+    /// G1 scalar multiplication (binary, MSB-first, double-and-add),
+    /// carried out in homogeneous projective coordinates with a single
+    /// inversion at the end.  `scalar_be` is the scalar in big-endian
+    /// bytes.  NOT constant-time: the addition is still branched on the
+    /// scalar bit (the arithmetic itself is uniform, so a `select`
+    /// would close that).
+    ///
+    /// Same function as [`g1_scalar_mul_affine`]; `kat.rs`'s
+    /// `g1_scalar_mul_projective_matches_affine` checks that
+    /// differentially.  Because Algorithms 7 and 9 are complete, the
+    /// `started` flag of the affine version is gone: doubling the
+    /// identity and adding to the identity are handled by the formulas.
+    pub fn g1_scalar_mul(scalar_be: &[u8], P: &G1Aff) -> G1Aff {
+        let b3 = g1_three_b();
+        let pp = g1_to_proj(P);
+        let mut acc = g1_proj_inf();
+        for &byte in scalar_be {
+            for i in 0..8 {
+                let bit = (byte >> (7 - i)) & 1;
+                acc = g1_proj_double(&acc, &b3);
+                if bit == 1 { acc = g1_proj_add(&acc, &pp, &b3); }
+            }
+        }
+        g1_from_proj(&acc)
     }
 
     // ────────────────────── G2 affine ──────────────────────────────
@@ -693,7 +874,10 @@ pub mod group {
     }
 }
 
-pub use group::{G1Aff, G2Aff, g1_add, g1_double, g1_neg, g1_scalar_mul,
+pub use group::{G1Aff, G1Proj, G2Aff, g1_add, g1_double, g1_neg,
+                 g1_scalar_mul, g1_scalar_mul_affine,
+                 g1_proj_add, g1_proj_double, g1_proj_inf, g1_three_b,
+                 g1_to_proj, g1_from_proj,
                  g2_add, g2_double, g2_neg, g2_scalar_mul,
                  hash_to_g1, hash_to_g2};
 

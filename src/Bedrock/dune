@@ -49,9 +49,10 @@
      Curve.P256_G1_Add_Functor_Instance
      Curve.P384_G1_Add_Functor_Instance
      Curve.P224_G1_Add_Functor_Instance
-     ; Emission driver: writes Rust text to /tmp via [Redirect], like
+     ; Emission drivers: write Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust
+     Curve.EmitWnafRust
      Curve.P256Curve_G1_bedrock
      Curve.PallasCurve_G1_bedrock
      Curve.VestaCurve_G1_bedrock

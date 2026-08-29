@@ -31,10 +31,12 @@
             projective-equivalence refactor of the chain (phase 2).
       - G7  Digit array and table contents are caller-supplied.
 
-    Honesty ledger: Admitted = the adapter lemmas of NistWnafWrappers.v
-    (imported) plus [p256_Hhorner_step] and [p256_wnaf_single_full]
-    (composition; positional-argument shapes need a compiler).
-    Uncompiled draft. *)
+    Honesty ledger (this file): 1 Admitted —
+    [p256_wnaf_single_full] (composition into [wnaf_single_full]).
+    [p256_Hhorner_step] is proved from
+    [wNAF_Single_HornerAlgebra.horner_step_single].  Imported
+    Admitteds: the four function-body wrapper lemmas of
+    NistWnafWrappers.v. *)
 
 From Stdlib Require Import ZArith Lia List.
 Require Import Rupicola.Lib.Api.
@@ -409,22 +411,34 @@ Section P256_wNAF.
          else p256_curve_add (Ox,Oy,Oz) (digit_point d table_entries))
         = p256_scmul (Z.to_nat (weighted_sum (skipn n (p256_digits k)) 0)) (Px,Py,Pz).
   Proof.
-    intros (Hid_r & Hid_l & Hassoc & Hcomm & Hinv) k Hk Px Py Pz tab (Hlen & Hcorr).
-    (* Intended script:
-         intros n Ox Oy Oz Hn ws_old Hacc d.
-         change (digit_point d tab) with
-           (digit_point_local Fzero Fone p256_point_opp d tab).
-         apply (horner_step_single Fzero Fone p256_curve_add p256_point_opp
-                  Hid_r Hid_l Hassoc Hcomm Hinv (p256_digits k) Px Py Pz tab
-                  Hlen Hcorr
-                  (fun i Hi => p256_digits_odd k ltac:(lia) i ltac:(rewrite p256_digits_length in Hi; exact Hi))
-                  (fun i Hi => p256_digits_bounded k ltac:(lia) i ltac:(rewrite p256_digits_length in Hi; exact Hi))
-                  (fun n' Hn' => p256_digits_Hws_nn k Hk n' ltac:(rewrite p256_digits_length in Hn'; exact Hn'))
-                  n Ox Oy Oz ltac:(rewrite p256_digits_length; exact Hn) Hacc).
-       The explicit-argument order of [horner_step_single] (Section
-       variables of wNAF_Single_HornerAlgebra.v) must be confirmed with
-       a compiler. *)
-  Admitted.
+    intros Hlaws k Hk Px Py Pz tab Htab n Ox Oy Oz Hn ws_old Hacc d.
+    destruct Hlaws as (Hid_r & Hid_l & Hassoc & Hcomm & Hinv).
+    destruct Htab as (Hlen4 & Hcorr).
+    assert (Hlen : length (p256_digits k) = p256_num_digits)
+      by apply p256_digits_length.
+    assert (Hn' : (n < length (p256_digits k))%nat)
+      by (rewrite Hlen; exact Hn).
+    assert (Hodd : forall i, (i < length (p256_digits k))%nat ->
+              Z.odd (nth i (p256_digits k) 0) = true \/ nth i (p256_digits k) 0 = 0).
+    { intros i Hi. apply p256_digits_odd; [lia | rewrite <- Hlen; exact Hi]. }
+    assert (Hb : forall i, (i < length (p256_digits k))%nat ->
+              -7 <= nth i (p256_digits k) 0 <= 7).
+    { intros i Hi. apply p256_digits_bounded; [lia | rewrite <- Hlen; exact Hi]. }
+    assert (Hws : forall j, (j <= length (p256_digits k))%nat ->
+              0 <= weighted_sum (skipn j (p256_digits k)) 0).
+    { intros j Hj. apply p256_digits_Hws_nn; [exact Hk | rewrite <- Hlen; exact Hj]. }
+    (* [sm] of wNAF_Single_HornerAlgebra.v is [p256_scmul] and its
+       [digit_point_local] is ProcessDigits' [digit_point] by
+       conversion (same fixpoint / same [point_opp]), so the
+       instantiated statement is the goal up to delta. *)
+    pose proof (horner_step_single
+                  Fzero Fone p256_curve_add p256_point_opp
+                  Hid_r Hid_l Hassoc Hcomm Hinv
+                  (p256_digits k) Px Py Pz tab
+                  Hlen4 Hcorr Hodd Hb Hws
+                  n Ox Oy Oz Hn' Hacc) as Hstep.
+    first [ exact Hstep | apply Hstep ].
+  Qed.
 
   (** The citable statement.  Under the function table and the field
       leaf specs, plus the three residual hypothesis groups (G5, G6,
@@ -506,17 +520,19 @@ Section P256_wNAF.
 
 End P256_wNAF.
 
-(** * Adapter-lemma inventory (statements drafted, proofs Admitted)
+(** * Adapter-lemma inventory
 
-    NistWnafWrappers.v
+    NistWnafWrappers.v — proved
+      felem_copy_HFelemCopy          spec_of_felem_copy (bytes dst) -> FElem-dst shape
+      opp_HOpp                       spec_of_UnOp un_opp -> HOpp shape (loose->tight by Hbounds_eq)
+      FElem2_elim_frame / _intro_frame   one-leaf transport across the FElem layers
+    NistWnafWrappers.v — Admitted (each needs a function-body entry)
       curve_add_inplace_general_ok   spec_of_rcb_add_general + spec_of_felem_copy
                                       -> HCurveAddInplace shape at "curve_add"
       curve_double_general_ok        same inputs -> HCurveDouble shape at "curve_double"
-      felem_copy_HFelemCopy          spec_of_felem_copy (bytes dst) -> FElem-dst shape
-      opp_HOpp                       spec_of_UnOp un_opp -> HOpp shape (loose->tight by Hbounds_eq)
       opp_inplace_ok                 spec_of_UnOp un_opp + spec_of_felem_copy
                                       -> both negation shapes at "opp_inplace" (needs G5 rename)
       store_zero_from_word_ok        spec_of_from_word -> StoreZero.spec_of_store_zero
     This file
-      p256_Hhorner_step              horner_step_single at p256 (Leibniz laws as hypothesis)
-      p256_wnaf_single_full          composition into wnaf_single_full *)
+      p256_Hhorner_step              proved from horner_step_single (Leibniz laws as hypothesis)
+      p256_wnaf_single_full          Admitted: composition into wnaf_single_full *)

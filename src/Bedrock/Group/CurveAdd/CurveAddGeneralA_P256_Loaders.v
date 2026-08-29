@@ -12,9 +12,7 @@
     bounds-annotated [Compilation2.FElem] of the CurveAddGeneralA
     loader specs.
 
-    ROUND-1 NOTE: the two proofs end in [Show. Admitted.] pending one
-    compile round-trip; the [Show] output pins the exact residual
-    goals for the finalizing edit. *)
+    Honesty ledger (this file): 0 Admitted. *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -104,9 +102,11 @@ Section P256_Loaders.
          CompilationAbstract.maybe_bounded Compilation2.maybe_bounded
          Field.FElem].
     ssplit; try reflexivity.
+    (* The goal-side extraction leaves the ex1 witness as an evar
+       (extract_ex1_in_goal_at_index) and pulls the emp contents out
+       as conjuncts; supply the witness explicitly. *)
     extract_ex1_and_emp_in_goal.
-    exists p256_three_b_felem.
-    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p256_three_b_felem).
     ssplit;
       lazymatch goal with
       | |- feval _ = _ => reflexivity
@@ -123,8 +123,7 @@ Section P256_Loaders.
       with (word.add pout (word.of_Z 24)) by ring.
     repeat match goal with x := _ |- _ => subst x end.
     ecancel_assumption.
-    Show.
-  Admitted.
+  Qed.
 
   Lemma p256_a_loader_ok :
     forall functions,
@@ -164,8 +163,7 @@ Section P256_Loaders.
          Field.FElem].
     ssplit; try reflexivity.
     extract_ex1_and_emp_in_goal.
-    exists p256_a_felem.
-    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p256_a_felem).
     ssplit;
       lazymatch goal with
       | |- feval _ = _ => reflexivity
@@ -181,8 +179,7 @@ Section P256_Loaders.
       with (word.add pout (word.of_Z 24)) by ring.
     repeat match goal with x := _ |- _ => subst x end.
     ecancel_assumption.
-    Show.
-  Admitted.
+  Qed.
 
   (** End-to-end: with the two loader functions and the three field
       ops in the table, the derived body meets its FElem-level spec. *)

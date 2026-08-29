@@ -7,11 +7,9 @@
     (prefix "p384_coord_", 6 limbs of 64 bits,
     m = 2^384 - 2^128 - 2^96 + 2^32 - 1, m' = 2^32 + 1).
 
-    Honesty ledger (this file): 3 Admitted —
-    [p384_three_b_loader_ok], [p384_a_loader_ok] (loader WP proofs;
-    the 6-limb replay of the P-256 script, pending its round-trip
-    validation) and [p384_curve_add_general_bignum_bridge] (spec
-    bridge, same deferral as the P-256 one). *)
+    Honesty ledger (this file): 1 Admitted —
+    [p384_curve_add_general_bignum_bridge] (spec bridge, same
+    deferral as the P-256 one). *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -211,21 +209,134 @@ Section P384_GeneralA.
 
   (** Loader-spec proofs: the 6-limb replay of the P-256 loader
       script (CurveAddGeneralA_P256_Loaders.v) — six limb destructs,
-      address normalizations at offsets 16/24/32/40.  Deferred until
-      that script has passed its compile round-trip. *)
+      address normalizations at offsets 16/24/32/40. *)
   Lemma p384_three_b_loader_ok :
     forall functions,
       map.get functions "p384_three_b" = Some p384_three_b_func ->
       spec_of_three_b_loader p384_three_b_felem "p384_three_b" functions.
   Proof.
-  Admitted.
+    intros functions EnvContains.
+    cbv [spec_of_three_b_loader].
+    intros pout outold Rout tr mem0 Hpre.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded]
+      in Hpre.
+    extract_ex1_and_emp_in Hpre.
+    lazymatch type of Hpre with
+    | context [Field.FElem _ ?v] =>
+        let ws := fresh "ws" in
+        let Hlen := fresh "Hlen" in
+        destruct v as [ws Hlen];
+        cbv [Field.FElem] in Hpre;
+        vm_compute in Hlen;
+        do 6 (destruct ws as [|? ws]; [cbn in Hlen; lia|]);
+        destruct ws as [|? ws]; [|cbn in Hlen; lia];
+        cbn [array proj1_sig] in Hpre
+    end.
+    change (Memory.bytes_per_word 64) with 8 in Hpre.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 24)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 32)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 32)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 40)) in Hpre by ring.
+    eapply WeakestPreconditionProperties.start_func;
+      [ exact EnvContains | ].
+    cbv match beta delta
+      [WeakestPrecondition.func p384_three_b_func p384_three_b_loader_body].
+    repeat straightline.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded
+         Field.FElem].
+    ssplit; try reflexivity.
+    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p384_three_b_felem).
+    ssplit;
+      lazymatch goal with
+      | |- feval _ = _ => reflexivity
+      | |- bounded_by _ _ => exact p384_three_b_words_bounded
+      | |- _ => idtac
+      end.
+    cbv [p384_three_b_felem p384_three_b_words].
+    cbn [array proj1_sig].
+    change (Memory.bytes_per_word 64) with 8.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) by ring.
+    replace (word.add (word.add pout (word.of_Z 24)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 32)) by ring.
+    replace (word.add (word.add pout (word.of_Z 32)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 40)) by ring.
+    repeat match goal with x := _ |- _ => subst x end.
+    ecancel_assumption.
+  Qed.
 
   Lemma p384_a_loader_ok :
     forall functions,
       map.get functions "p384_a_const" = Some p384_a_const_func ->
       spec_of_a_loader p384_a_felem "p384_a_const" functions.
   Proof.
-  Admitted.
+    intros functions EnvContains.
+    cbv [spec_of_a_loader].
+    intros pout outold Rout tr mem0 Hpre.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded]
+      in Hpre.
+    extract_ex1_and_emp_in Hpre.
+    lazymatch type of Hpre with
+    | context [Field.FElem _ ?v] =>
+        let ws := fresh "ws" in
+        let Hlen := fresh "Hlen" in
+        destruct v as [ws Hlen];
+        cbv [Field.FElem] in Hpre;
+        vm_compute in Hlen;
+        do 6 (destruct ws as [|? ws]; [cbn in Hlen; lia|]);
+        destruct ws as [|? ws]; [|cbn in Hlen; lia];
+        cbn [array proj1_sig] in Hpre
+    end.
+    change (Memory.bytes_per_word 64) with 8 in Hpre.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 24)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 32)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 32)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 40)) in Hpre by ring.
+    eapply WeakestPreconditionProperties.start_func;
+      [ exact EnvContains | ].
+    cbv match beta delta
+      [WeakestPrecondition.func p384_a_const_func p384_a_const_loader_body].
+    repeat straightline.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded
+         Field.FElem].
+    ssplit; try reflexivity.
+    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p384_a_felem).
+    ssplit;
+      lazymatch goal with
+      | |- feval _ = _ => reflexivity
+      | |- bounded_by _ _ => exact p384_a_words_bounded
+      | |- _ => idtac
+      end.
+    cbv [p384_a_felem p384_a_words].
+    cbn [array proj1_sig].
+    change (Memory.bytes_per_word 64) with 8.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) by ring.
+    replace (word.add (word.add pout (word.of_Z 24)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 32)) by ring.
+    replace (word.add (word.add pout (word.of_Z 32)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 40)) by ring.
+    repeat match goal with x := _ |- _ => subst x end.
+    ecancel_assumption.
+  Qed.
 
   (* ============================================================== *)
   (* §4. The derived body at P-384, and its spec                     *)
@@ -251,7 +362,6 @@ Section P384_GeneralA.
       (rcb_add_general_correct p384_bounds_eq
          p384_three_b_felem "p384_three_b" p384_a_felem "p384_a_const"
          I functions _ Hmul Hadd Hsub Htb Ha).
-    Show.
     Timeout 120 exact Henv.
   Qed.
 

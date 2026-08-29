@@ -256,7 +256,6 @@ Section P256_GeneralA.
       (rcb_add_general_correct p256_bounds_eq
          p256_three_b_felem "p256_three_b" p256_a_felem "p256_a_const"
          I functions _ Hmul Hadd Hsub Htb Ha).
-    Show.
     Timeout 120 exact Henv.
   Qed.
 

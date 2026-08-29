@@ -15,9 +15,7 @@
     written so that it compiles unchanged once p224_field.vo is in
     place.
 
-    Honesty ledger (this file): 3 Admitted —
-    [p224_three_b_loader_ok], [p224_a_loader_ok] (loader WP proofs,
-    the 4-limb P-256 script pending its round-trip validation) and
+    Honesty ledger (this file): 1 Admitted —
     [p224_curve_add_general_bignum_bridge] (spec bridge, same
     deferral as the P-256 one). *)
 
@@ -202,21 +200,118 @@ Section P224_GeneralA.
     (["out"], [], p224_a_const_loader_body).
 
   (** Loader-spec proofs: the 4-limb P-256 loader script
-      (CurveAddGeneralA_P256_Loaders.v), pending its compile
-      round-trip. *)
+      (CurveAddGeneralA_P256_Loaders.v), verbatim modulo names. *)
   Lemma p224_three_b_loader_ok :
     forall functions,
       map.get functions "p224_three_b" = Some p224_three_b_func ->
       spec_of_three_b_loader p224_three_b_felem "p224_three_b" functions.
   Proof.
-  Admitted.
+    intros functions EnvContains.
+    cbv [spec_of_three_b_loader].
+    intros pout outold Rout tr mem0 Hpre.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded]
+      in Hpre.
+    extract_ex1_and_emp_in Hpre.
+    lazymatch type of Hpre with
+    | context [Field.FElem _ ?v] =>
+        let ws := fresh "ws" in
+        let Hlen := fresh "Hlen" in
+        destruct v as [ws Hlen];
+        cbv [Field.FElem] in Hpre;
+        vm_compute in Hlen;
+        do 4 (destruct ws as [|? ws]; [cbn in Hlen; lia|]);
+        destruct ws as [|? ws]; [|cbn in Hlen; lia];
+        cbn [array proj1_sig] in Hpre
+    end.
+    change (Memory.bytes_per_word 64) with 8 in Hpre.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) in Hpre by ring.
+    eapply WeakestPreconditionProperties.start_func;
+      [ exact EnvContains | ].
+    cbv match beta delta
+      [WeakestPrecondition.func p224_three_b_func p224_three_b_loader_body].
+    repeat straightline.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded
+         Field.FElem].
+    ssplit; try reflexivity.
+    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p224_three_b_felem).
+    ssplit;
+      lazymatch goal with
+      | |- feval _ = _ => reflexivity
+      | |- bounded_by _ _ => exact p224_three_b_words_bounded
+      | |- _ => idtac
+      end.
+    cbv [p224_three_b_felem p224_three_b_words].
+    cbn [array proj1_sig].
+    change (Memory.bytes_per_word 64) with 8.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) by ring.
+    repeat match goal with x := _ |- _ => subst x end.
+    ecancel_assumption.
+  Qed.
 
   Lemma p224_a_loader_ok :
     forall functions,
       map.get functions "p224_a_const" = Some p224_a_const_func ->
       spec_of_a_loader p224_a_felem "p224_a_const" functions.
   Proof.
-  Admitted.
+    intros functions EnvContains.
+    cbv [spec_of_a_loader].
+    intros pout outold Rout tr mem0 Hpre.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded]
+      in Hpre.
+    extract_ex1_and_emp_in Hpre.
+    lazymatch type of Hpre with
+    | context [Field.FElem _ ?v] =>
+        let ws := fresh "ws" in
+        let Hlen := fresh "Hlen" in
+        destruct v as [ws Hlen];
+        cbv [Field.FElem] in Hpre;
+        vm_compute in Hlen;
+        do 4 (destruct ws as [|? ws]; [cbn in Hlen; lia|]);
+        destruct ws as [|? ws]; [|cbn in Hlen; lia];
+        cbn [array proj1_sig] in Hpre
+    end.
+    change (Memory.bytes_per_word 64) with 8 in Hpre.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) in Hpre by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) in Hpre by ring.
+    eapply WeakestPreconditionProperties.start_func;
+      [ exact EnvContains | ].
+    cbv match beta delta
+      [WeakestPrecondition.func p224_a_const_func p224_a_const_loader_body].
+    repeat straightline.
+    cbv [CompilationAbstract.FElem Compilation2.FElem
+         CompilationAbstract.maybe_bounded Compilation2.maybe_bounded
+         Field.FElem].
+    ssplit; try reflexivity.
+    extract_ex1_and_emp_in_goal.
+    instantiate (1 := p224_a_felem).
+    ssplit;
+      lazymatch goal with
+      | |- feval _ = _ => reflexivity
+      | |- bounded_by _ _ => exact p224_a_words_bounded
+      | |- _ => idtac
+      end.
+    cbv [p224_a_felem p224_a_words].
+    cbn [array proj1_sig].
+    change (Memory.bytes_per_word 64) with 8.
+    replace (word.add (word.add pout (word.of_Z 8)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 16)) by ring.
+    replace (word.add (word.add pout (word.of_Z 16)) (word.of_Z 8))
+      with (word.add pout (word.of_Z 24)) by ring.
+    repeat match goal with x := _ |- _ => subst x end.
+    ecancel_assumption.
+  Qed.
 
   (* ============================================================== *)
   (* §4. The derived body at P-224, and its spec                     *)
@@ -242,7 +337,6 @@ Section P224_GeneralA.
       (rcb_add_general_correct p224_bounds_eq
          p224_three_b_felem "p224_three_b" p224_a_felem "p224_a_const"
          I functions _ Hmul Hadd Hsub Htb Ha).
-    Show.
     Timeout 120 exact Henv.
   Qed.
 

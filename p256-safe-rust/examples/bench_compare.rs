@@ -43,10 +43,17 @@
 //!   so the ratios below are not paying for a timing-leak tradeoff in either
 //!   direction.
 //!
-//! * Field layer.  Ours is fiat-crypto `p256_64` word-by-word Montgomery.
-//!   RustCrypto's P-256 field is hand-written 4x64 Montgomery
-//!   (`p256/src/arithmetic/field/field64.rs`), not fiat-crypto output.  (For
-//!   P-384 the situation is the opposite -- see the p384 sibling of this file.)
+//! * Field layer.  Both sides are 4x64 saturated Montgomery, and neither is
+//!   plain fiat-crypto.  RustCrypto's P-256 field is hand-written
+//!   (`p256/src/arithmetic/field/field64.rs`), folding the P-256-specific
+//!   reduction structure into `montgomery_reduce`.  Ours is fiat-crypto
+//!   `p256_64` for add/sub/opp and CryptOpt-superoptimized assembly for
+//!   mul/square (`generated/p256_*_cryptopt.asm`), which computes the same
+//!   function as the fiat leaf it replaces -- see `tests/cryptopt_diff.rs`.
+//!   Run `--example bench_field` for the per-operation field numbers, and
+//!   build with `P256_NO_CRYPTOPT=1` to see the pure-fiat field layer.
+//!   (For P-384 both sides are still plain fiat-crypto -- see the p384
+//!   sibling of this file.)
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -55,16 +62,30 @@ const N_ADD: u64 = 2_000_000;
 const N_DBL: u64 = 2_000_000;
 const N_MUL: u64 = 2_000;
 
-/// Warm up for `iters / 10` calls, then time `iters` calls; return ns/op.
+/// Number of timed repetitions per measurement; the minimum is reported.
+/// The minimum is the right summary here because every source of error on a
+/// shared machine -- a competing process, a frequency dip, a migration --
+/// adds time and none subtracts it.
+const REPS: usize = 7;
+
+/// Warm up for `iters / 10` calls, then time `iters` calls `REPS` times and
+/// return the smallest ns/op observed.
 fn bench<F: FnMut()>(iters: u64, mut f: F) -> f64 {
     for _ in 0..(iters / 10 + 1) {
         f();
     }
-    let start = Instant::now();
-    for _ in 0..iters {
-        f();
+    let mut best = f64::INFINITY;
+    for _ in 0..REPS {
+        let start = Instant::now();
+        for _ in 0..iters {
+            f();
+        }
+        let t = start.elapsed().as_nanos() as f64 / iters as f64;
+        if t < best {
+            best = t;
+        }
     }
-    start.elapsed().as_nanos() as f64 / iters as f64
+    best
 }
 
 /// The one scalar both arms multiply by, 32 bytes big-endian.
@@ -88,7 +109,7 @@ fn main() {
     // ---------------------------------------------------------------
     // This work: proved RCB Algorithm 1 (general a) + width-1 CT ladder
     // ---------------------------------------------------------------
-    println!("=== p256-safe-rust (this work: RCB Alg.1 general-a, fiat-crypto leaves) ===");
+    println!("=== p256-safe-rust (this work: RCB Alg.4/Alg.6 a=-3, fiat-crypto leaves) ===");
     let (ours_add, ours_dbl, ours_mul) = {
         use p256::group::*;
 
@@ -195,9 +216,9 @@ fn main() {
     println!("ratio = ours / RustCrypto; below 1.00 means this work is faster.");
     println!();
     println!("Caveats (full text at the head of this file):");
-    println!("  - add/double: ours is RCB Alg.1 for general a (40 field ops), theirs is");
-    println!("    the a = -3 specialisation (RCB Alg.4 / Alg.6).  Formula choice, not");
-    println!("    field arithmetic.");
+    println!("  - add/double: BOTH arms now use the a = -3 specialisation (RCB Alg.4 /");
+    println!("    Alg.6).  Ours is the Rocq-derived body of CurveAddA3.v / CurveDoubleA3.v;");
+    println!("    group::g1_add_general_a keeps the 40-op Alg.1 chain for reference.");
     println!("  - scalar_mul: BOTH arms are variable-base.  Ours is width-1");
     println!("    double-and-add-always (256 dbl + 256 add).  Theirs is a 4-bit fixed");
     println!("    window with a per-call 16-entry table of the input point");
@@ -208,6 +229,11 @@ fn main() {
     println!("    src/scalar_mul_extracted.rs.  That one branches on each digit and reads");
     println!("    its 4-entry table at a digit-derived index, so it is NOT constant time");
     println!("    and is not comparable to the others on a side-channel basis.");
-    println!("  - Field layer: ours is fiat-crypto p256_64; RustCrypto's P-256 field is");
-    println!("    hand-written 4x64 Montgomery, not fiat-crypto output.");
+    println!("  - Field layer: both sides are 4x64 Montgomery.  RustCrypto's is");
+    println!("    hand-written; ours is fiat-crypto p256_64 for add/sub and CryptOpt");
+    println!("    assembly for mul/square (P256_NO_CRYPTOPT=1 reverts to pure fiat).");
+    println!(
+        "    This build's mul/square leaves: {}",
+        if p256::CRYPTOPT_ASM { "CryptOpt assembly" } else { "fiat-rust" }
+    );
 }

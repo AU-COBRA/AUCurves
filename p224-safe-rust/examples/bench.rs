@@ -73,6 +73,12 @@ fn main() {
     time("g1_double", 2_000_000, || {
         acc = g1_double(black_box(&acc))
     });
+    time("g1_add (general a)", 2_000_000, || {
+        acc = g1_add_general_a(black_box(&acc), black_box(&g))
+    });
+    time("g1_double (general a)", 2_000_000, || {
+        acc = g1_double_general_a(black_box(&acc))
+    });
     black_box(&acc);
 
     let k: [u64; 4] = [
@@ -115,6 +121,13 @@ fn main() {
         let mut o = [0u8; 96];
         time("g1_add (extracted)", 2_000_000, || {
             p224_g1_add_extracted(black_box(&mut o), black_box(&mut a), black_box(&mut b))
+        });
+        use p224::g1_a3_extracted::{p224_g1_add_a3_extracted, p224_g1_double_a3_extracted};
+        time("g1_add (extracted, a=-3)", 2_000_000, || {
+            p224_g1_add_a3_extracted(black_box(&mut o), black_box(&mut a), black_box(&mut b))
+        });
+        time("g1_double (extracted, a=-3)", 2_000_000, || {
+            p224_g1_double_a3_extracted(black_box(&mut o), black_box(&mut a))
         });
         black_box(&o);
 

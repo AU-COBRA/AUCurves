@@ -238,7 +238,11 @@ pub fn g1_neg(p: &G1) -> G1 {
 /// general a).  Transcribed from the 40-op bedrock2 body of `P256_G1_add`
 /// in `src/Bedrock/Curve/P256_G1_Add_Spec.v` (proved correct for P-256;
 /// the sequence is generic in `a_mont` / `three_b_mont`).
-pub fn g1_add(p: &G1, q: &G1) -> G1 {
+///
+/// Superseded as the default path by [`g1_add_a3`] (Algorithm 4).  Kept
+/// as the reference for `tests/a3_diff.rs` and because it is the body
+/// that `g1_extracted.rs` and `scalar_mul_extracted.rs` implement.
+pub fn g1_add_general_a(p: &G1, q: &G1) -> G1 {
     let (x1, y1, z1) = (&p.x, &p.y, &p.z);
     let (x2, y2, z2) = (&q.x, &q.y, &q.z);
 
@@ -290,9 +294,141 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     G1 { x: x3, y: y3, z: z3 }
 }
 
-/// Doubling via the complete addition formula.
+/// Doubling via the general-a complete addition formula.
+pub fn g1_double_general_a(p: &G1) -> G1 {
+    g1_add_general_a(p, p)
+}
+
+// ---------------------------------------------------------------------------
+// Complete addition and doubling specialised to a = -3
+// (Renes–Costello–Batina 2015, Algorithms 4 and 6)
+// ---------------------------------------------------------------------------
+//
+// Op-for-op transcriptions of the Rupicola derivations
+// `rcb_add_a3_gallina` (`src/Bedrock/Group/CurveAdd/CurveAddA3.v`,
+// steps A1-A43) and `rcb_double_a3_gallina`
+// (`.../CurveDoubleA3.v`, steps E1-E34).  P-224 has a = -3, so they
+// apply.  Against Algorithm 1 the addition trades three multiplications
+// for six additions (43 ops, 14 M) and the doubling replaces a 40-op
+// self-addition with 34 ops; only `b` is needed as a constant, not `a`
+// and `3b`.  `src/Bedrock/Group/CurveAdd/CurveA3Equiv.v` proves the
+// chains equal at a = -3 as polynomial identities, so the agreement is
+// exact equality of the projective triple, on the exceptional inputs
+// too; `tests/a3_diff.rs` checks that numerically.
+
+/// Complete projective point addition for `a = -3` (RCB Algorithm 4).
+///
+/// Returns exactly the same projective triple as [`g1_add_general_a`].
+pub fn g1_add_a3(p: &G1, q: &G1) -> G1 {
+    let (x1, y1, z1) = (&p.x, &p.y, &p.z);
+    let (x2, y2, z2) = (&q.x, &q.y, &q.z);
+
+    let t0 = mul(x1, x2); // A1  t0 := X1 * X2
+    let t1 = mul(y1, y2); // A2  t1 := Y1 * Y2
+    let t2 = mul(z1, z2); // A3  t2 := Z1 * Z2
+    let t3 = add(x1, y1); // A4  t3 := X1 + Y1
+    let t4 = add(x2, y2); // A5  t4 := X2 + Y2
+    let t3 = mul(&t3, &t4); // A6  t3 := t3 * t4
+    let t4 = add(&t0, &t1); // A7  t4 := t0 + t1
+    let t3 = sub(&t3, &t4); // A8  t3 := t3 - t4
+    let t4 = add(y1, z1); // A9  t4 := Y1 + Z1
+    let x3 = add(y2, z2); // A10 X3 := Y2 + Z2
+    let t4 = mul(&t4, &x3); // A11 t4 := t4 * X3
+    let x3 = add(&t1, &t2); // A12 X3 := t1 + t2
+    let t4 = sub(&t4, &x3); // A13 t4 := t4 - X3
+    let x3 = add(x1, z1); // A14 X3 := X1 + Z1
+    let y3 = add(x2, z2); // A15 Y3 := X2 + Z2
+    let x3 = mul(&x3, &y3); // A16 X3 := X3 * Y3
+    let y3 = add(&t0, &t2); // A17 Y3 := t0 + t2
+    let y3 = sub(&x3, &y3); // A18 Y3 := X3 - Y3
+    let z3 = mul(&B_MONT, &t2); // A19 Z3 := b * t2
+    let x3 = sub(&y3, &z3); // A20 X3 := Y3 - Z3
+    let z3 = add(&x3, &x3); // A21 Z3 := X3 + X3
+    let x3 = add(&x3, &z3); // A22 X3 := X3 + Z3
+    let z3 = sub(&t1, &x3); // A23 Z3 := t1 - X3
+    let x3 = add(&t1, &x3); // A24 X3 := t1 + X3
+    let y3 = mul(&B_MONT, &y3); // A25 Y3 := b * Y3
+    let t1 = add(&t2, &t2); // A26 t1 := t2 + t2
+    let t2 = add(&t1, &t2); // A27 t2 := t1 + t2
+    let y3 = sub(&y3, &t2); // A28 Y3 := Y3 - t2
+    let y3 = sub(&y3, &t0); // A29 Y3 := Y3 - t0
+    let t1 = add(&y3, &y3); // A30 t1 := Y3 + Y3
+    let y3 = add(&t1, &y3); // A31 Y3 := t1 + Y3
+    let t1 = add(&t0, &t0); // A32 t1 := t0 + t0
+    let t0 = add(&t1, &t0); // A33 t0 := t1 + t0
+    let t0 = sub(&t0, &t2); // A34 t0 := t0 - t2
+    let t1 = mul(&t4, &y3); // A35 t1 := t4 * Y3
+    let t2 = mul(&t0, &y3); // A36 t2 := t0 * Y3
+    let y3 = mul(&x3, &z3); // A37 Y3 := X3 * Z3
+    let y3 = add(&y3, &t2); // A38 Y3 := Y3 + t2
+    let x3 = mul(&t3, &x3); // A39 X3 := t3 * X3
+    let x3 = sub(&x3, &t1); // A40 X3 := X3 - t1
+    let z3 = mul(&t4, &z3); // A41 Z3 := t4 * Z3
+    let t1 = mul(&t3, &t0); // A42 t1 := t3 * t0
+    let z3 = add(&z3, &t1); // A43 Z3 := Z3 + t1
+
+    G1 { x: x3, y: y3, z: z3 }
+}
+
+/// Complete projective point doubling for `a = -3` (RCB Algorithm 6).
+///
+/// Returns exactly the same projective triple as
+/// `g1_add_general_a(p, p)`.
+pub fn g1_double_a3(p: &G1) -> G1 {
+    let (x, y, z) = (&p.x, &p.y, &p.z);
+
+    let t0 = mul(x, x); // E1  t0 := X * X
+    let t1 = mul(y, y); // E2  t1 := Y * Y
+    let t2 = mul(z, z); // E3  t2 := Z * Z
+    let t3 = mul(x, y); // E4  t3 := X * Y
+    let t3 = add(&t3, &t3); // E5  t3 := t3 + t3
+    let z3 = mul(x, z); // E6  Z3 := X * Z
+    let z3 = add(&z3, &z3); // E7  Z3 := Z3 + Z3
+    let y3 = mul(&B_MONT, &t2); // E8  Y3 := b * t2
+    let y3 = sub(&y3, &z3); // E9  Y3 := Y3 - Z3
+    let x3 = add(&y3, &y3); // E10 X3 := Y3 + Y3
+    let y3 = add(&x3, &y3); // E11 Y3 := X3 + Y3
+    let x3 = sub(&t1, &y3); // E12 X3 := t1 - Y3
+    let y3 = add(&t1, &y3); // E13 Y3 := t1 + Y3
+    let y3 = mul(&x3, &y3); // E14 Y3 := X3 * Y3
+    let x3 = mul(&x3, &t3); // E15 X3 := X3 * t3
+    let t3 = add(&t2, &t2); // E16 t3 := t2 + t2
+    let t2 = add(&t2, &t3); // E17 t2 := t2 + t3
+    let z3 = mul(&B_MONT, &z3); // E18 Z3 := b * Z3
+    let z3 = sub(&z3, &t2); // E19 Z3 := Z3 - t2
+    let z3 = sub(&z3, &t0); // E20 Z3 := Z3 - t0
+    let t3 = add(&z3, &z3); // E21 t3 := Z3 + Z3
+    let z3 = add(&z3, &t3); // E22 Z3 := Z3 + t3
+    let t3 = add(&t0, &t0); // E23 t3 := t0 + t0
+    let t0 = add(&t3, &t0); // E24 t0 := t3 + t0
+    let t0 = sub(&t0, &t2); // E25 t0 := t0 - t2
+    let t0 = mul(&t0, &z3); // E26 t0 := t0 * Z3
+    let y3 = add(&y3, &t0); // E27 Y3 := Y3 + t0
+    let t0 = mul(y, z); // E28 t0 := Y * Z
+    let t0 = add(&t0, &t0); // E29 t0 := t0 + t0
+    let z3 = mul(&t0, &z3); // E30 Z3 := t0 * Z3
+    let x3 = sub(&x3, &z3); // E31 X3 := X3 - Z3
+    let z3 = mul(&t0, &t1); // E32 Z3 := t0 * t1
+    let z3 = add(&z3, &z3); // E33 Z3 := Z3 + Z3
+    let z3 = add(&z3, &z3); // E34 Z3 := Z3 + Z3
+
+    G1 { x: x3, y: y3, z: z3 }
+}
+
+/// Complete projective point addition — the default path.
+///
+/// Dispatches to the a = -3 specialisation [`g1_add_a3`].
+#[inline]
+pub fn g1_add(p: &G1, q: &G1) -> G1 {
+    g1_add_a3(p, q)
+}
+
+/// Point doubling — the default path.
+///
+/// Dispatches to the a = -3 specialisation [`g1_double_a3`].
+#[inline]
 pub fn g1_double(p: &G1) -> G1 {
-    g1_add(p, p)
+    g1_double_a3(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -395,7 +531,7 @@ pub fn g1_scalar_mul(k: &[u64; 4], p: &G1) -> G1 {
     let mut acc = g1_identity();
     let mut i: i32 = 223;
     while i >= 0 {
-        acc = g1_add(&acc, &acc);
+        acc = g1_double(&acc);
         let sum = g1_add(&acc, p);
         let bit = (k[(i as usize) / 64] >> ((i as usize) % 64)) & 1;
         let mask = 0u64.wrapping_sub(bit);

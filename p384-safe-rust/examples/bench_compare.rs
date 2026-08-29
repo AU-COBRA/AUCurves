@@ -101,7 +101,7 @@ fn main() {
     // ---------------------------------------------------------------
     // This work: proved RCB Algorithm 1 (general a) + width-1 CT ladder
     // ---------------------------------------------------------------
-    println!("=== p384-safe-rust (this work: RCB Alg.1 general-a, fiat-crypto leaves) ===");
+    println!("=== p384-safe-rust (this work: RCB Alg.4/Alg.6 a=-3, fiat-crypto leaves) ===");
     let (ours_add, ours_dbl, ours_mul) = {
         use p384::group::*;
 
@@ -210,9 +210,9 @@ fn main() {
     println!("ratio = ours / RustCrypto; below 1.00 means this work is faster.");
     println!();
     println!("Caveats (full text at the head of this file):");
-    println!("  - add/double: ours is RCB Alg.1 for general a (40 field ops), theirs is");
-    println!("    the a = -3 specialisation (RCB Alg.4 / Alg.6).  Formula choice, not");
-    println!("    field arithmetic.");
+    println!("  - add/double: BOTH arms now use the a = -3 specialisation (RCB Alg.4 /");
+    println!("    Alg.6).  Ours is the Rocq-derived body of CurveAddA3.v / CurveDoubleA3.v;");
+    println!("    group::g1_add_general_a keeps the 40-op Alg.1 chain for reference.");
     println!("  - scalar_mul: BOTH arms are variable-base.  Ours is width-1");
     println!("    double-and-add-always (384 dbl + 384 add).  Theirs is a 4-bit fixed");
     println!("    window with a per-call 16-entry table of the input point");

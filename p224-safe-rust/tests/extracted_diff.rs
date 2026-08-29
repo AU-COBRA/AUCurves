@@ -26,12 +26,12 @@ fn ser(p: &G1) -> [u8; 96] {
 #[test]
 fn extracted_add_matches_handwritten() {
     let g = g1_generator();
-    let g2 = g1_add(&g, &g);
-    let g3 = g1_add(&g2, &g);
+    let g2 = g1_add_general_a(&g, &g);
+    let g3 = g1_add_general_a(&g2, &g);
     let pts = [g1_identity(), g, g2, g3, g1_neg(&g)];
     for p in &pts {
         for q in &pts {
-            let expected = ser(&g1_add(p, q));
+            let expected = ser(&g1_add_general_a(p, q));
             let mut out = [0u8; 96];
             let mut a = ser(p);
             let mut b = ser(q);

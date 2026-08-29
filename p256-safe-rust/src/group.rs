@@ -1,17 +1,27 @@
 //! P-256 (secp256r1) projective group operations, hand-written over the
 //! fiat-crypto field leaves in `lib.rs`.
 //!
-//! The point addition is a line-by-line transcription of the bedrock2
-//! function body [`P256_G1_add`] in
-//! `src/Bedrock/Curve/P256_G1_Add_Spec.v` (proved correct there,
-//! theorem `P256_G1_add_func_ok`, Qed).  That body implements the
-//! Renes–Costello–Batina 2015 complete addition formula (Algorithm 1,
-//! general `a != 0` case, 40 field operations) for homogeneous
-//! projective coordinates with identity `(0 : 1 : 0)`.
+//! [`g1_add`] and [`g1_double`] are the `a = -3` specialisations of the
+//! Renes–Costello–Batina 2015 complete formulas, Algorithms 4 and 6,
+//! transcribed from the Rupicola derivations
+//! `src/Bedrock/Group/CurveAdd/CurveAddA3.v` and
+//! `.../CurveDoubleA3.v`.  P-256 has `a = -3`, so they apply; they cost
+//! 43 ops / 14 multiplications and 34 ops / 13 multiplications
+//! respectively.
 //!
-//! Because the formula is complete, `g1_add(P, P)` computes `2P` and
-//! addition with the identity is correct, so doubling is implemented as
-//! self-addition.
+//! [`g1_add_general_a`] keeps the general-`a` Algorithm 1 chain (40
+//! ops, 17 multiplications), a line-by-line transcription of the
+//! bedrock2 function body [`P256_G1_add`] in
+//! `src/Bedrock/Curve/P256_G1_Add_Spec.v` (proved correct there,
+//! theorem `P256_G1_add_func_ok`, Qed).  It is the body that the
+//! Rocq-emitted `g1_extracted.rs` and the wNAF driver implement.
+//! `src/Bedrock/Group/CurveAdd/CurveA3Equiv.v` proves the two chains
+//! equal at `a = -3` as polynomial identities, so they agree on every
+//! input including the exceptional ones; `tests/a3_diff.rs` checks that
+//! numerically.
+//!
+//! All three formulas are complete: addition with the identity and
+//! `P + (-P)` need no special case.
 //!
 //! Curve constants (canonical, non-Montgomery limbs, little-endian u64):
 //! - `b`, and the group order `n`, from
@@ -22,10 +32,14 @@
 //! - Base point `Gx`, `Gy` from FIPS 186-4 / SEC 2 v2.0 §2.4.2 (they do
 //!   not appear in this repository); they are validated jointly with
 //!   `b` and `n` by the tests below (G on curve, n·G = identity).
-//! - `a = -3 mod p` and `3b` are stored as precomputed Montgomery
-//!   literals ([`A_MONT`], [`THREE_B_MONT`]); the tests recompute them
-//!   (`fp_opp` of the encoding of 3, and `b + b + b`) and compare them
-//!   against the `cA` / `cB3` literals of `g1_extracted.rs`.
+//! - `b`, `a = -3 mod p` and `3b` are stored as precomputed Montgomery
+//!   literals ([`B_MONT`], [`A_MONT`], [`THREE_B_MONT`]); the tests
+//!   recompute them (`fp_opp` of the encoding of 3, and `b + b + b`) and
+//!   compare them against the `cA` / `cB3` literals of `g1_extracted.rs`
+//!   and the `cB` literal of `g1_a3_extracted.rs`.  `B_MONT` is the only
+//!   curve constant the a = -3 formulas need; `A_MONT` and
+//!   `THREE_B_MONT` remain live through [`g1_add_general_a`] and
+//!   [`g1_affine_on_curve`].
 //!
 //! Scalar-multiplication input format: 32 bytes, **big-endian**.
 //! The ladder is a fixed-length MSB-first double-and-add over all 256
@@ -283,7 +297,13 @@ pub fn g1_generator() -> G1 {
 /// `$sub`), which is proved correct there (`P256_G1_add_func_ok`, Qed).
 /// Variable names t0..t5, x3 (= outx), y3 (= outy), z3 (= outz) match
 /// the bedrock2 temporaries.
-pub fn g1_add(p: &G1, q: &G1) -> G1 {
+///
+/// Superseded as the default path by [`g1_add_a3`] (Algorithm 4), which
+/// computes the same triple with three fewer multiplications.  Kept
+/// because it is the body the Rocq-emitted `g1_extracted.rs` and the
+/// wNAF driver in `scalar_mul_extracted.rs` implement, and because
+/// `tests/a3_diff.rs` differentially tests the a = -3 bodies against it.
+pub fn g1_add_general_a(p: &G1, q: &G1) -> G1 {
     let (x1, y1, z1) = (&p.x, &p.y, &p.z);
     let (x2, y2, z2) = (&q.x, &q.y, &q.z);
 
@@ -365,9 +385,179 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     G1 { x: x3, y: y3, z: z3 }
 }
 
-/// Doubling via the complete addition formula.
+/// Doubling via the general-a complete addition formula.
+pub fn g1_double_general_a(p: &G1) -> G1 {
+    g1_add_general_a(p, p)
+}
+
+// ---------------------------------------------------------------------------
+// Complete addition and doubling specialised to a = -3
+// (Renes–Costello–Batina 2015, Algorithms 4 and 6)
+// ---------------------------------------------------------------------------
+//
+// P-256 has a = -3, so the specialised formulas apply.  Against the
+// general-a Algorithm 1 above they trade three field multiplications for
+// six field additions in the addition (43 ops, 14 M) and replace the
+// self-addition doubling outright (34 ops, 13 M against 40 ops, 17 M).
+// Only `b` is needed as a constant, not `a` and `3b`.
+//
+// Both are op-for-op transcriptions of the Rupicola derivations
+// `rcb_add_a3_gallina` (`src/Bedrock/Group/CurveAdd/CurveAddA3.v`,
+// steps A1-A43) and `rcb_double_a3_gallina`
+// (`src/Bedrock/Group/CurveAdd/CurveDoubleA3.v`, steps E1-E34), with the
+// paper's temporaries t0..t4 / outx / outy / outz kept as shadowed Rust
+// bindings so the step numbering reads straight down the page.
+// `src/Bedrock/Group/CurveAdd/CurveA3Equiv.v` proves each chain equal to
+// the corresponding general-a chain at a = -3 as a polynomial identity —
+// unconditionally, so the equality holds on the exceptional inputs too,
+// and `tests/a3_diff.rs` checks that numerically.
+
+#[inline]
+fn fmul(x: &Fp, y: &Fp) -> Fp {
+    let mut o = Fp([0u64; 4]);
+    fp_mul(&mut o, x, y);
+    o
+}
+
+#[inline]
+fn fadd(x: &Fp, y: &Fp) -> Fp {
+    let mut o = Fp([0u64; 4]);
+    fp_add(&mut o, x, y);
+    o
+}
+
+#[inline]
+fn fsub(x: &Fp, y: &Fp) -> Fp {
+    let mut o = Fp([0u64; 4]);
+    fp_sub(&mut o, x, y);
+    o
+}
+
+/// `x * x`.  Same value as `fmul(x, x)`; routed through the dedicated
+/// squaring leaf, which is cheaper than the multiplication on both the
+/// fiat-rust and the CryptOpt path.
+#[inline]
+fn fsqr(x: &Fp) -> Fp {
+    let mut o = Fp([0u64; 4]);
+    fp_square(&mut o, x);
+    o
+}
+
+/// Complete projective point addition for `a = -3` (RCB Algorithm 4).
+///
+/// Returns exactly the same projective triple as [`g1_add_general_a`],
+/// rather than a projectively equivalent one.
+pub fn g1_add_a3(p: &G1, q: &G1) -> G1 {
+    let (x1, y1, z1) = (&p.x, &p.y, &p.z);
+    let (x2, y2, z2) = (&q.x, &q.y, &q.z);
+
+    let t0 = fmul(x1, x2); // A1  t0 := X1 * X2
+    let t1 = fmul(y1, y2); // A2  t1 := Y1 * Y2
+    let t2 = fmul(z1, z2); // A3  t2 := Z1 * Z2
+    let t3 = fadd(x1, y1); // A4  t3 := X1 + Y1
+    let t4 = fadd(x2, y2); // A5  t4 := X2 + Y2
+    let t3 = fmul(&t3, &t4); // A6  t3 := t3 * t4
+    let t4 = fadd(&t0, &t1); // A7  t4 := t0 + t1
+    let t3 = fsub(&t3, &t4); // A8  t3 := t3 - t4
+    let t4 = fadd(y1, z1); // A9  t4 := Y1 + Z1
+    let x3 = fadd(y2, z2); // A10 X3 := Y2 + Z2
+    let t4 = fmul(&t4, &x3); // A11 t4 := t4 * X3
+    let x3 = fadd(&t1, &t2); // A12 X3 := t1 + t2
+    let t4 = fsub(&t4, &x3); // A13 t4 := t4 - X3
+    let x3 = fadd(x1, z1); // A14 X3 := X1 + Z1
+    let y3 = fadd(x2, z2); // A15 Y3 := X2 + Z2
+    let x3 = fmul(&x3, &y3); // A16 X3 := X3 * Y3
+    let y3 = fadd(&t0, &t2); // A17 Y3 := t0 + t2
+    let y3 = fsub(&x3, &y3); // A18 Y3 := X3 - Y3
+    let z3 = fmul(&B_MONT, &t2); // A19 Z3 := b * t2
+    let x3 = fsub(&y3, &z3); // A20 X3 := Y3 - Z3
+    let z3 = fadd(&x3, &x3); // A21 Z3 := X3 + X3
+    let x3 = fadd(&x3, &z3); // A22 X3 := X3 + Z3
+    let z3 = fsub(&t1, &x3); // A23 Z3 := t1 - X3
+    let x3 = fadd(&t1, &x3); // A24 X3 := t1 + X3
+    let y3 = fmul(&B_MONT, &y3); // A25 Y3 := b * Y3
+    let t1 = fadd(&t2, &t2); // A26 t1 := t2 + t2
+    let t2 = fadd(&t1, &t2); // A27 t2 := t1 + t2
+    let y3 = fsub(&y3, &t2); // A28 Y3 := Y3 - t2
+    let y3 = fsub(&y3, &t0); // A29 Y3 := Y3 - t0
+    let t1 = fadd(&y3, &y3); // A30 t1 := Y3 + Y3
+    let y3 = fadd(&t1, &y3); // A31 Y3 := t1 + Y3
+    let t1 = fadd(&t0, &t0); // A32 t1 := t0 + t0
+    let t0 = fadd(&t1, &t0); // A33 t0 := t1 + t0
+    let t0 = fsub(&t0, &t2); // A34 t0 := t0 - t2
+    let t1 = fmul(&t4, &y3); // A35 t1 := t4 * Y3
+    let t2 = fmul(&t0, &y3); // A36 t2 := t0 * Y3
+    let y3 = fmul(&x3, &z3); // A37 Y3 := X3 * Z3
+    let y3 = fadd(&y3, &t2); // A38 Y3 := Y3 + t2
+    let x3 = fmul(&t3, &x3); // A39 X3 := t3 * X3
+    let x3 = fsub(&x3, &t1); // A40 X3 := X3 - t1
+    let z3 = fmul(&t4, &z3); // A41 Z3 := t4 * Z3
+    let t1 = fmul(&t3, &t0); // A42 t1 := t3 * t0
+    let z3 = fadd(&z3, &t1); // A43 Z3 := Z3 + t1
+
+    G1 { x: x3, y: y3, z: z3 }
+}
+
+/// Complete projective point doubling for `a = -3` (RCB Algorithm 6).
+///
+/// Returns exactly the same projective triple as
+/// `g1_add_general_a(p, p)`.
+pub fn g1_double_a3(p: &G1) -> G1 {
+    let (x, y, z) = (&p.x, &p.y, &p.z);
+
+    let t0 = fsqr(x); // E1  t0 := X * X
+    let t1 = fsqr(y); // E2  t1 := Y * Y
+    let t2 = fsqr(z); // E3  t2 := Z * Z
+    let t3 = fmul(x, y); // E4  t3 := X * Y
+    let t3 = fadd(&t3, &t3); // E5  t3 := t3 + t3
+    let z3 = fmul(x, z); // E6  Z3 := X * Z
+    let z3 = fadd(&z3, &z3); // E7  Z3 := Z3 + Z3
+    let y3 = fmul(&B_MONT, &t2); // E8  Y3 := b * t2
+    let y3 = fsub(&y3, &z3); // E9  Y3 := Y3 - Z3
+    let x3 = fadd(&y3, &y3); // E10 X3 := Y3 + Y3
+    let y3 = fadd(&x3, &y3); // E11 Y3 := X3 + Y3
+    let x3 = fsub(&t1, &y3); // E12 X3 := t1 - Y3
+    let y3 = fadd(&t1, &y3); // E13 Y3 := t1 + Y3
+    let y3 = fmul(&x3, &y3); // E14 Y3 := X3 * Y3
+    let x3 = fmul(&x3, &t3); // E15 X3 := X3 * t3
+    let t3 = fadd(&t2, &t2); // E16 t3 := t2 + t2
+    let t2 = fadd(&t2, &t3); // E17 t2 := t2 + t3
+    let z3 = fmul(&B_MONT, &z3); // E18 Z3 := b * Z3
+    let z3 = fsub(&z3, &t2); // E19 Z3 := Z3 - t2
+    let z3 = fsub(&z3, &t0); // E20 Z3 := Z3 - t0
+    let t3 = fadd(&z3, &z3); // E21 t3 := Z3 + Z3
+    let z3 = fadd(&z3, &t3); // E22 Z3 := Z3 + t3
+    let t3 = fadd(&t0, &t0); // E23 t3 := t0 + t0
+    let t0 = fadd(&t3, &t0); // E24 t0 := t3 + t0
+    let t0 = fsub(&t0, &t2); // E25 t0 := t0 - t2
+    let t0 = fmul(&t0, &z3); // E26 t0 := t0 * Z3
+    let y3 = fadd(&y3, &t0); // E27 Y3 := Y3 + t0
+    let t0 = fmul(y, z); // E28 t0 := Y * Z
+    let t0 = fadd(&t0, &t0); // E29 t0 := t0 + t0
+    let z3 = fmul(&t0, &z3); // E30 Z3 := t0 * Z3
+    let x3 = fsub(&x3, &z3); // E31 X3 := X3 - Z3
+    let z3 = fmul(&t0, &t1); // E32 Z3 := t0 * t1
+    let z3 = fadd(&z3, &z3); // E33 Z3 := Z3 + Z3
+    let z3 = fadd(&z3, &z3); // E34 Z3 := Z3 + Z3
+
+    G1 { x: x3, y: y3, z: z3 }
+}
+
+/// Complete projective point addition — the default path.
+///
+/// Dispatches to the a = -3 specialisation [`g1_add_a3`].
+#[inline]
+pub fn g1_add(p: &G1, q: &G1) -> G1 {
+    g1_add_a3(p, q)
+}
+
+/// Point doubling — the default path.
+///
+/// Dispatches to the a = -3 specialisation [`g1_double_a3`], which is
+/// substantially cheaper than the self-addition it replaced.
+#[inline]
 pub fn g1_double(p: &G1) -> G1 {
-    g1_add(p, p)
+    g1_double_a3(p)
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +597,7 @@ fn g1_cmov(a: &G1, b: &G1, bit: u64) -> G1 {
 pub fn g1_scalar_mul(scalar: &[u8; 32], p: &G1) -> G1 {
     let mut acc = g1_identity();
     for i in 0..256 {
-        acc = g1_add(&acc, &acc);
+        acc = g1_double(&acc);
         let byte = scalar[i / 8];
         let bit = ((byte >> (7 - (i % 8))) & 1) as u64;
         let sum = g1_add(&acc, p);

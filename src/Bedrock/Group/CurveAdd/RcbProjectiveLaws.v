@@ -376,6 +376,26 @@ Section RcbProjectiveLaws.
     rewrite H1, H2. reflexivity.
   Qed.
 
+  (** *** 4a'. [point_opp_triple] is a morphism for [pt_eq].
+
+      Needed by the quotiented chain: [digit_point] negates a table
+      entry, so the table's [pt_eq] correctness has to survive
+      negation.  The affine [W.opp] is a morphism because
+      [Hierarchy.group] carries [group_inv_Proper]. *)
+  Theorem point_opp_Proper (p p' : F * F * F) :
+    oncurve p -> oncurve p' -> pt_eq p p' ->
+    pt_eq (point_opp_triple p) (point_opp_triple p').
+  Proof.
+    intros Hp Hp' Ep.
+    assert (H1 : W.eq (Ptoaff (mkP p Hp)) (Ptoaff (mkP p' Hp')))
+      by (apply pt_eq_iff_Weq; exact Ep).
+    apply (proj2 (pt_eq_iff_Weq
+                    (mkP (point_opp_triple p) (oncurve_opp p Hp))
+                    (mkP (point_opp_triple p') (oncurve_opp p' Hp')))).
+    rewrite (toaff_opp p Hp), (toaff_opp p' Hp').
+    rewrite H1. reflexivity.
+  Qed.
+
   (** *** 4b. Commutativity. *)
   Theorem cadd_comm (p q : F * F * F) :
     oncurve p -> oncurve q -> pt_eq (cadd p q) (cadd q p).
@@ -459,8 +479,16 @@ End RcbProjectiveLaws.
 (** ** 5. How the wNAF chain's Section hypotheses would be met         *)
 (* ================================================================== *)
 
-(** The four generic files are NOT edited here.  This section only
-    records the mapping a phase-2 edit would use.
+(** UPDATE: phase 2 has landed.  wNAF_Single_HornerAlgebra.v,
+    wNAF_Single_LoopBody.v and wNAF_Single_Proof.v now take [pt_eq],
+    [oncurve] and the closure/congruence hypotheses as Section
+    parameters, and P256_wNAF_Instance.v §1b discharges them from this
+    file.  wNAF_Single_LoadAndProcess.v was left Leibniz, as predicted
+    below; it only lost its two (unused) group-law Contexts and gained
+    the [opp_name] parameter of plan item G5.  The mapping recorded here
+    is the one that was used.
+
+    This section records the mapping.
 
     The chain's abstract interface (wNAF_Single_HornerAlgebra.v, Section
     SingleHornerAlgebra; mirrored in BLS12_wNAF_ProcessDigits.v and

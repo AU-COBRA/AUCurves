@@ -51,12 +51,18 @@ Section SingleLoadAndProcess.
   Local Notation Fone := (@F.one M_pos).
   Local Notation FElem := (Compilation2.FElem).
 
-  Context (curve_add_name : string).
+  (** G5: the aliased negation is called at the Section-parametric name
+      [opp_name], not the [FieldParameters] field [opp] — fiat-crypto's
+      synthesized [opp] has no aliasing spec, so the NIST chain calls
+      [NistWnafWrappers.opp_inplace_func] ("opp_inplace") instead. *)
+  Context (curve_add_name opp_name : string).
   Context {curve_add : F * F * F -> F * F * F -> F * F * F}.
-  Context (curve_add_id_r :
-    forall x y z, curve_add (x,y,z) (Fzero,Fone,Fzero) = (x,y,z)).
-  Context (curve_add_id_l :
-    forall x y z, curve_add (Fzero,Fone,Fzero) (x,y,z) = (x,y,z)).
+
+  (** [curve_add_id_r] / [curve_add_id_l] used to be declared here.
+      This file is memory-level: its statements are Leibniz equations
+      about the raw computed triples and use no group law.  They are
+      removed so that a caller whose group laws hold only up to
+      projective equivalence (G6) can still apply this lemma. *)
 
   Variable functions : map.rep (map := Semantics.env).
 
@@ -89,7 +95,7 @@ Section SingleLoadAndProcess.
     forall pOut pIn (Y : F) (Yold : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pIn Y
      ⋆ FElem (Some tight_bounds) pOut Yold ⋆ R0) m0 ->
-    Semantics.call functions opp tr0 m0 [pOut; pIn]
+    Semantics.call functions opp_name tr0 m0 [pOut; pIn]
       (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
         (FElem (Some tight_bounds) pIn Y
          ⋆ FElem (Some tight_bounds) pOut (F.opp Y) ⋆ R0) m')).
@@ -97,7 +103,7 @@ Section SingleLoadAndProcess.
   Context (HOppInplace :
     forall p (Y : F) R0 tr0 m0,
     (FElem (Some tight_bounds) p Y ⋆ R0) m0 ->
-    Semantics.call functions opp tr0 m0 [p; p]
+    Semantics.call functions opp_name tr0 m0 [p; p]
       (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
         (FElem (Some tight_bounds) p (F.opp Y) ⋆ R0) m')).
 
@@ -301,7 +307,7 @@ Section SingleLoadAndProcess.
           (expr.op bopname.add (expr.var "digits_k")
             (expr.op bopname.mul (expr.var "iter")
               (expr.literal (Memory.bytes_per_word 64))))))
-        (process_one_digit curve_add_name felem_copy opp felem_size_in_bytes
+        (process_one_digit curve_add_name felem_copy opp_name felem_size_in_bytes
           "d" "table_P" "auxx" "auxy" "auxz" "outx" "outy" "outz"))
       tr0 m0 l0
       (fun t' m' l' =>

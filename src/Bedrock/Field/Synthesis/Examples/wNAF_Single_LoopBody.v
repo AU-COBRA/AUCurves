@@ -5,9 +5,31 @@
       acc = scmul(weighted_sum(skipn n dk)) P
 
     This file is GENERIC — parameterized by field_parameters.
-    Works for BN254, BN256, P-256, or any curve without GLV. *)
+    Works for BN254, BN256, P-256, or any curve without GLV.
+
+    ** G6 (projective equivalence) **
+
+    The loop invariant is stated up to the Section-parametric
+    equivalence [pt_eq], not Leibniz equality on raw triples, and it
+    carries an [oncurve] conjunct.  Both are forced: the
+    Renes-Costello-Batina addition satisfies the group laws only up to
+    projective equivalence, and [oncurve] is not [pt_eq]-invariant, so
+    it cannot be recovered from the equation.  The sep-logic (memory)
+    part of every statement stays Leibniz — only the point-level algebra
+    is quotiented.
+
+    Instantiating [pt_eq := eq], [oncurve := fun _ => True] recovers the
+    previous interface.
+
+    ** G5 (negation name) **
+
+    The name of the aliasing-tolerant in-place negation is the Section
+    parameter [opp_name], no longer the [FieldParameters] field [opp]:
+    the fiat-crypto synthesis of [opp] has no aliasing spec, so the NIST
+    chain must call [NistWnafWrappers.opp_inplace_func] instead. *)
 
 From Stdlib Require Import ZArith Lia List.
+From Stdlib Require Import RelationClasses.
 Require Import Rupicola.Lib.Api.
 Import bedrock2.WeakestPrecondition.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
@@ -69,13 +91,83 @@ Section SingleLoopBodyProof.
   Local Notation FElem := (Compilation2.FElem).
   Local Notation Point3 b px py pz X Y Z := (FElem b px X ⋆ FElem b py Y ⋆ FElem b pz Z)%sep.
 
-  Context (curve_add_name curve_double_name : string).
+  Context (curve_add_name curve_double_name opp_name : string).
   Context {curve_add : F * F * F -> F * F * F -> F * F * F}.
-  Context (curve_add_id_r : forall x y z, curve_add (x,y,z) (Fzero,Fone,Fzero) = (x,y,z)).
-  Context (curve_add_id_l : forall x y z, curve_add (Fzero,Fone,Fzero) (x,y,z) = (x,y,z)).
-  Context (curve_add_assoc : forall P Q R, curve_add P (curve_add Q R) = curve_add (curve_add P Q) R).
-  Context (curve_add_comm : forall P Q, curve_add P Q = curve_add Q P).
+
+  (** *** G6: the point-level equivalence and the on-curve predicate.
+
+      [curve_add_id_r] and [curve_add_comm] were declared here but never
+      used by [wnaf_single_loop_body_ok]; they are dropped so that the
+      Section-discharged argument list is unambiguous. *)
+  Context (pt_eq : F * F * F -> F * F * F -> Prop).
+  Context (pt_eq_equiv : Equivalence pt_eq).
+  Context (oncurve : F * F * F -> Prop).
+  Context (oncurve_id : oncurve (Fzero,Fone,Fzero)).
+  Context (oncurve_curve_add :
+    forall P Q, oncurve P -> oncurve Q -> oncurve (curve_add P Q)).
+  Context (curve_add_Proper : forall P P' Q Q',
+    oncurve P -> oncurve P' -> oncurve Q -> oncurve Q' ->
+    pt_eq P P' -> pt_eq Q Q' -> pt_eq (curve_add P Q) (curve_add P' Q')).
+  Context (curve_add_id_l : forall x y z,
+    oncurve (x,y,z) -> pt_eq (curve_add (Fzero,Fone,Fzero) (x,y,z)) (x,y,z)).
+  Context (curve_add_assoc : forall P Q R,
+    oncurve P -> oncurve Q -> oncurve R ->
+    pt_eq (curve_add P (curve_add Q R)) (curve_add (curve_add P Q) R)).
   Let scmul_s := scmul Fzero Fone curve_add.
+
+  (** Explicit projections of [pt_eq_equiv]: [curve_add_Proper] carries
+      [oncurve] side conditions and so is not a [Proper] instance, hence
+      no setoid tactics. *)
+  Local Lemma pt_refl : forall P, pt_eq P P.
+  Proof. destruct pt_eq_equiv as [Hr _ _]. exact Hr. Qed.
+  Local Lemma pt_sym : forall P Q, pt_eq P Q -> pt_eq Q P.
+  Proof. destruct pt_eq_equiv as [_ Hs _]. exact Hs. Qed.
+  Local Lemma pt_trans : forall P Q R, pt_eq P Q -> pt_eq Q R -> pt_eq P R.
+  Proof. destruct pt_eq_equiv as [_ _ Ht]. exact Ht. Qed.
+
+  Local Lemma add_id_l' : forall P,
+    oncurve P -> pt_eq (curve_add (Fzero,Fone,Fzero) P) P.
+  Proof. intros [[x y] z] H. apply curve_add_id_l. exact H. Qed.
+
+  (** The two computation rules of [scmul_s], as rewrite lemmas: the
+      unifier is not asked to delta-unfold [scmul] under [oncurve]. *)
+  Local Lemma scmul_s_O : forall P, scmul_s 0%nat P = (Fzero,Fone,Fzero).
+  Proof. intros. reflexivity. Qed.
+  Local Lemma scmul_s_S : forall n P,
+    scmul_s (S n) P = curve_add P (scmul_s n P).
+  Proof. intros. reflexivity. Qed.
+
+  Local Lemma oncurve_scmul : forall n P, oncurve P -> oncurve (scmul_s n P).
+  Proof.
+    induction n as [|n' IH]; intros P HP.
+    - rewrite scmul_s_O. exact oncurve_id.
+    - rewrite scmul_s_S.
+      apply oncurve_curve_add; [exact HP | apply IH; exact HP].
+  Qed.
+
+  (** [scmul_add] of BLS12_GLV_LoopInvariant.v, up to [pt_eq]. *)
+  Local Lemma scmul_add_pt : forall a b P, oncurve P ->
+    pt_eq (scmul_s (a + b)%nat P) (curve_add (scmul_s a P) (scmul_s b P)).
+  Proof.
+    induction a as [|a' IH]; intros b P HP.
+    - rewrite scmul_s_O. simpl (0 + b)%nat.
+      apply pt_sym. apply add_id_l'. apply oncurve_scmul. exact HP.
+    - replace (S a' + b)%nat with (S (a' + b)%nat) by lia.
+      rewrite !scmul_s_S.
+      apply (pt_trans
+               (curve_add P (scmul_s (a' + b)%nat P))
+               (curve_add P (curve_add (scmul_s a' P) (scmul_s b P)))
+               (curve_add (curve_add P (scmul_s a' P)) (scmul_s b P))).
+      + apply curve_add_Proper;
+          [ exact HP | exact HP
+          | apply oncurve_scmul; exact HP
+          | apply oncurve_curve_add; apply oncurve_scmul; exact HP
+          | apply pt_refl
+          | apply IH; exact HP ].
+      + apply curve_add_assoc;
+          [ exact HP | apply oncurve_scmul; exact HP
+          | apply oncurve_scmul; exact HP ].
+  Qed.
 
   Variable functions : map.rep (map := Semantics.env).
 
@@ -115,15 +207,21 @@ Section SingleLoopBodyProof.
 
   Context (HOpp : forall pOut pIn (Y : F) (Yold : F) R0 tr0 m0,
     (FElem (Some tight_bounds) pIn Y ⋆ FElem (Some tight_bounds) pOut Yold ⋆ R0) m0 ->
-    Semantics.call functions opp tr0 m0 [pOut; pIn]
+    Semantics.call functions opp_name tr0 m0 [pOut; pIn]
       (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
         (FElem (Some tight_bounds) pIn Y ⋆ FElem (Some tight_bounds) pOut (F.opp Y) ⋆ R0) m')).
 
-  (** Single digit stream and point *)
+  (** Single digit stream and point.
+
+      [Hlen : length dk = num_iters] used to be declared here.  It is
+      not needed by [wnaf_single_loop_body_ok] (only [num_iters] bounds
+      the iteration), and being a ground nat equation it was silently
+      collected by [lia]/[zify] into the discharged argument list.  It
+      is removed so that list is determined by genuine use. *)
   Context (dk : list Z).
   Context (Px Py Pz : F).
+  Context (Honcurve_P : oncurve (Px,Py,Pz)).
   Context (num_iters : nat).
-  Context (Hlen : length dk = num_iters).
 
   Context (Hws_nn :
     forall n, (n <= num_iters)%nat -> 0 <= weighted_sum (skipn n dk) 0).
@@ -137,7 +235,8 @@ Section SingleLoopBodyProof.
   Context (HProcessDigit : forall (n : nat) pOx pOy pOz pAx pAy pAz
     pT pDK (Ox Oy Oz Ax Ay Az : F) Rinner tr0 m0 l0,
     (n < num_iters)%nat ->
-    (Ox,Oy,Oz) = scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz) ->
+    oncurve (Ox,Oy,Oz) ->
+    pt_eq (Ox,Oy,Oz) (scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz)) ->
     (FElem (Some tight_bounds) pOx Ox ⋆ FElem (Some tight_bounds) pOy Oy
      ⋆ FElem (Some tight_bounds) pOz Oz ⋆ FElem (Some tight_bounds) pAx Ax
      ⋆ FElem (Some tight_bounds) pAy Ay ⋆ FElem (Some tight_bounds) pAz Az
@@ -155,12 +254,13 @@ Section SingleLoopBodyProof.
           (expr.op bopname.add (expr.var "digits_k")
             (expr.op bopname.mul (expr.var "iter")
               (expr.literal (Memory.bytes_per_word 64))))))
-        (process_one_digit curve_add_name felem_copy opp felem_size_in_bytes
+        (process_one_digit curve_add_name felem_copy opp_name felem_size_in_bytes
           "d" "table_P" "auxx" "auxy" "auxz" "outx" "outy" "outz"))
       tr0 m0 l0
       (fun t' m' l' =>
         exists Ox' Oy' Oz' Ax' Ay' Az',
-        (Ox',Oy',Oz') = scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz)
+        oncurve (Ox',Oy',Oz')
+        /\ pt_eq (Ox',Oy',Oz') (scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz))
         /\ (FElem (Some tight_bounds) pOx Ox' ⋆ FElem (Some tight_bounds) pOy Oy'
             ⋆ FElem (Some tight_bounds) pOz Oz' ⋆ FElem (Some tight_bounds) pAx Ax'
             ⋆ FElem (Some tight_bounds) pAy Ay' ⋆ FElem (Some tight_bounds) pAz Az'
@@ -181,7 +281,8 @@ Section SingleLoopBodyProof.
     forall (n : nat) pOx pOy pOz pAx pAy pAz pT pDK
       (Ox Oy Oz Ax Ay Az : F) Rinner tr0 m0 l0,
       (n < num_iters)%nat ->
-      (Ox,Oy,Oz) = scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz) ->
+      oncurve (Ox,Oy,Oz) ->
+      pt_eq (Ox,Oy,Oz) (scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz)) ->
       (Point3 (Some tight_bounds) pOx pOy pOz Ox Oy Oz
        ⋆ Point3 (Some tight_bounds) pAx pAy pAz Ax Ay Az
        ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
@@ -194,12 +295,13 @@ Section SingleLoopBodyProof.
       map.get l0 "iter" = Some (word.of_Z (Z.of_nat (S n))) ->
       WeakestPrecondition.cmd functions
         (wnaf_single_loop_body curve_add_name curve_double_name
-           felem_copy opp felem_size_in_bytes
+           felem_copy opp_name felem_size_in_bytes
            "digits_k" "table_P")
         tr0 m0 l0
         (fun t' m' l' =>
           exists Ox' Oy' Oz' Ax' Ay' Az',
-          (Ox',Oy',Oz') = scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz)
+          oncurve (Ox',Oy',Oz')
+          /\ pt_eq (Ox',Oy',Oz') (scmul_s (Z.to_nat (weighted_sum (skipn n dk) 0)) (Px,Py,Pz))
           /\ (Point3 (Some tight_bounds) pOx pOy pOz Ox' Oy' Oz'
               ⋆ Point3 (Some tight_bounds) pAx pAy pAz Ax' Ay' Az'
               ⋆ DigitArray pDK dk ⋆ Table4 pT table_entries
@@ -214,7 +316,7 @@ Section SingleLoopBodyProof.
   Proof.
     intros n pOx pOy pOz pAx pAy pAz pT pDK
       Ox Oy Oz Ax Ay Az Rinner tr0 m0 l0
-      Hn Hinv Hsep Hl_ox Hl_oy Hl_oz Hl_ax Hl_ay Hl_az
+      Hn Hoc Hinv Hsep Hl_ox Hl_oy Hl_oz Hl_ax Hl_ay Hl_az
       Hl_t Hl_dk Hl_iter.
     unfold wnaf_single_loop_body.
     (* Step 1: iter-- *)
@@ -250,18 +352,33 @@ Section SingleLoopBodyProof.
     assert (Hiter_n : iter_word = word.of_Z (Z.of_nat n))
       by (unfold iter_word; rewrite <- word.ring_morph_sub; f_equal; lia).
     (* Prove doubling precondition for HProcessDigit:
-       (Dx,Dy,Dz) = scmul_s(2 * ws) P *)
-    assert (Hdbl_acc : (Dx, Dy, Dz) = scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz)).
-    { unfold doubled in Hdoubled. rewrite Hinv in Hdoubled.
-      symmetry in Hdoubled. rewrite Hdoubled.
-      set (ws := weighted_sum (skipn (S n) dk) 0).
-      pose proof (fun a b P => eq_sym (scmul_add Fzero Fone curve_add
-        curve_add_id_l curve_add_assoc a b P)) as Hscmul_add.
-      unfold scmul_s. rewrite Hscmul_add.
-      assert (Z.to_nat ws + Z.to_nat ws = Z.to_nat (2 * ws))%nat as ->.
+       (Dx,Dy,Dz) is on-curve and pt_eq to scmul_s(2 * ws) P. *)
+    assert (Hdbl_eq : curve_add (Ox, Oy, Oz) (Ox, Oy, Oz) = (Dx, Dy, Dz)).
+    { unfold doubled in Hdoubled. exact Hdoubled. }
+    assert (Hdbl_oc : oncurve (Dx, Dy, Dz)).
+    { rewrite <- Hdbl_eq. apply oncurve_curve_add; exact Hoc. }
+    assert (Hdbl_acc : pt_eq (Dx, Dy, Dz)
+             (scmul_s (Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz))).
+    { assert (Hdouble_nat :
+        Z.to_nat (2 * weighted_sum (skipn (S n) dk) 0)
+        = (Z.to_nat (weighted_sum (skipn (S n) dk) 0)
+           + Z.to_nat (weighted_sum (skipn (S n) dk) 0))%nat).
       { rewrite Z2Nat.inj_mul; [simpl Z.to_nat; lia | lia |].
-        unfold ws. apply Hws_nn. lia. }
-      reflexivity. }
+        apply Hws_nn. lia. }
+      rewrite Hdouble_nat, <- Hdbl_eq.
+      apply (pt_trans
+               (curve_add (Ox,Oy,Oz) (Ox,Oy,Oz))
+               (curve_add
+                  (scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz))
+                  (scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)) (Px,Py,Pz)))
+               (scmul_s (Z.to_nat (weighted_sum (skipn (S n) dk) 0)
+                         + Z.to_nat (weighted_sum (skipn (S n) dk) 0))%nat
+                        (Px,Py,Pz))).
+      - apply curve_add_Proper;
+          [ exact Hoc | apply oncurve_scmul; exact Honcurve_P
+          | exact Hoc | apply oncurve_scmul; exact Honcurve_P
+          | exact Hinv | exact Hinv ].
+      - apply pt_sym. apply scmul_add_pt. exact Honcurve_P. }
     (* Reassociate sep for HProcessDigit *)
     assert (Hsep1' : (FElem (Some tight_bounds) pOx Dx
       ⋆ FElem (Some tight_bounds) pOy Dy ⋆ FElem (Some tight_bounds) pOz Dz
@@ -273,7 +390,7 @@ Section SingleLoopBodyProof.
     eapply WeakestPreconditionProperties.Proper_cmd;
       [|exact (HProcessDigit n pOx pOy pOz pAx pAy pAz pT pDK
                 Dx Dy Dz Ax Ay Az Rinner tr0 m1 (map.put l0 "iter" iter_word)
-                Hn Hdbl_acc Hsep1'
+                Hn Hdbl_oc Hdbl_acc Hsep1'
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_ox)
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_oy)
                 ltac:(rewrite map.get_put_diff by congruence; exact Hl_oz)
@@ -285,7 +402,7 @@ Section SingleLoopBodyProof.
                 ltac:(rewrite map.get_put_same; f_equal; exact Hiter_n))].
     (* Weaken postcondition: convert flat FElem sep to Point3 notation *)
     intros t2 m2 l2 (Ox2 & Oy2 & Oz2 & Ax2 & Ay2 & Az2 &
-      Hout2 & Hsep2 & Hlox2 & Hloy2 & Hloz2 &
+      Hoc2 & Hout2 & Hsep2 & Hlox2 & Hloy2 & Hloz2 &
       Hlax2 & Hlay2 & Hlaz2 & Hlt2 &
       Hldk2 & Hliter2 & Htr2).
     subst t2.

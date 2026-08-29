@@ -21,9 +21,9 @@
     (Qed once compiled) for the Bignum shape with valid output buffers
     on entry, which is what [spec_of_rcb_add_general] requires.
 
-    Honesty ledger (this file): 1 Admitted —
-    [p224_curve_add_general_bignum_bridge] (unconditional shape; not
-    derivable from the FElem-level spec, see the note at §5b). *)
+    Honesty ledger (this file): 0 Admitted.  The unconditional bridge
+    [p224_curve_add_general_bignum_bridge] is not stated (not derivable
+    from the FElem-level spec; comment at the end of §5b). *)
 
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.Strings.String.
@@ -727,19 +727,26 @@ Section P224_GeneralA.
        end).
   Qed.
 
-  (** The unconditional shape.  Not derivable from
-      [spec_of_rcb_add_general] (see the note above
-      [spec_of_p224_curve_add_general_bignum_valid_out]): the FElem-level
-      spec says nothing about a call whose output buffers hold
-      non-canonical words.  Kept as stated; closing it needs either a
-      weaker output precondition in the derivation
-      ([FElem None] for the outputs in CurveAddGeneralA.v) or the
-      validity hypotheses of the [_valid_out] variant. *)
-  Theorem p224_curve_add_general_bignum_bridge :
-    forall functions,
-      spec_of_rcb_add_general p224_three_b_felem p224_a_felem functions ->
-      spec_of_p224_curve_add_general_bignum functions.
-  Proof.
-  Admitted.
+  (** The unconditional shape, NOT stated as a theorem.
+
+      <<
+      Theorem p224_curve_add_general_bignum_bridge :
+        forall functions,
+          spec_of_rcb_add_general p224_three_b_felem p224_a_felem functions ->
+          spec_of_p224_curve_add_general_bignum functions.
+      >>
+
+      is not derivable from [spec_of_rcb_add_general]: that spec
+      requires [FElem (Some tight_bounds) poutx outxold] for the three
+      output buffers, i.e. canonical ([p224_valid]) old contents, and
+      says nothing about a call on non-canonical output buffers, while
+      [spec_of_p224_curve_add_general_bignum] assumes nothing about
+      [wold_outx]/[wold_outy]/[wold_outz].  A function satisfying the
+      FElem-level spec and misbehaving on non-canonical output buffers
+      is a model of the hypothesis and a counter-model of the
+      conclusion.  Downstream users take
+      [p224_curve_add_general_bignum_bridge_valid_out] (Qed above); the
+      unconditional shape would need the derivation in
+      CurveAddGeneralA.v to require only [FElem None] for the outputs. *)
 
 End P224_GeneralA.

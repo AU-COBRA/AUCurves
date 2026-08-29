@@ -80,3 +80,16 @@
 #   repeat-straightline prologue sentence   >90 min (diverges; fixed: singles)
 #   single straightline step (late allocs)  ~1-3 min under load
 #   first store ecancel (26-atom chain)     < 600 s via ecancel_assumption_fast
+#
+# 2026-08-29 — principled (Rupicola) route for the general-a G1 add, all
+# under dune native, machine otherwise idle:
+#   Group/CurveAdd/CurveAddGeneralA.v            ~3 min  (Derive/compile, 42 nlets)
+#   Group/CurveAdd/CurveAddGeneralA_GallinaToZ.v  minutes (F-chain -> Gallina spec, ring over variables)
+#   Group/CurveAdd/CurveAddGeneralA_P256.v        ~10 min (loaders + wrapper + bridge, Qed)
+#   Group/CurveAdd/CurveAddGeneralA_P384.v        ~10 min (6-limb loaders)
+#   Group/CurveAdd/CurveAddGeneralA_P224.v        ~5 min
+#   Field/Synthesis/Examples/p224_field.v         minutes (4-limb WBW synthesis)
+#   Theory/WordByWordMontgomery/RcbGeneralAChain.v ~0 s proofs (subst; reflexivity)
+# For comparison the WP-replay functor instances take ~6 min of tactic
+# time through the closure preamble, plus ~7 min per premise-discharge
+# round (12 rounds) in the RcbGeneralAChain-based closure.

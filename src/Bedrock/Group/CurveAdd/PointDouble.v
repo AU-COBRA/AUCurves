@@ -30,14 +30,24 @@
     literally [curve_add (X,Y,Z) (X,Y,Z)], cannot be discharged from
     it.
 
-    Reach: [bn254_point_double], [bn256_point_double] and
-    [bn446_point_double] bind [point_double_body] to the
-    "curve_double" key of their function tables, and
-    [bn254_point_double_correct] is Qed -- but it only proves the body
-    computes [point_double_gallina], never that
-    [point_double_gallina] doubles.  Nothing downstream consumes it:
-    no Rust or Jasmin artifact in this tree contains a
-    "curve_double", so the defect has not shipped.
+    Reach: NONE.  [bn254_point_double], [bn256_point_double] and
+    [bn446_point_double] used to bind [point_double_body] to the
+    "curve_double" key of their function tables; those three bindings
+    were removed and now read
+    [("curve_double_a0", rcb_double_a0_body "bn<curve>_three_b")].
+    [bn254_point_double_correct] and its two analogues were Qed against
+    this body, but only proved that the body computes
+    [point_double_gallina], never that [point_double_gallina] doubles;
+    they are now stated against [PointDoubleA0.rcb_double_a0_correct],
+    and each curve carries a [bn<curve>_double_is_curve_add] saying the
+    Gallina model is the chain's own addition on a repeated argument.
+    Nothing downstream ever consumed the old binding: no Rust or Jasmin
+    artifact in this tree contains a "curve_double", so the defect never
+    shipped.  Four files still [Require Import] this one --
+    [BLS12_wNAF_Extract.v], [BLS12_377_wNAF_Extract.v],
+    [BLS12_MSM_Extract.v] and [Jasmin/extractions/BLS12_381.v] -- but
+    none of them binds [point_double_body] into a function table; the
+    imports are vestigial.
 
     Replacement: [PointDoubleA0.v] derives RCB 2015 Algorithm 9, the
     homogeneous a = 0 doubling, and proves

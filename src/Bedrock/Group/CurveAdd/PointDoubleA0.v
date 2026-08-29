@@ -9,10 +9,11 @@
 
     ** Why this file exists **
 
-    [PointDouble.v] already carries a definition called
-    [point_double_gallina], wired as the "curve_double" entry of
+    [PointDouble.v] carries a definition called
+    [point_double_gallina], which was the "curve_double" entry of
     [bn254_curve_op_funcs], [bn256_curve_op_funcs] and
-    [bn446_curve_op_funcs].  That body is dbl-2009-l, which is a
+    [bn446_curve_op_funcs] until this file replaced it.  That body is
+    dbl-2009-l, which is a
     JACOBIAN formula: it reads (X : Y : Z) as (X/Z^2, Y/Z^3).  Every
     other component of the a = 0 chain is HOMOGENEOUS --
     [ladderstep_gallina] is [Projective.add]
@@ -27,8 +28,27 @@
     discharge [BN254_wNAF_Instance.HCurveDouble], whose postcondition
     is literally [curve_add (X,Y,Z) (X,Y,Z)].
 
-    Algorithm 9 is the correct homogeneous body, and it discharges
-    that postcondition on the nose (Section 2 below).
+    Algorithm 9 is the correct homogeneous body: Section 2 proves its
+    Gallina model equal to [ladderstep_gallina] on a repeated argument,
+    coordinate for coordinate, for every ON-CURVE input.
+
+    That is the algebra of [HCurveDouble], not [HCurveDouble] itself.
+    Two things still stand between them, and neither is repaired here
+    (see the note at the end of [BN254_CurveOps.v]):
+
+      * ALIASING.  [HCurveDouble] calls with [pX;pY;pZ;pX;pY;pZ].
+        [spec_of_rcb_double_a0] below -- like [spec_of_ladderstep], and
+        like every Rupicola-derived spec -- separates the six buffers,
+        so it says nothing about that call.  Algorithm 9 is not
+        in-place safe either: D8 writes Xout and D9 writes Yout while
+        D16 still reads X1 and Y1.  The remedy is the stackalloc +
+        felem_copy wrapper of [CurveAddInplaceWrapper.v], which for the
+        addition is itself still only a proof blueprint.
+
+      * ON-CURVE.  [HCurveDouble] is stated for arbitrary (X,Y,Z), and
+        off the curve the two formulas genuinely differ (the cofactors
+        are given in Section 2).  Discharging it needs the wNAF
+        chain's hypothesis weakened to carry [oncurve].
 
     ** Op counts **
 
@@ -99,15 +119,8 @@
     -- the [nlet] var-name strings change, nothing else -- so
     Section 2 is untouched in content.
 
-    Not yet re-verified: neither the [Derive] nor
-    [rcb_double_a0_eq_ladderstep] has been re-run.  Interactive
-    checking through rocq-mcp is unavailable for this file: the only
-    `pet` binary on this machine belongs to the vc-sf opam switch, and
-    loading fiat-crypto's [coq-rewriter] plugin from rocq-9 into it
-    fails at Dynlink ("implementation mismatch on Proofview").
-    `opam install coq-lsp --switch=rocq-9` would remove that
-    limitation.  Unverified API details are flagged
-    (* PORT-CHECK: ... *).
+    Interactive checking through rocq-mcp now works for this file
+    (coq-lsp / pet installed into the rocq-9 switch, 2026-08-29).
 
     Source: Renes, Costello, Batina, "Complete addition formulas for
     prime order elliptic curves", EUROCRYPT 2016 / ePrint 2015/1060,
@@ -291,11 +304,13 @@ Section DoubleIsAdd.
       [3b] as [b + b + b].
 
       Consequence for the wNAF chain: because the equality is
-      Leibniz rather than [pt_eq], a "curve_double" implementing
-      Algorithm 9 satisfies [BN254_wNAF_Instance.HCurveDouble]
-      (postcondition [curve_add (X,Y,Z) (X,Y,Z)]) directly, with no
-      [pt_eq]-congruence argument anywhere in the chain --
-      [rcb_double_a0_is_curve_add] below.
+      Leibniz rather than [pt_eq], the point-level half of
+      [BN254_wNAF_Instance.HCurveDouble] (postcondition
+      [curve_add (X,Y,Z) (X,Y,Z)]) needs no [pt_eq]-congruence
+      argument -- [rcb_double_a0_is_curve_add] below.  The memory-level
+      half does not follow: HCurveDouble aliases its output buffers
+      onto its inputs, and drops the on-curve hypothesis.  See the
+      header.
 
       [timeout] so that a regression reports a position instead of
       hanging: the three [ring] calls are on degree-4 polynomials in

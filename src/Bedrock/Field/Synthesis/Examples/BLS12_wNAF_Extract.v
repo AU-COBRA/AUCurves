@@ -43,7 +43,9 @@ Local Notation function_t :=
     - Leaf Fp operations (from bls12_prime synthesis)
     - curve_add (ladderstep, from CurveAdd.v)
     - curve_add_inplace (wrapper, from CurveAddInplaceWrapper.v)
-    - point_double (from PointDouble.v)
+      (no dedicated doubling: [bls12_wnaf_all_funcs] below binds none,
+       and [PointDouble.v]'s dbl-2009-l must not be bound here -- it is
+       Jacobian, this chain is homogeneous.  See [PointDoubleA0.v].)
     - point_negate (from PointNegate.v)
     - felem_copy (from bls12_felem_copy)
     - The wNAF loop body (from wNAF_GLV_Func.v) *)

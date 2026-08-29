@@ -53,6 +53,9 @@
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust
      Curve.EmitWnafRust
+     ; Axiom check for the Algorithm 9 rebinding; Print Assumptions only,
+     ; no theorems.  Run by hand, not part of the build.
+     Examples.CheckBNDouble
      Curve.P256Curve_G1_bedrock
      Curve.PallasCurve_G1_bedrock
      Curve.VestaCurve_G1_bedrock

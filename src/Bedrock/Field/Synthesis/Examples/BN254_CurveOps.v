@@ -5,7 +5,14 @@
     (y^2 = x^3 + 3, so 3b = 9).
 
     Provides:
-    - [bn254_point_double] : dedicated doubling (dbl-2009-l, a=0)
+    - [bn254_point_double] : dedicated doubling (RCB 2015 Algorithm 9,
+      the HOMOGENEOUS a = 0 formula, from [PointDoubleA0.v]).  The
+      earlier binding of [PointDouble.point_double_body] (dbl-2009-l)
+      was removed: dbl-2009-l is JACOBIAN, and every other component of
+      this chain -- [ladderstep_gallina], [store_zero],
+      [RcbProjectiveLaws.oncurve] -- is homogeneous, so on the
+      representatives this chain produces it returned 2P in neither
+      reading.  See the header of [PointDouble.v].
     - [bn254_store_zero]   : store the identity point (0:1:0)
     - [bn254_point_negate_func] : negate Y coordinate
     - [bn254_curve_add_inplace] : ladderstep with in-place output
@@ -18,7 +25,7 @@ Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
 Require Import Bedrock.Field.Synthesis.Examples.bn254_three_b.
 Require Import Bedrock.Field.Synthesis.Examples.BN254_G1.
 Require Import Bedrock.Group.CurveAdd.CurveAdd.
-Require Import Bedrock.Group.CurveAdd.PointDouble.
+Require Import Bedrock.Group.CurveAdd.PointDoubleA0.
 Require Import Bedrock.Group.CurveAdd.PointNegate.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
@@ -55,21 +62,28 @@ Section BN254_CurveOps.
 
   Local Notation F := (F M_pos).
 
-  (** ** Point doubling: dedicated dbl-2009-l formula (a=0).
+  (** ** Point doubling: RCB 2015 Algorithm 9, homogeneous, a = 0.
 
-      Uses the generic [point_double_body] from [PointDouble.v],
-      which is derived by Rupicola compilation from [point_double_gallina].
-      The body calls [square], [mul], [add], [sub] -- all resolved
-      to "bn254_square", "bn254_mul", "bn254_add", "bn254_sub" via
-      [bn254_field_parameters].
+      Uses the generic [rcb_double_a0_body] from [PointDoubleA0.v],
+      derived by Rupicola compilation from [rcb_double_a0_gallina].
+      The body calls [mul], [add], [sub] and the 3b loader -- exactly
+      the callee list [ladderstep_body] uses, so BN254 needs no leaf it
+      does not already have; the loader is "bn254_three_b", the same
+      constant [bn254_G1_add] passes to [ladderstep_body].
 
-      Note: [point_double_body] is a Derived bedrock2 cmd.  After section
-      closure in PointDouble.v, the body depends only on field_parameters
-      (for function name strings) and Hbounds_eq (proof-level only, erased
-      from the cmd).  With [bn254_field_parameters] as an Existing Instance,
-      Coq resolves the syntactic dependencies automatically. *)
+      The function key is "curve_double_a0", not "curve_double":
+      [rcb_double_a0_correct] demands
+      [map.get functions "curve_double_a0" = Some (rcb_double_a0_body _)],
+      and [spec_of_rcb_double_a0] is a [spec_of "curve_double_a0"].
+      Consumers parameterised by a [curve_double_name] (the wNAF chain)
+      instantiate it with that string.
+
+      Note: [rcb_double_a0_body] is a Derived bedrock2 cmd.  After
+      section closure in PointDoubleA0.v it depends on field_parameters
+      (for the leaf name strings) and on the loader name; [three_b] and
+      [Hbounds_eq] are proof-level and erased from the cmd. *)
   Definition bn254_point_double : function_t :=
-    ("curve_double", point_double_body).
+    ("curve_double_a0", rcb_double_a0_body "bn254_three_b").
 
   (** ** Store zero (identity point): (0 : 1 : 0) in Jacobian coords.
 
@@ -124,17 +138,24 @@ Section BN254_CurveOps_Specs.
 
   Local Notation F := (F M_pos).
 
-  (** The point_double spec: calling "curve_double" with 6 pointers
-      (3 input + 3 output) computes [point_double_gallina].
+  (** The point_double spec: calling "curve_double_a0" with 6 DISJOINT
+      pointers (3 input + 3 output) computes [rcb_double_a0_gallina]
+      at [three_b_val = feval three_b].
 
-      This is the spec consumed by [HCurveDouble] in the wNAF chain:
-      doubling P in-place (pXin=pXout, etc.) computes curve_add(P,P). *)
+      This is NOT yet [BN254_wNAF_Instance.HCurveDouble].  That
+      hypothesis calls with [pX;pY;pZ;pX;pY;pZ] -- input buffers
+      aliased with the output buffers -- which this (and every
+      Rupicola-derived) spec excludes by its separating conjunction,
+      and it carries no on-curve side condition.  See
+      [bn254_double_is_curve_add] below for what is available, and the
+      note after it for what is missing. *)
   Definition bn254_point_double_spec
+    (three_b : Crypto.Bedrock.Specs.Field.felem)
     (functions : Semantics.env) : Prop :=
-    PointDouble.spec_of_point_double
+    PointDoubleA0.spec_of_rcb_double_a0
       (field_parameters:=bn254_field_parameters)
       (field_representation:=bn254_frep)
-      functions.
+      three_b functions.
 
   (** The store_zero spec: writing the identity (0,1,0) to 3 output FElems. *)
   Definition bn254_store_zero_spec
@@ -175,29 +196,91 @@ Section BN254_CurveOps_Specs.
       The store_zero proof requires [spec_of_from_word] which is
       provided by the bn254 field synthesis.
 
-      These are Admitted pending full compilation of the dependency
-      chain; the proofs are mechanical given the Derived bodies from
-      the generic modules ([point_double_correct] is already Qed in
-      [PointDouble.v]). *)
+      [bn254_point_double_correct] is Qed from
+      [PointDoubleA0.rcb_double_a0_correct];
+      [bn254_store_zero_correct] is still Admitted. *)
 
   Lemma bn254_point_double_correct :
-    forall functions,
+    forall (three_b : Crypto.Bedrock.Specs.Field.felem) functions,
+      (* The point_double function is in the environment *)
+      map.get functions "curve_double_a0" = Some (snd bn254_point_double) ->
       (* Field operation specs are in the environment *)
       spec_of_BinOp bin_mul (field_representation:=bn254_frep) functions ->
-      spec_of_UnOp un_square (field_representation:=bn254_frep) functions ->
       spec_of_BinOp bin_add (field_representation:=bn254_frep) functions ->
       spec_of_BinOp bin_sub (field_representation:=bn254_frep) functions ->
-      (* The point_double function is in the environment *)
-      map.get functions "curve_double" = Some (snd bn254_point_double) ->
-      bn254_point_double_spec functions.
+      (* The 3b loader is in the environment *)
+      PointDoubleA0.spec_of_three_b_loader_a0
+        (field_parameters:=bn254_field_parameters)
+        (field_representation:=bn254_frep)
+        three_b "bn254_three_b" functions ->
+      bn254_point_double_spec three_b functions.
   Proof.
-    intros. unfold bn254_point_double_spec.
-    eapply point_double_correct; try eassumption.
-    { (* loose_bounds = tight_bounds for BN254 Montgomery *)
-      reflexivity. }
-    { (* __rupicola_program_marker *)
-      exact I. }
+    intros three_b functions Henv Hmul Hadd Hsub Hloader.
+    (* loose_bounds = tight_bounds for BN254 word-by-word Montgomery *)
+    assert (Hbe : loose_bounds = tight_bounds) by reflexivity.
+    exact (@rcb_double_a0_correct
+             _ _ _ _ _ _ _ _ _ _
+             bn254_field_parameters bn254_frep bn254_frep_ok
+             Hbe three_b "bn254_three_b" I
+             functions Henv Hmul Hadd Hsub Hloader).
   Qed.
+
+  (** ** The doubling really doubles.
+
+      [rcb_double_a0_correct] says the body computes
+      [rcb_double_a0_gallina]; this says [rcb_double_a0_gallina] is the
+      chain's own addition on a repeated argument, coordinate for
+      coordinate (Leibniz, not up to projective equivalence), for every
+      on-curve input.  BN254 is y^2 = x^3 + 3, so b = 3 and 3b = 9.
+
+      The [feval three_b = 9] hypothesis is the same obligation
+      [BN254_wNAF_Laws] lists as [bn254_Hthree_b]; the bounded witness
+      lives in [bn254_three_b.v]. *)
+  Lemma bn254_double_is_curve_add
+    (three_b : Crypto.Bedrock.Specs.Field.felem)
+    (Hthree_b : feval (proj1_sig three_b)
+                = ModularArithmetic.F.of_Z M_pos 9) :
+    forall P,
+      PointDoubleA0.oncurve_a0 (ModularArithmetic.F.of_Z M_pos 3) P ->
+      PointDoubleA0.rcb_double_a0_triple (feval (proj1_sig three_b)) P
+      = PointDoubleA0.ladderstep_triple (feval (proj1_sig three_b)) P P.
+  Proof.
+    intros P HP.
+    apply (PointDoubleA0.rcb_double_a0_eq_ladderstep
+             (ModularArithmetic.F.of_Z M_pos 3)); [ | exact HP ].
+    rewrite Hthree_b.
+    rewrite <- !ModularArithmeticTheorems.F.of_Z_add. reflexivity.
+  Qed.
+
+  (** ** What is still missing before [HCurveDouble] follows.
+
+      [BN254_wNAF_Instance.HCurveDouble] is
+
+        forall pX pY pZ X Y Z R0 tr0 m0,
+          (FElem pX X * FElem pY Y * FElem pZ Z * R0) m0 ->
+          call functions curve_double_name tr0 m0 [pX;pY;pZ;pX;pY;pZ]
+            (... curve_add (X,Y,Z) (X,Y,Z) ...)
+
+      and two things separate it from the two lemmas above.
+
+      (1) ALIASING.  The call passes the input pointers again as the
+      output pointers.  [spec_of_rcb_double_a0] -- like every
+      Rupicola-derived spec, and like [spec_of_ladderstep] -- puts the
+      six buffers in a separating conjunction, so it says nothing about
+      that call.  Algorithm 9 is not in-place safe either: D8 writes
+      Xout and D9 writes Yout, while D16 still reads X1 and Y1.  The
+      fix is the wrapper [CurveAddInplaceWrapper.v] already describes
+      for the addition -- three [stackalloc]s, the disjoint call, three
+      [felem_copy]s -- which for the addition is itself still only a
+      proof blueprint, not a theorem.
+
+      (2) ON-CURVE.  [HCurveDouble] asserts the equality for arbitrary
+      (X,Y,Z).  [rcb_double_a0_eq_ladderstep] holds only on the curve,
+      and that is not slack in the proof: the cofactors against the
+      curve polynomial are 6*3b*Z for Y3 and 6*Y for Z3, so off the
+      curve Algorithm 9 and the addition genuinely differ.  Deriving
+      [HCurveDouble] needs the hypothesis in the wNAF chain weakened to
+      carry [oncurve], as its point-level algebra already does. *)
 
   Lemma bn254_store_zero_correct :
     forall functions,
@@ -234,7 +317,7 @@ Section BN254_AllCurveOps.
       multiplication on BN254 G1 (beyond the leaf Fp operations). *)
   Definition bn254_curve_op_funcs : list function_t :=
     [ bn254_G1_add;            (* ladderstep: "curve_add" *)
-      bn254_point_double;      (* dedicated doubling: "curve_double" *)
+      bn254_point_double;      (* RCB Alg. 9 doubling: "curve_double_a0" *)
       bn254_store_zero;        (* identity point: "store_zero" *)
       bn254_curve_add_inplace; (* inplace wrapper: "curve_add_inplace" *)
       bn254_point_negate_func  (* Y negation: "point_negate" *)

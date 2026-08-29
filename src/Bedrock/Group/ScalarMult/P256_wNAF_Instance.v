@@ -634,7 +634,11 @@ Section P256_wNAF.
       spec_of_rcb_add_general p256_three_b_felem p256_a_felem functions.
   Proof.
     intros functions (Hadd & Htb & Ha & _ & _ & _ & _ & _) (Hmul & Hfadd & Hsub & _ & _).
-    eapply p256_curve_add_general_full; eassumption.
+    (* Explicit discharge, as in P384_wNAF_Instance.v: a fully applied term
+       instead of [eapply ...; eassumption], whose cost is the conclusion
+       unification rather than the assumption lookup. *)
+    refine (p256_curve_add_general_full functions _ Htb Ha Hmul Hfadd Hsub).
+    exact Hadd.
   Qed.
 
   Lemma p256_felem_copy_spec :

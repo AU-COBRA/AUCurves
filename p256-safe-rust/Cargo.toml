@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "bench"
 path = "examples/bench.rs"
 
+[[example]]
+name = "bench_compare"
+path = "examples/bench_compare.rs"
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
@@ -23,6 +27,10 @@ fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }
 
 [dev-dependencies]
+# RustCrypto reference implementation for examples/bench_compare.rs.
+# Renamed because this crate's own [lib] is also called `p256`.
+# Pinned and resolvable from the local registry cache (`cargo --offline`).
+p256_rc = { package = "p256", version = "=0.13.2", default-features = false, features = ["arithmetic"] }
 
 [features]
 extracted = []

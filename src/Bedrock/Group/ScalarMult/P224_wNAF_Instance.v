@@ -607,8 +607,15 @@ Section P224_wNAF.
       spec_of_rcb_add_general p224_three_b_felem p224_a_felem functions.
   Proof.
     intros functions Hadd_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p224_curve_add_general_ok; eauto using
-      p224_three_b_loader_ok, p224_a_loader_ok.
+    (* Explicit discharge, as in P384_wNAF_Instance.v: name the two loader
+       facts and supply every argument, so no [eauto] search and no
+       [eapply] unification against [spec_of_rcb_add_general] takes place.
+       The environment premise is the single hole, discharged by the
+       following [exact]. *)
+    pose proof (p224_three_b_loader_ok functions Htb_env) as Htb.
+    pose proof (p224_a_loader_ok functions Ha_env) as Ha.
+    refine (p224_curve_add_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hadd_env.
   Qed.
 
   (** The derived add meets its FElem-level spec. *)
@@ -619,7 +626,8 @@ Section P224_wNAF.
       spec_of_rcb_add_general p224_three_b_felem p224_a_felem functions.
   Proof.
     intros functions (Hadd & Htb & Ha & _ & _ & _ & _ & _) (Hmul & Hfadd & Hsub & _ & _).
-    eapply p224_curve_add_general_full; eassumption.
+    refine (p224_curve_add_general_full functions _ Htb Ha Hmul Hfadd Hsub).
+    exact Hadd.
   Qed.
 
   Lemma p224_felem_copy_spec :

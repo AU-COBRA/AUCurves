@@ -606,8 +606,20 @@ Section P384_wNAF.
       spec_of_rcb_add_general p384_three_b_felem p384_a_felem functions.
   Proof.
     intros functions Hadd_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p384_curve_add_general_ok; eauto using
-      p384_three_b_loader_ok, p384_a_loader_ok.
+    (* Explicit discharge.  [eapply p384_curve_add_general_ok; eauto using
+       p384_three_b_loader_ok, p384_a_loader_ok] measured 853 s
+       (scripts/logs/final_rebuild_0829_1605.log, chars 26999-27092): the
+       [eauto] closure retries unification against
+       [spec_of_rcb_add_general p384_three_b_felem p384_a_felem] once per
+       candidate, over the six-limb felem constants and the whole section
+       context.  Naming the two loader facts and supplying every argument
+       removes the search, and leaving the environment premise as the one
+       hole defers its conversion to a separate [exact] -- the shape
+       [p384_curve_add_general_ok] itself uses. *)
+    pose proof (p384_three_b_loader_ok functions Htb_env) as Htb.
+    pose proof (p384_a_loader_ok functions Ha_env) as Ha.
+    refine (p384_curve_add_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hadd_env.
   Qed.
 
   (** The derived add meets its FElem-level spec. *)
@@ -618,7 +630,13 @@ Section P384_wNAF.
       spec_of_rcb_add_general p384_three_b_felem p384_a_felem functions.
   Proof.
     intros functions (Hadd & Htb & Ha & _ & _ & _ & _ & _) (Hmul & Hfadd & Hsub & _ & _).
-    eapply p384_curve_add_general_full; eassumption.
+    (* Same treatment as [p384_curve_add_general_full] above.  The former
+       [eapply p384_curve_add_general_full; eassumption] measured 859 s
+       (chars 27466-27514 of the same log) even though [eassumption]
+       performs no search: the cost is [eapply]'s unification of the
+       conclusion, which a fully applied term avoids. *)
+    refine (p384_curve_add_general_full functions _ Htb Ha Hmul Hfadd Hsub).
+    exact Hadd.
   Qed.
 
   Lemma p384_felem_copy_spec :

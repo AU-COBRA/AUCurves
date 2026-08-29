@@ -195,8 +195,16 @@ Section P256_Loaders.
       spec_of_rcb_add_general p256_three_b_felem p256_a_felem functions.
   Proof.
     intros functions Hadd_env Htb_env Ha_env Hmul Hadd Hsub.
-    eapply p256_curve_add_general_ok; eauto using
-      p256_three_b_loader_ok, p256_a_loader_ok.
+    (* Explicit discharge.  The former [eapply p256_curve_add_general_ok;
+       eauto using p256_three_b_loader_ok, p256_a_loader_ok] measured 88 s
+       (scripts/logs/dbl_chain_0829_0934.log); the six-limb P-384 analogue
+       of the same sentence measured 853 s.  Naming the two loader facts
+       and supplying every argument removes the search; the environment
+       premise is the single hole, discharged by the following [exact]. *)
+    pose proof (p256_three_b_loader_ok functions Htb_env) as Htb.
+    pose proof (p256_a_loader_ok functions Ha_env) as Ha.
+    refine (p256_curve_add_general_ok functions _ Hmul Hadd Hsub Htb Ha).
+    exact Hadd_env.
   Qed.
 
 End P256_Loaders.

@@ -28,9 +28,9 @@
     [symmetry_iff1], [curve_add_g_of_gallina],
     [felem_copy_HFelemCopy], [opp_HOpp], [store_zero_from_word_ok],
     [stackalloc_FElem], [FElem_dealloc], [felem_copy_FElem],
-    [opp_FElem], [opp_inplace_ok].  Admitted — the two multi-stackalloc
-    wrapper-body lemmas ([curve_add_inplace_general_ok],
-    [curve_double_general_ok]).  Proof templates:
+    [opp_FElem], [felem_copy_to_temp], [FElem2_dealloc],
+    [opp_inplace_ok], [curve_add_inplace_general_ok].  Admitted — one
+    wrapper-body lemma, [curve_double_general_ok].  Proof templates:
     CurveAddInplaceWrapper.v (stack temps + copy back),
     CurveAddGeneralA_P256_Loaders.v (start_func / straightline),
     wNAF_Single_Proof.v (per-call letexists / weaken_call pattern).
@@ -237,22 +237,8 @@ Section Specs.
          * FElem (Some tight_bounds) pY2 Y2' * FElem (Some tight_bounds) pZ2 Z2'
          * R0)%sep m')).
 
-  (** Proof template (CurveAddInplaceWrapper.v phases 1-5):
-      start_func; 3 stackallocs (anybytes -> FElem None via
-      felem_alloc / P_from_bytes); 3 felem_copy (FElem None dst is
-      bytes: FElem_to_bytes) giving tight temps; the derived call with
-      Rout := the frame (uses the six disjoint inputs + three tight
-      temps); 3 felem_copy back (dst pXo etc. as bytes); dealloc the
-      temps (P_to_bytes); rewrite with [curve_add_g_of_gallina]. *)
-  Lemma curve_add_inplace_general_ok :
-    forall functions,
-      map.get functions "curve_add"
-        = Some (snd curve_add_inplace_general_func) ->
-      spec_of_rcb_add_general three_b a_const functions ->
-      spec_of_felem_copy functions ->
-      spec_of_curve_add_inplace_general functions.
-  Proof.
-  Admitted.
+  (** [curve_add_inplace_general_ok] proves this; it is stated below,
+      after the transport lemmas and the WP plumbing it needs. *)
 
   (* ---- HCurveDouble ---------------------------------------------- *)
 
@@ -268,15 +254,8 @@ Section Specs.
         (FElem (Some tight_bounds) pX Xo * FElem (Some tight_bounds) pY Yo
          * FElem (Some tight_bounds) pZ Zo * R0)%sep m').
 
-  Lemma curve_double_general_ok :
-    forall functions,
-      map.get functions "curve_double"
-        = Some (snd curve_double_general_func) ->
-      spec_of_rcb_add_general three_b a_const functions ->
-      spec_of_felem_copy functions ->
-      spec_of_curve_double_general functions.
-  Proof.
-  Admitted.
+  (** [curve_double_general_ok] is stated below, with the other
+      wrapper-body lemmas. *)
 
   (* ---- Transport between the two FElem layers --------------------- *)
 
@@ -641,6 +620,57 @@ Section Specs.
     ecancel_assumption.
   Qed.
 
+  (** [felem_copy] from an [FElem]-layer source into a raw stack
+      temporary, leaving both buffers on the [FElem] layer.  This is the
+      shape every wrapper body needs for its "copy into the temp" step:
+      the destination has no bounds on entry (it is fresh stack), and
+      the copy makes it tight-bounded at the source's value. *)
+  Lemma felem_copy_to_temp :
+    forall functions,
+      spec_of_felem_copy functions ->
+      forall pDst pSrc (v : F) (xd : felem) (R0 : mem -> Prop) tr0 m0,
+        (FElem (Some tight_bounds) pSrc v * Field.FElem pDst xd * R0)%sep m0 ->
+        Semantics.call functions felem_copy tr0 m0 [pDst; pSrc]
+          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
+            (FElem (Some tight_bounds) pSrc v
+             * FElem (Some tight_bounds) pDst v * R0)%sep m').
+  Proof.
+    intros functions Hcopy pDst pSrc v xd R0 tr0 m0 Hsep.
+    assert (Hs : (FElem (Some tight_bounds) pSrc v
+                  * (Field.FElem pDst xd * R0))%sep m0)
+      by ecancel_assumption.
+    destruct (FElem2_elim_frame _ _ _ _ _ Hs) as (xs & Hfe_s & Hbd_s & Hs').
+    cbv [Compilation2.maybe_bounded] in Hbd_s.
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_FElem; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr' m' rets Hpost. cbv beta in Hpost.
+    destruct Hpost as (Hrets & Htr & Hpost).
+    split; [exact Hrets|]. split; [exact Htr|].
+    assert (K1 : (FElem (Some tight_bounds) pSrc v
+                  * (Field.FElem pDst xs * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pSrc xs v _ _ Hfe_s Hbd_s);
+          ecancel_assumption).
+    assert (K2 : (FElem (Some tight_bounds) pDst v
+                  * (FElem (Some tight_bounds) pSrc v * R0))%sep m')
+      by (apply (FElem2_intro_frame tight_bounds pDst xs v _ _ Hfe_s Hbd_s);
+          ecancel_assumption).
+    ecancel_assumption.
+  Qed.
+
+  (** [FElem_dealloc] one layer up: a stack temporary that a copy has
+      left on the [FElem] layer is handed back to the [cmd.stackalloc]
+      deallocation obligation.  The value and bounds are discarded. *)
+  Lemma FElem2_dealloc (b : option bounds) (a : word) (v : F)
+        (P : mem -> Prop) (mC : mem) :
+    (FElem b a v * P)%sep mC ->
+    exists m mS, bedrock2.Memory.anybytes a felem_size_in_bytes mS
+                 /\ map.split mC m mS /\ P m.
+  Proof.
+    intros H.
+    destruct (FElem2_elim_frame _ _ _ _ _ H) as (x & _ & _ & H').
+    exact (FElem_dealloc _ _ _ _ H').
+  Qed.
+
   (** Locals lookups in a [map.put] chain, and the argument-list
       evaluation of a call whose arguments mix variables and literals —
       which [straightline] does not consume, leaving the goal as the
@@ -828,6 +858,196 @@ Section Specs.
                Hfe_r' Hbd_r).
       ecancel_assumption.
   Qed.
+
+  (* ---- HCurveAddInplace body (G2) --------------------------------- *)
+
+  (** Body: three stack temporaries; three copies in, which make the
+      temporaries tight-bounded (what the derived spec demands of its
+      output buffers, plan G2); the derived nine-buffer add with the
+      temporaries as outputs; three copies back; three deallocations.
+      The copies are what reconciles the chain's aliased ABI
+      ([pXo;pX2;pYo;pY2;pZo;pZ2;pXo;pYo;pZo], outputs aliasing input 1)
+      with the derived spec's requirement that all nine buffers be
+      pairwise disjoint: the derived call sees the three fresh
+      temporaries as its outputs.
+
+      All three [felem_copy] calls in stay on the [FElem] layer via
+      [felem_copy_to_temp]; the three copies back are the already-proved
+      [felem_copy_HFelemCopy].  The derived spec is applied by explicit
+      [specialize] rather than [eapply] so that none of its nine ghost
+      values is left to unification. *)
+  Lemma curve_add_inplace_general_ok :
+    forall functions,
+      map.get functions "curve_add"
+        = Some (snd curve_add_inplace_general_func) ->
+      spec_of_rcb_add_general three_b a_const functions ->
+      spec_of_felem_copy functions ->
+      spec_of_curve_add_inplace_general functions.
+  Proof.
+    intros functions Henv Hadd Hcopy.
+    cbv [spec_of_rcb_add_general] in Hadd.
+    (* [CurveAddGeneralA.v] imports [CompilationAbstract], whose [FElem]
+       is the delta-alias
+       [@Compilation2.FElem width BW word mem field_parameters
+        field_representation].  The two are convertible but not
+       syntactically equal, and [ecancel] compares reified atoms
+       syntactically — so without this the derived spec's nine
+       precondition leaves cancel against nothing and
+       [ecancel_assumption]'s [multimatch] exhausts ("No matching
+       clauses for match", measured).  Rewriting the whole hypothesis
+       fixes the postcondition's leaves too, which the three copies
+       back then consume. *)
+    change CompilationAbstract.FElem with Compilation2.FElem in Hadd.
+    cbv [spec_of_curve_add_inplace_general].
+    intros pXo pX2 pYo pY2 pZo pZ2 X Y Z X2' Y2' Z2' R0 tr0 m0 Hsep.
+    eapply WeakestPreconditionProperties.start_func; [ exact Henv | ].
+    cbv match beta delta
+      [WeakestPrecondition.func curve_add_inplace_general_func snd].
+    eexists. split. { reflexivity. }
+    (* --- three stack temporaries --- *)
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    split; [ apply felem_size_in_bytes_mod | ].
+    intros atx mSx mCx Hanyx Hsplitx.
+    cbv beta zeta delta [dlet.dlet].
+    destruct (stackalloc_FElem _ _ _ _ _ Hanyx Hsplitx Hsep) as (xtx & Hax).
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    split; [ apply felem_size_in_bytes_mod | ].
+    intros aty mSy mCy Hanyy Hsplity.
+    cbv beta zeta delta [dlet.dlet].
+    destruct (stackalloc_FElem _ _ _ _ _ Hanyy Hsplity Hax) as (xty & Hay).
+    unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+    split; [ apply felem_size_in_bytes_mod | ].
+    intros atz mSz mCz Hanyz Hsplitz.
+    cbv beta zeta delta [dlet.dlet].
+    destruct (stackalloc_FElem _ _ _ _ _ Hanyz Hsplitz Hay) as (xtz & Haz).
+    clear Hsep Hax Hay.
+    (* --- felem_copy(tx, X1) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_to_temp; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr1 m1 rets1 Hp1. cbv beta in Hp1.
+    destruct Hp1 as (Hr1 & Ht1 & Hm1). subst rets1. subst tr1. clear Haz.
+    eexists. split. { exact eq_refl. }
+    (* --- felem_copy(ty, Y1) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_to_temp; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr2 m2 rets2 Hp2. cbv beta in Hp2.
+    destruct Hp2 as (Hr2 & Ht2 & Hm2). subst rets2. subst tr2. clear Hm1.
+    eexists. split. { exact eq_refl. }
+    (* --- felem_copy(tz, Z1) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_to_temp; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr3 m3 rets3 Hp3. cbv beta in Hp3.
+    destruct Hp3 as (Hr3 & Ht3 & Hm3). subst rets3. subst tr3. clear Hm2.
+    eexists. split. { exact eq_refl. }
+    (* --- curve_add_general(tx,ty,tz, X1,Y1,Z1, X2,Y2,Z2) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    specialize (Hadd atx aty atz pXo pYo pZo pX2 pY2 pZ2
+                  X Y Z X2' Y2' Z2' X Y Z R0 tr0 m3).
+    eapply Semantics.weaken_call.
+    1: { apply Hadd;
+         first [ ecancel_assumption
+               | lazymatch goal with
+                 | |- ?G => fail 99 "ADD-PRECOND:" G
+                 end ]. }
+    intros tr4 m4 rets4 Hp4. cbv beta in Hp4.
+    destruct Hp4 as (Hr4 & Ht4 & outx & outy & outz & Hgal & Hm4).
+    subst rets4. subst tr4. clear Hm3.
+    eexists. split. { exact eq_refl. }
+    (* --- felem_copy(X1, tx) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_HFelemCopy;
+         [ exact Hcopy
+         | first [ ecancel_assumption
+                 | lazymatch goal with
+                   | |- ?G => fail 99 "COPYBACK-X-PRECOND:" G
+                   end ] ]. }
+    intros tr5 m5 rets5 Hp5. cbv beta in Hp5.
+    destruct Hp5 as (Hr5 & Ht5 & Hm5). subst rets5. subst tr5. clear Hm4.
+    eexists. split. { exact eq_refl. }
+    (* --- felem_copy(Y1, ty) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_HFelemCopy; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr6 m6 rets6 Hp6. cbv beta in Hp6.
+    destruct Hp6 as (Hr6 & Ht6 & Hm6). subst rets6. subst tr6. clear Hm5.
+    eexists. split. { exact eq_refl. }
+    (* --- felem_copy(Z1, tz) --- *)
+    wp_expose_call.
+    eexists. split. { solve [ eval_call_args ]. }
+    eapply Semantics.weaken_call.
+    1: { eapply felem_copy_HFelemCopy; [ exact Hcopy | ecancel_assumption ]. }
+    intros tr7 m7 rets7 Hp7. cbv beta in Hp7.
+    destruct Hp7 as (Hr7 & Ht7 & Hm7). subst rets7. subst tr7. clear Hm6.
+    eexists. split. { exact eq_refl. }
+    cbv beta.
+    (* --- give the three temporaries back, innermost (tz) first --- *)
+    assert (Hdz : (FElem (Some tight_bounds) atz outz
+                   * (FElem (Some tight_bounds) atx outx
+                      * (FElem (Some tight_bounds) aty outy
+                         * (FElem (Some tight_bounds) pXo outx
+                            * (FElem (Some tight_bounds) pYo outy
+                               * (FElem (Some tight_bounds) pZo outz
+                                  * (FElem (Some tight_bounds) pX2 X2'
+                                     * (FElem (Some tight_bounds) pY2 Y2'
+                                        * (FElem (Some tight_bounds) pZ2 Z2'
+                                           * R0)))))))))%sep m7)
+      by ecancel_assumption.
+    clear Hm7.
+    destruct (FElem2_dealloc _ _ _ _ _ Hdz) as (mz & mSz2 & Habz & Hspz & Hpz).
+    exists mz, mSz2. split; [ exact Habz | ]. split; [ exact Hspz | ]. cbv beta.
+    assert (Hdy : (FElem (Some tight_bounds) aty outy
+                   * (FElem (Some tight_bounds) atx outx
+                      * (FElem (Some tight_bounds) pXo outx
+                         * (FElem (Some tight_bounds) pYo outy
+                            * (FElem (Some tight_bounds) pZo outz
+                               * (FElem (Some tight_bounds) pX2 X2'
+                                  * (FElem (Some tight_bounds) pY2 Y2'
+                                     * (FElem (Some tight_bounds) pZ2 Z2'
+                                        * R0))))))))%sep mz)
+      by ecancel_assumption.
+    clear Hpz.
+    destruct (FElem2_dealloc _ _ _ _ _ Hdy) as (my & mSy2 & Haby & Hspy & Hpy).
+    exists my, mSy2. split; [ exact Haby | ]. split; [ exact Hspy | ]. cbv beta.
+    destruct (FElem2_dealloc _ _ _ _ _ Hpy) as (mx & mSx2 & Habx & Hspx & Hpx).
+    exists mx, mSx2. split; [ exact Habx | ]. split; [ exact Hspx | ].
+    (* --- the wrapper's postcondition --- *)
+    cbv beta match fix delta [list_map list_map_body].
+    split; [ reflexivity | ]. split; [ reflexivity | ].
+    assert (Hcg : curve_add_g (X, Y, Z) (X2', Y2', Z2') = (outx, outy, outz)).
+    { apply curve_add_g_of_gallina.
+      first [ exact Hgal
+            | apply Hgal
+            | lazymatch goal with
+              | |- ?G => fail 99 "curve_add: gallina equation mismatch:" G
+              end ]. }
+    rewrite Hcg. cbv beta iota.
+    ecancel_assumption.
+  Qed.
+
+  (* ---- HCurveDouble body (G3) ------------------------------------- *)
+
+  (** Same shape as [curve_add_inplace_general_ok] with six temporaries:
+      three carry the second operand (the derived spec forbids
+      P1 = P2 aliasing) and three are the outputs. *)
+  Lemma curve_double_general_ok :
+    forall functions,
+      map.get functions "curve_double"
+        = Some (snd curve_double_general_func) ->
+      spec_of_rcb_add_general three_b a_const functions ->
+      spec_of_felem_copy functions ->
+      spec_of_curve_double_general functions.
+  Proof.
+  Admitted.
 
   (* ---- HStoreZero (G8) -------------------------------------------- *)
 

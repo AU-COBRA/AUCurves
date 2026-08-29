@@ -26,13 +26,11 @@
     Honesty ledger (this file): proved — [FElem2_elim_frame],
     [FElem2_intro_frame], [FElem2_intro3], [FElem2_intro3R],
     [symmetry_iff1], [curve_add_g_of_gallina],
-    [felem_copy_HFelemCopy], [opp_HOpp], [store_zero_from_word_ok].
-    Admitted — the three wrapper-body lemmas
-    ([curve_add_inplace_general_ok], [curve_double_general_ok],
-    [opp_inplace_ok]): each needs the stackalloc/dealloc cascade on top
-    of the function entry, which no wrapper proof in this repository has
-    carried out yet — [CurveAddInplaceWrapper.v] gives its template in
-    comments only.  Proof templates:
+    [felem_copy_HFelemCopy], [opp_HOpp], [store_zero_from_word_ok],
+    [stackalloc_FElem], [FElem_dealloc], [felem_copy_FElem],
+    [opp_FElem], [opp_inplace_ok].  Admitted — the two multi-stackalloc
+    wrapper-body lemmas ([curve_add_inplace_general_ok],
+    [curve_double_general_ok]).  Proof templates:
     CurveAddInplaceWrapper.v (stack temps + copy back),
     CurveAddGeneralA_P256_Loaders.v (start_func / straightline),
     wNAF_Single_Proof.v (per-call letexists / weaken_call pattern).
@@ -494,48 +492,154 @@ Section Specs.
     ecancel_assumption.
   Qed.
 
-  (* ---- HOppInplace via the wrapper (G5) --------------------------- *)
+  (* ---- Shared WP plumbing for the wrapper bodies ------------------- *)
 
-  (** Both shapes of the chain's negation hypothesis, at the wrapper
-      name.  Usable by the chain only after its [opp] name is made a
-      parameter (plan G5). *)
-  Definition spec_of_opp_inplace (functions : Semantics.env) : Prop :=
-    (forall pOut pIn (Y : F) (Yold : F) R0 tr0 m0,
-        (FElem (Some tight_bounds) pIn Y
-         * FElem (Some tight_bounds) pOut Yold * R0)%sep m0 ->
-        Semantics.call functions "opp_inplace" tr0 m0 [pOut; pIn]
-          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
-            (FElem (Some tight_bounds) pIn Y
-             * FElem (Some tight_bounds) pOut (F.opp Y) * R0)%sep m'))
-    /\
-    (forall p (Y : F) R0 tr0 m0,
-        (FElem (Some tight_bounds) p Y * R0)%sep m0 ->
-        Semantics.call functions "opp_inplace" tr0 m0 [p; p]
-          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
-            (FElem (Some tight_bounds) p (F.opp Y) * R0)%sep m')).
+  (** [Memory.bytes_per_word] is positive at both supported widths.
+      [Types.word_size_in_bytes_pos] states this already but needs a
+      [Types.ok] instance, which this section does not carry; the proof
+      is the same two-case split. *)
+  Lemma bytes_per_word_pos : 0 < bedrock2.Memory.bytes_per_word width.
+  Proof. destruct Bitwidth.width_cases as [H | H]; rewrite H; cbv; trivial. Qed.
 
-  Lemma opp_inplace_ok :
-    forall functions,
-      map.get functions "opp_inplace" = Some (snd opp_inplace_func) ->
-      spec_of_UnOp un_opp functions ->
-      spec_of_felem_copy functions ->
-      spec_of_opp_inplace functions.
+  Lemma felem_size_in_bytes_nonneg : 0 <= felem_size_in_bytes.
   Proof.
-  Admitted.
+    pose proof bytes_per_word_pos as Hbw.
+    pose proof (Nat2Z.is_nonneg felem_size_in_words) as Hnw.
+    (* [felem_size_in_bytes] is a definitional record field, so [apply]
+       sees through it (as [felem_size_in_bytes_mod] relies on); the
+       [change] branch is the fallback if it does not. *)
+    first [ apply Z.mul_nonneg_nonneg; lia
+          | (change felem_size_in_bytes
+               with (Z.of_nat felem_size_in_words
+                     * bedrock2.Memory.bytes_per_word width);
+             apply Z.mul_nonneg_nonneg; lia) ].
+  Qed.
 
-  (* ---- HStoreZero (G8) -------------------------------------------- *)
+  (** A stack block, as delivered by the [cmd.stackalloc] weakest
+      precondition, viewed as one uninitialised field element: the
+      [anybytes] block becomes a byte array ([anybytes_to_array_1]) and
+      then a [Field.FElem] ([felem_from_bytearray]), merged into the
+      ambient chain through the [map.split] the WP hands over.  This
+      replaces [Util/BignumStoreFold.stackalloc_anybytes_to_arrays],
+      which is hard-wired to [BasicC64Semantics.word] and so unusable in
+      this width-generic section. *)
+  Lemma stackalloc_FElem (a : word) (mS m mC : mem) (P : mem -> Prop) :
+    bedrock2.Memory.anybytes a felem_size_in_bytes mS ->
+    map.split mC m mS ->
+    P m ->
+    exists x : felem, (Field.FElem a x * P)%sep mC.
+  Proof.
+    intros Hany Hsplit HP.
+    destruct (bedrock2.Array.anybytes_to_array_1 _ _ _ Hany)
+      as (bs & Harr & Hlen).
+    pose proof (felem_from_bytearray a bs Hlen) as Hiff.
+    cbv [Lift1Prop.iff1] in Hiff.
+    apply (proj1 (Hiff mS)) in Harr.
+    assert (H0 : (P * Field.FElem a (bs2felem bs))%sep mC)
+      by (exists m, mS;
+          split; [ exact Hsplit | split; [ exact HP | exact Harr ] ]).
+    exists (bs2felem bs). ecancel_assumption.
+  Qed.
 
-  (** [StoreZero.spec_of_store_zero]: inputs [FElem None], outputs
-      [(F.of_Z 0, F.of_Z 1, F.of_Z 0)] tight.  From [spec_of_from_word]:
-      [feval X = F.of_Z _ (word.unsigned (word.of_Z 0))] and
-      [word.unsigned_of_Z_0]; [FElem None] -> bytes for the destination. *)
+  (** The converse, for the deallocation obligation of [cmd.stackalloc].
+      [array_1_to_anybytes] reports the size as
+      [Z.of_nat (length (ws2bs ..))]; [ws2bs_felem_length] and [Z2Nat.id]
+      normalise it to [felem_size_in_bytes], which is what the WP's
+      existential asks for. *)
+  Lemma FElem_dealloc (a : word) (x : felem) (P : mem -> Prop) (mC : mem) :
+    (Field.FElem a x * P)%sep mC ->
+    exists m mS, bedrock2.Memory.anybytes a felem_size_in_bytes mS
+                 /\ map.split mC m mS /\ P m.
+  Proof.
+    intros H.
+    assert (H' : (P * Field.FElem a x)%sep mC) by ecancel_assumption.
+    destruct H' as (m & mS & Hsplit & HP & Hstk).
+    pose proof (felem_to_bytearray a x) as Hiff.
+    cbv [Lift1Prop.iff1] in Hiff.
+    apply (proj1 (Hiff mS)) in Hstk.
+    exists m, mS.
+    split; [ | split; [ exact Hsplit | exact HP ] ].
+    pose proof (bedrock2.Array.array_1_to_anybytes _ _ _ Hstk) as Hab.
+    rewrite ws2bs_felem_length in Hab.
+    rewrite Z2Nat.id in Hab by apply felem_size_in_bytes_nonneg.
+    exact Hab.
+  Qed.
 
-  (** [iff1] symmetry: coqutil defines [Lift1Prop.iff1] but this
-      bedrock2 exports no named symmetry lemma, and [seprewrite_in <- H]
-      is not accepted here — so state it locally and pass it explicitly. *)
-  Lemma symmetry_iff1 {T} (P Q : T -> Prop) :
-    Lift1Prop.iff1 P Q -> Lift1Prop.iff1 Q P.
-  Proof. intros H x; split; apply H. Qed.
+  (** [felem_copy] with [Field.FElem] leaves on both sides: the
+      destination's old contents supply the ghost byte list the fiat
+      spec writes into ([felem_to_bytes]). *)
+  Lemma felem_copy_FElem :
+    forall functions,
+      spec_of_felem_copy functions ->
+      forall pDst pSrc (xs xd : felem) (R0 : mem -> Prop) tr0 m0,
+        (Field.FElem pSrc xs * Field.FElem pDst xd * R0)%sep m0 ->
+        Semantics.call functions felem_copy tr0 m0 [pDst; pSrc]
+          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
+            (Field.FElem pSrc xs * Field.FElem pDst xs * R0)%sep m').
+  Proof.
+    intros functions Hcopy pDst pSrc xs xd R0 tr0 m0 Hsep.
+    assert (Hd : (Field.FElem pDst xd
+                  * (Field.FElem pSrc xs * R0))%sep m0)
+      by ecancel_assumption.
+    seprewrite_in (felem_to_bytes pDst xd) Hd.
+    eapply Semantics.weaken_call.
+    1: { eapply Hcopy.
+         split; [ ecancel_assumption | apply ws2bs_felem_length ]. }
+    intros tr' m' rets Hpost. cbv beta in Hpost.
+    destruct Hpost as (Hrets & Htr & Hpost).
+    split; [exact Hrets|]. split; [exact Htr|].
+    ecancel_assumption.
+  Qed.
+
+  (** [opp] with [Field.FElem] leaves and the result witness exposed —
+      [opp_HOpp] one layer down.  The callee's [un_outbounds] is
+      [loose_bounds]; [Hbounds_eq] converts it. *)
+  Lemma opp_FElem :
+    forall functions,
+      spec_of_UnOp un_opp functions ->
+      forall pOut pIn (xi xo : felem) (R0 : mem -> Prop) tr0 m0,
+        bounded_by tight_bounds xi ->
+        (Field.FElem pIn xi * Field.FElem pOut xo * R0)%sep m0 ->
+        Semantics.call functions opp tr0 m0 [pOut; pIn]
+          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
+            exists xr : felem,
+              feval xr = F.opp (feval xi)
+              /\ bounded_by tight_bounds xr
+              /\ (Field.FElem pIn xi * Field.FElem pOut xr * R0)%sep m').
+  Proof.
+    intros functions Hopp pOut pIn xi xo R0 tr0 m0 Hbd_i Hsep.
+    assert (Ho : (Field.FElem pOut xo
+                  * (Field.FElem pIn xi * R0))%sep m0)
+      by ecancel_assumption.
+    seprewrite_in (felem_to_bytes pOut xo) Ho.
+    eapply Semantics.weaken_call.
+    1: { eapply Hopp.
+         ssplit;
+           [ exact Hbd_i
+           | (* length of the ghost byte list: deferred *)
+           | eexists; ecancel_assumption
+           | ecancel_assumption ].
+         apply ws2bs_felem_length. }
+    intros tr' m' rets Hpost. cbv beta in Hpost.
+    destruct Hpost as (Hrets & Htr & xres & Hfe_res & Hbd_res & Hpost).
+    split; [exact Hrets|]. split; [exact Htr|].
+    exists xres.
+    assert (Hbd_res' : bounded_by tight_bounds xres)
+      by (first
+            [ exact Hbd_res
+            | (rewrite <- Hbounds_eq; exact Hbd_res)
+            | (cbn [un_outbounds un_opp] in Hbd_res;
+               rewrite Hbounds_eq in Hbd_res; exact Hbd_res)
+            | (cbv [un_outbounds un_opp] in Hbd_res;
+               rewrite Hbounds_eq in Hbd_res; exact Hbd_res) ]).
+    assert (Hfe_res' : feval xres = F.opp (feval xi))
+      by (first
+            [ exact Hfe_res
+            | (cbn [un_model un_opp] in Hfe_res; exact Hfe_res)
+            | (cbv [un_model un_opp] in Hfe_res; exact Hfe_res) ]).
+    split; [exact Hfe_res'|]. split; [exact Hbd_res'|].
+    ecancel_assumption.
+  Qed.
 
   (** Locals lookups in a [map.put] chain, and the argument-list
       evaluation of a call whose arguments mix variables and literals —
@@ -563,6 +667,181 @@ Section Specs.
       [ exact eq_refl
       | (eexists; split; [ solve [ solve_mapget ] | ])
       | (eexists; split; [ exact eq_refl | ]) ]).
+
+  (** Peel [cmd.seq]/[cmd.call] until the call's argument existential is
+      exposed.  [straightline]'s own [cmd] branch does this, but here it
+      is invoked on its own so that a body proof never runs the rest of
+      [straightline] over a stackalloc context. *)
+  Local Ltac wp_expose_call :=
+    repeat (lazymatch goal with
+            | |- WeakestPrecondition.cmd _ _ _ _ _ _ =>
+                unfold1_cmd_goal;
+                cbv beta match delta [WeakestPrecondition.cmd_body]
+            end).
+
+  (* ---- HOppInplace via the wrapper (G5) --------------------------- *)
+
+  (** Both shapes of the chain's negation hypothesis, at the wrapper
+      name.  Usable by the chain only after its [opp] name is made a
+      parameter (plan G5). *)
+  Definition spec_of_opp_inplace (functions : Semantics.env) : Prop :=
+    (forall pOut pIn (Y : F) (Yold : F) R0 tr0 m0,
+        (FElem (Some tight_bounds) pIn Y
+         * FElem (Some tight_bounds) pOut Yold * R0)%sep m0 ->
+        Semantics.call functions "opp_inplace" tr0 m0 [pOut; pIn]
+          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
+            (FElem (Some tight_bounds) pIn Y
+             * FElem (Some tight_bounds) pOut (F.opp Y) * R0)%sep m'))
+    /\
+    (forall p (Y : F) R0 tr0 m0,
+        (FElem (Some tight_bounds) p Y * R0)%sep m0 ->
+        Semantics.call functions "opp_inplace" tr0 m0 [p; p]
+          (fun tr' m' rets => rets = [] /\ tr0 = tr' /\
+            (FElem (Some tight_bounds) p (F.opp Y) * R0)%sep m')).
+
+  (** Body: [stackalloc "t"; felem_copy(t, Yin); opp(Yout, t)].  The
+      temporary makes the negation aliasing-tolerant: [opp]'s input is
+      always the stack copy, so its input and output buffers are
+      disjoint in both conjuncts, including the fully aliased one.
+
+      The stackalloc is handled by hand rather than by [straightline]:
+      its [Z.modulo n (bytes_per_word width) = 0] branch fires only on a
+      [Z] literal, and [straightline_stackalloc] closes its size side
+      condition with [ZifyInst.of_nat_to_nat_eq], which needs
+      [Z.max 0 n] to reduce to [n] — both fail for the symbolic
+      [felem_size_in_bytes].  [stackalloc_FElem] / [FElem_dealloc] do
+      the two conversions instead. *)
+  Lemma opp_inplace_ok :
+    forall functions,
+      map.get functions "opp_inplace" = Some (snd opp_inplace_func) ->
+      spec_of_UnOp un_opp functions ->
+      spec_of_felem_copy functions ->
+      spec_of_opp_inplace functions.
+  Proof.
+    intros functions Henv Hopp Hcopy.
+    cbv [spec_of_opp_inplace]. split.
+    - (* ---- distinct output and input buffers ---- *)
+      intros pOut pIn Y Yold R0 tr0 m0 Hsep.
+      assert (Hi : (FElem (Some tight_bounds) pIn Y
+                    * (FElem (Some tight_bounds) pOut Yold * R0))%sep m0)
+        by ecancel_assumption.
+      destruct (FElem2_elim_frame _ _ _ _ _ Hi) as (xi & Hfe_i & Hbd_i & Hi').
+      assert (Ho : (FElem (Some tight_bounds) pOut Yold
+                    * (Field.FElem pIn xi * R0))%sep m0)
+        by ecancel_assumption.
+      destruct (FElem2_elim_frame _ _ _ _ _ Ho) as (xo & Hfe_o & Hbd_o & Ho').
+      cbv [Compilation2.maybe_bounded] in Hbd_i, Hbd_o.
+      clear Hsep Hi Ho Hi'.
+      eapply WeakestPreconditionProperties.start_func; [ exact Henv | ].
+      cbv match beta delta
+        [WeakestPrecondition.func opp_inplace_func snd].
+      eexists. split. { reflexivity. }
+      (* stackalloc "t" *)
+      unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+      split; [ apply felem_size_in_bytes_mod | ].
+      intros astk mStack mComb Hany Hsplit.
+      cbv beta zeta delta [dlet.dlet].
+      destruct (stackalloc_FElem _ _ _ _ _ Hany Hsplit Ho') as (xt & Hmc).
+      clear Ho'.
+      (* felem_copy(t, Yin) *)
+      wp_expose_call.
+      eexists. split. { solve [ eval_call_args ]. }
+      eapply Semantics.weaken_call.
+      1: { eapply felem_copy_FElem; [ exact Hcopy | ecancel_assumption ]. }
+      intros tr1 m1 rets1 Hp1. cbv beta in Hp1.
+      destruct Hp1 as (Hr1 & Ht1 & Hm1). subst rets1. clear Hmc.
+      eexists. split. { exact eq_refl. }
+      (* opp(Yout, t) *)
+      wp_expose_call.
+      eexists. split. { solve [ eval_call_args ]. }
+      eapply Semantics.weaken_call.
+      1: { eapply opp_FElem; [ exact Hopp | exact Hbd_i | ecancel_assumption ]. }
+      intros tr2 m2 rets2 Hp2. cbv beta in Hp2.
+      destruct Hp2 as (Hr2 & Ht2 & xr & Hfe_r & Hbd_r & Hm2).
+      subst rets2. clear Hm1.
+      eexists. split. { exact eq_refl. }
+      (* give the temporary back *)
+      assert (Hstk : (Field.FElem astk xi
+                      * (Field.FElem pIn xi
+                         * (Field.FElem pOut xr * R0)))%sep m2)
+        by ecancel_assumption.
+      destruct (FElem_dealloc _ _ _ _ Hstk) as (mR & mS' & Hab & HspR & HPR).
+      exists mR, mS'.
+      split; [ exact Hab | ]. split; [ exact HspR | ].
+      cbv beta match fix delta [list_map list_map_body].
+      split; [ reflexivity | ].
+      split; [ etransitivity; [ exact Ht1 | exact Ht2 ] | ].
+      assert (Hfe_r' : feval xr = F.opp Y)
+        by (rewrite Hfe_r, Hfe_i; reflexivity).
+      assert (K1 : (FElem (Some tight_bounds) pOut (F.opp Y)
+                    * (Field.FElem pIn xi * R0))%sep mR)
+        by (apply (FElem2_intro_frame tight_bounds pOut xr (F.opp Y) _ _
+                     Hfe_r' Hbd_r);
+            ecancel_assumption).
+      assert (K2 : (FElem (Some tight_bounds) pIn Y
+                    * (FElem (Some tight_bounds) pOut (F.opp Y) * R0))%sep mR)
+        by (apply (FElem2_intro_frame tight_bounds pIn xi Y _ _ Hfe_i Hbd_i);
+            ecancel_assumption).
+      ecancel_assumption.
+    - (* ---- fully aliased: opp_inplace(p, p) ---- *)
+      intros p Y R0 tr0 m0 Hsep.
+      destruct (FElem2_elim_frame _ _ _ _ _ Hsep) as (xi & Hfe_i & Hbd_i & Hi').
+      cbv [Compilation2.maybe_bounded] in Hbd_i.
+      clear Hsep.
+      eapply WeakestPreconditionProperties.start_func; [ exact Henv | ].
+      cbv match beta delta
+        [WeakestPrecondition.func opp_inplace_func snd].
+      eexists. split. { reflexivity. }
+      unfold1_cmd_goal; cbv beta match delta [WeakestPrecondition.cmd_body].
+      split; [ apply felem_size_in_bytes_mod | ].
+      intros astk mStack mComb Hany Hsplit.
+      cbv beta zeta delta [dlet.dlet].
+      destruct (stackalloc_FElem _ _ _ _ _ Hany Hsplit Hi') as (xt & Hmc).
+      clear Hi'.
+      wp_expose_call.
+      eexists. split. { solve [ eval_call_args ]. }
+      eapply Semantics.weaken_call.
+      1: { eapply felem_copy_FElem; [ exact Hcopy | ecancel_assumption ]. }
+      intros tr1 m1 rets1 Hp1. cbv beta in Hp1.
+      destruct Hp1 as (Hr1 & Ht1 & Hm1). subst rets1. clear Hmc.
+      eexists. split. { exact eq_refl. }
+      wp_expose_call.
+      eexists. split. { solve [ eval_call_args ]. }
+      eapply Semantics.weaken_call.
+      1: { eapply opp_FElem; [ exact Hopp | exact Hbd_i | ecancel_assumption ]. }
+      intros tr2 m2 rets2 Hp2. cbv beta in Hp2.
+      destruct Hp2 as (Hr2 & Ht2 & xr & Hfe_r & Hbd_r & Hm2).
+      subst rets2. clear Hm1.
+      eexists. split. { exact eq_refl. }
+      assert (Hstk : (Field.FElem astk xi
+                      * (Field.FElem p xr * R0))%sep m2)
+        by ecancel_assumption.
+      destruct (FElem_dealloc _ _ _ _ Hstk) as (mR & mS' & Hab & HspR & HPR).
+      exists mR, mS'.
+      split; [ exact Hab | ]. split; [ exact HspR | ].
+      cbv beta match fix delta [list_map list_map_body].
+      split; [ reflexivity | ].
+      split; [ etransitivity; [ exact Ht1 | exact Ht2 ] | ].
+      assert (Hfe_r' : feval xr = F.opp Y)
+        by (rewrite Hfe_r, Hfe_i; reflexivity).
+      apply (FElem2_intro_frame tight_bounds p xr (F.opp Y) _ _
+               Hfe_r' Hbd_r).
+      ecancel_assumption.
+  Qed.
+
+  (* ---- HStoreZero (G8) -------------------------------------------- *)
+
+  (** [StoreZero.spec_of_store_zero]: inputs [FElem None], outputs
+      [(F.of_Z 0, F.of_Z 1, F.of_Z 0)] tight.  From [spec_of_from_word]:
+      [feval X = F.of_Z _ (word.unsigned (word.of_Z 0))] and
+      [word.unsigned_of_Z_0]; [FElem None] -> bytes for the destination. *)
+
+  (** [iff1] symmetry: coqutil defines [Lift1Prop.iff1] but this
+      bedrock2 exports no named symmetry lemma, and [seprewrite_in <- H]
+      is not accepted here — so state it locally and pass it explicitly. *)
+  Lemma symmetry_iff1 {T} (P Q : T -> Prop) :
+    Lift1Prop.iff1 P Q -> Lift1Prop.iff1 Q P.
+  Proof. intros H x; split; apply H. Qed.
 
   (** One [from_word] call: re-expose the command head (the entry [cbv]
       leaves [cmd.seq] folded), let [straightline] resolve what it can,

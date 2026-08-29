@@ -83,7 +83,14 @@ fn main() {
     time("g1_scalar_mul (256-bit)", 2_000, || {
         acc = g1_scalar_mul(black_box(&k), black_box(&g))
     });
+    time("g1_scalar_mul_base (256-bit)", 20_000, || {
+        acc = g1_scalar_mul_base(black_box(&k))
+    });
     black_box(&acc);
+    println!(
+        "    (fixed-base table: W={}, {} windows x {} entries = {} bytes of .rodata)",
+        BASE_W, BASE_WINDOWS, BASE_TSIZE, BASE_TABLE_BYTES
+    );
 
     // ------------- extracted add -------------
     #[cfg(feature = "extracted")]
@@ -109,5 +116,18 @@ fn main() {
             p256_g1_add_extracted(black_box(&mut o), black_box(&mut a), black_box(&mut b))
         });
         black_box(&o);
+
+        // The Rocq-emitted w=4 wNAF driver (variable time; see
+        // src/scalar_mul_extracted.rs).  Compare against the
+        // "g1_scalar_mul (256-bit)" line above, which is the
+        // constant-time width-1 double-and-add-always ladder.
+        use p256::wnaf::{g1_scalar_mul_wnaf, wnaf_digits_w4};
+        time("wnaf digit encode (glue)", 200_000, || {
+            black_box(wnaf_digits_w4(black_box(&k)));
+        });
+        time("g1_scalar_mul wNAF (extracted)", 2_000, || {
+            acc = g1_scalar_mul_wnaf(black_box(&k), black_box(&g))
+        });
+        black_box(&acc);
     }
 }

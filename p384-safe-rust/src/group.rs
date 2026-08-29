@@ -18,9 +18,9 @@
 //!     secp384r1 values.  `b`, `Gx`, `Gy`, `N` are validated jointly by
 //!     the tests (`g_on_curve`, `order_times_g_is_identity`).
 
-use crate::{
-    fp_add, fp_inv, fp_mul, fp_opp, fp_square, fp_sub, fp_to_montgomery, Fp, FpRaw,
-};
+use crate::{fp_add, fp_inv, fp_mul, fp_opp, fp_square, fp_sub, Fp};
+#[cfg(test)]
+use crate::{fp_to_montgomery, FpRaw};
 
 // ---------------------------------------------------------------------------
 // Curve constants (canonical limbs, little-endian u64)
@@ -89,6 +89,12 @@ fn fp_zero() -> Fp {
 /// Montgomery encoding of 1 (i.e. R mod p).
 #[inline]
 fn fp_one() -> Fp {
+    ONE_MONT
+}
+
+/// Runtime recomputation of [`ONE_MONT`], for the drift test.
+#[cfg(test)]
+fn fp_one_computed() -> Fp {
     let mut out = fp_zero();
     let mut raw = FpRaw([0u64; 6]);
     raw.0[0] = 1;
@@ -96,7 +102,9 @@ fn fp_one() -> Fp {
     out
 }
 
-/// Montgomery encoding of a canonical limb value.
+/// Montgomery encoding of a canonical limb value.  Only the drift tests
+/// need it now that the curve constants are stored pre-encoded.
+#[cfg(test)]
 #[inline]
 fn fp_from_canon(limbs: &[u64; 6]) -> Fp {
     let mut out = fp_zero();
@@ -104,22 +112,102 @@ fn fp_from_canon(limbs: &[u64; 6]) -> Fp {
     out
 }
 
+// ---------------------------------------------------------------------------
+// Precomputed Montgomery encodings
+//
+// `g1_add` used to recompute `a` and `3b` on every call (two
+// `to_montgomery` conversions plus two adds per addition).  The
+// Rocq-emitted body in `g1_extracted.rs` loads them from byte literals
+// instead.  The constants below are those same values;
+// `mont_constants_match_runtime` recomputes them at test time and
+// `mont_constants_match_extracted_literals` compares them against the
+// `cA` / `cB3` literals, so they cannot silently drift.
+// ---------------------------------------------------------------------------
+
+/// Montgomery encoding of 1 (R mod p).
+pub const ONE_MONT: Fp = Fp([
+    0xffffffff00000001,
+    0x00000000ffffffff,
+    0x0000000000000001,
+    0x0000000000000000,
+    0x0000000000000000,
+    0x0000000000000000,
+]);
+
+/// Montgomery encoding of a = -3 mod p.
+/// Equals the `cA` literal of `g1_extracted.rs` read as little-endian u64s.
+pub const A_MONT: Fp = Fp([
+    0x00000003fffffffc,
+    0xfffffffc00000000,
+    0xfffffffffffffffb,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+]);
+
+/// Montgomery encoding of b.
+pub const B_MONT: Fp = Fp([
+    0x081188719d412dcc,
+    0xf729add87a4c32ec,
+    0x77f2209b1920022e,
+    0xe3374bee94938ae2,
+    0xb62b21f41f022094,
+    0xcd08114b604fbff9,
+]);
+
+/// Montgomery encoding of 3b.
+/// Equals the `cB3` literal of `g1_extracted.rs` read as little-endian u64s.
+pub const THREE_B_MONT: Fp = Fp([
+    0x18349952d7c38966,
+    0xe57d098b6ee498c4,
+    0x67d661d14b60068e,
+    0xa9a5e3cbbdbaa0a7,
+    0x228165dc5d0661be,
+    0x671833e220ef3fed,
+]);
+
+/// Montgomery encoding of the base-point x-coordinate.
+pub const GX_MONT: Fp = Fp([
+    0x3dd0756649c0b528,
+    0x20e378e2a0d6ce38,
+    0x879c3afc541b4d6e,
+    0x6454868459a30eff,
+    0x812ff723614ede2b,
+    0x4d3aadc2299e1513,
+]);
+
+/// Montgomery encoding of the base-point y-coordinate.
+pub const GY_MONT: Fp = Fp([
+    0x23043dad4b03a4fe,
+    0xa1bfa8bf7bb4a9ac,
+    0x8bade7562e83b050,
+    0xc6c3521968f4ffd9,
+    0xdd8002263969a840,
+    0x2b78abc25a15c5e9,
+]);
+
 /// a in Montgomery form.
 #[inline]
 pub fn a_mont() -> Fp {
-    fp_from_canon(&A_CANON)
+    A_MONT
 }
 
 /// b in Montgomery form.
 #[inline]
 pub fn b_mont() -> Fp {
-    fp_from_canon(&B_CANON)
+    B_MONT
 }
 
 /// 3*b mod p in Montgomery form.
 #[inline]
 pub fn three_b_mont() -> Fp {
-    let b = b_mont();
+    THREE_B_MONT
+}
+
+/// Runtime recomputation of [`THREE_B_MONT`] as b + b + b, for the drift test.
+#[cfg(test)]
+fn three_b_mont_computed() -> Fp {
+    let b = fp_from_canon(&B_CANON);
     let mut t = fp_zero();
     fp_add(&mut t, &b, &b);
     let mut out = fp_zero();
@@ -165,9 +253,9 @@ pub fn g1_identity() -> G1 {
 /// The standard base point G, in projective coordinates (Gx : Gy : 1).
 pub fn g1_generator() -> G1 {
     G1 {
-        x: fp_from_canon(&GX_CANON),
-        y: fp_from_canon(&GY_CANON),
-        z: fp_one(),
+        x: GX_MONT,
+        y: GY_MONT,
+        z: ONE_MONT,
     }
 }
 
@@ -236,8 +324,6 @@ pub fn g1_is_on_curve_affine(x: &Fp, y: &Fp) -> bool {
 /// Straight-line code over constant-time fiat field ops: no
 /// secret-dependent branches or memory accesses.
 pub fn g1_add(p: &G1, q: &G1) -> G1 {
-    let a_c = a_mont();
-    let b3 = three_b_mont();
 
     let (x1, y1, z1) = (&p.x, &p.y, &p.z);
     let (x2, y2, z2) = (&q.x, &q.y, &q.z);
@@ -279,9 +365,9 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     fp_sub(&mut tmp, &t5, &x3);         // 18: t5 := t5 - X3
     t5 = tmp;
     // Step 19: Z3 := a * t4
-    fp_mul(&mut z3, &a_c, &t4);
+    fp_mul(&mut z3, &A_MONT, &t4);
     // Step 20: X3 := 3b * t2
-    fp_mul(&mut x3, &b3, &t2);
+    fp_mul(&mut x3, &THREE_B_MONT, &t2);
     // Step 21: Z3 := X3 + Z3
     fp_add(&mut tmp, &x3, &z3);
     z3 = tmp;
@@ -297,10 +383,10 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     fp_add(&mut tmp, &t1, &t0);
     t1 = tmp;
     // Step 27: t2 := a * t2
-    fp_mul(&mut tmp, &a_c, &t2);
+    fp_mul(&mut tmp, &A_MONT, &t2);
     t2 = tmp;
     // Step 28: t4 := 3b * t4
-    fp_mul(&mut tmp, &b3, &t4);
+    fp_mul(&mut tmp, &THREE_B_MONT, &t4);
     t4 = tmp;
     // Step 29: t1 := t1 + t2
     fp_add(&mut tmp, &t1, &t2);
@@ -309,7 +395,7 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     fp_sub(&mut tmp, &t0, &t2);
     t2 = tmp;
     // Step 31: t2 := a * t2
-    fp_mul(&mut tmp, &a_c, &t2);
+    fp_mul(&mut tmp, &A_MONT, &t2);
     t2 = tmp;
     // Step 32: t4 := t4 + t2
     fp_add(&mut tmp, &t4, &t2);
@@ -345,7 +431,13 @@ pub fn g1_double(p: &G1) -> G1 {
 /// returns `a` if bit = 0, `b` if bit = 1.  `bit` must be 0 or 1.
 #[inline]
 fn ct_select_limbs(a: &[u64; 6], b: &[u64; 6], bit: u64) -> [u64; 6] {
-    let mask = 0u64.wrapping_sub(bit); // 0x00..0 or 0xff..f
+    ct_select_limbs_mask(a, b, 0u64.wrapping_sub(bit)) // 0x00..0 or 0xff..f
+}
+
+/// Constant-time conditional select on a full mask: returns `a` if
+/// `mask == 0`, `b` if `mask == u64::MAX`.
+#[inline]
+fn ct_select_limbs_mask(a: &[u64; 6], b: &[u64; 6], mask: u64) -> [u64; 6] {
     let mut out = [0u64; 6];
     let mut i = 0;
     while i < 6 {
@@ -383,6 +475,95 @@ pub fn g1_scalar_mul(k: &[u64; 6], p: &G1) -> G1 {
         let bit = (k[(i as usize) / 64] >> ((i as usize) % 64)) & 1;
         acc = ct_select_point(&acc, &with_p, bit);
         i -= 1;
+    }
+    acc
+}
+
+// ---------------------------------------------------------------------------
+// Fixed-base scalar multiplication (precomputed table for G)
+// ---------------------------------------------------------------------------
+
+mod g_table;
+
+/// Window width of the fixed-base table, in bits.
+///
+/// Chosen by measurement: the per-window table scan is cheap next to the
+/// one complete addition per window, so the cost is dominated by
+/// `ceil(384/W)` additions; W=5 is the knee of the speed/size curve
+/// (see the P-256 crate's `BASE_W` note for the W=4/5/6 numbers).
+pub const BASE_W: usize = 5;
+
+/// Number of windows, `ceil(384 / BASE_W)`.
+pub const BASE_WINDOWS: usize = (384 + BASE_W - 1) / BASE_W;
+
+/// Non-zero digits per window, `2^BASE_W - 1`.
+pub const BASE_TSIZE: usize = (1 << BASE_W) - 1;
+
+/// Size of the precomputed table in bytes
+/// (`BASE_WINDOWS * BASE_TSIZE` affine points, 2 x 48 bytes each).
+pub const BASE_TABLE_BYTES: usize = BASE_WINDOWS * BASE_TSIZE * 2 * 48;
+
+/// Constant-time equality mask: `u64::MAX` when `a == b`, else 0.
+#[inline]
+fn ct_eq_mask(a: u64, b: u64) -> u64 {
+    let d = a ^ b;
+    let nonzero = (d | d.wrapping_neg()) >> 63;
+    nonzero.wrapping_sub(1)
+}
+
+/// The `i`-th `BASE_W`-bit digit of the scalar, LSB-first window order.
+/// `i` is a loop counter, never secret.
+#[inline]
+fn base_digit(k: &[u64; 6], i: usize) -> u64 {
+    let mut d = 0u64;
+    let mut b = 0;
+    while b < BASE_W {
+        let idx = i * BASE_W + b;
+        if idx < 384 {
+            d |= ((k[idx / 64] >> (idx % 64)) & 1) << b;
+        }
+        b += 1;
+    }
+    d
+}
+
+/// Constant-time fixed-base scalar multiplication: `k * G`.
+///
+/// `k` is 6 little-endian u64 limbs, an integer in `[0, 2^384)` with no
+/// reduction mod n — the same convention as [`g1_scalar_mul`].
+///
+/// The scalar is split into [`BASE_WINDOWS`] digits of [`BASE_W`] bits.
+/// Digit `d` of window `i` selects `d * 2^(BASE_W*i) * G` from the
+/// precomputed table `g_table::G_TABLE`, so there are no doublings — one
+/// complete addition per window instead of the ladder's 768.
+///
+/// Constant-time: the lookup is a full linear scan of all [`BASE_TSIZE`]
+/// entries of the window with a limb-mask select ([`ct_eq_mask`] /
+/// [`ct_select_limbs_mask`]), so the addresses touched and the instruction
+/// trace depend only on the public `BASE_W` / `BASE_WINDOWS`.  `d = 0`
+/// leaves the identity in `sel`, which the complete formula handles with
+/// no special case.
+pub fn g1_scalar_mul_base(k: &[u64; 6]) -> G1 {
+    let mut acc = g1_identity();
+    let mut i = 0;
+    while i < BASE_WINDOWS {
+        let digit = base_digit(k, i);
+        let mut sx = [0u64; 6];
+        let mut sy = ONE_MONT.0;
+        let mut sz = [0u64; 6];
+        let mut j = 1usize;
+        while j <= BASE_TSIZE {
+            let e = &g_table::G_TABLE[i * BASE_TSIZE + (j - 1)];
+            let m = ct_eq_mask(digit, j as u64);
+            sx = ct_select_limbs_mask(&sx, &e[0], m);
+            sy = ct_select_limbs_mask(&sy, &e[1], m);
+            sz = ct_select_limbs_mask(&sz, &ONE_MONT.0, m);
+            j += 1;
+        }
+        let sel = G1 { x: Fp(sx), y: Fp(sy), z: Fp(sz) };
+        // `i` is public, so this branch leaks nothing; it saves one add.
+        acc = if i == 0 { sel } else { g1_add(&acc, &sel) };
+        i += 1;
     }
     acc
 }
@@ -444,6 +625,105 @@ mod tests {
             }
         }
         false
+    }
+
+    /// The hoisted Montgomery constants must equal the runtime computation
+    /// they replaced, so they cannot silently drift.
+    #[test]
+    fn mont_constants_match_runtime() {
+        assert!(fp_eq(&ONE_MONT, &fp_one_computed()), "ONE_MONT");
+        assert!(fp_eq(&A_MONT, &fp_from_canon(&A_CANON)), "A_MONT");
+        assert!(fp_eq(&B_MONT, &fp_from_canon(&B_CANON)), "B_MONT");
+        assert!(fp_eq(&THREE_B_MONT, &three_b_mont_computed()), "THREE_B_MONT");
+        assert!(fp_eq(&GX_MONT, &fp_from_canon(&GX_CANON)), "GX_MONT");
+        assert!(fp_eq(&GY_MONT, &fp_from_canon(&GY_CANON)), "GY_MONT");
+    }
+
+    /// `A_MONT` / `THREE_B_MONT` must equal the `cA` / `cB3` byte literals of
+    /// the Rocq-emitted `g1_extracted.rs`, read little-endian.
+    #[test]
+    fn mont_constants_match_extracted_literals() {
+        let ca: [u8; 48] = [
+            252, 255, 255, 255, 3, 0, 0, 0, 0, 0, 0, 0, 252, 255, 255, 255, 251, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        ];
+        let cb3: [u8; 48] = [
+            102, 137, 195, 215, 82, 153, 52, 24, 196, 152, 228, 110, 139, 9, 125, 229, 142, 6, 96,
+            75, 209, 97, 214, 103, 167, 160, 186, 189, 203, 227, 165, 169, 190, 97, 6, 93, 220,
+            101, 129, 34, 237, 63, 239, 32, 226, 51, 24, 103,
+        ];
+        let le = |bs: &[u8; 48]| {
+            let mut o = [0u64; 6];
+            for (i, w) in o.iter_mut().enumerate() {
+                *w = u64::from_le_bytes(bs[8 * i..8 * i + 8].try_into().unwrap());
+            }
+            o
+        };
+        assert_eq!(A_MONT.0, le(&ca), "A_MONT vs g1_extracted cA");
+        assert_eq!(THREE_B_MONT.0, le(&cb3), "THREE_B_MONT vs g1_extracted cB3");
+    }
+
+    /// Every entry of the fixed-base table must equal the corresponding
+    /// multiple of G obtained by repeated `g1_add` from the generator.
+    #[test]
+    fn base_table_entries_match_repeated_addition() {
+        assert_eq!(g_table::G_TABLE.len(), BASE_WINDOWS * BASE_TSIZE);
+        let mut base = g1_generator(); // 2^(BASE_W*i) * G
+        for i in 0..BASE_WINDOWS {
+            let mut acc = base; // j * 2^(BASE_W*i) * G
+            for j in 1..=BASE_TSIZE {
+                let e = &g_table::G_TABLE[i * BASE_TSIZE + (j - 1)];
+                let want = G1 { x: Fp(e[0]), y: Fp(e[1]), z: ONE_MONT };
+                assert!(
+                    pt_eq(&want, &acc),
+                    "G_TABLE[{i}][{j}] != {j} * 2^({BASE_W}*{i}) * G"
+                );
+                assert!(
+                    g1_is_on_curve_affine(&Fp(e[0]), &Fp(e[1])),
+                    "G_TABLE[{i}][{j}] is not on the curve"
+                );
+                acc = g1_add(&acc, &base);
+            }
+            for _ in 0..BASE_W {
+                base = g1_double(&base);
+            }
+        }
+    }
+
+    #[test]
+    fn base_mul_matches_ladder() {
+        let g = g1_generator();
+        for v in [0u64, 1, 2, 3, 31, 32, 33, 1023, 1024, u64::MAX] {
+            let k = small_scalar(v);
+            assert!(
+                pt_eq(&g1_scalar_mul_base(&k), &g1_scalar_mul(&k, &g)),
+                "g1_scalar_mul_base disagrees with the ladder at k = {v}"
+            );
+        }
+        assert!(g1_is_identity(&g1_scalar_mul_base(&N_CANON)), "n * G != O");
+    }
+
+    #[test]
+    fn base_mul_matches_ladder_on_large_scalars() {
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let g = g1_generator();
+        for _ in 0..4 {
+            let mut k = [0u64; 6];
+            for w in k.iter_mut() {
+                *w = next();
+            }
+            assert!(
+                pt_eq(&g1_scalar_mul_base(&k), &g1_scalar_mul(&k, &g)),
+                "g1_scalar_mul_base disagrees with the ladder"
+            );
+        }
     }
 
     #[test]

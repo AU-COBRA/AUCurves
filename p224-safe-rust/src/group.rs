@@ -131,15 +131,71 @@ fn fp_is_zero(x: &Fp) -> bool {
     x.0 == [0u64; 4]
 }
 
-/// Montgomery-domain curve constant a = -3.
-#[inline]
-fn a_mont() -> Fp {
-    mont(P224_A)
-}
+// ---------------------------------------------------------------------------
+// Precomputed Montgomery encodings
+//
+// `g1_add` used to recompute `a` and `3b` on every call (two
+// `to_montgomery` conversions plus two adds per addition).  The
+// Rocq-emitted body in `g1_extracted.rs` loads them from byte literals
+// instead.  The constants below are those same values;
+// `mont_constants_match_runtime` recomputes them at test time and
+// `mont_constants_match_extracted_literals` compares them against the
+// `cA` / `cB3` literals, so they cannot silently drift.
+// ---------------------------------------------------------------------------
 
-/// Montgomery-domain curve constant 3*b.
-#[inline]
-fn three_b_mont() -> Fp {
+/// Montgomery encoding of 1 (R mod p).
+pub const ONE_MONT: Fp = Fp([
+    0xffffffff00000000,
+    0xffffffffffffffff,
+    0x0000000000000000,
+    0x0000000000000000,
+]);
+
+/// Montgomery encoding of a = -3 mod p.
+/// Equals the `cA` literal of `g1_extracted.rs` read as little-endian u64s.
+pub const A_MONT: Fp = Fp([
+    0x0000000300000001,
+    0xffffffff00000000,
+    0xfffffffffffffffc,
+    0x00000000ffffffff,
+]);
+
+/// Montgomery encoding of b.
+pub const B_MONT: Fp = Fp([
+    0xe768cdf663c059cd,
+    0x107ac2f3ccf01310,
+    0x3dceba98c8528151,
+    0x000000007fc02f93,
+]);
+
+/// Montgomery encoding of 3b.
+/// Equals the `cB3` literal of `g1_extracted.rs` read as little-endian u64s.
+pub const THREE_B_MONT: Fp = Fp([
+    0xb63a69e32b410d66,
+    0x317048dc66d03932,
+    0xb96c2fca58f783f3,
+    0x000000007f408eb9,
+]);
+
+/// Montgomery encoding of the base-point x-coordinate.
+pub const GX_MONT: Fp = Fp([
+    0xbc9052266d0a4aea,
+    0x852597366018bfaa,
+    0x6dd3af9bf96bec05,
+    0x00000000a21b5e60,
+]);
+
+/// Montgomery encoding of the base-point y-coordinate.
+pub const GY_MONT: Fp = Fp([
+    0x2edca1e5eff3ede8,
+    0xf8cd672b05335a6b,
+    0xaea9c5ae03dfe878,
+    0x00000000614786f1,
+]);
+
+/// Runtime recomputation of [`THREE_B_MONT`] as b + b + b, for the drift test.
+#[cfg(test)]
+fn three_b_mont_computed() -> Fp {
     let b = mont(P224_B);
     let b2 = add(&b, &b);
     add(&b2, &b)
@@ -161,7 +217,7 @@ pub struct G1 {
 pub fn g1_identity() -> G1 {
     G1 {
         x: fp_zero(),
-        y: mont([1, 0, 0, 0]),
+        y: ONE_MONT,
         z: fp_zero(),
     }
 }
@@ -183,8 +239,6 @@ pub fn g1_neg(p: &G1) -> G1 {
 /// in `src/Bedrock/Curve/P256_G1_Add_Spec.v` (proved correct for P-256;
 /// the sequence is generic in `a_mont` / `three_b_mont`).
 pub fn g1_add(p: &G1, q: &G1) -> G1 {
-    let a_c = a_mont();
-    let b3 = three_b_mont();
     let (x1, y1, z1) = (&p.x, &p.y, &p.z);
     let (x2, y2, z2) = (&q.x, &q.y, &q.z);
 
@@ -208,8 +262,8 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     let x3 = add(&t1, &t2); // 17: X3 := t1 + t2
     let t5 = sub(&t5, &x3); // 18: t5 := t5 - X3
     // Steps 19-24
-    let z3 = mul(&a_c, &t4); // 19: Z3 := a * t4
-    let x3 = mul(&b3, &t2); // 20: X3 := 3b * t2
+    let z3 = mul(&A_MONT, &t4); // 19: Z3 := a * t4
+    let x3 = mul(&THREE_B_MONT, &t2); // 20: X3 := 3b * t2
     let z3 = add(&x3, &z3); // 21: Z3 := X3 + Z3
     let x3 = sub(&t1, &z3); // 22: X3 := t1 - Z3
     let z3 = add(&z3, &t1); // 23: Z3 := Z3 + t1
@@ -217,11 +271,11 @@ pub fn g1_add(p: &G1, q: &G1) -> G1 {
     // Steps 25-32
     let t1 = add(&t0, &t0); // 25: t1 := t0 + t0
     let t1 = add(&t1, &t0); // 26: t1 := t1 + t0
-    let t2 = mul(&a_c, &t2); // 27: t2 := a * t2
-    let t4 = mul(&b3, &t4); // 28: t4 := 3b * t4
+    let t2 = mul(&A_MONT, &t2); // 27: t2 := a * t2
+    let t4 = mul(&THREE_B_MONT, &t4); // 28: t4 := 3b * t4
     let t1 = add(&t1, &t2); // 29: t1 := t1 + t2
     let t2 = sub(&t0, &t2); // 30: t2 := t0 - t2
-    let t2 = mul(&a_c, &t2); // 31: t2 := a * t2
+    let t2 = mul(&A_MONT, &t2); // 31: t2 := a * t2
     let t4 = add(&t4, &t2); // 32: t4 := t4 + t2
     // Steps 33-40
     let t0 = mul(&t1, &t4); // 33: t0 := t1 * t4
@@ -251,7 +305,7 @@ pub fn g1_from_affine(x: &[u64; 4], y: &[u64; 4]) -> G1 {
     G1 {
         x: mont(*x),
         y: mont(*y),
-        z: mont([1, 0, 0, 0]),
+        z: ONE_MONT,
     }
 }
 
@@ -280,8 +334,8 @@ pub fn is_on_curve_affine(x: &[u64; 4], y: &[u64; 4]) -> bool {
     let lhs = square(&ym);
     let x2 = square(&xm);
     let x3 = mul(&x2, &xm);
-    let ax = mul(&a_mont(), &xm);
-    let rhs = add(&add(&x3, &ax), &mont(P224_B));
+    let ax = mul(&A_MONT, &xm);
+    let rhs = add(&add(&x3, &ax), &B_MONT);
     fp_eq(&lhs, &rhs)
 }
 
@@ -300,7 +354,7 @@ pub fn g1_eq(p: &G1, q: &G1) -> bool {
 
 /// The base point G.
 pub fn g1_generator() -> G1 {
-    g1_from_affine(&P224_GX, &P224_GY)
+    G1 { x: GX_MONT, y: GY_MONT, z: ONE_MONT }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +406,95 @@ pub fn g1_scalar_mul(k: &[u64; 4], p: &G1) -> G1 {
 }
 
 // ---------------------------------------------------------------------------
+// Fixed-base scalar multiplication (precomputed table for G)
+// ---------------------------------------------------------------------------
+
+mod g_table;
+
+/// Window width of the fixed-base table, in bits.
+///
+/// Chosen by measurement: the per-window table scan is cheap next to the
+/// one complete addition per window, so the cost is dominated by
+/// `ceil(224/W)` additions; W=5 is the knee of the speed/size curve
+/// (see the P-256 crate's `BASE_W` note for the W=4/5/6 numbers).
+pub const BASE_W: usize = 5;
+
+/// Number of windows, `ceil(224 / BASE_W)`.
+pub const BASE_WINDOWS: usize = (224 + BASE_W - 1) / BASE_W;
+
+/// Non-zero digits per window, `2^BASE_W - 1`.
+pub const BASE_TSIZE: usize = (1 << BASE_W) - 1;
+
+/// Size of the precomputed table in bytes
+/// (`BASE_WINDOWS * BASE_TSIZE` affine points, 2 x 32 bytes each).
+pub const BASE_TABLE_BYTES: usize = BASE_WINDOWS * BASE_TSIZE * 2 * 32;
+
+/// Constant-time equality mask: `u64::MAX` when `a == b`, else 0.
+#[inline]
+fn ct_eq_mask(a: u64, b: u64) -> u64 {
+    let d = a ^ b;
+    let nonzero = (d | d.wrapping_neg()) >> 63;
+    nonzero.wrapping_sub(1)
+}
+
+/// The `i`-th `BASE_W`-bit digit of the scalar, LSB-first window order.
+/// `i` is a loop counter, never secret.
+#[inline]
+fn base_digit(k: &[u64; 4], i: usize) -> u64 {
+    let mut d = 0u64;
+    let mut b = 0;
+    while b < BASE_W {
+        let idx = i * BASE_W + b;
+        if idx < 224 {
+            d |= ((k[idx / 64] >> (idx % 64)) & 1) << b;
+        }
+        b += 1;
+    }
+    d
+}
+
+/// Constant-time fixed-base scalar multiplication: `k * G`.
+///
+/// `k` is 4 little-endian u64 limbs and must be less than `2^224`, the
+/// same convention as [`g1_scalar_mul`]; bits 224..255 are ignored.
+///
+/// The scalar is split into [`BASE_WINDOWS`] digits of [`BASE_W`] bits.
+/// Digit `d` of window `i` selects `d * 2^(BASE_W*i) * G` from the
+/// precomputed table `g_table::G_TABLE`, so there are no doublings — one
+/// complete addition per window instead of the ladder's 448.
+///
+/// Constant-time: the lookup is a full linear scan of all [`BASE_TSIZE`]
+/// entries of the window with a limb-mask select ([`ct_eq_mask`] /
+/// [`fp_cmov`]), so the addresses touched and the instruction trace depend
+/// only on the public `BASE_W` / `BASE_WINDOWS`.  `d = 0` leaves the
+/// identity in `sel`, which the complete formula handles with no special
+/// case.
+pub fn g1_scalar_mul_base(k: &[u64; 4]) -> G1 {
+    let mut acc = g1_identity();
+    let mut i = 0;
+    while i < BASE_WINDOWS {
+        let digit = base_digit(k, i);
+        let mut sx = fp_zero();
+        let mut sy = ONE_MONT;
+        let mut sz = fp_zero();
+        let mut j = 1usize;
+        while j <= BASE_TSIZE {
+            let e = &g_table::G_TABLE[i * BASE_TSIZE + (j - 1)];
+            let m = ct_eq_mask(digit, j as u64);
+            sx = fp_cmov(m, &Fp(e[0]), &sx);
+            sy = fp_cmov(m, &Fp(e[1]), &sy);
+            sz = fp_cmov(m, &ONE_MONT, &sz);
+            j += 1;
+        }
+        let sel = G1 { x: sx, y: sy, z: sz };
+        // `i` is public, so this branch leaks nothing; it saves one add.
+        acc = if i == 0 { sel } else { g1_add(&acc, &sel) };
+        i += 1;
+    }
+    acc
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -377,6 +520,100 @@ mod tests {
         assert_eq!(carry, 0, "scalar sum overflows 256 bits");
         assert!(out[3] < 1u64 << 32, "scalar sum >= 2^224");
         out
+    }
+
+    /// The hoisted Montgomery constants must equal the runtime computation
+    /// they replaced, so they cannot silently drift.
+    #[test]
+    fn mont_constants_match_runtime() {
+        assert_eq!(ONE_MONT.0, mont([1, 0, 0, 0]).0, "ONE_MONT");
+        assert_eq!(A_MONT.0, mont(P224_A).0, "A_MONT");
+        assert_eq!(B_MONT.0, mont(P224_B).0, "B_MONT");
+        assert_eq!(THREE_B_MONT.0, three_b_mont_computed().0, "THREE_B_MONT");
+        assert_eq!(GX_MONT.0, mont(P224_GX).0, "GX_MONT");
+        assert_eq!(GY_MONT.0, mont(P224_GY).0, "GY_MONT");
+    }
+
+    /// `A_MONT` / `THREE_B_MONT` must equal the `cA` / `cB3` byte literals of
+    /// the Rocq-emitted `g1_extracted.rs`, read little-endian.
+    #[test]
+    fn mont_constants_match_extracted_literals() {
+        let ca: [u8; 32] = [
+            1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 252, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 0, 0, 0, 0,
+        ];
+        let cb3: [u8; 32] = [
+            102, 13, 65, 43, 227, 105, 58, 182, 50, 57, 208, 102, 220, 72, 112, 49, 243, 131, 247,
+            88, 202, 47, 108, 185, 185, 142, 64, 127, 0, 0, 0, 0,
+        ];
+        let le = |bs: &[u8; 32]| {
+            let mut o = [0u64; 4];
+            for (i, w) in o.iter_mut().enumerate() {
+                *w = u64::from_le_bytes(bs[8 * i..8 * i + 8].try_into().unwrap());
+            }
+            o
+        };
+        assert_eq!(A_MONT.0, le(&ca), "A_MONT vs g1_extracted cA");
+        assert_eq!(THREE_B_MONT.0, le(&cb3), "THREE_B_MONT vs g1_extracted cB3");
+    }
+
+    /// Every entry of the fixed-base table must equal the corresponding
+    /// multiple of G obtained by repeated `g1_add` from the generator.
+    #[test]
+    fn base_table_entries_match_repeated_addition() {
+        assert_eq!(g_table::G_TABLE.len(), BASE_WINDOWS * BASE_TSIZE);
+        let mut base = g1_generator(); // 2^(BASE_W*i) * G
+        for i in 0..BASE_WINDOWS {
+            let mut acc = base; // j * 2^(BASE_W*i) * G
+            for j in 1..=BASE_TSIZE {
+                let e = &g_table::G_TABLE[i * BASE_TSIZE + (j - 1)];
+                let want = G1 { x: Fp(e[0]), y: Fp(e[1]), z: ONE_MONT };
+                assert!(
+                    g1_eq(&want, &acc),
+                    "G_TABLE[{i}][{j}] != {j} * 2^({BASE_W}*{i}) * G"
+                );
+                acc = g1_add(&acc, &base);
+            }
+            for _ in 0..BASE_W {
+                base = g1_double(&base);
+            }
+        }
+    }
+
+    #[test]
+    fn base_mul_matches_ladder() {
+        let g = g1_generator();
+        for v in [0u64, 1, 2, 3, 31, 32, 33, 1023, 1024, u64::MAX] {
+            let k = scalar(v);
+            assert!(
+                g1_eq(&g1_scalar_mul_base(&k), &g1_scalar_mul(&k, &g)),
+                "g1_scalar_mul_base disagrees with the ladder at k = {v}"
+            );
+        }
+        assert!(g1_is_identity(&g1_scalar_mul_base(&P224_N)), "n * G != O");
+    }
+
+    #[test]
+    fn base_mul_matches_ladder_on_large_scalars() {
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let g = g1_generator();
+        for _ in 0..8 {
+            let mut k = [0u64; 4];
+            for w in k.iter_mut() {
+                *w = next();
+            }
+            k[3] &= 0x0000_0000_ffff_ffff; // keep k < 2^224
+            assert!(
+                g1_eq(&g1_scalar_mul_base(&k), &g1_scalar_mul(&k, &g)),
+                "g1_scalar_mul_base disagrees with the ladder"
+            );
+        }
     }
 
     #[test]

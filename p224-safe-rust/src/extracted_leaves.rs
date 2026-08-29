@@ -7,7 +7,7 @@
 //! limbs.  These shims adapt that byte-buffer ABI to the verified
 //! fiat-rust field functions.  Little-endian host assumed.
 
-use crate::{fp_add, fp_mul, fp_sub, Fp};
+use crate::{fp_add, fp_mul, fp_opp, fp_sub, Fp};
 
 #[inline]
 unsafe fn load_fp(p: *const u8) -> Fp {
@@ -45,5 +45,17 @@ pub unsafe fn p224_fp_sub(out: *mut u8, a: *const u8, b: *const u8) {
     let (a, b) = (load_fp(a), load_fp(b));
     let mut o = Fp([0u64; 4]);
     fp_sub(&mut o, &a, &b);
+    store_fp(out, &o);
+}
+
+/// Field negation, for the wNAF driver's digit-sign handling
+/// (`NistWnafScalarMultRustCmd.v`, the `REdCall opp_name` site).
+///
+/// # Safety
+/// `out` must point to 32 writable bytes; `a` to 32 readable bytes.
+pub unsafe fn p224_fp_opp(out: *mut u8, a: *const u8) {
+    let a = load_fp(a);
+    let mut o = Fp([0u64; 4]);
+    fp_opp(&mut o, &a);
     store_fp(out, &o);
 }

@@ -128,6 +128,28 @@ fn main() {
         (add, dbl, mul)
     };
 
+    // The Rocq-emitted w = 4 wNAF driver, when it is compiled in.
+    // VARIABLE TIME (branches on the digit, digit-indexed table read),
+    // unlike every other arm in this file.
+    #[cfg(feature = "extracted")]
+    let ours_wnaf = {
+        use p384::group::*;
+        use p384::wnaf::g1_scalar_mul_wnaf;
+        let g2 = g1_double(&g1_generator());
+        let mut acc = g2;
+        let mul = bench(N_MUL, || {
+            acc = g1_scalar_mul_wnaf(black_box(&K_LIMBS), black_box(&g2))
+        });
+        black_box(&acc);
+        println!(
+            "  g1_scalar_mul wNAF (Rocq-emitted, VARIABLE TIME): {:>10.1} ns/op   ({} iters)",
+            mul, N_MUL
+        );
+        Some(mul)
+    };
+    #[cfg(not(feature = "extracted"))]
+    let ours_wnaf: Option<f64> = None;
+
     println!();
 
     // ---------------------------------------------------------------
@@ -181,6 +203,9 @@ fn main() {
     row("add", ours_add, rc_add);
     row("double", ours_dbl, rc_dbl);
     row("scalar_mul (var-base)", ours_mul, rc_mul);
+    if let Some(w) = ours_wnaf {
+        row("  ^ wNAF, var-time", w, rc_mul);
+    }
     println!();
     println!("ratio = ours / RustCrypto; below 1.00 means this work is faster.");
     println!();
@@ -193,7 +218,10 @@ fn main() {
     println!("    window with a per-call 16-entry table of the input point");
     println!("    (384 dbl + 96 add).  primeorder 0.13.6 has no precomputed generator");
     println!("    tables, so no fixed-base path is being compared here.");
-    println!("  - BOTH arms are constant time in the scalar and the coordinates.");
+    println!("  - BOTH arms are constant time in the scalar and the coordinates -- EXCEPT");
+    println!("    the `wNAF, var-time` row, which is the Rocq-emitted w=4 wNAF driver of");
+    println!("    src/scalar_mul_extracted.rs.  That one branches on each digit and reads");
+    println!("    its 4-entry table at a digit-derived index, so it is NOT constant time.");
     println!("  - Field layer: both arms use the SAME fiat-crypto p384_64 word-by-word");
     println!("    Montgomery output, so this is close to a pure point-layer comparison.");
 }

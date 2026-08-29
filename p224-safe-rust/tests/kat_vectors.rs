@@ -524,6 +524,66 @@ fn large_scalar_kat() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The same KATs through the fixed-base (precomputed table) path
+// ---------------------------------------------------------------------------
+
+#[test]
+fn base_mul_matches_hardcoded_multiples() {
+    for (k, x, y) in kat_table() {
+        let pt = g1_scalar_mul_base(&narrow(&small_scalar(k)));
+        assert_eq!(
+            crate_affine(&pt),
+            Some((x, y)),
+            "g1_scalar_mul_base({}) disagrees with the KAT",
+            k
+        );
+    }
+}
+
+#[test]
+fn base_mul_large_scalar_kat() {
+    let k = hex_to_big(KBIG_HEX);
+    let want = Some((hex_to_big(KBIG_X), hex_to_big(KBIG_Y)));
+    assert_eq!(
+        crate_affine(&g1_scalar_mul_base(&narrow(&k))),
+        want,
+        "fixed-base large-scalar result disagrees with the KAT"
+    );
+    assert!(
+        g1_is_identity(&g1_scalar_mul_base(&narrow(&hex_to_big(N_HEX)))),
+        "fixed-base n * G != O"
+    );
+}
+
+#[test]
+fn base_mul_agrees_with_reference_on_random_scalars() {
+    let mut state: u64 = 0x1357_9bdf_2468_ace0;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let gaff = generator_aff();
+    let (a, pp) = (a_canon(), p());
+    for _ in 0..4 {
+        let mut k = [0u64; LN];
+        for i in 0..FL {
+            k[i] = next();
+        }
+        k[FL - 1] &= 0x0000_0000_03ff_ffff; // < 2^218 < n
+        let want = refimpl::mul(&k, &gaff, &a, &pp);
+        let got = crate_affine(&g1_scalar_mul_base(&narrow(&k)));
+        assert_eq!(
+            got,
+            want,
+            "fixed-base and reference disagree on k = {}",
+            big_to_hex(&k, 28)
+        );
+    }
+}
+
 #[test]
 fn scalar_mul_agrees_with_reference_on_random_scalars() {
     // Deterministic xorshift-generated scalars, masked to 218 bits so they

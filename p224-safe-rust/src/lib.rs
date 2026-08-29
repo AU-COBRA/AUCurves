@@ -45,6 +45,13 @@ pub mod group;
 pub mod extracted_leaves;
 #[cfg(feature = "extracted")]
 pub mod g1_extracted;
+/// Rocq-emitted w=4 wNAF scalar multiplication (variable time).
+#[cfg(feature = "extracted")]
+pub mod scalar_mul_extracted;
+/// Hand-written glue for the emitted wNAF driver: digit encoder and
+/// point (de)serialisation.
+#[cfg(feature = "extracted")]
+pub mod wnaf;
 
 #[cfg(test)]
 mod kat;

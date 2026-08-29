@@ -26,3 +26,15 @@ exclude = [
     "fiat-crypto",          # upstream submodule
     "curve25519-jasmin-rs", # has own [workspace]
 ]
+
+# Release profile for every workspace member.
+#
+# Cargo only honours [profile.*] in the workspace ROOT -- a copy in a member
+# crate is silently ignored, with a warning on every build.  All fifteen
+# members carried this identical block and all fifteen were being dropped,
+# so the whole tree was building with lto = false and codegen-units = 16.
+# Keep this here and nowhere else.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3

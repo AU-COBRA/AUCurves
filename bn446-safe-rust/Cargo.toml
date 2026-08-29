@@ -9,7 +9,3 @@ license = "Apache-2.0"
 name = "bn446"
 path = "src/lib.rs"
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-opt-level = 3

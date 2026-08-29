@@ -21,11 +21,6 @@ path = "examples/bench.rs"
 name = "multilin_test"
 path = "examples/multilin_test.rs"
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-opt-level = 3
-
 [[example]]
 name = "multilin_test_optimal"
 path = "examples/multilin_test_optimal.rs"

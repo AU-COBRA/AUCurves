@@ -21,11 +21,6 @@ path = "examples/bench_compare.rs"
 name = "bench_field"
 path = "examples/bench_field.rs"
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-opt-level = 3
-
 [dependencies]
 fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }

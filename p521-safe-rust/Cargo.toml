@@ -9,11 +9,6 @@ license = "Apache-2.0"
 name = "p521"
 path = "src/lib.rs"
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-opt-level = 3
-
 [dependencies]
 fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }

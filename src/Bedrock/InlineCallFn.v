@@ -38,13 +38,17 @@
  *     (lifts a spec [R c rs1 rs2] to [R (inline_n n ftab c) rs1 rs2]
  *     before extracting the inlined [c] to Jasmin).
  *   - Backward soundness [inline_callfn_one_preserves_semantics_bwd] :
- *     STATED, proof is [Admitted].  See the in-file note: BWD requires
- *     per-[ftab] structure (a [c0] of the form [REdCallFn] with a
- *     Seq-producing body inlines to the same shape as a structural [REdSeq],
- *     so the general statement is provable only with assumptions on the
- *     function table).  Not on the critical path for Jasmin extraction.
- *   - 0 new global Rocq axioms (only [Admitted] on the BWD theorem,
- *     which is section-local and only used by section-local consequences).
+ *     Qed, by induction on the derivation with [c] generalised.  The
+ *     non-injectivity of inlining (a [c0] of the form [REdCallFn] with a
+ *     Seq-producing body inlines to the same shape as a structural
+ *     [REdSeq]) turns out not to obstruct it: in the call case the
+ *     derivation in hand IS a derivation of [body dst args], so
+ *     [rexec_callfn] closes the goal with no induction hypothesis.  What
+ *     does obstruct a structural induction on [c] is [REdWhileNz] /
+ *     [REdFor]; inducting on the derivation avoids that.
+ *   - Consequently [inline_callfn_one_preserves_semantics] (iff) and
+ *     [inline_callfn_n_preserves_semantics] are Qed with no admits.
+ *   - 0 new global Rocq axioms, and no [Admitted] remains in this file.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -204,18 +208,46 @@ Qed.
     concrete [ftab] (e.g. [ed25519_function_table]) avoids this by
     case-analysis on the table's entries; we defer that to a per-table
     lemma where it's actually needed. *)
+(** The [REdCallFn] case of BWD.  Non-injectivity of inlining is not an
+    obstacle here: when [c0] is a call, the derivation in hand IS a
+    derivation of [body dst args], so [rexec_callfn] applies directly and
+    no induction hypothesis is needed. *)
+Lemma inline_callfn_bwd_callfn :
+  forall fname dst args rs1 rs2,
+    R (inline_callfn_one ftab (REdCallFn fname dst args)) rs1 rs2 ->
+    R (REdCallFn fname dst args) rs1 rs2.
+Proof.
+  intros fname dst args rs1 rs2 H. simpl in H.
+  destruct (List.find (fun p => String.eqb (fst p) fname) ftab) as [[nm body]|] eqn:Hf.
+  - assert (Hnm : nm = fname).
+    { apply List.find_some in Hf. destruct Hf as [_ Heq]. simpl in Heq.
+      apply String.eqb_eq in Heq. exact Heq. }
+    subst nm. eapply rexec_callfn; [ exact Hf | exact H ].
+  - exact H.
+Qed.
+
+(** Soundness, backward.  Structural induction on [c] fails for
+    [REdWhileNz] / [REdFor]; inducting on the derivation with [c]
+    generalised is what makes it go through. *)
 Theorem inline_callfn_one_preserves_semantics_bwd :
   forall c rs1 rs2,
     R (inline_callfn_one ftab c) rs1 rs2 ->
     R c rs1 rs2.
 Proof.
-  (* Deferred: needs per-[ftab] structure (see note above).
-     Statement retained so downstream consumers that need it can
-     supply the missing per-table case-analysis on a separate axiom. *)
-Admitted.
+  intros c rs1 rs2 H.
+  remember (inline_callfn_one ftab c) as cin eqn:Hc.
+  revert c Hc.
+  induction H; intros c0 Hc0; destruct c0; simpl in Hc0; try discriminate.
+  (* [solve] is load-bearing: [eauto] does not fail on an unsolved goal,
+     so without it [econstructor] picks the wrong
+     [REdIfNz]/[REdWhileNz]/[REdFor] rule and leaves residue. *)
+  all: try (apply inline_callfn_bwd_callfn; simpl; rewrite <- Hc0;
+            solve [ econstructor; eauto ]).
+  all: try (inversion Hc0; subst; solve [ econstructor; eauto ]).
+Qed.
 
 (** Soundness, iff.  Forward direction is the load-bearing one for
-    extraction; the backward direction is [Admitted] (see note above). *)
+    extraction; the backward direction is proved above. *)
 Theorem inline_callfn_one_preserves_semantics :
   forall c rs1 rs2,
     R c rs1 rs2 <-> R (inline_callfn_one ftab c) rs1 rs2.

@@ -105,6 +105,14 @@ Proof. intros. ring. Qed.
 Lemma iso_A_nonzero : iso_A <> 0f.
 Proof.
   intro H. apply (f_equal F.to_Z) in H.
+  (* Reduce to plain Z BEFORE computing.  [F p_pos] is a sigma type
+     carrying a proof component, so [vm_compute in H] normalises that
+     proof term as well as the value -- over a 381-bit modulus that is
+     where the gigabytes go.  [F.to_Z_of_Z] rewrites
+     [F.to_Z (F.of_Z m z)] to [z mod m], after which the computation is
+     ordinary Z arithmetic. *)
+  unfold iso_A in H.
+  rewrite ModularArithmeticTheorems.F.to_Z_of_Z in H.
   vm_compute in H. discriminate.
 Qed.
 
@@ -112,6 +120,14 @@ Qed.
 Lemma iso_B_nonzero : iso_B <> 0f.
 Proof.
   intro H. apply (f_equal F.to_Z) in H.
+  (* Reduce to plain Z BEFORE computing.  [F p_pos] is a sigma type
+     carrying a proof component, so [vm_compute in H] normalises that
+     proof term as well as the value -- over a 381-bit modulus that is
+     where the gigabytes go.  [F.to_Z_of_Z] rewrites
+     [F.to_Z (F.of_Z m z)] to [z mod m], after which the computation is
+     ordinary Z arithmetic. *)
+  unfold iso_B in H.
+  rewrite ModularArithmeticTheorems.F.to_Z_of_Z in H.
   vm_compute in H. discriminate.
 Qed.
 
@@ -119,6 +135,14 @@ Qed.
 Lemma swu_Z_nonzero : swu_Z <> 0f.
 Proof.
   intro H. apply (f_equal F.to_Z) in H.
+  (* Reduce to plain Z BEFORE computing.  [F p_pos] is a sigma type
+     carrying a proof component, so [vm_compute in H] normalises that
+     proof term as well as the value -- over a 381-bit modulus that is
+     where the gigabytes go.  [F.to_Z_of_Z] rewrites
+     [F.to_Z (F.of_Z m z)] to [z mod m], after which the computation is
+     ordinary Z arithmetic. *)
+  unfold swu_Z in H.
+  rewrite ModularArithmeticTheorems.F.to_Z_of_Z in H.
   vm_compute in H. discriminate.
 Qed.
 

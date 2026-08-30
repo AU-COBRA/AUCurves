@@ -2,6 +2,73 @@
 
 Hardware: Zen 4, criterion median, release profile.
 
+## Group operations and pairings — measured 2026-08-30
+
+Zen 4 (Ryzen 7 PRO 7840U), one core, `[profile.release]` with
+`lto = "fat", codegen-units = 1`.  Comparison arms run in the same
+process as ours, so the ratios are load-robust; absolute figures are
+not.  Ratio is ours / theirs, so below 1.00 means this project is
+faster.
+
+Note on earlier figures: until 2026-08-30 the workspace root carried no
+`[profile.release]`, so cargo discarded every member crate's
+`lto = "fat"` and the whole tree built with `lto = false`.  Comparison
+libraries whose field operations are not `#[inline]` lose more to that
+than fiat-crypto's do, so ratios measured before the fix flattered this
+project by up to twenty points on P-256.  Everything below is post-fix.
+
+### NIST curves against RustCrypto
+
+Both arms use the same a = -3 RCB Algorithm 4 / Algorithm 6 formulas
+over the same Montgomery representation, and both scalar
+multiplications are constant time with a 4-bit window.
+
+| Curve | Operation | Ours | RustCrypto | Ratio |
+|---|---|---:|---:|---:|
+| P-256 | `g1_add`    | 303.6 ns | 274.5 ns | 1.11x |
+| P-256 | `g1_double` | 270.6 ns | 247.4 ns | 1.09x |
+| P-256 | scalar mul (var-base) | 95.8 us | 89.8 us | 1.07x |
+| P-384 | `g1_add`    | 652.2 ns | 879.1 ns | **0.74x** |
+| P-384 | `g1_double` | 603.3 ns | 797.8 ns | **0.76x** |
+| P-384 | scalar mul (var-base) | 374.9 us | 468.1 us | **0.80x** |
+
+P-224 and secp256k1 have no comparable production arm.  P-224:
+`fp_mul` 15.3 ns, `g1_add` 345.7 ns, `g1_double` 326.9 ns, scalar mul
+149.5 us.  Field multiplication and squaring on P-224/P-256/P-384 and
+secp256k1 use CryptOpt assembly, taken verbatim from seeds CryptOpt had
+already equivalence-checked against fiat-crypto, with a per-crate
+differential test and a fiat fallback when the host lacks BMI2/ADX.
+
+### Pairings
+
+| Implementation | Pairing | Reference |
+|---|---:|---|
+| BLS12-381, `bls12-jasmin-rs` native | 1.33 ms | blst 0.53 ms, arkworks 0.99 ms |
+| BLS12-381, `bls12-381-safe-rust` | 1.99 ms | same |
+| BN254, `bn254-safe-rust` | 1.24 ms | arkworks 0.57 ms (2.20x) |
+
+BN254's field multiply is at parity with arkworks (83.2 against 80.1
+invariant-TSC cycles, 1.04x), so the remaining gap is above the field
+layer.
+
+### BW6-761 G1
+
+Projective coordinates replace affine, so a scalar multiplication
+performs one inversion rather than one per bit; on this curve the
+Bernstein-Yang inverse costs about 23x a multiply.  The doubling is RCB
+2015 Algorithm 9, emitted from the Rocq derivation in
+`src/Bedrock/Curve/CurveDoubleA0RustCmd.v`.
+
+| Doubling route | Field ops | Cycles |
+|---|---:|---:|
+| Algorithm 9, Rocq-emitted | 18 (9 M) | 6818 |
+| Algorithm 9, hand-written | 18 (9 M) | 6934 |
+| Algorithm 7 self-addition | 33 (14 M) | 11028 |
+
+The emitted body is 1.017x faster than the hand transcription it
+replaced and 1.617x faster than reusing the addition, so the
+hand-written variant was removed rather than kept alongside.
+
 ## Modular inversion — OURS vs constant-time production references
 
 Each row fixes a prime field and compares this project's safegcd
@@ -98,7 +165,7 @@ assembly for field leaves and Coq-extracted MSM bodies.
 
 | Curve | Operation | This crate | Notes |
 |---|---|---:|---|
-| BLS12-381 | Pairing (full) | 1.95 ms | Projective Miller loop, gnark final-exp port, constant-time scalar mul. |
+| BLS12-381 | Pairing (full) | 1.33 ms | Projective Miller loop, gnark final-exp port, constant-time scalar mul. |
 | BLS12-381 | G1 add | 17 ns (Jasmin asm) | Vs GCC -O3: 26 ns → 36 % faster |
 | BLS12-381 | Fp mul (CryptOpt) | ~170 cyc | Vs GCC -O3: 265 cyc → 55 % faster |
 | BLS12-381 | MSM (extracted) | within 1.5× of arkworks at KZG sizes | 4 c-window variants (c=5/7/9/11), cache-aware dispatch |

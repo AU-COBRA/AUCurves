@@ -179,11 +179,16 @@ Lemma rs_emit_block (indent : String.string) (body : rust_cmd_ed) :
     indent ++ "}".
 Proof. reflexivity. Qed.
 
+(** [rs_emit] emits a whole-array literal write as
+    [loc.copy_from_slice(&[..])] rather than [loc = [..]], so that it
+    works whether [loc] is a local [ [u8; N] ] or a reference parameter
+    [&mut [u8; N] ]; a bare [=] type-errors on the latter.  See the
+    comment on [REdSetBytes] in RustCmdToRust.v. *)
 Lemma rs_emit_setbytes (indent : String.string)
                        (loc : located_ed) (bytes : list Z) :
   rs_emit indent (REdSetBytes loc bytes) =
-    indent ++ rs_sanitize loc.(loc_var) ++ " = [" ++
-      join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "]".
+    indent ++ rs_sanitize loc.(loc_var) ++ ".copy_from_slice(&[" ++
+      join ", " (List.map (fun z => z_str z ++ "u8") bytes) ++ "])".
 Proof. reflexivity. Qed.
 
 Lemma rs_emit_arr_load (indent : String.string)

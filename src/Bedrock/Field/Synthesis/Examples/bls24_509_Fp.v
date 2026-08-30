@@ -73,4 +73,19 @@ Section Field.
     (WordByWordMontgomery.n m machine_wordsize) m.
   Proof using Type. Time constructor; make_computed_op_native. Defined.
 
+
+  (* Field representation, mirroring bn254_prime.v:64-73.  BLS24-509's
+     frep lived only as a [Local Instance] inside [Section BLS24] of
+     BLS24_509_Instances.v, so it was discarded at [End BLS24] and no
+     other file could reach it.  Defining it here, beside [bls24_509_ops],
+     matches where every other curve keeps it. *)
+  Instance bls24_509_frep : FieldRepresentation := field_representation m.
+  Instance bls24_509_frep_ok : FieldRepresentation_ok (field_representation:=bls24_509_frep).
+  Proof.
+    apply Crypto.Bedrock.Field.Synthesis.New.Signature.field_representation_ok.
+    intros. assumption.
+    let c := eval lazy in felem_size_in_bytes in change felem_size_in_bytes with c.
+    Lia.lia.
+  Defined.
+
 End Field.

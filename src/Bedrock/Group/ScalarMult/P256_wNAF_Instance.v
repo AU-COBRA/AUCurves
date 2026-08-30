@@ -32,31 +32,30 @@
             is now quotiented by [RcbProjectiveLaws.pt_eq] and carries
             [RcbProjectiveLaws.oncurve]; §1b below proves every group
             hypothesis the chain asks for.
-            HONESTY: this trades the (false) Leibniz laws for five
-            genuine side conditions on the curve, taken as hypotheses
-            here: the curve constant [p256_b_val] with
-            [three_b = 3b], the characteristic bound [27 < M],
+            This trades the (false) Leibniz laws for five genuine side
+            conditions on the curve: the curve constant [p256_b_val]
+            with [three_b = 3b], the characteristic bound [27 < M],
             non-vanishing of the discriminant, and totality of
-            [Projective.add] ([p256_Hexcept]).  The last is the one that
-            is not a routine computation: it says the P-256 curve has no
-            F-rational point of order two.  It corresponds to
-            RcbProjectiveLaws' single Admitted
-            ([not_exceptional_of_no_two_torsion]), which this file does
-            NOT use — it takes the conclusion as a hypothesis instead.
+            [Projective.add] ([p256_Hexcept]).  All five are DISCHARGED
+            in §1b; the first four by [vm_compute] on concrete field
+            elements.  The fifth says the P-256 curve has no F-rational
+            point of order two, equivalently that x^3 - 3x + b has no
+            root modulo the P-256 prime; it comes from
+            [RcbProjectiveLaws.not_exceptional_of_no_two_torsion] (Qed)
+            applied to [P256NoTwoTorsion.p256_cubic_no_root], which
+            instantiates the root-free certificate of
+            [Bedrock.Group.CurveAdd.CubicNoRoot] at the P-256 constants.
       - G7  Digit array and table contents are caller-supplied.  The
             table hypothesis is now STRONGER than before: each entry
             must be on the curve as well as [pt_eq] to the odd multiple.
 
     Honesty ledger (this file): 0 Admitted.
-    [p256_wnaf_single_full] is Qed, on the Section hypotheses listed
-    under G6 above plus the caller's G7 data.  [p256_Hhorner_step] /
+    [p256_wnaf_single_full] is Qed on the caller's G7 data alone; it
+    carries no curve-level hypothesis.  [p256_Hhorner_step] /
     [p256_Hhorner_oncurve] are proved from
     [wNAF_Single_HornerAlgebra]; the four function-body wrapper lemmas
     of NistWnafWrappers.v are Qed as of be20f7b.  What the theorem
     still RESTS ON, and what a reader should check:
-      - the five curve-level hypotheses of §1b, of which
-        [p256_Hexcept] (no F-rational 2-torsion) is the only
-        non-routine one;
       - [p256_wnaf_table_ok] / [p256_wnaf_leaf_specs] — the caller's
         function table and fiat-crypto's synthesized field leaves;
       - G7: the caller's digit array and table buffers hold
@@ -100,6 +99,7 @@ Require Import Crypto.Spec.WeierstrassCurve.
 Require Import Crypto.Curves.Weierstrass.Projective.
 Require Import Crypto.Util.Decidable.
 Require Import Bedrock.Group.CurveAdd.RcbProjectiveLaws.
+Require Import Bedrock.Group.CurveAdd.P256NoTwoTorsion.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.WNAFTable.
 Require Import Bedrock.Group.CurveAdd.CurveAddGeneralA.
@@ -158,22 +158,47 @@ Section P256_wNAF.
   (* §1b. G6: the projective equivalence and the group laws          *)
   (* ============================================================== *)
 
-  (** The side conditions of RcbProjectiveLaws.v, as hypotheses.
+  (** The side conditions of RcbProjectiveLaws.v.
 
       [p256_b_val] is the curve constant b (the chain only ever sees
       [three_b]); [p256_M_gt_27] is the characteristic bound the
       [Ring.char_ge] instances need; [p256_Hdisc] is
       4a^3 + 27b^2 <> 0 in the expanded form Projective.v expects;
       [p256_Hexcept] is totality of [Projective.add], equivalently that
-      the curve has no F-rational point of order two. *)
-  Context (p256_b_val : F).
-  Context (p256_M_gt_27 : (27 < M_pos)%positive).
-  Context (p256_Hthree_b :
-    p256_three_b_val = (p256_b_val + p256_b_val + p256_b_val)%F).
-  Context (p256_Hdisc : id
+      the curve has no F-rational point of order two.
+
+      The first four are DISCHARGED here, not assumed: [b] is the NIST
+      constant [CurveAddGeneralA_P256.p256_b], and the three proofs are
+      [vm_compute] checks on concrete field elements.  [p256_Hdisc]
+      follows the idiom of
+      [Bedrock.Curve.Secp256k1Curve_G1_bedrock.secp_discriminant]
+      ([F.eq_to_Z_iff] / [vm_compute] / [discriminate]) rather than
+      [Decidable.vm_decide], because [M_pos] here is a
+      [FieldParameters] projection.  [p256_Hexcept] is derived below
+      from [P256NoTwoTorsion.p256_cubic_no_root]; nothing in this
+      section is assumed. *)
+  Definition p256_b_val : F := F.of_Z M_pos p256_b.
+
+  Lemma p256_M_gt_27 : (27 < M_pos)%positive.
+  Proof. vm_compute. reflexivity. Qed.
+
+  Lemma p256_Hthree_b :
+    p256_three_b_val = (p256_b_val + p256_b_val + p256_b_val)%F.
+  Proof.
+    unfold p256_three_b_val, p256_b_val.
+    rewrite p256_three_b_feval.
+    apply ModularArithmeticTheorems.F.eq_to_Z_iff.
+    vm_compute. reflexivity.
+  Qed.
+
+  Lemma p256_Hdisc : id
     ((((1 + 1 + 1 + 1) * p256_a_val * p256_a_val * p256_a_val
        + ((1 + 1 + 1 + 1) * (1 + 1 + 1 + 1) + (1 + 1 + 1 + 1)
-          + (1 + 1 + 1 + 1) + 1 + 1 + 1) * p256_b_val * p256_b_val) <> 0)%F)).
+          + (1 + 1 + 1 + 1) + 1 + 1 + 1) * p256_b_val * p256_b_val) <> 0)%F).
+  Proof.
+    cbv [id]. unfold p256_a_val, p256_b_val. rewrite p256_a_feval.
+    intro H. apply (f_equal F.to_Z) in H. vm_compute in H. discriminate H.
+  Qed.
 
   Local Instance p256_char_ge_3 :
     @Ring.char_ge F eq F.zero F.one F.opp F.add F.sub F.mul 3%positive :=
@@ -186,7 +211,38 @@ Section P256_wNAF.
     (@Projective.not_exceptional F eq F.zero F.one F.opp F.add F.sub
        F.mul F.inv F.div p256_a_val p256_b_val _ p256_char_ge_3 _).
 
-  Context (p256_Hexcept : forall P Q : P256_Ppoint, P256_not_exceptional P Q).
+  (** No F-rational point of order two, equivalently: x^3 - 3x + b has
+      no root modulo the P-256 prime.  Proved, not assumed:
+      [P256NoTwoTorsion.p256_cubic_no_root] instantiates the
+      root-free certificate of
+      [Bedrock.Group.CurveAdd.CubicNoRoot] at the P-256 constants.  Its
+      two hypotheses read the coefficients back as canonical residues;
+      both are [vm_compute] checks. *)
+  Lemma p256_no_two_torsion :
+    RcbProjectiveLaws.no_two_torsion p256_a_val p256_b_val.
+  Proof.
+    unfold RcbProjectiveLaws.no_two_torsion.
+    apply P256NoTwoTorsion.p256_cubic_no_root.
+    - unfold p256_a_val. rewrite p256_a_feval.
+      rewrite ModularArithmeticTheorems.F.to_Z_of_Z.
+      vm_compute. reflexivity.
+    - unfold p256_b_val.
+      rewrite ModularArithmeticTheorems.F.to_Z_of_Z.
+      vm_compute. reflexivity.
+  Qed.
+
+  (** Totality of [Projective.add] at P-256.  Fully applied rather than
+      [eapply]d: [not_exceptional_of_no_two_torsion] is generalised over
+      the whole ambient section context of RcbProjectiveLaws.v, and
+      naming every argument avoids both the unresolved-variable failure
+      and the search. *)
+  Lemma p256_Hexcept : forall P Q : P256_Ppoint, P256_not_exceptional P Q.
+  Proof.
+    exact (@RcbProjectiveLaws.not_exceptional_of_no_two_torsion
+             p256_field_parameters p256_field_parameters_ok p256_M_gt_27
+             p256_a_val p256_b_val p256_three_b_val
+             p256_Hthree_b p256_Hdisc p256_no_two_torsion).
+  Qed.
 
   (** The chain's [pt_eq] and [oncurve] at P-256. *)
   Definition p256_pt_eq : F * F * F -> F * F * F -> Prop :=
@@ -888,10 +944,10 @@ Section P256_wNAF.
       points the triples represent.  A consumer that needs a canonical
       representative must normalise (divide through by Z, mapping Z = 0
       to (0,1,0)); [pt_eq] is exactly the equivalence under which that
-      normalisation is sound.  The G6 group laws are no longer assumed;
+      normalisation is sound.  The G6 group laws are discharged, not assumed;
       the curve-level side conditions they rest on ([p256_b_val],
       [p256_M_gt_27], [p256_Hthree_b], [p256_Hdisc], [p256_Hexcept])
-      are Section hypotheses of this file. *)
+      are all proved in §1b of this file. *)
   Theorem p256_wnaf_single_full :
     forall functions,
       p256_wnaf_table_ok functions ->
@@ -1030,7 +1086,7 @@ End P256_wNAF.
       §1b group laws                 PROVED from RcbProjectiveLaws.v, under the
                                       curve side conditions p256_b_val /
                                       p256_M_gt_27 / p256_Hthree_b / p256_Hdisc /
-                                      p256_Hexcept (Section hypotheses)
+                                      p256_Hexcept (all proved in §1b)
       p256_HOppInplace_spec          PROVED from opp_inplace_ok (G5)
       p256_Hhorner_step              proved from horner_step_single (quotiented)
       p256_Hhorner_oncurve           proved from digit_point_oncurve_full

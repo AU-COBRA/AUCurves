@@ -1,0 +1,46 @@
+name: bench
+
+# Instruction counts under callgrind.  These are deterministic --
+# identical run to run regardless of machine load -- which is what makes
+# them usable as a CI signal.  Wall-clock and even cycle counts on a
+# shared runner are not: load has been observed to inflate a pairing
+# measurement by 44% and to invert the ordering of two field operations.
+#
+# An instruction count is NOT a speed.  It ignores cache behaviour and
+# IPC, so a change here means the amount of work changed, not
+# necessarily the time taken.  Use it to catch regressions, and the
+# _rdtsc harnesses in examples/ to measure performance.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  instructions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install valgrind and nasm
+        run: sudo apt-get update && sudo apt-get install -y valgrind nasm
+
+      # The runner version must match the iai-callgrind dependency
+      # EXACTLY; a mismatch is a run-time error, not a build error.
+      # Keep this pin in step with the crates' [dev-dependencies].
+      - name: Install iai-callgrind-runner
+        run: cargo install iai-callgrind-runner --version 0.16.1 --locked
+
+      - name: Instruction counts
+        run: |
+          set -e
+          cargo bench --manifest-path p256-safe-rust/Cargo.toml    --bench iai_p256
+          cargo bench --manifest-path p384-safe-rust/Cargo.toml    --bench iai_p384
+          cargo bench --manifest-path bn254-safe-rust/Cargo.toml   --bench iai_bn254
+          cargo bench --manifest-path bw6-761-safe-rust/Cargo.toml --bench iai_bw6_761

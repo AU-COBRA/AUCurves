@@ -1,0 +1,57 @@
+name: rust
+
+# Builds and tests the Rust workspace: the safe-Rust crates, their
+# differential tests against the Rocq-emitted bodies, and the KAT
+# vectors.  This is the cheap, always-on check; the Rocq build is
+# separate because it is orders of magnitude more expensive.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The crates take fiat-crypto/fiat-rust as a path dependency.
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # nasm assembles the CryptOpt field leaves.  Without it every
+      # build.rs falls back to fiat-crypto and prints a cargo warning,
+      # so the job would still pass but would not exercise the
+      # assembly path that ships.
+      - name: Install nasm
+        run: sudo apt-get update && sudo apt-get install -y nasm
+
+      - name: Build
+        run: cargo build --release --workspace
+
+      - name: Test
+        run: cargo test --release --workspace
+
+      # The extracted bodies live behind a feature flag in several
+      # crates; the differential tests against them only run with it on.
+      - name: Test (extracted bodies)
+        run: |
+          for c in p224-safe-rust p256-safe-rust p384-safe-rust; do
+            cargo test --release --manifest-path "$c/Cargo.toml" --features extracted
+          done
+
+      # Both leaf paths must agree.  A crate that silently stopped
+      # linking its assembly would otherwise pass the run above.
+      - name: Test (fiat fallback, no CryptOpt assembly)
+        env:
+          P224_NO_CRYPTOPT: 1
+          P256_NO_CRYPTOPT: 1
+          P384_NO_CRYPTOPT: 1
+          SECP256K1_NO_CRYPTOPT: 1
+        run: cargo test --release --workspace

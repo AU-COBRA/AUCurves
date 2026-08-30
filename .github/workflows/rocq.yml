@@ -1,0 +1,86 @@
+name: rocq
+
+# Builds the Rocq development.  This is deliberately NOT on every push:
+# the dependency set (Rocq 9.0, coqutil, bedrock2, Rupicola, Rewriter,
+# Coqprime, Bignums) plus the fiat-crypto submodule is expensive to
+# build from cold, and fiat-crypto's push-button synthesis files run for
+# tens of minutes each.  It runs nightly and on demand.
+#
+# The Rust workflow is the fast signal; this one is the thorough one.
+
+on:
+  schedule:
+    # 03:00 UTC daily.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'dune target to build'
+        required: false
+        default: 'src/Bedrock'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache the opam switch
+        uses: actions/cache@v4
+        with:
+          path: ~/.opam
+          # Bump the suffix to force a rebuild of the switch.
+          key: opam-rocq9-${{ runner.os }}-v1
+
+      - name: Set up Rocq 9.0 and the development's dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y opam m4 pkg-config
+          opam init --bare --disable-sandboxing --yes || true
+          opam switch create rocq-9 5.2.0 --yes || opam switch rocq-9
+          eval $(opam env --switch=rocq-9)
+          opam repo add rocq-released https://rocq-prover.org/opam/released --yes || true
+          opam install --yes \
+            rocq-prover.9.0.0 coq-coqutil coq-bedrock2 coq-rupicola \
+            coq-rewriter coq-coqprime coq-bignums dune
+
+      # ulimit and OCAMLRUNPARAM are required, not optional: without
+      # them large Z.pow reductions overflow the kernel stack and the
+      # native compiler retries silently.
+      - name: Build
+        run: |
+          eval $(opam env --switch=rocq-9)
+          ulimit -s unlimited
+          export OCAMLRUNPARAM="b,l=1000000000"
+          dune build -j 1 --display=short "${{ github.event.inputs.target || 'src/Bedrock' }}"
+
+      # A theorem can be Qed and still rest on an axiom, and a Section
+      # hypothesis is invisible to Print Assumptions once discharged as
+      # an argument.  This checks the headline results explicitly.
+      - name: Axiom check
+        run: |
+          eval $(opam env --switch=rocq-9)
+          ulimit -s unlimited
+          cat > /tmp/axioms.v <<'EOF'
+          Require Import Bedrock.Group.ScalarMult.P256_wNAF_Instance.
+          Require Import Bedrock.Group.ScalarMult.P256_wNAF_TableFunc.
+          Require Import Bedrock.Group.ScalarMult.BN254_Ladderstep.
+          Require Import Bedrock.Group.CurveAdd.PointDoubleA0.
+          Print Assumptions p256_Hexcept.
+          Print Assumptions p256_wnaf_single_full_precomputed.
+          Print Assumptions bn254_G1_ladderstep_ok.
+          Print Assumptions rcb_double_a0_correct.
+          Print Assumptions rcb_double_a0_eq_ladderstep.
+          EOF
+          rocq compile -R _build/default/src/Bedrock Bedrock \
+            -Q _build/default/fiat-crypto/src Crypto \
+            -Q _build/default/src/Theory Theory \
+            -Q _build/default/src/Implementations Implementations \
+            /tmp/axioms.v 2>&1 | tee /tmp/axioms.out
+          if grep -q 'Axioms:' /tmp/axioms.out; then
+            echo "::error::a headline theorem depends on an axiom"; exit 1
+          fi

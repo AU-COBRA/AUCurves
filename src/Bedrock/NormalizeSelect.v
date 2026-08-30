@@ -205,38 +205,52 @@ Fixpoint normalize_select (c : rust_cmd_ed) : rust_cmd_ed :=
   end.
 
 (* ================================================================ *)
-(* §5. Correctness lemma (statement; body Admitted)                  *)
+(* §5. Correctness: NOT stated here -- the obvious statement is FALSE *)
 (* ================================================================ *)
 
-(** [normalize_select] preserves [rust_exec_ed] semantics.  The
-    proof for non-[REdSelect] constructors is structural induction
-    (mirrors the [safe_cmd_correct_ed] structure).  The [REdSelect]
-    case requires showing the byte-loop expansion computes the same
-    final destination value as [rexec_select]'s opaque [tval_ed] copy.
+(** A [normalize_select_correct] of the shape
 
-    The byte-loop reproduces, byte-by-byte:
-        dest[i] = if cond_v ≠ 0 then if_t_bytes[i] else if_f_bytes[i]
-    which matches [rexec_select]'s effect (one tower update copying
-    the chosen source's [tval_ed]).  The arithmetic identity for the
-    merge step is:
-        (b_t & 0xFF...FF) + (b_f & 0x00...00) = b_t,
-        (b_t & 0x00...00) + (b_f & 0xFF...FF) = b_f.
-    Both are immediate from [Z.land] properties.
+      forall cp cpn ftab c rs1 rs2,
+        rust_exec_ed cp cpn ftab c rs1 rs2 ->
+        exists rs2', rust_exec_ed cp cpn ftab (normalize_select c) rs1 rs2'
+                  /\ rs_get_tower_ed rs2' = rs_get_tower_ed rs2
 
-    This proof is mechanical but long (one inductive case per
-    constructor; the [REdSelect] case is ~30 LoC of bytewise
-    rearrangement).  Admitted for now per the Option-C-ladder plan;
-    the PoC's value is in the *transformation* and its
-    *Rocq-typecheckable statement*. *)
-Theorem normalize_select_correct :
-  forall callee_post callee_post_n function_table c rs1 rs2,
-    rust_exec_ed callee_post callee_post_n function_table c rs1 rs2 ->
-    exists rs2',
-      rust_exec_ed callee_post callee_post_n function_table
-                   (normalize_select c) rs1 rs2'
-      /\ rs_get_tower_ed rs2' = rs_get_tower_ed rs2.
-Proof.
-Admitted.
+    stood here as an [Admitted] theorem.  It is refutable, so it was
+    removed (2026-08-30): an [Admitted] false proposition proves
+    [False] on any use.
+
+    Defect 1 -- type coverage.  [rexec_select] copies the source
+    [tval_ed] opaquely, at ANY tower type.  [lower_one_select] lowers
+    it to [tt_bytes_ed dest.(loc_type)] byte load/store pairs, and
+    [rexec_byte_load] / [rexec_byte_store] fire only when
+    [loc_type = TBytes n].  So for a select at [TFp25519],
+    [TFp25519_64], [TFpL25519], [TU64] or [TArr] the normalized
+    command has no execution at all and the [exists rs2'] is
+    unsatisfiable.  Witness: [ftab = []], [a := {| loc_var := "a";
+    loc_type := TFp25519 |}], [c := REdSelect (SLit 1) a a a] -- a
+    constant-time cmov on a field element, i.e. the ladder pattern.
+
+    Defect 2 -- mask polarity.  Even at [TBytes n] the lowering
+    disagrees with [rexec_select] when [cond_v < 0]: [rexec_select]
+    branches on [cond_v =? 0], while [build_mask_expr] computes
+    [0 - (0 <? cond_v)], so a negative (hence non-zero, "pick
+    [if_t]") condition yields mask [0] and selects [if_f].
+
+    A correct statement needs, at minimum: a [TBytes] side-condition
+    (or a lowering that handles the other tower types), [0 <= cond_v]
+    (or an [SLt cond (SLit 0)] arm giving a genuine [cond <> 0] test),
+    a syntactic freshness condition that [c] neither binds nor reads
+    any [__sel_*] name, and a pointwise conclusion under a simulation
+    relation -- an equality of the partial applications
+    [rs_get_tower_ed rs2' = rs_get_tower_ed rs2] does not compose
+    through [REdSeq], because normalizing [c1] leaves extra scratch
+    scalar bindings that the IH for [c2] cannot discharge.
+
+    Every [REdSelect] site in this tree is at [TBytes n] with a
+    non-negative condition ([WnafScalarmultBody.v] at [TBytes 200],
+    [Ristretto_Encode_RustCmd.v] at [TBytes 40]), so no current
+    extraction depended on the false generality. *)
+
 
 (* ================================================================ *)
 (* §6. Integration: route the Jasmin pipeline through normalize     *)

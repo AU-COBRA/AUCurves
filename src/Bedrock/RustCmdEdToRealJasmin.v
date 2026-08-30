@@ -34,11 +34,16 @@
  *  Status (2026-05-12):
  *
  *  - [rust_cmd_ed_to_real_jasmin] composition: **defined, Qed-trivial**.
- *  - End-to-end simulation theorem: stated, Admitted (mechanical
- *    composition of [bridge_complete] / [tr_cmd_correct] /
- *    [normalize_select_correct] / [real_jsem_*] — all four are Qed in
- *    their respective files, modulo two trivial identity-cast axioms
- *    in [BridgeReal] for [int_to_ident]/[int_to_funname]).
+ *  - End-to-end simulation theorem: stated, Admitted.  It was
+ *    described as a mechanical composition of [bridge_complete] /
+ *    [tr_cmd_correct] / [normalize_select_correct] / [real_jsem_*],
+ *    "all four Qed".  That is not the case: [normalize_select_correct]
+ *    was an [Admitted] statement that is REFUTABLE (see
+ *    [NormalizeSelect.v] §5 for the two defects and a witness), and it
+ *    has been deleted.  The composition therefore has a real gap at
+ *    the [REdSelect]-lowering step, not merely an unwritten script.
+ *    The other three are Qed, modulo two identity-cast axioms in
+ *    [BridgeReal] for [int_to_ident]/[int_to_funname].
  *  - [JasminBridge] theory build: BLOCKED on Jasmin/Rocq .vo version
  *    skew (Jasmin proofs are built with Rocq 9.0.0; the active switch
  *    is Rocq 9.0.1; .vo files report bad version 90000 vs expected
@@ -161,7 +166,9 @@ Proof. reflexivity. Qed.
 
       - [SafeRustEd25519WPBridge.bridge_complete]   (Qed)
       - [Jasmin.Core.tr_cmd_correct]                (Qed)
-      - [NormalizeSelect.normalize_select_correct]  (Qed for non-Select)
+      - [REdSelect] lowering                        (NO THEOREM: the
+        former [NormalizeSelect.normalize_select_correct] is refutable
+        and was deleted; see [NormalizeSelect.v] §5)
       - [JasminBridge.BridgeReal.real_jsem_*]       (Qed + 2 cast axioms)
 
     Each link of the chain is already proven; only the syntactic

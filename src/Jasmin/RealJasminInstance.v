@@ -118,8 +118,10 @@ Section EndToEnd.
 
         - [SafeRustEd25519WPBridge.bridge_complete]
           ([rust_exec_ed] ↔ bedrock2 WP)
-        - [NormalizeSelect.normalize_select_correct]
-          (REdSelect lowering preserves [rust_exec_ed])
+        - [REdSelect] lowering preserves [rust_exec_ed]
+          (NO THEOREM: the former
+          [NormalizeSelect.normalize_select_correct] is refutable and
+          was deleted; see [NormalizeSelect.v] §5)
         - [Jasmin.Core.tr_cmd_correct]
           (bedrock2 [exec] ↔ jasmin_cmd [cmd_jasmin_equiv])
         - [JasminBridge.BridgeReal.real_jsem_*]

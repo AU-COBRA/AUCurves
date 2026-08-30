@@ -36,7 +36,7 @@
  *                                       outer-loop chain: the loose
  *                                       slack carries through.
  *
- *  Notes on [safegcd_step59_preserves_InRange] (Admitted):
+ *  Why the [InRange]-shape statement is gone (removed 2026-08-30):
  *    The literal statement
  *      [InRange d F G V R -> InRange (safegcd_step59_spec_Z p25519 ...)]
  *    is *false* at the lower edge of [d]'s range.  Concretely take
@@ -46,9 +46,13 @@
  *    The fix is to thread a strengthened invariant ([InRange_loose])
  *    that gives [d] enough slack to absorb 59 divsteps' drift; the
  *    [_strong] variant above does exactly that and is closed by
- *    direct calculation.  The original [InRange]-shape lemma is
- *    retained as scaffolding for the documented Z-level contract;
- *    callers should use [_strong].
+ *    direct calculation.  Because the [InRange]-shape statement is
+ *    refutable, carrying it as an [Admitted] lemma would let any
+ *    [apply] of it derive [False], so it and its two dependents
+ *    ([step59_iter_pack_preserves_InRange],
+ *    [outer_iter_pack_preserves_InRange]) were deleted.  Nothing
+ *    referenced them: the headline corollary goes through the
+ *    [_loose] chain, which is closed unconditionally.
  *
  *  Downstream composition lemmas
  *    [step59_iter_pack_preserves_InRange_loose] and
@@ -258,17 +262,6 @@ Proof.
   apply InRange_loose_0_iff_InRange. exact Hloose.
 Qed.
 
-(** Original [InRange]-shape statement, retained as documented
-    scaffolding.  *Not* provable as stated — see explanatory comment
-    at top of file (counterexample at the lower edge of d).  Callers
-    should use [safegcd_step59_preserves_InRange_strong] instead. *)
-Lemma safegcd_step59_preserves_InRange : forall (d F G V R : Z),
-  InRange d F G V R ->
-  let '(d', F', G', V', R') := safegcd_step59_spec_Z p25519 d F G V R in
-  InRange d' F' G' V' R'.
-Proof.
-Admitted.
-
 (* ================================================================== *)
 (* §4.  Outer-chain invariant — composition via [InRange_loose]        *)
 (* ================================================================== *)
@@ -306,19 +299,6 @@ Proof.
   pose proof (iter_divstep_full_half_p25519_preserves_loose sg_chunk k d F G V R Hk H)
     as Hstep.
   destruct (iter_divstep_spec_half p25519 sg_chunk d F G V R)
-    as [[[[d' F'] G'] V'] R'].
-  exact Hstep.
-Qed.
-
-(** Original [InRange]-shape packed version, retained as scaffolding;
-    inherits the Admit on [safegcd_step59_preserves_InRange]. *)
-Lemma step59_iter_pack_preserves_InRange :
-  forall st, InRange_pack st -> InRange_pack (step59_iter_pack p25519 st).
-Proof.
-  intros [[[[d F] G] V] R] H.
-  unfold InRange_pack, step59_iter_pack in *.
-  pose proof (safegcd_step59_preserves_InRange d F G V R H) as Hstep.
-  destruct (safegcd_step59_spec_Z p25519 d F G V R)
     as [[[[d' F'] G'] V'] R'].
   exact Hstep.
 Qed.
@@ -379,20 +359,6 @@ Proof.
     exact Hstep.
 Qed.
 
-(** Original [InRange]-shape outer composition; inherits the Admit on
-    [safegcd_step59_preserves_InRange]. *)
-Lemma outer_iter_pack_preserves_InRange : forall (n : nat) (x : Z),
-  0 < x < p25519 ->
-  InRange_pack
-    (Nat.iter n (step59_iter_pack p25519)
-       (-1, p25519, x, 0, 1)).
-Proof.
-  intros n x Hx.
-  apply iter_preserves.
-  - apply step59_iter_pack_preserves_InRange.
-  - cbn. apply init_state_in_InRange. exact Hx.
-Qed.
-
 (** Headline corollary: after the full 10 chunks of safegcd, the state
     is in [InRange] — *unconditionally*, with no Admit dependency.
     This is the lemma the bedrock2-level chain proof actually needs.
@@ -430,7 +396,3 @@ Print Assumptions safegcd_step59_preserves_InRange_strong.
 Print Assumptions step59_iter_pack_preserves_InRange_loose.
 Print Assumptions outer_iter_pack_preserves_InRange_loose.
 Print Assumptions outer_iter10_pack_in_InRange.
-(* The next two retain the documented Admit on
-   [safegcd_step59_preserves_InRange]. *)
-Print Assumptions step59_iter_pack_preserves_InRange.
-Print Assumptions outer_iter_pack_preserves_InRange.

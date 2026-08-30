@@ -325,70 +325,20 @@ Section R10Segments.
       | ecancel_assumption ].
   Time Qed.
 
-  (** ** R10_close_4_calls — chains S1 → S2 → S3 → S4
+  (** ** R10_close_4_calls — removed 2026-08-30
    *
-   * Conclusion: [call functions "fe25519_from_bytes" tr m' [B_pre_addr;
-   * B_pre_bytes_addr] post_4call] where [post_4call] is the deeply-nested
-   * 3-call-deep continuation parameterized by an outer [Hcont_final].
-   *)
-  Lemma R10_close_4_calls
-    (functions : env)
-    (Hfb : spec_of_fe25519_from_bytes functions)
-    (Hpar : spec_of_ed25519_scalarmult_base_parametric functions)
-    (out_ptr scalar_ptr B_pre_addr B_pre_bytes_addr : word)
-    (out_init scalar : list Byte.byte)
-    (R : mem -> Prop)
-    (tr : trace)
-    (Hlen_out : Datatypes.length out_init = 200%nat)
-    (Hlen_scalar : Datatypes.length scalar = 32%nat)
-    (chunk32_0 chunk32_1 chunk32_2 : list Byte.byte)
-    (chunk40_0 chunk40_1 chunk40_2 : list Byte.byte)
-    (Hc0_len : Datatypes.length chunk32_0 = 32%nat)
-    (Hc1_len : Datatypes.length chunk32_1 = 32%nat)
-    (Hc2_len : Datatypes.length chunk32_2 = 32%nat)
-    (Hb0_len : Datatypes.length chunk40_0 = 40%nat)
-    (Hb1_len : Datatypes.length chunk40_1 = 40%nat)
-    (Hb2_len : Datatypes.length chunk40_2 = 40%nat)
-    (Hbib_c0 : Field.bytes_in_bounds (FieldRepresentation:=frep25519) chunk32_0)
-    (Hbib_c1 : Field.bytes_in_bounds (FieldRepresentation:=frep25519) chunk32_1)
-    (Hbib_c2 : Field.bytes_in_bounds (FieldRepresentation:=frep25519) chunk32_2)
-    (m' : mem)
-    (Hsep' :
-      (sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-       ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-       ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-       ⋆ sepclause_of_map (chunk40_0$@B_pre_addr)
-       ⋆ sepclause_of_map (chunk40_1$@(word.add B_pre_addr (word.of_Z 40)))
-       ⋆ sepclause_of_map (chunk40_2$@(word.add B_pre_addr (word.of_Z 80)))
-       ⋆ sepclause_of_map (out_init$@out_ptr)
-       ⋆ sepclause_of_map (scalar$@scalar_ptr) ⋆ R)%sep m')
-    (post : trace -> mem -> list word -> Prop)
-    (Hcont_final :
-      forall (m_final : mem) (out_par : list Byte.byte)
-             (X_b0 X_b1 X_b2 : felem),
-        Datatypes.length out_par = 200%nat ->
-        (sepclause_of_map (out_par$@out_ptr)
-         ⋆ sepclause_of_map (scalar$@scalar_ptr)
-         ⋆ sepclause_of_map
-             ((ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b0)
-               ++ ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b1)
-               ++ ArrayCasts.ws2bs (Z.to_nat (bytes_per_word 64)) (felem_to_list X_b2))%list
-              $@B_pre_addr)
-         ⋆ sepclause_of_map (chunk32_0$@B_pre_bytes_addr)
-         ⋆ sepclause_of_map (chunk32_1$@(word.add B_pre_bytes_addr (word.of_Z 32)))
-         ⋆ sepclause_of_map (chunk32_2$@(word.add B_pre_bytes_addr (word.of_Z 64)))
-         ⋆ R)%sep m_final ->
-        post tr m_final nil) :
-    WeakestPrecondition.call functions "fe25519_from_bytes" tr m'
-      (B_pre_addr :: B_pre_bytes_addr :: nil) post.
-  Proof.
-    (* Chaining S1..S4 inside an abstract [post] cannot peel the
-       deeply-nested [exists l, putmany ... /\ exists args, dexprs ...
-       /\ call ...] shape that R10's concrete post unfolds to.  The
-       chained form is preserved here as a placeholder; the live
-       version of this composition lives inline in R10's proof body
-       in [Scalarmult_Impl_64.v], where [post] is the concrete
-       deeply-nested form. *)
-  Admitted.
+   * A lemma chaining S1 -> S4 into one [WeakestPrecondition.call] under
+   * an abstract [post] stood here, [Admitted].  Its own note recorded
+   * why it could not be closed: chaining S1..S4 inside an abstract
+   * [post] cannot peel the deeply-nested
+   * [exists l, putmany ... /\ exists args, dexprs ... /\ call ...]
+   * shape that R10's concrete post unfolds to.  It is provable only for
+   * a concrete [post], not the universally quantified one it stated, so
+   * the statement as written was not the thing anyone could use.
+   *
+   * The live version of this composition is inline in R10's proof body
+   * in [Scalarmult_Impl_64.v], where [post] IS the concrete nested
+   * form.  S1..S4 themselves remain Qed above.  Nothing referenced this
+   * lemma and no file Requires this module. *)
 
 End R10Segments.

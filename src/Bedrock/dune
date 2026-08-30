@@ -92,6 +92,38 @@
      ; (CurveAddGeneralA*, CurveDoubleGeneralA*, CurveA3_*) already
      ; delivers verified add/double for all three curves.
      Curve.WbwMontgomeryG1GeneralA
+     ; The bit-serial scalar-multiplication cluster, superseded by the
+     ; wNAF/GLV route.  [BignumShift] provides "shift_scalar" (divide a
+     ; bignum by two, hand back the low bit); the other five build a
+     ; double-and-add ladder on top of it.  None of the six has EVER
+     ; produced a .vo -- BignumShift line 441 ran a [rewrite <- !] whose
+     ; RHS occurs inside its own LHS, so it diverged (that, not proof
+     ; cost, is the ~4 GB in build_timings), and the other five Require
+     ; it.  They were nonetheless in the build, so a whole subtree was
+     ; failing per-target while the build reported success elsewhere.
+     ; Nothing outside the cluster Requires any of them.
+     ; The design moved on deliberately: wNAF_GLV_Func.v, which DOES
+     ; build, lists among its changes "Digit loading from word arrays
+     ; instead of shift_scalar" -- precomputed wNAF digits allow the
+     ; windowed constant-time form, where shifting destroys the scalar
+     ; in place and forces a bit-serial ladder.  No Rust or Jasmin
+     ; artifact in this tree contains a "shift_scalar"; it never shipped.
+     Group.CurveAdd.BignumShift
+     Group.CurveAdd.LoopBody
+     Group.CurveAdd.ScalarMult
+     Group.CurveAdd.ScalarMultAlt
+     Group.CurveAdd.Test
+     Group.CurveAdd.TestFp2
+     ; The two GLV bedrock2 drivers that assume the same primitive.
+     ; Both copy the spec locally -- their own comment reads "Local spec
+     ; for shift_scalar (from BignumShift.v, not compiled)" -- and take
+     ; it as a hypothesis [HShiftScalar : spec_of_shift_scalar functions]
+     ; for which NO compiled implementation exists anywhere in the tree,
+     ; the only one being the cluster above.  Both are also unbuilt and
+     ; were failing silently in the build.  wNAF_GLV_Func.v is the
+     ; surviving route.
+     Field.Synthesis.Examples.BLS12_GLV_ScalarMultBedrock
+     Field.Synthesis.Examples.BLS12_377_GLV_ScalarMultBedrock
      ; Emission drivers: write Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust

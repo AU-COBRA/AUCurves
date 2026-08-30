@@ -29,6 +29,7 @@ Require Import Bedrock.Group.CurveAdd.PointDoubleA0.
 Require Import Bedrock.Group.CurveAdd.PointNegate.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
+Require Import Bedrock.Group.ScalarMult.NistWnafWrappers.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
@@ -198,7 +199,8 @@ Section BN254_CurveOps_Specs.
 
       [bn254_point_double_correct] is Qed from
       [PointDoubleA0.rcb_double_a0_correct];
-      [bn254_store_zero_correct] is still Admitted. *)
+      [bn254_store_zero_correct] is Qed from
+      [NistWnafWrappers.store_zero_from_word_ok]. *)
 
   Lemma bn254_point_double_correct :
     forall (three_b : Crypto.Bedrock.Specs.Field.felem) functions,
@@ -288,12 +290,31 @@ Section BN254_CurveOps_Specs.
       map.get functions "store_zero" = Some (snd bn254_store_zero) ->
       bn254_store_zero_spec functions.
   Proof.
-    (* Mechanical proof: 3 from_word calls writing 0, 1, 0 to the point
-       components. Each call discharges via Hfw after converting FElem to
-       bytes. Final step wraps into Compilation2.FElem (Some tight_bounds).
-       Left as follow-up — the store_zero spec is well-established in
-       StoreZero.v for the standard encoding. *)
-  Admitted.
+    intros functions Hfw Hsz.
+    (* [bn254_store_zero] is [NistWnafWrappers.store_zero_from_word_func]
+       at these instances (same three [from_word] calls with literals
+       0, 1, 0, same parameter names), so [Hsz] meets the table premise
+       of [store_zero_from_word_ok] by conversion.
+
+       [StoreZero.store_zero_ok] is NOT the lemma to use here: it is
+       [program_logic_goal_for store_zero_func True], proved by
+       [exact I], and carries no information about the body.
+
+       After Section discharge [store_zero_from_word_ok] takes 13
+       arguments before [functions]: the six bedrock2 parameters
+       (width, BW, word, mem, locals, ext_spec), the four ok-classes
+       (word.ok, map.ok mem, map.ok locals, ext_spec.ok),
+       [field_parameters], [field_representation] and
+       [FieldRepresentation_ok].  [Hbounds_eq] and the two constant
+       felems of that Section are not among them, since neither the
+       statement nor the proof of this lemma uses them.  All 13 are
+       determined by unification against the conclusion, hence [_].
+       Written as a fully applied [exact] rather than [eapply] so the
+       cost is one conversion instead of a search over the
+       [spec_of_store_zero] conclusion. *)
+    exact (@store_zero_from_word_ok _ _ _ _ _ _ _ _ _ _ _ _ _
+             functions Hsz Hfw).
+  Qed.
 
 End BN254_CurveOps_Specs.
 

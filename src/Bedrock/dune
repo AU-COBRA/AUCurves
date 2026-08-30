@@ -34,6 +34,22 @@
      ; fifteen defect classes found while executing them.  Excluded so a
      ; whole-tree build is meaningful.
      Curve.P256_G1_Add_Spec
+     ; Secp256k1_G1_Add_Spec is the same WP route and fails the same way.
+     ; Its Admitted at line 896 records the cause: unfolding
+     ; BLS12_add_mont_spec yields MontgomeryCurveG1Equiv.three_b_mont
+     ; where the rewrite expects MontgomeryCurveSpecs.three_b_mont, so
+     ; the rewrite finds no subterm -- the file itself calls this the
+     ; "same root cause as P256_G1_Add_Spec.v line 1034".  Unlike its
+     ; siblings it compiled, by admitting that obligation, so it was
+     ; shipping an admit inside the build.
+     ; Nothing needs it: no .v Requires it, there is no secp256k1
+     ; instantiation of the Rupicola route, and secp256k1-safe-rust is
+     ; field-only (no group module), so no G1 operation ships for this
+     ; curve at either level.  If secp256k1 G1 is wanted later, the
+     ; principled route is a CurveAddGeneralA/CurveAdd instantiation --
+     ; secp256k1 has a = 0, so RCB Algorithm 7 and the Algorithm 9
+     ; doubling of PointDoubleA0.v apply directly.
+     Curve.Secp256k1_G1_Add_Spec
      Curve.P384_G1_Add_Spec
      Curve.P224_G1_Add_Spec
      ; The functor instances replay that same WP script over the functor

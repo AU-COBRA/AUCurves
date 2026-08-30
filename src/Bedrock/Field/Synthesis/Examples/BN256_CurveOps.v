@@ -29,6 +29,7 @@ Require Import Bedrock.Group.CurveAdd.PointDoubleA0.
 Require Import Bedrock.Group.CurveAdd.PointNegate.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.Group.CurveAdd.CurveAddInplaceWrapper.
+Require Import Bedrock.Group.ScalarMult.NistWnafWrappers.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Bedrock.Specs.Field.
 Require Import Crypto.Bedrock.Field.Interface.CompilationAbstract.
@@ -198,7 +199,8 @@ Section BN256_CurveOps_Specs.
 
       [bn256_point_double_correct] is Qed from
       [PointDoubleA0.rcb_double_a0_correct];
-      [bn256_store_zero_correct] is still Admitted. *)
+      [bn256_store_zero_correct] is Qed from
+      [NistWnafWrappers.store_zero_from_word_ok]. *)
 
   Lemma bn256_point_double_correct :
     forall (three_b : Crypto.Bedrock.Specs.Field.felem) functions,
@@ -289,12 +291,24 @@ Section BN256_CurveOps_Specs.
       map.get functions "store_zero" = Some (snd bn256_store_zero) ->
       bn256_store_zero_spec functions.
   Proof.
-    (* Mechanical proof: 3 from_word calls writing 0, 1, 0 to the point
-       components. Each call discharges via Hfw after converting FElem to
-       bytes. Final step wraps into Compilation2.FElem (Some tight_bounds).
-       Left as follow-up — the store_zero spec is well-established in
-       StoreZero.v for the standard encoding. *)
-  Admitted.
+    intros functions Hfw Hsz.
+    (* [bn256_store_zero] is [NistWnafWrappers.store_zero_from_word_func]
+       at these instances (same three [from_word] calls with literals
+       0, 1, 0, same parameter names), so [Hsz] meets the table premise
+       of [store_zero_from_word_ok] by conversion.
+
+       [StoreZero.store_zero_ok] is NOT the lemma to use here: it is
+       [program_logic_goal_for store_zero_func True], proved by
+       [exact I], and carries no information about the body.
+
+       The 13 arguments before [functions] are the six bedrock2
+       parameters, the four ok-classes, [field_parameters],
+       [field_representation] and [FieldRepresentation_ok]; all are
+       determined by unification against the conclusion.  Fully applied
+       [exact] rather than [eapply] so the cost is one conversion. *)
+    exact (@store_zero_from_word_ok _ _ _ _ _ _ _ _ _ _ _ _ _
+             functions Hsz Hfw).
+  Qed.
 
 End BN256_CurveOps_Specs.
 

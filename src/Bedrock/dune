@@ -53,6 +53,7 @@
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust
      Curve.EmitWnafRust
+     Curve.EmitDoubleA0Rust
      ; Axiom check for the Algorithm 9 rebinding; Print Assumptions only,
      ; no theorems.  Run by hand, not part of the build.
      Examples.CheckBNDouble

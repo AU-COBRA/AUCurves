@@ -70,3 +70,13 @@ ark-bn254 = "0.5"
 ark-ec    = "0.5"
 ark-ff    = "0.5"
 ark-std   = "0.5"
+
+# Instruction-count harness (benches/iai_bn254.rs).  Needs `valgrind` on the
+# host and a runner binary at the SAME version as this crate dependency:
+#     cargo install iai-callgrind-runner --version 0.16.1
+# A version skew between the two is a run-time error, not a build error.
+iai-callgrind = "=0.16.1"
+
+[[bench]]
+name = "iai_bn254"
+harness = false

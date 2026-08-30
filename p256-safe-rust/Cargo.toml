@@ -31,5 +31,15 @@ safegcd     = { path = "../safegcd-rs" }
 # Pinned and resolvable from the local registry cache (`cargo --offline`).
 p256_rc = { package = "p256", version = "=0.13.2", default-features = false, features = ["arithmetic", "expose-field"] }
 
+# Instruction-count harness (benches/iai_p256.rs).  Needs `valgrind` on the
+# host and a runner binary at the SAME version as this crate dependency:
+#     cargo install iai-callgrind-runner --version 0.16.1
+# A version skew between the two is a run-time error, not a build error.
+iai-callgrind = "=0.16.1"
+
+[[bench]]
+name = "iai_p256"
+harness = false
+
 [features]
 extracted = []

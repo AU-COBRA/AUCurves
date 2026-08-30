@@ -15,3 +15,12 @@ fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }
 
 [dev-dependencies]
+# Instruction-count harness (benches/iai_bw6_761.rs).  Needs `valgrind` on
+# the host and a runner binary at the SAME version as this crate dependency:
+#     cargo install iai-callgrind-runner --version 0.16.1
+# A version skew between the two is a run-time error, not a build error.
+iai-callgrind = "=0.16.1"
+
+[[bench]]
+name = "iai_bw6_761"
+harness = false

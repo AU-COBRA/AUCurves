@@ -25,7 +25,20 @@ safegcd     = { path = "../safegcd-rs" }
 # RustCrypto reference implementation for examples/bench_compare.rs.
 # Renamed because this crate's own [lib] is also called `p384`.
 # Pinned and resolvable from the local registry cache (`cargo --offline`).
-p384_rc = { package = "p384", version = "=0.13.1", default-features = false, features = ["arithmetic"] }
+# `expose-field` makes RustCrypto's `FieldElement` public, which is what the
+# `rustcrypto_fp_mul` arm of benches/iai_p384.rs needs.  It is additive and
+# dev-only; the group-operation arms are unaffected.
+p384_rc = { package = "p384", version = "=0.13.1", default-features = false, features = ["arithmetic", "expose-field"] }
+
+# Instruction-count harness (benches/iai_p384.rs).  Needs `valgrind` on the
+# host and a runner binary at the SAME version as this crate dependency:
+#     cargo install iai-callgrind-runner --version 0.16.1
+# A version skew between the two is a run-time error, not a build error.
+iai-callgrind = "=0.16.1"
+
+[[bench]]
+name = "iai_p384"
+harness = false
 
 [features]
 extracted = []

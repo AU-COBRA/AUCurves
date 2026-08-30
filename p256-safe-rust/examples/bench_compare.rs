@@ -78,8 +78,9 @@
 //!   function as the fiat leaf it replaces -- see `tests/cryptopt_diff.rs`.
 //!   Run `--example bench_field` for the per-operation field numbers, and
 //!   build with `P256_NO_CRYPTOPT=1` to see the pure-fiat field layer.
-//!   (For P-384 both sides are still plain fiat-crypto -- see the p384
-//!   sibling of this file.)
+//!   P-384 also routes its field multiply and square to CryptOpt
+//!   assembly (p384-safe-rust/build.rs sets `p384_cryptopt_asm`); see
+//!   the p384 sibling of this file.
 
 use std::hint::black_box;
 use std::time::Instant;

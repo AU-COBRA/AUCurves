@@ -49,9 +49,17 @@ fallback when the host lacks BMI2/ADX.
 | BN254     | Pairing     |  3.52M |      — |  1.66M |
 
 BLS12-381 is 3.12x blst and 1.69x arkworks on a full pairing; BN254 is
-2.13x arkworks.  The gap is not confined to the tower: BN254's Fp
-multiply is 1.46x, Fp2 1.32x and Fp12 1.30x, so roughly a third of the
-pairing gap is already in the base field.
+2.13x arkworks.  Where that gap sits depends on which metric is asked.
+In cycles BN254's Fp multiply is 1.46x, Fp2 1.32x and Fp12 1.30x.  In
+INSTRUCTIONS the Fp multiply is 0.96x -- our leaf issues slightly fewer
+instructions than arkworks -- so that row is not extra work but lower
+throughput: 3.83 instructions per reference cycle against arkworks'
+5.82.  The same measurement puts six other rows across P-256, P-384 and
+the BN254 pairing at an instruction-to-cycle ratio of 0.89-0.92, i.e.
+this project's generated code consistently retires about 10% fewer
+instructions per cycle than the hand-written references.  Read the
+cycle ratios as what the machine does and the instruction ratios as
+what the algorithm costs; see the iai-callgrind benches for the latter.
 
 A note on measuring a field multiply against arkworks.  Our `fp_mul` is
 an out-parameter API, `fp_mul(&mut out, &a, &b)`, and writes through

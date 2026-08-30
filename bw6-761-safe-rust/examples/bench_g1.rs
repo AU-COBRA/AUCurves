@@ -8,6 +8,7 @@
 use std::hint::black_box;
 use std::time::Instant;
 
+use bw6_761::g1_double_a0_extracted::g1_proj_double_extracted;
 use bw6_761::group::*;
 use bw6_761::tower::{self, Fp, bw6_761_mul, bw6_761_square, bw6_761_inv};
 
@@ -62,15 +63,15 @@ fn main() {
         || { black_box(g1_double(black_box(&g))); });
     let d_a7 = bench("projective Alg 7 self-add   (33 ops, 14 M)", 200_000,
         || { black_box(g1_proj_add(black_box(&gp), black_box(&gp), &b3)); });
-    let d_a9 = bench("projective Alg 9 dedicated  (18 ops,  9 M)", 200_000,
-        || { black_box(g1_proj_double(black_box(&gp), &b3)); });
+    let d_a9 = bench("projective Alg 9 emitted    (18 ops,  9 M)", 200_000,
+        || { black_box(g1_proj_double_extracted(black_box(&gp))); });
     println!("\n  Alg 9 vs Alg 7 self-add : {:+.1}%", 100.0 * (d_a9 / d_a7 - 1.0));
     println!("  Alg 9 vs affine         : {:.1}x faster\n", d_aff / d_a9);
 
     println!("G1 point addition\n");
     let a_aff = bench("affine    chord            (1 inversion)", 20_000,
         || { black_box(g1_add(black_box(&g), black_box(&g1_double(&g)))); });
-    let gp2 = g1_proj_double(&gp, &b3);
+    let gp2 = g1_proj_double_extracted(&gp);
     let a_prj = bench("projective Alg 7           (33 ops, 14 M)", 200_000,
         || { black_box(g1_proj_add(black_box(&gp), black_box(&gp2), &b3)); });
     println!("\n  Alg 7 vs affine : {:.1}x faster\n", a_aff / a_prj);

@@ -24,6 +24,15 @@ pub mod tower {
 // first in link order).
 mod stubs;
 
+/// Byte-ABI shims (`*mut u8` / `*const u8` over the leaf byte slots)
+/// for the Rocq-emitted bodies, over the crate's own leaves.
+pub mod extracted_leaves;
+/// Rocq-emitted RCB Algorithm 9 complete doubling (a = 0).
+pub mod g1_double_a0_extracted;
+#[cfg(test)]
+mod g1_double_a0_test;
+
+
 // Hand-coded projective Miller loop (UNVERIFIED, benchmark-only).
 pub mod projective;
 

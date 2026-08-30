@@ -666,53 +666,27 @@ pub mod group {
         G1Proj { x: xo, y: yo, z: zo }
     }
 
-    /// Complete projective DOUBLING for `a = 0` (Renes–Costello–Batina
-    /// 2015, Algorithm 9): 8 M + 1 m_3b + 9 add/sub — 18 field
-    /// operations against the 33 of `g1_proj_add(P, P)`, and 9
-    /// multiplications against 14.
-    ///
-    /// Steps 1 and 6 are squarings written as `mul`, following
-    /// `CurveDoubleA3.v`'s PORT-CHECK (S): it keeps the callee list at
-    /// `[mul; add; sub; b3_loader]`, and BW6-761's `fp_square` leaf is
-    /// in fact 13% SLOWER than `fp_mul` (230 ns against 203 ns; see
-    /// `examples/bench_g1.rs`), so nothing is given up here.
-    ///
-    /// Transcribed from `rcb_double_a0_gallina`
-    /// (`src/Bedrock/Group/CurveAdd/PointDoubleA0.v`), where
-    /// `rcb_double_a0_eq_ladderstep` proves it equal — coordinate for
-    /// coordinate, rather than only projectively — to
-    /// `ladderstep_gallina three_b X X Y Y Z Z` for every on-curve
-    /// input.
-    ///
-    /// That file compiles with 0 Admitted and 0 Axiom, and its
-    /// `Derive` of the bedrock2 body (`rcb_double_a0_correct`) is Qed,
-    /// so both the formula and a body implementing it are verified.
-    /// This Rust function is a hand transcription of the Gallina one
-    /// and is not itself extracted, so `kat.rs` checks it against
-    /// `g1_proj_add(P, P)` directly.
-    pub fn g1_proj_double(P: &G1Proj, b3: &TFp) -> G1Proj {
-        let (x, y, z) = (P.x, P.y, P.z);
-        let mut u = TFp::zero();
-        let mut t0 = TFp::zero(); fp_mul_t(&mut t0, &y, &y);     // 1
-        let mut z3 = TFp::zero(); fp_add_t(&mut z3, &t0, &t0);   // 2
-        fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 3
-        fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 4
-        let mut t1 = TFp::zero(); fp_mul_t(&mut t1, &y, &z);     // 5
-        let mut t2 = TFp::zero(); fp_mul_t(&mut t2, &z, &z);     // 6
-        fp_mul_t(&mut u, b3, &t2); t2 = u;                       // 7
-        let mut x3 = TFp::zero(); fp_mul_t(&mut x3, &t2, &z3);   // 8
-        let mut y3 = TFp::zero(); fp_add_t(&mut y3, &t0, &t2);   // 9
-        fp_mul_t(&mut u, &t1, &z3); z3 = u;                      // 10
-        fp_add_t(&mut u, &t2, &t2); t1 = u;                      // 11
-        fp_add_t(&mut u, &t1, &t2); t2 = u;                      // 12
-        fp_sub_t(&mut u, &t0, &t2); t0 = u;                      // 13
-        fp_mul_t(&mut u, &t0, &y3); y3 = u;                      // 14
-        fp_add_t(&mut u, &x3, &y3); y3 = u;                      // 15
-        fp_mul_t(&mut u, &x, &y); t1 = u;                        // 16
-        fp_mul_t(&mut u, &t0, &t1); x3 = u;                      // 17
-        fp_add_t(&mut u, &x3, &x3); x3 = u;                      // 18
-        G1Proj { x: x3, y: y3, z: z3 }
-    }
+    // Complete projective DOUBLING for `a = 0` (Renes–Costello–Batina
+    // 2015, Algorithm 9): 8 M + 1 m_3b + 9 add/sub — 18 field
+    // operations against the 33 of `g1_proj_add(P, P)`, and 9
+    // multiplications against 14.
+    //
+    // There is no hand-written `g1_proj_double` here any more.  The
+    // shipping body is the ROCQ-EMITTED
+    // `crate::g1_double_a0_extracted::g1_proj_double_extracted`,
+    // printed by `rs_body_extract` from
+    // `src/Bedrock/Curve/CurveDoubleA0RustCmd.v`.  It takes no `b3`
+    // argument: `3b` is baked into the emitted text as the `cB3` byte
+    // constant, `mont_bytes 12 bw6_761_m ((3*b) mod m)` with `b = m−1`.
+    //
+    // The hand transcription it replaced agreed with it on every input
+    // tested (`kat::g1_alg9_extracted_matches_handwritten`) and
+    // measured 1.1% SLOWER (7040 against 6954 cycles;
+    // `examples/bench_double_a0.rs`), so per the repo's
+    // verified-extraction-first policy it was removed from the
+    // shipping surface.  It survives as the test oracle
+    // `kat::g1_proj_double_handwritten`, which is what keeps that
+    // differential test meaningful.
 
     /// The projective identity `(0 : 1 : 0)`.
     pub fn g1_proj_inf() -> G1Proj {
@@ -759,7 +733,7 @@ pub mod group {
         for &byte in scalar_be {
             for i in 0..8 {
                 let bit = (byte >> (7 - i)) & 1;
-                acc = g1_proj_double(&acc, &b3);
+                acc = crate::g1_double_a0_extracted::g1_proj_double_extracted(&acc);
                 if bit == 1 { acc = g1_proj_add(&acc, &pp, &b3); }
             }
         }
@@ -874,9 +848,17 @@ pub mod group {
     }
 }
 
+/// Byte-ABI shims (`*mut u8` / `*const u8` over `[u8; 96]` slots) for
+/// the Rocq-emitted bodies, over the crate's own verified leaves.
+pub mod extracted_leaves;
+/// Rocq-emitted RCB Algorithm 9 complete doubling (a = 0).
+pub mod g1_double_a0_extracted;
+
+pub use g1_double_a0_extracted::g1_proj_double_extracted;
+
 pub use group::{G1Aff, G1Proj, G2Aff, g1_add, g1_double, g1_neg,
                  g1_scalar_mul, g1_scalar_mul_affine,
-                 g1_proj_add, g1_proj_double, g1_proj_inf, g1_three_b,
+                 g1_proj_add, g1_proj_inf, g1_three_b,
                  g1_to_proj, g1_from_proj,
                  g2_add, g2_double, g2_neg, g2_scalar_mul,
                  hash_to_g1, hash_to_g2};

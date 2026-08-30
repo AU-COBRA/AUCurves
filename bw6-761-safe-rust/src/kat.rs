@@ -713,7 +713,7 @@ fn hash_to_g2_stub_returns_none() {
 //
 // The affine chain (`g1_double`, `g1_add`, `g1_scalar_mul_affine`)
 // spends one `fp_inv` per group operation; the projective chain
-// (`g1_proj_double` = RCB Algorithm 9, `g1_proj_add` = RCB
+// (`g1_proj_double_extracted` = RCB Algorithm 9, `g1_proj_add` = RCB
 // Algorithm 7) spends none, and `g1_scalar_mul` inverts once at the
 // end.  These tests pin the two chains to the same function.
 // =====================================================================
@@ -743,16 +743,57 @@ fn g1_curve_b_is_minus_one() {
     assert_eq!(crate::group::g1_three_b(), minus_three);
 }
 
+/// The hand transcription of `rcb_double_a0_gallina` that this crate
+/// used to SHIP as `group::g1_proj_double`, retained here as the test
+/// oracle for the Rocq-emitted body that replaced it (see
+/// [`g1_alg9_extracted_matches_handwritten`]).  Independent code —
+/// struct-typed `Fp` throughout, no byte buffers, the paper's in-place
+/// buffer reuse rather than SSA slots — so agreement between the two
+/// is evidence about both.
+///
+/// Steps 1 and 6 are squarings written as `mul`, following
+/// `CurveDoubleA3.v`'s PORT-CHECK (S); BW6-761's `fp_square` leaf is
+/// in fact 13% SLOWER than `fp_mul` (230 ns against 203 ns; see
+/// `examples/bench_g1.rs`), so nothing is given up by that.
+fn g1_proj_double_handwritten(P: &crate::group::G1Proj, b3: &tower::Fp)
+    -> crate::group::G1Proj
+{
+    use crate::group::G1Proj;
+    use tower::{bw6_761_add as fp_add_t, bw6_761_mul as fp_mul_t,
+                bw6_761_sub as fp_sub_t, Fp as TFp};
+    let (x, y, z) = (P.x, P.y, P.z);
+    let mut u = TFp::zero();
+    let mut t0 = TFp::zero(); fp_mul_t(&mut t0, &y, &y);     // 1
+    let mut z3 = TFp::zero(); fp_add_t(&mut z3, &t0, &t0);   // 2
+    fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 3
+    fp_add_t(&mut u, &z3, &z3); z3 = u;                      // 4
+    let mut t1 = TFp::zero(); fp_mul_t(&mut t1, &y, &z);     // 5
+    let mut t2 = TFp::zero(); fp_mul_t(&mut t2, &z, &z);     // 6
+    fp_mul_t(&mut u, b3, &t2); t2 = u;                       // 7
+    let mut x3 = TFp::zero(); fp_mul_t(&mut x3, &t2, &z3);   // 8
+    let mut y3 = TFp::zero(); fp_add_t(&mut y3, &t0, &t2);   // 9
+    fp_mul_t(&mut u, &t1, &z3); z3 = u;                      // 10
+    fp_add_t(&mut u, &t2, &t2); t1 = u;                      // 11
+    fp_add_t(&mut u, &t1, &t2); t2 = u;                      // 12
+    fp_sub_t(&mut u, &t0, &t2); t0 = u;                      // 13
+    fp_mul_t(&mut u, &t0, &y3); y3 = u;                      // 14
+    fp_add_t(&mut u, &x3, &y3); y3 = u;                      // 15
+    fp_mul_t(&mut u, &x, &y); t1 = u;                        // 16
+    fp_mul_t(&mut u, &t0, &t1); x3 = u;                      // 17
+    fp_add_t(&mut u, &x3, &x3); x3 = u;                      // 18
+    G1Proj { x: x3, y: y3, z: z3 }
+}
+
 /// Algorithm 9 against the affine doubling, on 2^k·G for k = 0..15.
 #[test]
 fn g1_proj_double_matches_affine() {
+    use crate::g1_double_a0_extracted::g1_proj_double_extracted;
     use crate::group::*;
-    let b3 = g1_three_b();
     let mut aff = g1_gen();
     let mut proj = g1_to_proj(&aff);
     for k in 0..16 {
         aff = g1_double(&aff);
-        proj = g1_proj_double(&proj, &b3);
+        proj = g1_proj_double_extracted(&proj);
         assert_eq!(g1_from_proj(&proj), aff, "doubling mismatch at k={k}");
     }
 }
@@ -763,11 +804,12 @@ fn g1_proj_double_matches_affine() {
 /// the projective equivalence.
 #[test]
 fn g1_alg9_equals_alg7_self_add_on_the_nose() {
+    use crate::g1_double_a0_extracted::g1_proj_double_extracted;
     use crate::group::*;
     let b3 = g1_three_b();
     let mut p = g1_to_proj(&g1_gen());
     for k in 0..16 {
-        let by_double = g1_proj_double(&p, &b3);
+        let by_double = g1_proj_double_extracted(&p);
         let by_self_add = g1_proj_add(&p, &p, &b3);
         assert_eq!(by_double, by_self_add,
                    "Alg 9 != Alg 7(P,P) at k={k}");
@@ -775,7 +817,7 @@ fn g1_alg9_equals_alg7_self_add_on_the_nose() {
     }
     // Also at the identity, where Z = 0.
     let inf = g1_proj_inf();
-    assert_eq!(g1_proj_double(&inf, &b3), g1_proj_add(&inf, &inf, &b3));
+    assert_eq!(g1_proj_double_extracted(&inf), g1_proj_add(&inf, &inf, &b3));
 }
 
 /// Algorithm 7 against the affine addition.
@@ -805,7 +847,9 @@ fn g1_proj_add_is_complete() {
     let inf = g1_proj_inf();
     assert_eq!(g1_from_proj(&g1_proj_add(&inf, &gp, &b3)), g);
     assert_eq!(g1_from_proj(&g1_proj_add(&gp, &inf, &b3)), g);
-    assert_eq!(g1_from_proj(&g1_proj_double(&inf, &b3)), G1Aff::Inf);
+    assert_eq!(
+        g1_from_proj(&crate::g1_double_a0_extracted::g1_proj_double_extracted(&inf)),
+        G1Aff::Inf);
     let neg_gp = g1_to_proj(&g1_neg(&g));
     assert_eq!(g1_from_proj(&g1_proj_add(&gp, &neg_gp, &b3)), G1Aff::Inf);
 }
@@ -851,4 +895,134 @@ fn g1_scalar_mul_projective_zero_and_one() {
     assert_eq!(g1_scalar_mul(&[0u8; 4], &g), G1Aff::Inf);
     assert_eq!(g1_scalar_mul(&[1u8], &g), g);
     assert_eq!(g1_scalar_mul(&[2u8], &g), g1_double(&g));
+}
+
+// =====================================================================
+// Rocq-EMITTED Algorithm 9 (`g1_double_a0_extracted.rs`) against the
+// hand-written `group::g1_proj_double`
+//
+// Both are transcriptions of `PointDoubleA0.rcb_double_a0_gallina`;
+// the emitted one mechanically, through `rs_body_extract`, the other
+// by hand.  Disagreement on any input means one of the two is wrong,
+// so these compare the full projective TRIPLE, not the affine image.
+// =====================================================================
+
+/// Deterministic Fp element: `x^k` for a fixed generator-coordinate
+/// `x`, which stays inside the Montgomery domain by construction.
+fn fp_pow_small(base: &tower::Fp, k: u32) -> tower::Fp {
+    use tower::{bw6_761_mul, Fp};
+    let mut acc = Fp::zero();
+    crate::tower::bw6_761_one(&mut acc);
+    for _ in 0..k {
+        let mut t = Fp::zero();
+        bw6_761_mul(&mut t, &acc, base);
+        acc = t;
+    }
+    acc
+}
+
+/// Scale a projective representative by `lambda`, giving a DIFFERENT
+/// triple for the same projective point (in particular `Z != 1`).
+fn scale_proj(p: &crate::group::G1Proj, lambda: &tower::Fp) -> crate::group::G1Proj {
+    use crate::group::G1Proj;
+    use tower::{bw6_761_mul, Fp};
+    let mut x = Fp::zero();
+    let mut y = Fp::zero();
+    let mut z = Fp::zero();
+    bw6_761_mul(&mut x, &p.x, lambda);
+    bw6_761_mul(&mut y, &p.y, lambda);
+    bw6_761_mul(&mut z, &p.z, lambda);
+    G1Proj { x, y, z }
+}
+
+/// The differential test: emitted body vs hand-written body, as
+/// projective triples, on the identity, the generator, 2G, a spread
+/// of on-curve points, and non-normalised (`Z != 1`) representatives.
+#[test]
+fn g1_alg9_extracted_matches_handwritten() {
+    use crate::g1_double_a0_extracted::g1_proj_double_extracted;
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let g = g1_gen();
+    let gp = g1_to_proj(&g);
+
+    // (1) the identity (0 : 1 : 0)
+    let inf = g1_proj_inf();
+    assert_eq!(g1_proj_double_extracted(&inf), g1_proj_double_handwritten(&inf, &b3),
+               "extracted != hand-written at the identity");
+
+    // (2) the generator, Z = 1
+    assert_eq!(g1_proj_double_extracted(&gp), g1_proj_double_handwritten(&gp, &b3),
+               "extracted != hand-written at G");
+
+    // (3) 2G, and (4) a run of further on-curve points 2^k·G, whose
+    //     Z is not 1 from k = 1 on.
+    let mut p = gp;
+    for k in 0..24 {
+        let want = g1_proj_double_handwritten(&p, &b3);
+        let got = g1_proj_double_extracted(&p);
+        assert_eq!(got, want, "extracted != hand-written at 2^{k}·G");
+        p = want;
+    }
+
+    // (5) a spread of on-curve points k·G for pseudo-random k.
+    let scalars: [&[u8]; 6] = [
+        &[0xde, 0xad, 0xbe, 0xef],
+        &[0x00, 0x00, 0x12, 0x34, 0x56, 0x78],
+        &[0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+          0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+        &[0xa5, 0x5a, 0x3c, 0xc3, 0x0f, 0xf0, 0x69, 0x96,
+          0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+          0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01],
+        &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+          0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
+    ];
+    for s in scalars {
+        let q = g1_to_proj(&g1_scalar_mul(s, &g));
+        assert_eq!(g1_proj_double_extracted(&q), g1_proj_double_handwritten(&q, &b3),
+                   "extracted != hand-written at {s:02x?}·G");
+        // (6) the same point, non-normalised: (λX : λY : λZ), Z != 1.
+        for e in [2u32, 3, 7, 11] {
+            let lambda = fp_pow_small(&tower::Fp(G1_GEN_X), e);
+            let qs = scale_proj(&q, &lambda);
+            assert_eq!(g1_proj_double_extracted(&qs),
+                       g1_proj_double_handwritten(&qs, &b3),
+                       "extracted != hand-written at λ^{e}·({s:02x?}·G)");
+        }
+    }
+}
+
+/// The emitted body also has to agree with Algorithm 7 applied to a
+/// repeated argument — the Rust image of `rcb_double_a0_eq_ladderstep`
+/// — on on-curve inputs, coordinate for coordinate.
+#[test]
+fn g1_alg9_extracted_equals_alg7_self_add() {
+    use crate::g1_double_a0_extracted::g1_proj_double_extracted;
+    use crate::group::*;
+    let b3 = g1_three_b();
+    let mut p = g1_to_proj(&g1_gen());
+    for k in 0..16 {
+        let by_double = g1_proj_double_extracted(&p);
+        assert_eq!(by_double, g1_proj_add(&p, &p, &b3),
+                   "extracted Alg 9 != Alg 7(P,P) at k={k}");
+        p = by_double;
+    }
+}
+
+/// And it has to agree with the affine reference through
+/// `g1_from_proj`, which is an independent check of the value (the
+/// two tests above only pin it to other RCB code).
+#[test]
+fn g1_alg9_extracted_matches_affine() {
+    use crate::g1_double_a0_extracted::g1_proj_double_extracted;
+    use crate::group::*;
+    let mut aff = g1_gen();
+    let mut proj = g1_to_proj(&aff);
+    for k in 0..16 {
+        aff = g1_double(&aff);
+        proj = g1_proj_double_extracted(&proj);
+        assert_eq!(g1_from_proj(&proj), aff,
+                   "extracted doubling mismatch at k={k}");
+    }
 }

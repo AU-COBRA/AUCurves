@@ -136,6 +136,14 @@ mod extern_shim {
 // linkable thanks to the `extern_shim` module above (which provides
 // the `_bls377_*` C-ABI symbols by re-routing into the fiat-rust
 // wrappers).
+/// Byte-ABI shims (`*mut u8` / `*const u8` over the leaf byte slots)
+/// for the Rocq-emitted bodies, over the crate's own leaves.
+pub mod extracted_leaves;
+/// Rocq-emitted RCB Algorithm 9 complete doubling (a = 0).
+pub mod g1_double_a0_extracted;
+#[cfg(test)]
+mod g1_double_a0_test;
+
 pub mod tower {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/bls12_377_safe_tower.rs"));
 }

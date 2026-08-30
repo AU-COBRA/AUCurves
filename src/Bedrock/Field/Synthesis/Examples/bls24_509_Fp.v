@@ -52,6 +52,15 @@ Section Field.
          M ((a - F.of_Z _ 2) / F.of_Z _ 4)%F prefix).
   Defined.
 
+  (* Mirrors bn254_prime.v:51.  BLS24_509_Instances.v has a
+     PrimeFieldParameters_ok, which is a different class; the G1 files
+     need this one. *)
+  Instance bls24_509_field_parameters_ok : FieldParameters_ok.
+  Proof using Type.
+    constructor.
+    exact prime_bls24_509.
+  Qed.
+
   Definition to_mont_string := prefix ++ "to_mont".
   Definition from_mont_string := prefix ++ "from_mont".
 

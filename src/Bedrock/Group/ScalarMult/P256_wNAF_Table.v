@@ -74,19 +74,12 @@ Section P256_wNAF_Table.
   Local Notation Fzero := (@F.zero M_pos).
   Local Notation Fone := (@F.one M_pos).
 
-  (** The five curve-level side conditions, character for character the
-      Section hypotheses of [P256_wNAF_Instance] §1b.  [p256_a_val] and
-      [p256_three_b_val] are closed constants of that file (they are
-      [feval] of the stored Montgomery felems), so only [b] and the four
-      proofs are hypotheses. *)
-  Context (p256_b_val : F).
-  Context (p256_M_gt_27 : (27 < M_pos)%positive).
-  Context (p256_Hthree_b :
-    p256_three_b_val = (p256_b_val + p256_b_val + p256_b_val)%F).
-  Context (p256_Hdisc : id
-    ((((1 + 1 + 1 + 1) * p256_a_val * p256_a_val * p256_a_val
-       + ((1 + 1 + 1 + 1) * (1 + 1 + 1 + 1) + (1 + 1 + 1 + 1)
-          + (1 + 1 + 1 + 1) + 1 + 1 + 1) * p256_b_val * p256_b_val) <> 0)%F)).
+  (** The five curve-level side conditions of [P256_wNAF_Instance] §1b.
+      [p256_a_val] and [p256_three_b_val] are closed constants of that
+      file (they are [feval] of the stored Montgomery felems), and
+      [p256_b_val], [p256_M_gt_27], [p256_Hthree_b] and [p256_Hdisc] are
+      now closed constants of it too — they are imported, not restated.
+      Only [p256_Hexcept] below is still a hypothesis. *)
 
   Local Notation P256_Ppoint :=
     (@Projective.point F eq F.zero F.add F.mul p256_a_val p256_b_val).
@@ -203,7 +196,7 @@ Section P256_wNAF_Table.
   Theorem p256_table_ok_of_oncurve :
     forall Px Py Pz : F,
       RcbProjectiveLaws.oncurve p256_a_val p256_b_val (Px, Py, Pz) ->
-      p256_table_ok p256_b_val Px Py Pz (p256_table4 (Px, Py, Pz)).
+      p256_table_ok Px Py Pz (p256_table4 (Px, Py, Pz)).
   Proof.
     intros Px Py Pz HP.
     first

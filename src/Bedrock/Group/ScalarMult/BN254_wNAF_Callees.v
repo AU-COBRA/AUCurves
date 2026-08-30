@@ -538,4 +538,36 @@ Section BN254_GeneralA.
     rewrite bn254_a_feval, bn254_three_b_feval. reflexivity.
   Qed.
 
+
+  (** ** The wNAF route's own function table.
+
+      Two tables rather than one.  [BN254_CurveOps.bn254_curve_op_funcs]
+      binds "curve_add" to the ladderstep body, which is what BLS12 and
+      the other pairing curves expect; the general-a wNAF route needs
+      "curve_add" bound to [curve_add_inplace_general_func] instead, and
+      the wrapper lemmas of [NistWnafWrappers] match on those literal
+      names.  Both tables are plain [list function_t] and nothing
+      requires a single one per curve, so each route carries its own
+      environment.  That leaves [bn254_curve_op_funcs] untouched --
+      including its "curve_double_a0" Algorithm 9 entry, which nothing
+      in this chain reads -- and avoids renaming a body the other curves
+      share.  The alternative, one table with a rename, would either
+      break BN254's parity with its siblings or force the generic
+      wrappers to take a name parameter. *)
+  Definition bn254_wnaf_op_funcs : list function_t :=
+    [ ("curve_add_general", bn254_curve_add_general_func);
+      ("bn254_three_b",     bn254_three_b_func);
+      ("bn254_a_const",     bn254_a_const_func);
+      ("curve_add",         snd curve_add_inplace_general_func);
+      ("curve_double",      snd curve_double_general_func) ].
+
+  Lemma bn254_wnaf_op_funcs_ok :
+    bn254_general_table (map.of_list bn254_wnaf_op_funcs).
+  Proof.
+    unfold bn254_general_table, bn254_wnaf_op_funcs.
+    first [ repeat split; reflexivity
+          | repeat split; vm_compute; reflexivity
+          | repeat split; cbv; reflexivity ].
+  Qed.
+
 End BN254_GeneralA.

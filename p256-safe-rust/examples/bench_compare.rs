@@ -1,10 +1,35 @@
 //! Side-by-side P-256 group benchmark: this crate vs RustCrypto `p256`,
-//! same machine, same iteration counts, same `black_box` discipline.
+//! same machine, same process, same iteration counts, same `black_box`
+//! discipline.
 //!
 //! Run pinned to one core for stability:
 //!   taskset -c 2 cargo run --release --offline -p p256-safe-rust --example bench_compare
 //!
-//! WHAT IS AND IS NOT COMPARABLE (read before quoting a ratio)
+//! ## MEASUREMENT (read before quoting a number)
+//!
+//! The primary column is **cycles**; nanoseconds are secondary.  Cycles are
+//! read with `_rdtsc` fenced by `lfence` on both sides.  This host reports
+//! `constant_tsc` + `nonstop_tsc`, so the counter ticks at a fixed reference
+//! rate independent of the core's actual frequency.  These are therefore
+//! *invariant-TSC reference cycles*, not retired core cycles; a true
+//! core-cycle count needs `perf_event_open`, and `perf_event_paranoid` is 4
+//! on this host, so it is unavailable without a root sysctl.  Reference
+//! cycles are far more stable than wall-clock nanoseconds under background
+//! load, which is why the ratios below are computed on cycles.
+//!
+//! Both arms run in ONE process and are INTERLEAVED round by round: within a
+//! round, ours is timed, then RustCrypto's, then the next round starts.  Per
+//! row the round MINIMUM is reported.  Interleaving means a load spike hits
+//! both arms, and the minimum discards the rounds it hit.  A pair of
+//! one-shot timing runs, one arm each, does neither.
+//!
+//! Each timing loop is a serial dependency chain — iteration `i + 1` consumes
+//! the result of iteration `i` — with the *operands* inside `black_box`.
+//! `black_box` on the result alone does NOT stop LLVM hoisting a
+//! loop-invariant computation out of the loop.  `assert_floor` fails the run
+//! rather than printing a figure only an optimised-away loop could produce.
+//!
+//! ## WHAT IS AND IS NOT COMPARABLE
 //!
 //! * `g1_add` / `g1_double`.  Ours is a line-by-line transcription of the
 //!   Qed-proved bedrock2 body `P256_G1_add`
@@ -59,34 +84,75 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-const N_ADD: u64 = 2_000_000;
-const N_DBL: u64 = 2_000_000;
-const N_MUL: u64 = 2_000;
+const N_ADD: u64 = 500_000;
+const N_DBL: u64 = 500_000;
+const N_MUL: u64 = 300;
 
-/// Number of timed repetitions per measurement; the minimum is reported.
-/// The minimum is the right summary here because every source of error on a
-/// shared machine -- a competing process, a frequency dip, a migration --
-/// adds time and none subtracts it.
-const REPS: usize = 7;
+/// Number of interleaved rounds; the per-row minimum is reported.  Every
+/// source of error on a shared machine -- a competing process, a frequency
+/// dip, a migration -- adds time and none subtracts it.
+const ROUNDS: usize = 7;
 
-/// Warm up for `iters / 10` calls, then time `iters` calls `REPS` times and
-/// return the smallest ns/op observed.
-fn bench<F: FnMut()>(iters: u64, mut f: F) -> f64 {
-    for _ in 0..(iters / 10 + 1) {
+/// Serialising TSC read.  `lfence` on both sides keeps the counter read
+/// from drifting across the region being timed.
+#[inline]
+fn rdtsc() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use core::arch::x86_64::{_mm_lfence, _rdtsc};
+        _mm_lfence();
+        let t = _rdtsc();
+        _mm_lfence();
+        t
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
+}
+
+/// A single measurement: reference cycles per op and nanoseconds per op.
+#[derive(Clone, Copy)]
+struct M {
+    cyc: f64,
+    ns: f64,
+}
+
+impl M {
+    fn worst() -> Self {
+        M { cyc: f64::INFINITY, ns: f64::INFINITY }
+    }
+    fn min(self, o: Self) -> Self {
+        if o.cyc < self.cyc {
+            o
+        } else {
+            self
+        }
+    }
+}
+
+fn round<F: FnMut()>(iters: u64, mut f: F) -> M {
+    let t0 = rdtsc();
+    let w0 = Instant::now();
+    for _ in 0..iters {
         f();
     }
-    let mut best = f64::INFINITY;
-    for _ in 0..REPS {
-        let start = Instant::now();
-        for _ in 0..iters {
-            f();
-        }
-        let t = start.elapsed().as_nanos() as f64 / iters as f64;
-        if t < best {
-            best = t;
-        }
+    M {
+        cyc: (rdtsc() - t0) as f64 / iters as f64,
+        ns: w0.elapsed().as_nanos() as f64 / iters as f64,
     }
-    best
+}
+
+/// Refuse to report a figure that cannot be real.  Below the floor means the
+/// timing loop was optimised away.
+fn assert_floor(label: &str, m: M, floor: f64) {
+    assert!(
+        m.cyc >= floor,
+        "{label}: {:.2} cycles/op is below the {floor} cycle floor — the timing \
+         loop was optimised away.  Check that the operands are inside black_box \
+         and that each iteration consumes the previous result.",
+        m.cyc
+    );
 }
 
 /// The one scalar both arms multiply by, 32 bytes big-endian.
@@ -106,129 +172,153 @@ fn main() {
 
     println!("P-256 (secp256r1) group operations -- this work vs RustCrypto p256 0.13.2");
     println!();
-
-    // ---------------------------------------------------------------
-    // This work: RCB Alg.4 / Alg.6 (a = -3) + 4-bit windowed CT ladder
-    // ---------------------------------------------------------------
-    println!("=== p256-safe-rust (this work: RCB Alg.4/Alg.6 a=-3, fiat-crypto leaves) ===");
-    let (ours_add, ours_dbl, ours_mul, ours_mul_w1) = {
-        use p256::group::*;
-
-        let g = g1_generator();
-        let g2 = g1_double(&g);
-
-        let mut acc = g2;
-        let add = bench(N_ADD, || acc = g1_add(black_box(&acc), black_box(&g)));
-        black_box(&acc);
-
-        let mut acc = g2;
-        let dbl = bench(N_DBL, || acc = g1_double(black_box(&acc)));
-        black_box(&acc);
-
-        let mut acc = g2;
-        let mul = bench(N_MUL, || acc = g1_scalar_mul(black_box(&k), black_box(&g2)));
-        black_box(&acc);
-
-        // The width-1 double-and-add-always ladder it replaced, timed in
-        // the same process so the windowing speedup is a ratio measured
-        // under identical conditions rather than across two runs.
-        let mut acc = g2;
-        let mul_w1 = bench(N_MUL, || {
-            acc = g1_scalar_mul_width1(black_box(&k), black_box(&g2))
-        });
-        black_box(&acc);
-
-        println!("  g1_add:        {:>12.1} ns/op   ({} iters)", add, N_ADD);
-        println!("  g1_double:     {:>12.1} ns/op   ({} iters)", dbl, N_DBL);
-        println!("  g1_scalar_mul: {:>12.1} ns/op   ({} iters)", mul, N_MUL);
-        println!(
-            "  g1_scalar_mul_width1 (reference): {:>12.1} ns/op   ({} iters)",
-            mul_w1, N_MUL
-        );
-        (add, dbl, mul, mul_w1)
-    };
-
-    // The Rocq-emitted w = 4 wNAF driver, when it is compiled in.
-    // VARIABLE TIME (branches on the digit, digit-indexed table read),
-    // unlike every other arm in this file.
-    #[cfg(feature = "extracted")]
-    let ours_wnaf = {
-        use p256::group::*;
-        use p256::wnaf::g1_scalar_mul_wnaf;
-        let g2 = g1_double(&g1_generator());
-        let mut acc = g2;
-        let mul = bench(N_MUL, || {
-            acc = g1_scalar_mul_wnaf(black_box(&k), black_box(&g2))
-        });
-        black_box(&acc);
-        println!(
-            "  g1_scalar_mul wNAF (Rocq-emitted, VARIABLE TIME): {:>10.1} ns/op   ({} iters)",
-            mul, N_MUL
-        );
-        Some(mul)
-    };
-    #[cfg(not(feature = "extracted"))]
-    let ours_wnaf: Option<f64> = None;
-
+    println!("cycles are invariant-TSC REFERENCE cycles (constant_tsc + nonstop_tsc),");
+    println!("not retired core cycles.  Ratios are computed on cycles.");
+    println!("Both arms in ONE process, {ROUNDS} interleaved rounds, per-row minimum.");
     println!();
 
-    // ---------------------------------------------------------------
-    // RustCrypto: RCB a = -3 specialisations + 4-bit fixed window
-    // ---------------------------------------------------------------
-    println!("=== RustCrypto p256 0.13.2 (production Rust: RCB a=-3, 4-bit window) ===");
-    let (rc_add, rc_dbl, rc_mul) = {
-        use p256_rc::elliptic_curve::group::Group;
-        use p256_rc::elliptic_curve::ops::Reduce;
-        use p256_rc::{FieldBytes, ProjectivePoint, Scalar, U256};
+    use p256::group::*;
+    use p256_rc::elliptic_curve::group::Group;
+    use p256_rc::elliptic_curve::ops::Reduce;
+    use p256_rc::{FieldBytes, ProjectivePoint, Scalar, U256};
 
-        let g = ProjectivePoint::GENERATOR;
-        let g2 = g.double();
-        let ks = <Scalar as Reduce<U256>>::reduce_bytes(FieldBytes::from_slice(&k));
+    // ---- ours ----
+    let g = g1_generator();
+    let g2 = g1_double(&g);
 
-        let mut acc = g2;
-        let add = bench(N_ADD, || acc = black_box(&acc).add(black_box(&g)));
-        black_box(&acc);
+    // ---- RustCrypto ----
+    let rg = ProjectivePoint::GENERATOR;
+    let rg2 = rg.double();
+    let ks = <Scalar as Reduce<U256>>::reduce_bytes(FieldBytes::from_slice(&k));
 
-        let mut acc = g2;
-        let dbl = bench(N_DBL, || acc = black_box(&acc).double());
-        black_box(&acc);
-
-        let mut acc = g2;
-        let mul = bench(N_MUL, || acc = black_box(g2) * black_box(ks));
-        black_box(&acc);
-
-        println!("  add:           {:>12.1} ns/op   ({} iters)", add, N_ADD);
-        println!("  double:        {:>12.1} ns/op   ({} iters)", dbl, N_DBL);
-        println!("  mul (var-base):{:>12.1} ns/op   ({} iters)", mul, N_MUL);
-        (add, dbl, mul)
-    };
-
-    // ---------------------------------------------------------------
-    println!();
-    println!("=== comparison ===");
-    println!(
-        "{:<22} {:>14} {:>14} {:>12}",
-        "operation", "ours (ns)", "RustCrypto (ns)", "ratio"
-    );
-    println!("{}", "-".repeat(66));
-    let row = |name: &str, ours: f64, theirs: f64| {
-        println!(
-            "{:<22} {:>14.1} {:>14.1} {:>11.2}x",
-            name,
-            ours,
-            theirs,
-            ours / theirs
-        );
-    };
-    row("add", ours_add, rc_add);
-    row("double", ours_dbl, rc_dbl);
-    row("scalar_mul (var-base)", ours_mul, rc_mul);
-    row("  ^ width-1, reference", ours_mul_w1, rc_mul);
-    if let Some(w) = ours_wnaf {
-        row("  ^ wNAF, var-time", w, rc_mul);
+    // Warm up both arms before any timing.
+    {
+        let mut a = g2;
+        let mut r = rg2;
+        for _ in 0..N_ADD / 10 {
+            a = g1_add(black_box(&a), black_box(&g));
+            a = g1_double(black_box(&a));
+            r = black_box(&r).add(black_box(&rg));
+            r = black_box(&r).double();
+        }
+        black_box(&a);
+        black_box(&r);
+        for _ in 0..N_MUL / 5 + 1 {
+            black_box(g1_scalar_mul(black_box(&k), black_box(&g2)));
+            black_box(black_box(rg2) * black_box(ks));
+        }
     }
+
+    let (mut o_add, mut o_dbl, mut o_mul, mut o_mul_w1) =
+        (M::worst(), M::worst(), M::worst(), M::worst());
+    let (mut r_add, mut r_dbl, mut r_mul) = (M::worst(), M::worst(), M::worst());
+    #[cfg(feature = "extracted")]
+    let mut o_wnaf = M::worst();
+
+    for _ in 0..ROUNDS {
+        // --- add: ours, then theirs ---
+        let mut acc = g2;
+        o_add = o_add.min(round(N_ADD, || acc = g1_add(black_box(&acc), black_box(&g))));
+        black_box(&acc);
+        let mut racc = rg2;
+        r_add = r_add.min(round(N_ADD, || racc = black_box(&racc).add(black_box(&rg))));
+        black_box(&racc);
+
+        // --- double ---
+        let mut acc = g2;
+        o_dbl = o_dbl.min(round(N_DBL, || acc = g1_double(black_box(&acc))));
+        black_box(&acc);
+        let mut racc = rg2;
+        r_dbl = r_dbl.min(round(N_DBL, || racc = black_box(&racc).double()));
+        black_box(&racc);
+
+        // --- scalar mul (variable base) ---
+        let mut acc = g2;
+        o_mul = o_mul.min(round(N_MUL, || {
+            acc = g1_scalar_mul(black_box(&k), black_box(&g2))
+        }));
+        black_box(&acc);
+        let mut racc = rg2;
+        r_mul = r_mul.min(round(N_MUL, || racc = black_box(rg2) * black_box(ks)));
+        black_box(&racc);
+
+        // --- the width-1 double-and-add-always ladder ours replaced ---
+        let mut acc = g2;
+        o_mul_w1 = o_mul_w1.min(round(N_MUL, || {
+            acc = g1_scalar_mul_width1(black_box(&k), black_box(&g2))
+        }));
+        black_box(&acc);
+
+        // The Rocq-emitted w = 4 wNAF driver, when it is compiled in.
+        // VARIABLE TIME (branches on the digit, digit-indexed table read),
+        // unlike every other arm in this file.
+        #[cfg(feature = "extracted")]
+        {
+            use p256::wnaf::g1_scalar_mul_wnaf;
+            let mut acc = g2;
+            o_wnaf = o_wnaf.min(round(N_MUL, || {
+                acc = g1_scalar_mul_wnaf(black_box(&k), black_box(&g2))
+            }));
+            black_box(&acc);
+        }
+    }
+
+    // A complete addition is >= 10 4x64 Montgomery multiplies; a 256-bit
+    // scalar multiplication is >= 256 doublings.
+    for (n, m) in [("ours add", o_add), ("RustCrypto add", r_add),
+                   ("ours double", o_dbl), ("RustCrypto double", r_dbl)] {
+        assert_floor(n, m, 40.0);
+    }
+    for (n, m) in [("ours scalar_mul", o_mul), ("RustCrypto scalar_mul", r_mul),
+                   ("ours scalar_mul width1", o_mul_w1)] {
+        assert_floor(n, m, 5_000.0);
+    }
+
+    println!("=== per-arm figures ===");
+    println!(
+        "{:<26} {:>12} {:>10}   {:>12} {:>10}",
+        "operation", "ours (cyc)", "ours (ns)", "RC (cyc)", "RC (ns)"
+    );
+    println!("{}", "-".repeat(78));
+    let pair = |name: &str, a: M, b: M| {
+        println!(
+            "{:<26} {:>12.1} {:>10.1}   {:>12.1} {:>10.1}",
+            name, a.cyc, a.ns, b.cyc, b.ns
+        );
+    };
+    pair("add", o_add, r_add);
+    pair("double", o_dbl, r_dbl);
+    pair("scalar_mul (var-base)", o_mul, r_mul);
+    println!(
+        "{:<26} {:>12.1} {:>10.1}",
+        "  ^ width-1, reference", o_mul_w1.cyc, o_mul_w1.ns
+    );
+    #[cfg(feature = "extracted")]
+    println!(
+        "{:<26} {:>12.1} {:>10.1}    (VARIABLE TIME)",
+        "  ^ wNAF, Rocq-emitted", o_wnaf.cyc, o_wnaf.ns
+    );
+
     println!();
-    println!("ratio = ours / RustCrypto; below 1.00 means this work is faster.");
+    println!("=== comparison (cycles) ===");
+    println!("{:<26} {:>14} {:>14} {:>12}", "operation", "ours (cyc)", "RustCrypto (cyc)", "ratio");
+    println!("{}", "-".repeat(70));
+    let row = |name: &str, ours: M, theirs: M| {
+        println!(
+            "{:<26} {:>14.1} {:>14.1} {:>11.2}x",
+            name, ours.cyc, theirs.cyc, ours.cyc / theirs.cyc
+        );
+    };
+    row("add", o_add, r_add);
+    row("double", o_dbl, r_dbl);
+    row("scalar_mul (var-base)", o_mul, r_mul);
+    row("  ^ width-1, reference", o_mul_w1, r_mul);
+    #[cfg(feature = "extracted")]
+    row("  ^ wNAF, var-time", o_wnaf, r_mul);
+
+    println!();
+    println!("ratio = ours / RustCrypto on CYCLES; below 1.00 means this work is faster.");
+    println!("TSC reference rate here: {:.3} GHz (from the add row).", o_add.cyc / o_add.ns);
     println!();
     println!("Caveats (full text at the head of this file):");
     println!("  - add/double: BOTH arms now use the a = -3 specialisation (RCB Alg.4 /");

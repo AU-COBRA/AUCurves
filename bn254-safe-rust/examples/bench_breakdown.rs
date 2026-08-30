@@ -1,35 +1,117 @@
-//! Per-stage breakdown: where does the 4.87x BN254 gap come from?
+//! Per-stage BN254 breakdown: where does the pairing gap against arkworks
+//! come from?
 //!
-//! Compares each tower level (Fp, Fp2, Fp12) and pairing stages
-//! (Miller, final exp) against arkworks. Helps pinpoint whether the
-//! gap is concentrated in the base field, the Fp12 layer, or pairing
-//! plumbing.
+//!   cargo run --release --example bench_breakdown
+//!
+//! Compares each tower level (Fp, Fp2, Fp12) and each pairing stage (Miller
+//! loop, full pairing) against arkworks, so the gap can be located in the
+//! base field, the Fp12 layer, or the pairing plumbing.
+//!
+//! ## Measurement notes
+//!
+//! The primary column is **cycles**; nanoseconds are secondary.  Cycles come
+//! from `_rdtsc` fenced by `lfence` on both sides.  This host reports
+//! `constant_tsc` + `nonstop_tsc`, so the counter ticks at a fixed reference
+//! rate independent of the core's actual frequency.  These are *invariant-TSC
+//! reference cycles*, not retired core cycles; a true core-cycle count needs
+//! `perf_event_open`, and `perf_event_paranoid` is 4 on this host, so it is
+//! unavailable without a root sysctl.  Reference cycles are far more stable
+//! than wall-clock nanoseconds under background load, so the ratios are
+//! computed on cycles.
+//!
+//! Both arms run in ONE process and are INTERLEAVED: within a round, ours is
+//! timed for an operation, then arkworks' is, and per row the round MINIMUM
+//! over `ROUNDS` rounds is reported.
+//!
+//! Every field loop is a serial dependency chain — iteration `i + 1` consumes
+//! the result of iteration `i` — with the *operands* inside `black_box`.
+//! Before this file was converted it used `std::ptr::read_volatile` on the
+//! arkworks operands and a bare call on ours, so the two arms were not the
+//! same shape: the volatile read forces a reload every iteration that our arm
+//! did not pay for.  A serial chain with `black_box`ed operands defeats
+//! hoisting on both arms with the same instruction budget.  `assert_floor`
+//! fails the run rather than printing a figure only an optimised-away loop
+//! could produce.
 use bn254::*;
+use std::hint::black_box;
 use std::time::Instant;
 
-use ark_bn254::{Bn254, Fq, Fq2, Fq12, G1Affine, G2Affine, G1Projective, G2Projective};
-use ark_ec::{pairing::Pairing, bn::G2Prepared, PrimeGroup};
-use ark_ff::{UniformRand, Field};
+use ark_bn254::{Bn254, Fq, Fq12, Fq2, G1Affine, G1Projective, G2Affine, G2Projective};
+use ark_ec::{bn::G2Prepared, pairing::Pairing, PrimeGroup};
+use ark_ff::{Field, UniformRand};
 
-const N: usize = 100_000;
-const N_PAIR: usize = 100;
+const ROUNDS: usize = 5;
+const N: u64 = 200_000;
+const N12: u64 = 5_000;
+const N_PAIR: u64 = 30;
 
-fn time_ns<F: FnMut()>(mut f: F, n: usize) -> f64 {
-    let start = Instant::now();
-    for _ in 0..n { f(); }
-    start.elapsed().as_nanos() as f64 / n as f64
+/// Serialising TSC read.  `lfence` on both sides keeps the counter read
+/// from drifting across the region being timed.
+#[inline]
+fn rdtsc() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use core::arch::x86_64::{_mm_lfence, _rdtsc};
+        _mm_lfence();
+        let t = _rdtsc();
+        _mm_lfence();
+        t
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
 }
 
-fn time_us<F: FnMut()>(mut f: F, n: usize) -> f64 {
-    let start = Instant::now();
-    for _ in 0..n { f(); }
-    start.elapsed().as_micros() as f64 / n as f64
+/// A single measurement: reference cycles per op and nanoseconds per op.
+#[derive(Clone, Copy)]
+struct M {
+    cyc: f64,
+    ns: f64,
+}
+
+impl M {
+    fn worst() -> Self {
+        M { cyc: f64::INFINITY, ns: f64::INFINITY }
+    }
+    fn min(self, o: Self) -> Self {
+        if o.cyc < self.cyc {
+            o
+        } else {
+            self
+        }
+    }
+}
+
+fn round<F: FnMut()>(iters: u64, mut f: F) -> M {
+    let t0 = rdtsc();
+    let w0 = Instant::now();
+    for _ in 0..iters {
+        f();
+    }
+    M {
+        cyc: (rdtsc() - t0) as f64 / iters as f64,
+        ns: w0.elapsed().as_nanos() as f64 / iters as f64,
+    }
+}
+
+fn assert_floor(label: &str, m: M, floor: f64) {
+    assert!(
+        m.cyc >= floor,
+        "{label}: {:.2} cycles/op is below the {floor} cycle floor — the timing \
+         loop was optimised away.  Check that the operands are inside black_box \
+         and that each iteration consumes the previous result.",
+        m.cyc
+    );
 }
 
 fn main() {
-    println!("BN254 per-stage benchmark: ours vs ark-bn254\n");
-    println!("{:<28} {:>14} {:>14} {:>10}", "operation", "ours", "arkworks", "ratio");
-    println!("{:-<70}", "");
+    println!("BN254 per-stage benchmark: ours vs ark-bn254 — one process,");
+    println!("{ROUNDS} interleaved rounds, per-row minimum.");
+    println!();
+    println!("cycles are invariant-TSC REFERENCE cycles (constant_tsc + nonstop_tsc),");
+    println!("not retired core cycles.  Ratios are computed on cycles.");
+    println!();
 
     // ---- Setup: ours ----
     let p_x = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
@@ -41,17 +123,14 @@ fn main() {
 
     let a = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
     let b = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
-    let mut c = Fp::zero();
 
     let a2 = Fp2 { c0: a, c1: b };
     let b2 = Fp2 { c0: b, c1: a };
-    let mut c2 = Fp2::zero();
 
     let mut a12 = Fp12::zero();
     pairing(&mut a12, &p_x, &p_y, &q_x, &q_y);
     let mut b12 = Fp12::zero();
     pairing(&mut b12, &p_x, &p_y, &q_x, &q_y);
-    let mut c12 = Fp12::zero();
 
     let mut out_pair = Fp12::zero();
     pairing(&mut out_pair, &p_x, &p_y, &q_x, &q_y); // warmup
@@ -68,49 +147,151 @@ fn main() {
     let bb = Fq::rand(&mut rng);
     let aa2 = Fq2::rand(&mut rng);
     let bb2 = Fq2::rand(&mut rng);
-    let mut aa12 = Fq12::rand(&mut rng);
+    let aa12 = Fq12::rand(&mut rng);
     let bb12 = Fq12::rand(&mut rng);
 
-    // Use std::ptr::read_volatile to defeat constant folding.
-    let read = |x: &Fq| unsafe { std::ptr::read_volatile(x) };
-    let read2 = |x: &Fq2| unsafe { std::ptr::read_volatile(x) };
-    let read12 = |x: &Fq12| unsafe { std::ptr::read_volatile(x) };
+    let (mut o_mul, mut o_sqr, mut o_mul2, mut o_mul12, mut o_sqr12) =
+        (M::worst(), M::worst(), M::worst(), M::worst(), M::worst());
+    let (mut a_mul, mut a_sqr, mut a_mul2, mut a_mul12, mut a_sqr12) =
+        (M::worst(), M::worst(), M::worst(), M::worst(), M::worst());
+    let (mut o_miller, mut a_miller, mut o_pair, mut a_pair) =
+        (M::worst(), M::worst(), M::worst(), M::worst());
 
-    // ---- Fp mul ----
-    let ours = time_ns(|| fp_mul(&mut c, &a, &b), N);
-    let ark = time_ns(|| { let _ = std::hint::black_box(read(&aa) * read(&bb)); }, N);
-    println!("{:<28} {:>11.1} ns {:>11.1} ns {:>9.2}x", "Fp mul", ours, ark, ours/ark);
+    for _ in 0..ROUNDS {
+        // ---- Fp mul: serial chain both sides ----
+        let mut acc = a;
+        let mut c = Fp::zero();
+        o_mul = o_mul.min(round(N, || {
+            fp_mul(&mut c, black_box(&acc), black_box(&b));
+            acc = c;
+        }));
+        black_box(&acc);
+        let mut xa = aa;
+        a_mul = a_mul.min(round(N, || {
+            xa = *black_box(&xa) * *black_box(&bb);
+        }));
+        black_box(xa);
 
-    // ---- Fp square ----
-    let ours = time_ns(|| fp_square(&mut c, &a), N);
-    let ark = time_ns(|| { let _ = std::hint::black_box(read(&aa).square()); }, N);
-    println!("{:<28} {:>11.1} ns {:>11.1} ns {:>9.2}x", "Fp sqr", ours, ark, ours/ark);
+        // ---- Fp square ----
+        let mut acc = a;
+        let mut c = Fp::zero();
+        o_sqr = o_sqr.min(round(N, || {
+            fp_square(&mut c, black_box(&acc));
+            acc = c;
+        }));
+        black_box(&acc);
+        let mut xa = aa;
+        a_sqr = a_sqr.min(round(N, || {
+            xa = black_box(&xa).square();
+        }));
+        black_box(xa);
 
-    // ---- Fp2 mul ----
-    let ours = time_ns(|| fp2_mul(&mut c2, &a2, &b2), N);
-    let ark = time_ns(|| { let _ = std::hint::black_box(read2(&aa2) * read2(&bb2)); }, N);
-    println!("{:<28} {:>11.1} ns {:>11.1} ns {:>9.2}x", "Fp2 mul", ours, ark, ours/ark);
+        // ---- Fp2 mul ----
+        let mut acc = a2;
+        let mut c2 = Fp2::zero();
+        o_mul2 = o_mul2.min(round(N, || {
+            fp2_mul(&mut c2, black_box(&acc), black_box(&b2));
+            acc = c2;
+        }));
+        black_box(&acc);
+        let mut xa = aa2;
+        a_mul2 = a_mul2.min(round(N, || {
+            xa = *black_box(&xa) * *black_box(&bb2);
+        }));
+        black_box(xa);
 
-    // ---- Fp12 mul ----
-    let ours = time_ns(|| fp12_mul(&mut c12, &a12, &b12), 10_000);
-    let ark = time_ns(|| { let _ = std::hint::black_box(read12(&aa12) * read12(&bb12)); }, 10_000);
-    println!("{:<28} {:>11.1} ns {:>11.1} ns {:>9.2}x", "Fp12 mul", ours, ark, ours/ark);
+        // ---- Fp12 mul ----
+        let mut acc = a12;
+        let mut c12 = Fp12::zero();
+        o_mul12 = o_mul12.min(round(N12, || {
+            fp12_mul(&mut c12, black_box(&acc), black_box(&b12));
+            acc = c12;
+        }));
+        black_box(&acc);
+        let mut xa = aa12;
+        a_mul12 = a_mul12.min(round(N12, || {
+            xa = *black_box(&xa) * *black_box(&bb12);
+        }));
+        black_box(xa);
 
-    // ---- Fp12 sqr ----
-    let ours = time_ns(|| fp12_square(&mut c12, &a12), 10_000);
-    let ark = time_ns(|| { let _ = std::hint::black_box(read12(&aa12).square()); }, 10_000);
-    println!("{:<28} {:>11.1} ns {:>11.1} ns {:>9.2}x", "Fp12 sqr", ours, ark, ours/ark);
+        // ---- Fp12 square ----
+        let mut acc = a12;
+        let mut c12 = Fp12::zero();
+        o_sqr12 = o_sqr12.min(round(N12, || {
+            fp12_square(&mut c12, black_box(&acc));
+            acc = c12;
+        }));
+        black_box(&acc);
+        let mut xa = aa12;
+        a_sqr12 = a_sqr12.min(round(N12, || {
+            xa = black_box(&xa).square();
+        }));
+        black_box(xa);
 
-    // ---- Miller loop ----
-    let ours = time_us(|| miller_loop(&mut out_pair, &p_x, &p_y, &q_x, &q_y), N_PAIR);
-    let ark = time_us(|| { let _ = std::hint::black_box(Bn254::multi_miller_loop([pa_aff], [qa_prep.clone()])); }, N_PAIR);
-    println!("{:<28} {:>11.1} us {:>11.1} us {:>9.2}x", "Miller loop", ours, ark, ours/ark);
+        // ---- Miller loop ----
+        o_miller = o_miller.min(round(N_PAIR, || {
+            miller_loop(black_box(&mut out_pair), black_box(&p_x), black_box(&p_y),
+                        black_box(&q_x), black_box(&q_y));
+        }));
+        // NOTE: `qa_prep.clone()` is inside the loop because
+        // `multi_miller_loop` consumes its argument.  The clone is a memcpy
+        // of the precomputed G2 line coefficients and is charged to the
+        // arkworks arm; it is small relative to the loop itself.
+        a_miller = a_miller.min(round(N_PAIR, || {
+            let _ = black_box(Bn254::multi_miller_loop(
+                [black_box(pa_aff)], [qa_prep.clone()]));
+        }));
 
-    // ---- Full pairing ----
-    let ours = time_us(|| pairing(&mut out_pair, &p_x, &p_y, &q_x, &q_y), N_PAIR);
-    let ark = time_us(|| { let _ = std::hint::black_box(Bn254::pairing(pa, qa)); }, N_PAIR);
-    println!("{:<28} {:>11.1} us {:>11.1} us {:>9.2}x", "Pairing (full)", ours, ark, ours/ark);
+        // ---- Full pairing ----
+        o_pair = o_pair.min(round(N_PAIR, || {
+            pairing(black_box(&mut out_pair), black_box(&p_x), black_box(&p_y),
+                    black_box(&q_x), black_box(&q_y));
+        }));
+        a_pair = a_pair.min(round(N_PAIR, || {
+            let _ = black_box(Bn254::pairing(black_box(pa), black_box(qa)));
+        }));
+    }
 
-    println!("\nratio = ours / arkworks (higher = our gap)");
-    println!("read_volatile defeats constant folding.");
+    // A 4x64 Montgomery multiply is 16 mul-class instructions plus the
+    // reduction; nothing under ~10 cycles is achievable.
+    for (n, m) in [("ours Fp mul", o_mul), ("ark Fq mul", a_mul),
+                   ("ours Fp sqr", o_sqr), ("ark Fq sqr", a_sqr)] {
+        assert_floor(n, m, 10.0);
+    }
+    // Fp2 is three Fp multiplies (Karatsuba); Fp12 is at least 18.
+    assert_floor("ours Fp2 mul", o_mul2, 30.0);
+    assert_floor("ark Fq2 mul", a_mul2, 30.0);
+    assert_floor("ours Fp12 mul", o_mul12, 180.0);
+    assert_floor("ark Fq12 mul", a_mul12, 180.0);
+    for (n, m) in [("ours pairing", o_pair), ("ark pairing", a_pair)] {
+        assert_floor(n, m, 100_000.0);
+    }
+
+    println!("{:<20} {:>13} {:>11} {:>13} {:>11} {:>9}",
+             "operation", "ours (cyc)", "ours (ns)", "ark (cyc)", "ark (ns)", "ratio");
+    println!("{:-<84}", "");
+    let row = |name: &str, o: M, a: M| {
+        println!("{:<20} {:>13.1} {:>11.1} {:>13.1} {:>11.1} {:>8.2}x",
+                 name, o.cyc, o.ns, a.cyc, a.ns, o.cyc / a.cyc);
+    };
+    row("Fp mul", o_mul, a_mul);
+    row("Fp sqr", o_sqr, a_sqr);
+    row("Fp2 mul", o_mul2, a_mul2);
+    row("Fp12 mul", o_mul12, a_mul12);
+    row("Fp12 sqr", o_sqr12, a_sqr12);
+    println!("{:-<84}", "");
+    let row_big = |name: &str, o: M, a: M| {
+        println!("{:<20} {:>13.0} {:>9.1} us {:>13.0} {:>9.1} us {:>8.2}x",
+                 name, o.cyc, o.ns / 1000.0, a.cyc, a.ns / 1000.0, o.cyc / a.cyc);
+    };
+    row_big("Miller loop", o_miller, a_miller);
+    row_big("Pairing (full)", o_pair, a_pair);
+
+    println!();
+    println!("ratio = ours / arkworks on CYCLES (higher = our gap).");
+    println!("TSC reference rate here: {:.3} GHz (from the Fp mul row).",
+             o_mul.cyc / o_mul.ns);
+    println!();
+    println!("Every field row is a serial latency chain with black_boxed operands,");
+    println!("identically shaped on both arms.");
 }

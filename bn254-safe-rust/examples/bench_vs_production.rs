@@ -36,6 +36,30 @@
 //! *operands* so nothing is loop-invariant.  This measures multiply
 //! latency for both.  `assert_plausible` below fails the run rather than
 //! printing another impossible number.
+//!
+//! ## The two `black_box` styles, and why both arkworks rows are printed
+//!
+//! `black_box` has two forms and they do not cost the same:
+//!
+//!   * by value, `black_box(acc) * black_box(b)` — the operand is *moved*
+//!     through the barrier, which spills it to the stack and reloads it.
+//!     The chain then pays a store-to-load forward on every iteration.
+//!   * by reference, `*black_box(&acc) * *black_box(&b)` — only the address
+//!     is made opaque.  The load still happens but the spill does not.
+//!
+//! Our arm's API is `fp_mul(&mut out, &a, &b)`, an out-parameter: it writes
+//! the product to memory and the next iteration loads it back, so the memory
+//! round trip is intrinsic to the operation as this crate exposes it.
+//! Arkworks' `a * b` returns by value and can stay in registers, so the
+//! by-value `black_box` adds to the arkworks arm a cost that our arm pays
+//! anyway.  Matching the *syntax* of the two arms therefore does NOT match
+//! their instruction budget.
+//!
+//! Both arkworks rows are printed below.  The by-value row makes the two
+//! arms look level; the by-reference row is the honest cost of an arkworks
+//! multiply as arkworks is actually called.  The gap between the two rows is
+//! the store-forward the barrier injected, and the by-reference ratio is the
+//! one to quote.
 use bn254::*;
 use std::hint::black_box;
 use std::time::Instant;
@@ -45,8 +69,12 @@ use ark_bn254::{Bn254, G1Projective, G2Projective};
 use ark_ec::{pairing::Pairing, PrimeGroup};
 use ark_ff::UniformRand;
 
-const N_PAIRING: usize = 100;
-const N_FP_MUL: usize = 1_000_000;
+const N_PAIRING: usize = 30;
+const N_FP_MUL: usize = 500_000;
+
+/// Interleaved rounds; the per-row minimum is reported.  Every source of
+/// error on a shared machine adds time and none subtracts it.
+const ROUNDS: usize = 5;
 
 /// Serialising TSC read.  `lfence` on both sides keeps the counter read
 /// from drifting across the region being timed.
@@ -73,6 +101,32 @@ struct M {
     ns: f64,
 }
 
+impl M {
+    fn worst() -> Self {
+        M { cyc: f64::INFINITY, ns: f64::INFINITY }
+    }
+    fn min(self, o: Self) -> Self {
+        if o.cyc < self.cyc {
+            o
+        } else {
+            self
+        }
+    }
+}
+
+/// Time `iters` calls of `f`, returning cycles and nanoseconds per call.
+fn round<F: FnMut()>(iters: usize, mut f: F) -> M {
+    let t0 = rdtsc();
+    let w0 = Instant::now();
+    for _ in 0..iters {
+        f();
+    }
+    M {
+        cyc: (rdtsc() - t0) as f64 / iters as f64,
+        ns: w0.elapsed().as_nanos() as f64 / iters as f64,
+    }
+}
+
 /// Refuse to report a field-multiply figure that cannot be real.
 ///
 /// A 4x64 Montgomery multiply is 16 `mul`-class instructions plus the
@@ -91,7 +145,13 @@ fn assert_plausible(label: &str, m: M) {
     );
 }
 
-fn bench_ours() -> (M, M) {
+fn main() {
+    println!("BN254 benchmark: our extraction vs. arkworks");
+    println!("cycles are invariant-TSC REFERENCE cycles (constant_tsc + nonstop_tsc),");
+    println!("not retired core cycles; read them, not the ns.");
+    println!("Both arms in ONE process, {ROUNDS} interleaved rounds, per-row minimum.\n");
+
+    // ---------------- our inputs ----------------
     let p_x = Fp([0xd35d438dc58f0d9d, 0x0a78eb28f5c70b3d, 0x666ea36f7879462c, 0x0e0a77c19a07df2f]);
     let p_y = Fp([0xa6ba871b8b1e1b3a, 0x14f1d651eb8e167b, 0xccdd46def0f28c58, 0x1c14ef83340fbe5e]);
     let q_x = Fp2 {
@@ -102,108 +162,113 @@ fn bench_ours() -> (M, M) {
         c0: Fp([0x619dfa9d886be9f6, 0xfe7fd297f59e9b78, 0xff9e1a62231b7dfe, 0x28fd7eebae9e4206]),
         c1: Fp([0x64095b56c71856ee, 0xdc57f922327d3cbb, 0x55f935be33351076, 0x0da4a0e693fd6482]),
     };
-
-    // Warmup
-    let mut out = Fp12::zero();
-    pairing(&mut out, &p_x, &p_y, &q_x, &q_y);
-
     let a = Fp([0x7a17caa950ad28d7, 0x1f6ac17ae15521b9, 0x334bea4e696bd284, 0x2a1f6744ce179d8e]);
     let b = Fp([0xe4b1c5ae034e46ca, 0x9cdb2d3b64716da7, 0x47d8eb76d8dd067e, 0x15d0085520f5bbc3]);
+    let mut out = Fp12::zero();
 
-    // Latency chain: acc <- acc * b, operands black_boxed so nothing is
-    // loop-invariant and nothing can be hoisted.
-    let mut acc = a;
-    let mut c = Fp::zero();
-    let t0 = rdtsc();
-    let w0 = Instant::now();
-    for _ in 0..N_FP_MUL {
-        fp_mul(&mut c, black_box(&acc), black_box(&b));
-        acc = c;
-    }
-    let mul = M {
-        cyc: (rdtsc() - t0) as f64 / N_FP_MUL as f64,
-        ns: w0.elapsed().as_nanos() as f64 / N_FP_MUL as f64,
-    };
-    black_box(&acc);
-
-    let t0 = rdtsc();
-    let w0 = Instant::now();
-    for _ in 0..N_PAIRING {
-        pairing(&mut out, black_box(&p_x), black_box(&p_y), black_box(&q_x), black_box(&q_y));
-    }
-    let pair = M {
-        cyc: (rdtsc() - t0) as f64 / N_PAIRING as f64,
-        ns: w0.elapsed().as_nanos() as f64 / N_PAIRING as f64,
-    };
-    black_box(&out);
-
-    (mul, pair)
-}
-
-fn bench_arkworks() -> (M, M) {
+    // ---------------- arkworks inputs ----------------
+    use ark_bn254::Fq;
     let mut rng = ark_std::test_rng();
     let p = G1Projective::generator();
     let q = G2Projective::generator();
+    let aa = Fq::rand(&mut rng);
+    let bb = Fq::rand(&mut rng);
 
-    // Warmup
-    let _ = Bn254::pairing(p, q);
-
-    use ark_bn254::Fq;
-    let a = Fq::rand(&mut rng);
-    let b = Fq::rand(&mut rng);
-
-    // Same shape as the arm above: serial chain, operands black_boxed.
-    let mut acc = a;
-    let t0 = rdtsc();
-    let w0 = Instant::now();
-    for _ in 0..N_FP_MUL {
-        acc = black_box(acc) * black_box(b);
+    // ---------------- warmup, both arms ----------------
+    {
+        pairing(&mut out, &p_x, &p_y, &q_x, &q_y);
+        let _ = Bn254::pairing(p, q);
+        let mut acc = a;
+        let mut c = Fp::zero();
+        let mut xv = aa;
+        let mut xr = aa;
+        for _ in 0..N_FP_MUL / 10 {
+            fp_mul(&mut c, black_box(&acc), black_box(&b));
+            acc = c;
+            xv = black_box(xv) * black_box(bb);
+            xr = *black_box(&xr) * *black_box(&bb);
+        }
+        black_box(&acc);
+        black_box(xv);
+        black_box(xr);
     }
-    let mul = M {
-        cyc: (rdtsc() - t0) as f64 / N_FP_MUL as f64,
-        ns: w0.elapsed().as_nanos() as f64 / N_FP_MUL as f64,
-    };
-    black_box(acc);
 
-    let t0 = rdtsc();
-    let w0 = Instant::now();
-    for _ in 0..N_PAIRING {
-        let _ = black_box(Bn254::pairing(black_box(p), black_box(q)));
+    let (mut ours_mul, mut ours_pair) = (M::worst(), M::worst());
+    let (mut ark_mul_val, mut ark_mul_ref, mut ark_pair) =
+        (M::worst(), M::worst(), M::worst());
+
+    for _ in 0..ROUNDS {
+        // Latency chain: acc <- acc * b, operands black_boxed so nothing is
+        // loop-invariant and nothing can be hoisted.
+        let mut acc = a;
+        let mut c = Fp::zero();
+        ours_mul = ours_mul.min(round(N_FP_MUL, || {
+            fp_mul(&mut c, black_box(&acc), black_box(&b));
+            acc = c;
+        }));
+        black_box(&acc);
+
+        // Arkworks, by-VALUE barrier: same syntax as our arm, but the move
+        // through `black_box` spills each operand to the stack, so this
+        // charges arkworks a store-forward our out-parameter API pays anyway.
+        let mut xv = aa;
+        ark_mul_val = ark_mul_val.min(round(N_FP_MUL, || {
+            xv = black_box(xv) * black_box(bb);
+        }));
+        black_box(xv);
+
+        // Arkworks, by-REFERENCE barrier: the address is opaque, the value is
+        // not spilled.  This is the cost of an arkworks multiply as arkworks
+        // is actually called, and is the row to quote.
+        let mut xr = aa;
+        ark_mul_ref = ark_mul_ref.min(round(N_FP_MUL, || {
+            xr = *black_box(&xr) * *black_box(&bb);
+        }));
+        black_box(xr);
+
+        ours_pair = ours_pair.min(round(N_PAIRING, || {
+            pairing(black_box(&mut out), black_box(&p_x), black_box(&p_y),
+                    black_box(&q_x), black_box(&q_y));
+        }));
+        black_box(&out);
+
+        ark_pair = ark_pair.min(round(N_PAIRING, || {
+            let _ = black_box(Bn254::pairing(black_box(p), black_box(q)));
+        }));
     }
-    let pair = M {
-        cyc: (rdtsc() - t0) as f64 / N_PAIRING as f64,
-        ns: w0.elapsed().as_nanos() as f64 / N_PAIRING as f64,
-    };
-
-    (mul, pair)
-}
-
-fn main() {
-    println!("BN254 benchmark: our extraction vs. arkworks");
-    println!("cycles are invariant-TSC reference cycles; read them, not the ns\n");
-
-    let (ours_mul, ours_pair) = bench_ours();
-    let (ark_mul, ark_pair) = bench_arkworks();
 
     assert_plausible("ours Fp mul", ours_mul);
-    assert_plausible("arkworks Fp mul", ark_mul);
+    assert_plausible("arkworks Fp mul (by value)", ark_mul_val);
+    assert_plausible("arkworks Fp mul (by reference)", ark_mul_ref);
 
     println!(
-        "{:<20} {:>12} {:>11} {:>12} {:>11} {:>9}",
+        "{:<28} {:>12} {:>11} {:>12} {:>11} {:>9}",
         "op", "ours (cyc)", "ours", "ark (cyc)", "arkworks", "ratio"
     );
-    println!("{:-<80}", "");
+    println!("{:-<88}", "");
+    let row = |name: &str, o: M, k: M| {
+        println!(
+            "{:<28} {:>12.1} {:>8.1} ns {:>12.1} {:>8.1} ns {:>8.2}x",
+            name, o.cyc, o.ns, k.cyc, k.ns, o.cyc / k.cyc
+        );
+    };
+    row("Fp mul (ark by reference)", ours_mul, ark_mul_ref);
+    row("Fp mul (ark by value)", ours_mul, ark_mul_val);
     println!(
-        "{:<20} {:>12.1} {:>8.1} ns {:>12.1} {:>8.1} ns {:>8.2}x",
-        "Fp mul", ours_mul.cyc, ours_mul.ns, ark_mul.cyc, ark_mul.ns,
-        ours_mul.cyc / ark_mul.cyc
-    );
-    println!(
-        "{:<20} {:>12.0} {:>8.1} us {:>12.0} {:>8.1} us {:>8.2}x",
+        "{:<28} {:>12.0} {:>8.1} us {:>12.0} {:>8.1} us {:>8.2}x",
         "Pairing (full)", ours_pair.cyc, ours_pair.ns / 1000.0,
         ark_pair.cyc, ark_pair.ns / 1000.0,
         ours_pair.cyc / ark_pair.cyc
     );
+
     println!("\n(ratio = how many times slower ours is vs. arkworks, on cycles)");
     println!("Both field loops are serial latency chains with black_boxed operands.");
+    println!();
+    println!("The two Fp-mul rows differ only in how the arkworks operands cross the");
+    println!("optimisation barrier: {:.1} cycles by value against {:.1} by reference,",
+             ark_mul_val.cyc, ark_mul_ref.cyc);
+    println!("a {:.1}-cycle store-forward that the by-value barrier injects.  Our arm's",
+             ark_mul_val.cyc - ark_mul_ref.cyc);
+    println!("`fp_mul(&mut out, &a, &b)` writes through memory by construction, so the");
+    println!("by-value row flatters us; quote the by-reference ratio.");
 }

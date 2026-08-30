@@ -4,63 +4,86 @@ Hardware: Zen 4, criterion median, release profile.
 
 ## Group operations and pairings
 
-Zen 4 (Ryzen 7 PRO 7840U), one core, `[profile.release]` with
-`lto = "fat", codegen-units = 1`.  Comparison arms run in the same
-process as ours, so the ratios are load-robust; absolute figures are
-not.  Ratio is ours / theirs, so below 1.00 means this project is
-faster.
+Zen 4 (Ryzen 7 PRO 7840U), pinned to one core, `[profile.release]` with
+`lto = "fat", codegen-units = 1`.  Figures are **invariant-TSC reference
+cycles** (`constant_tsc` + `nonstop_tsc`), not retired core cycles: a
+true core-cycle count needs `perf_event_open`, and `perf_event_paranoid`
+is 4 on this host.  Every comparison runs both arms in one process,
+interleaved round by round, and reports each row's round minimum, so a
+load spike hits both arms and the minimum discards the rounds it hit.
+Ratio is ours / theirs, so below 1.00 means this project is faster.
 
 ### NIST curves against RustCrypto
 
-Both arms use the same a = -3 RCB Algorithm 4 / Algorithm 6 formulas
-over the same Montgomery representation, and both scalar
-multiplications are constant time with a 4-bit window.
+Both arms use the a = -3 RCB Algorithm 4 / Algorithm 6 formulas over the
+same Montgomery representation, and both scalar multiplications are
+constant time with a 4-bit window.
 
 | Curve | Operation | Ours | RustCrypto | Ratio |
 |---|---|---:|---:|---:|
-| P-256 | `g1_add`    | 303.6 ns | 274.5 ns | 1.11x |
-| P-256 | `g1_double` | 270.6 ns | 247.4 ns | 1.09x |
-| P-256 | scalar mul (var-base) | 95.8 us | 89.8 us | 1.07x |
-| P-384 | `g1_add`    | 652.2 ns | 879.1 ns | **0.74x** |
-| P-384 | `g1_double` | 603.3 ns | 797.8 ns | **0.76x** |
-| P-384 | scalar mul (var-base) | 374.9 us | 468.1 us | **0.80x** |
+| P-256 | `g1_add`    |    909–951 |    831–854 | 1.09–1.11x |
+| P-256 | `g1_double` |    826–844 |    765–783 | 1.08x |
+| P-256 | scalar mul  | 282k–286k | 265k–269k | 1.06x |
+| P-384 | `g1_add`    |  1957–1980 |  2650–2689 | **0.74x** |
+| P-384 | `g1_double` |  1728–1760 |  2353–2412 | **0.72–0.73x** |
+| P-384 | scalar mul  |  876k–884k |      1.19M | **0.74x** |
 
-P-224 and secp256k1 have no comparable production arm.  P-224:
-`fp_mul` 15.3 ns, `g1_add` 345.7 ns, `g1_double` 326.9 ns, scalar mul
-149.5 us.  Field multiplication and squaring on P-224/P-256/P-384 and
-secp256k1 use CryptOpt assembly, taken verbatim from seeds CryptOpt had
-already equivalence-checked against fiat-crypto, with a per-crate
-differential test and a fiat fallback when the host lacks BMI2/ADX.
+P-224 and secp256k1 have no comparable production arm.  P-224: `fp_mul`
+60.9, `g1_add` 1031, `g1_double` 967, scalar mul 287k, fixed-base 51.3k.
+Field multiplication and squaring on P-224/P-256/P-384 and secp256k1 use
+CryptOpt assembly, verbatim from seeds CryptOpt equivalence-checked
+against fiat-crypto, with a per-crate differential test and a fiat
+fallback when the host lacks BMI2/ADX.
 
-### Pairings
+### Pairing curves
 
-| Implementation | Pairing | Reference |
-|---|---:|---|
-| BLS12-381, `bls12-jasmin-rs` native | 1.33 ms | blst 0.53 ms, arkworks 0.99 ms |
-| BLS12-381, `bls12-381-safe-rust` | 1.99 ms | same |
-| BN254, `bn254-safe-rust` | 1.24 ms | arkworks 0.57 ms (2.20x) |
+| Curve | Operation | Ours | blst 0.3 | arkworks 0.5 |
+|---|---|---:|---:|---:|
+| BLS12-381 | Fp mul      |  128.6 |  107.1 |  106.0 |
+| BLS12-381 | Miller loop | 1.906M | 0.624M |      — |
+| BLS12-381 | Pairing     | 4.556M | 1.458M | 2.695M |
+| BN254     | Fp mul      |   74.5 |      — |   51.0 |
+| BN254     | Fp2 mul     |    261 |      — |    197 |
+| BN254     | Fp12 mul    |   7970 |      — |   6129 |
+| BN254     | Miller loop | 1.482M |      — | 0.526M |
+| BN254     | Pairing     |  3.52M |      — |  1.66M |
 
-BN254's field multiply is at parity with arkworks (83.2 against 80.1
-invariant-TSC cycles, 1.04x), so the remaining gap is above the field
-layer.
+BLS12-381 is 3.12x blst and 1.69x arkworks on a full pairing; BN254 is
+2.13x arkworks.  The gap is not confined to the tower: BN254's Fp
+multiply is 1.46x, Fp2 1.32x and Fp12 1.30x, so roughly a third of the
+pairing gap is already in the base field.
+
+A note on measuring a field multiply against arkworks.  Our `fp_mul` is
+an out-parameter API, `fp_mul(&mut out, &a, &b)`, and writes through
+memory by construction; arkworks' `a * b` returns by value and can stay
+in registers.  Passing the arkworks operands through `black_box` *by
+value* moves them across the barrier and spills them, adding a
+23-cycle store-forward per iteration that our arm pays anyway — which
+makes the two look level at 1.02x.  Taking the barrier by reference
+gives 1.46-1.53x, and that is the figure quoted above.  Matching the
+syntax of two arms does not match their instruction budget.
+
+BN254's `fp2_inv` is 4208 cycles, 23.3% of the Miller loop over its 80
+steps.
 
 ### BW6-761 G1
 
 Projective coordinates replace affine, so a scalar multiplication
-performs one inversion rather than one per bit; on this curve the
-Bernstein-Yang inverse costs about 23x a multiply.  The doubling is RCB
-2015 Algorithm 9, emitted from the Rocq derivation in
+performs one inversion rather than one per bit; the Bernstein-Yang
+inverse costs 23.8x a multiply here.  The doubling is RCB 2015
+Algorithm 9, emitted from the Rocq derivation in
 `src/Bedrock/Curve/CurveDoubleA0RustCmd.v`.
 
-| Doubling route | Field ops | Cycles |
-|---|---:|---:|
-| Algorithm 9, Rocq-emitted | 18 (9 M) | 6818 |
-| Algorithm 9, hand-written | 18 (9 M) | 6934 |
-| Algorithm 7 self-addition | 33 (14 M) | 11028 |
+| Operation | Affine | Algorithm 7 | Algorithm 9 (emitted) |
+|---|---:|---:|---:|
+| doubling    | 22327 | 11902 | **7656** |
+| addition    | 21989 | 12363 | — |
+| scalar mul  | 13.59M | 7.33M | **5.70M** |
 
-The emitted body is 1.017x faster than the hand transcription it
-replaced and 1.617x faster than reusing the addition, so the
-hand-written variant was removed rather than kept alongside.
+Field leaves: `fp_mul` 788, `fp_square` 656, `fp_inv` 18803.  The
+emitted Algorithm 9 body is 1.012x faster than the hand transcription it
+replaced and 1.616x faster than reusing the addition, so only the
+emitted body ships.
 
 ## Modular inversion — OURS vs constant-time production references
 

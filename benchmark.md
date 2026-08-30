@@ -2,20 +2,13 @@
 
 Hardware: Zen 4, criterion median, release profile.
 
-## Group operations and pairings — measured 2026-08-30
+## Group operations and pairings
 
 Zen 4 (Ryzen 7 PRO 7840U), one core, `[profile.release]` with
 `lto = "fat", codegen-units = 1`.  Comparison arms run in the same
 process as ours, so the ratios are load-robust; absolute figures are
 not.  Ratio is ours / theirs, so below 1.00 means this project is
 faster.
-
-Note on earlier figures: until 2026-08-30 the workspace root carried no
-`[profile.release]`, so cargo discarded every member crate's
-`lto = "fat"` and the whole tree built with `lto = false`.  Comparison
-libraries whose field operations are not `#[inline]` lose more to that
-than fiat-crypto's do, so ratios measured before the fix flattered this
-project by up to twenty points on P-256.  Everything below is post-fix.
 
 ### NIST curves against RustCrypto
 

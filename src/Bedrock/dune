@@ -50,6 +50,19 @@
      ; secp256k1 has a = 0, so RCB Algorithm 7 and the Algorithm 9
      ; doubling of PointDoubleA0.v apply directly.
      Curve.Secp256k1_G1_Add_Spec
+     ; The two CurveSpecsEquiv files added 2026-04-17 have never
+     ; compiled.  Both fail on fiat-crypto API drift: the reference
+     ; WordByWordMontgomery.r' is gone, and `m` is now a positive where
+     ; these expect a Z.  Their three siblings from 2026-04-13
+     ; (Pallas, Secp256k1, Vesta) predate the drift and do build.
+     ; Neither is needed.  BW6_761CurveSpecsEquiv has no consumer at
+     ; all; P256CurveSpecsEquiv's only consumer is P256Curve_G1_bedrock,
+     ; already excluded above for the same drift (it cites P256.three_b,
+     ; absent from the current Curves/Weierstrass/P256.v).  Excluded so
+     ; a whole-tree build is meaningful; delete once someone confirms
+     ; the pasta/secp equivalence route is the one being kept.
+     Curve.P256CurveSpecsEquiv
+     Curve.BW6_761CurveSpecsEquiv
      Curve.P384_G1_Add_Spec
      Curve.P224_G1_Add_Spec
      ; The functor instances replay that same WP script over the functor

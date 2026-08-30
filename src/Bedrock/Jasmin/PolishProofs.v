@@ -1056,6 +1056,18 @@ Section WithWordCmd.
     | JCif _ ct cf => cmd_no_binop_assign ct && cmd_no_binop_assign cf
     | JCwhile _ body => cmd_no_binop_assign body
     | JCdecl _ _ body => cmd_no_binop_assign body
+    (* [JCstore] is NEVER an identity case, whatever its value
+       expression.  [lower_binop_assigns] returns
+       [JCseq prefix (JCstore base off atom)], and [flatten_expr]
+       returns [(JCskip, e, n)] on an atom, so even an atomic value
+       yields [JCseq JCskip (JCstore ..)] -- not syntactically the
+       input.  Reporting [true] here (via the old catch-all) made
+       [lower_binop_assigns_id_no_binop] FALSE: its hypothesis held for
+       every [JCstore] while its conclusion never did.  The [JCstore]
+       arm of [lower_binop_assigns] was added later, to ANF value trees
+       for jasminc's linearization, and this predicate was not updated
+       with it. *)
+    | JCstore _ _ _ => false
     | _ => true
     end.
 
@@ -1064,7 +1076,7 @@ Section WithWordCmd.
       cmd_no_binop_assign c = true ->
       lower_binop_assigns c = c.
   Proof.
-    induction c; intros Hno; simpl; try reflexivity.
+    induction c; intros Hno; simpl; try reflexivity; try discriminate Hno.
     - (* JCseq *)
       apply andb_prop in Hno as [Hno1 Hno2].
       rewrite (IHc1 Hno1), (IHc2 Hno2). reflexivity.

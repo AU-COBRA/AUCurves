@@ -438,7 +438,27 @@ Section impl.
           with (px +w word.of_Z (2 * bytes)) by ring.
         replace ((px +w word.of_Z (2 * bytes)) +w word.of_Z bytes)
           with (px +w word.of_Z (3 * bytes)) by ring.
-        rewrite <- !(slu_and1_width_minus_1).
+        (* The former [rewrite <- !(slu_and1_width_minus_1)] here did not
+           terminate: the lemma's RHS [word.slu w (word.of_Z (width - 1))]
+           occurs inside its own LHS, so each right-to-left pass wraps
+           another [word.and _ (word.of_Z 1)] around the shifted word and
+           [!] never fails.  That divergence, not any proof cost, is what
+           made this file consume ~4 GB before being killed; a [-time]
+           stream accounts for the whole file in 4.7 s up to this point.
+
+           Rewriting is in any case unnecessary: [Hret] carries no masks
+           ([scalar px (r >>w 1 +w r0 <<w (width - 1))] and its three
+           siblings), and neither does the goal.
+
+           REMAINING GAP: the goal here still has unreduced
+           [nth_default (word.of_Z 0) [r; r0; r1; r2] i] applications and
+           an unfolded [array] fixpoint, and [ecancel_assumption] fails
+           on it with "No matching clauses for match" -- the failure is
+           inside the canceller's own [match goal], and reproduces with
+           [SeparationLogic.ecancel_assumption] and after [cbn] with
+           [nth_error] added.  This file has never compiled; the tail
+           below was never discharged.  Left failing fast and cheaply
+           rather than diverging. *)
         ecancel_assumption. }
     Qed.
 

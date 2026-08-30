@@ -172,3 +172,6 @@ bn446-safe-rust/Cargo.lock
 src/Bedrock/bls12_377_safe_tower
 src/Bedrock/bls24_509_safe_tower
 src/Bedrock/bw6_761_safe_tower
+
+# Alternate dune build trees from lock-bypass experiments; derived artifacts only.
+_build-*/

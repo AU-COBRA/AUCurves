@@ -78,6 +78,20 @@
      Curve.P256_G1_Add_Functor_Instance
      Curve.P384_G1_Add_Functor_Instance
      Curve.P224_G1_Add_Functor_Instance
+     ; The functor body those three instantiate.  Its headline theorem
+     ; [g1_add_func_ok] (line 878) is Admitted on the same
+     ; P3-CLOSURE-RESIDUAL that stops the three instances above, and
+     ; carries a TODO(P256-campaign) "pending upstream fix".  Reachable
+     ; only from files already retired: the sole [Require Import]s of it
+     ; are the three functor instances just excluded, and
+     ; [g1_add_func_ok] has zero references anywhere in the tree.  The
+     ; two files that read like consumers, RcbGeneralAChain.v and
+     ; Group/CurveAdd/CurveAddGeneralA_P256.v, name it only in prose --
+     ; neither Requires it.  Excluded so the build stops shipping an
+     ; Admitted headline theorem; the Rupicola route
+     ; (CurveAddGeneralA*, CurveDoubleGeneralA*, CurveA3_*) already
+     ; delivers verified add/double for all three curves.
+     Curve.WbwMontgomeryG1GeneralA
      ; Emission drivers: write Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      Curve.EmitA3Rust

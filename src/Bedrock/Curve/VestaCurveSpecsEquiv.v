@@ -73,7 +73,14 @@ Section Vesta_Equiv.
     id ((four *m fp_a *m fp_a *m fp_a +m twenty7 *m fp_b *m fp_b) <> zero m).
   Proof.
     unfold id. intro H.
-    apply (f_equal (@val m)) in H. vm_compute in H. discriminate.
+    apply (f_equal (@val m)) in H.
+    (* Reduce the [val] projections through [add]/[mul] BEFORE computing.
+       [add]/[mul] in GZnZ build [mkznz] with an embedded modular-arithmetic
+       proof; [vm_compute] is call-by-value and so normalises those proof
+       terms as well as the value.  [cbn] with this delta list is lazy and
+       leaves plain [Z] arithmetic, which [vm_compute] then settles. *)
+    cbn [val add mul one zero] in H.
+    vm_compute in H. discriminate.
   Qed.
 
   (* All hypotheses of CurveSpecsEquivalence.G1Equiv are satisfied.

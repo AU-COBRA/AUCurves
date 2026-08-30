@@ -415,7 +415,7 @@ Section BLS12_Pairing.
         cbv [AbstractField.bin_model AbstractField.bin_sub AbstractField.Fsub
              AbstractField.bin_add AbstractField.Fadd] in Hfeval_sub, Hfeval_add.
         rewrite Hfeval_sub, Hfeval_add.
-        cbv [BLS12Fp6Spec.fp2_mul_xi Crypto.Spec.BLS12Pairing.Fp6.fp2_mul_xi
+        cbv [BLS12Fp6Spec.fp2_mul_xi Spec.BLS12Pairing.Fp6.fp2_mul_xi
              bls12_xi_re bls12_xi_im fst snd].
         assert (Hbeta_opp : bls12_beta = @F.opp PrimeField.M_pos (@F.one PrimeField.M_pos)).
         { unfold bls12_beta. change (-1)%Z with (Z.opp 1%Z).

@@ -20,8 +20,8 @@ Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Bedrock.Field.FieldExtensions.Theory.FieldsUtil.
 Require Import Crypto.Algebra.Hierarchy.
-Require Crypto.Spec.BLS12Pairing.Fp6.
-Module BLS12Fp6Spec := Crypto.Spec.BLS12Pairing.Fp6.
+Require Spec.BLS12Pairing.Fp6.
+Module BLS12Fp6Spec := Spec.BLS12Pairing.Fp6.
 From Stdlib Require Import Numbers.DecimalString.
 
 Local Open Scope Z_scope.

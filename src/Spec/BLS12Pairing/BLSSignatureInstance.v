@@ -19,9 +19,9 @@
 From Stdlib Require Import ZArith BinPos List Bool.
 Import ListNotations.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS12Pairing.Pairing.
-Require Import Crypto.Spec.BLS12Pairing.Bilinearity.
-Require Import Crypto.Spec.BLS12Pairing.BLSSignature.
+Require Import Spec.BLS12Pairing.Pairing.
+Require Import Spec.BLS12Pairing.Bilinearity.
+Require Import Spec.BLS12Pairing.BLSSignature.
 Require Import Spec.HashToCurve.
 
 Local Notation byte := Byte.byte.

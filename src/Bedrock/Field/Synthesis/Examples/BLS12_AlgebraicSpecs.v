@@ -14,7 +14,7 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS12Pairing.Pairing.
+Require Import Spec.BLS12Pairing.Pairing.
 
 Local Open Scope Z_scope.
 

@@ -12,9 +12,9 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS12Pairing.Pairing.
-Require Crypto.Spec.BLS12Pairing.Fp6.
-Module Fp6Spec := Crypto.Spec.BLS12Pairing.Fp6.
+Require Import Spec.BLS12Pairing.Pairing.
+Require Spec.BLS12Pairing.Fp6.
+Module Fp6Spec := Spec.BLS12Pairing.Fp6.
 Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.

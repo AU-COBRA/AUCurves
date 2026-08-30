@@ -12,8 +12,8 @@ From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 Import ListNotations.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Crypto.Spec.BLS12Pairing.Fp6.
-Require Import Crypto.Spec.BLS12Pairing.Fp12.
+Require Import Spec.BLS12Pairing.Fp6.
+Require Import Spec.BLS12Pairing.Fp12.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_377_Fp12Feval.
 
 Local Open Scope Z_scope.

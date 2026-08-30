@@ -12,7 +12,7 @@ Require Import Bedrock.Field.Synthesis.Examples.bls12_377_Fp2.
 Require Import Bedrock.Field.Synthesis.Examples.bls12_377_instances.
 Require Import Bedrock.Field.Synthesis.Examples.bls12_377_prime_certif.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
-Require Import Crypto.Spec.BLS12Pairing.Fp6.
+Require Import Spec.BLS12Pairing.Fp6.
 Require Import Bedrock.Field.FieldExtensions.PairingFieldOps.
 Require Import Crypto.Algebra.Field.
 Require Import bedrock2.NotationsCustomEntry.

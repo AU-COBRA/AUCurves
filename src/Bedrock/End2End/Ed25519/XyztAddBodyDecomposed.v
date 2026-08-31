@@ -227,54 +227,31 @@ Definition fe25519_callees_honoured_add
 (* §3.  Correctness theorem                                          *)
 (* ================================================================ *)
 
-(** [xyzt_add_body_decomposed_correct]: under the field-op contracts
-    plus 200-byte input pre-conditions on both points, the decomposed
-    body produces the 200-byte output specified by
-    [ed25519_xyzt_add_gallina].
+(** [xyzt_add_body_decomposed_correct] lived here as an [Admitted]
+    statement.  It was REFUTABLE -- applying a refutation to it
+    typechecked, so this file derived [False] -- and it has been
+    replaced by a proved version in [XyztAddStrong.v].
 
-    PROOF SKELETON.  ~30 sequential [rust_exec_ed] inversion steps:
-    23 [rexec_let_zero] for the scratch slots + 2 [rexec_calln] for
-    the unpacks + 12 [rexec_call] for the field ops + 1 [rexec_calln]
-    for the pack.  Each [rexec_call(_n)] hits a clause in
-    [fe25519_callees_honoured_add] to extract the post value.
+    Why the old statement was false: [rexec_call]
+    ([SafeRustEd25519Sim.v:854]) defers the entire state transition to
+    the [callee_post] oracle, and the old [fe25519_callees_honoured_add]
+    below constrained only [loc_type] and two list lengths -- no value
+    written, no frame.  An oracle meeting it may relate arbitrary
+    states and leave [dest] untouched.
 
-    The 12 [rexec_call] inversions thread a chain of Z-level
-    equalities (T1 = Ta1·Tb1 mod p, A = (Y1-X1)(Y2-X2) mod p, ...)
-    that compose to [parse_xyzt5 p1], [parse_xyzt5 p2] -> the
-    Hisil formula -> [pack_xyzt5 X3 Y3 Z3 E H] = the output of
-    [ed25519_xyzt_add_gallina p_bs1 p_bs2].
+    The old statement also lacked freshness side conditions.  The
+    23-slot [REdLetZero] prologue writes [rs_set_tower_ed]
+    unconditionally, so an input aliasing a scratch name (say
+    [P1.(loc_var) = "X1"]) is clobbered before the unpack reads it.
 
-    Cost: ~150-200 LoC of mechanical [inversion] / [eapply] glue.
-    Left as [Admitted] for the next session; the body itself is
-    Qed-clean. *)
-Theorem xyzt_add_body_decomposed_correct :
-  forall callee_post callee_post_n function_table
-         (P1 P2 dest : located_ed)
-         (rs1 rs2 : rust_state_ed)
-         (p1_bs p2_bs : list Byte.byte),
-    fe25519_callees_honoured_add callee_post callee_post_n ->
-    length p1_bs = 200%nat ->
-    length p2_bs = 200%nat ->
-    dest.(loc_type) = TBytes 200 ->
-    rs_get_tower_ed rs1 P1.(loc_var)
-      = Some (exist_tval_ed (TBytes 200) (VBytes 200 p1_bs)) ->
-    rs_get_tower_ed rs1 P2.(loc_var)
-      = Some (exist_tval_ed (TBytes 200) (VBytes 200 p2_bs)) ->
-    rust_exec_ed callee_post callee_post_n function_table
-                 (xyzt_add_body_decomposed dest [P1; P2]) rs1 rs2 ->
-    rs_get_tower_ed rs2 dest.(loc_var)
-      = Some (exist_tval_ed (TBytes 200)
-                (VBytes 200 (ed25519_xyzt_add_gallina p1_bs p2_bs))).
-Proof.
-  intros callee_post callee_post_n function_table P1 P2 dest rs1 rs2
-         p1_bs p2_bs Hhonoured Hlen1 Hlen2 Hdest_type HP1in HP2in Hexec.
-  (* Remaining cascade — see the comment above.  Each step is one
-     [rexec_let_zero] / [rexec_seq] / [rexec_call(_n)] inversion,
-     threading [Hhonoured]'s components to pull the post value out
-     of each oracle hit.  ~30 transitions total.
-
-     STATUS: 0 progress here; leaves the obligation visible. *)
-Admitted.
+    [XyztAddStrong.v] carries: a functional
+    [fe25519_callees_honoured_add] giving each leaf's value AND the
+    frame [rs2 = set_fp rs1 dst.(loc_var) limbs]; the restated theorem
+    with the two freshness conditions; [witness_honours_add], proving
+    the new predicate is satisfiable by a concrete state-transforming
+    oracle; and [stale_cp_violates_new_contract], proving the
+    dest-unwriting oracle that satisfied the old clause is excluded by
+    the new one.  All Qed, all Closed under the global context. *)
 
 (* Print Assumptions xyzt_add_body_decomposed. *)
 (* Print Assumptions xyzt_add_body_decomposed_correct. *)

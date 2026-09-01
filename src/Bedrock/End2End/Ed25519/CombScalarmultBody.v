@@ -273,22 +273,113 @@ Fixpoint comb_partial_sum_nat (scalar : list Byte.byte) (i : nat) : Z :=
 Definition comb_partial_sum (scalar : list Byte.byte) (i : Z) : Z :=
   comb_partial_sum_nat scalar (Z.to_nat i).
 
+(* Imported here rather than in the header so that the surrounding
+   definitions are elaborated in the same scope as before. *)
+Require Import coqutil.Word.LittleEndianList.
+Require Import coqutil.Byte.
+Require Import Stdlib.micromega.Lia.
+
+(** The [n]-th byte of [l] read back out of the little-endian integer
+    [le_combine l].  Holds unconditionally: past the end of [l] both
+    sides are [0], by [le_combine_bound]. *)
+Lemma comb_byte_nth_le_combine :
+  forall (l : list Byte.byte) (n : nat),
+    Z.of_N (Byte.to_N (List.nth n l Byte.x00))
+    = (le_combine l / 2 ^ (8 * Z.of_nat n)) mod 256.
+Proof.
+  intros l n.
+  destruct (Nat.lt_ge_cases n (length l)) as [Hlt | Hge].
+  - assert (Hn : List.nth n l Byte.x00
+                 = byte.of_Z (Z.shiftr (le_combine l) (8 * Z.of_nat n))).
+    { rewrite <- List.nth_default_eq.
+      rewrite <- (nth_default_le_split n (length l) (le_combine l) Hlt Byte.x00).
+      rewrite split_le_combine. reflexivity. }
+    rewrite Hn.
+    pose proof (byte.unsigned_of_Z (Z.shiftr (le_combine l) (8 * Z.of_nat n))) as Hu.
+    unfold byte.unsigned, byte.wrap in Hu.
+    rewrite Hu.
+    rewrite Z.shiftr_div_pow2 by lia.
+    reflexivity.
+  - rewrite List.nth_overflow by assumption.
+    pose proof (le_combine_bound l) as Hb.
+    rewrite Z.div_small.
+    + reflexivity.
+    + split; [lia|].
+      eapply Z.lt_le_trans; [apply Hb|].
+      apply Z.pow_le_mono_r; lia.
+Qed.
+
+(** Same, in bitwise form. *)
+Lemma comb_byte_nth_land :
+  forall (l : list Byte.byte) (n : nat),
+    Z.of_N (Byte.to_N (List.nth n l Byte.x00))
+    = Z.land (Z.shiftr (le_combine l) (8 * Z.of_nat n)) 255.
+Proof.
+  intros l n. rewrite comb_byte_nth_le_combine.
+  change 255 with (Z.ones 8).
+  rewrite Z.land_ones by lia.
+  rewrite Z.shiftr_div_pow2 by lia.
+  reflexivity.
+Qed.
+
+(** The nibble [comb_partial_sum_nat] extracts at index [k] — the
+    [(k mod 2)]-th nibble of byte [k / 2] — is the [k]-th nibble of
+    [le_combine l]. *)
+Lemma comb_nibble_le_combine :
+  forall (l : list Byte.byte) (k : nat),
+    Z.land (Z.shiftr (Z.of_N (Byte.to_N (List.nth (k / 2)%nat l Byte.x00)))
+                     (Z.of_nat (4 * (k mod 2))%nat)) 15
+    = Z.land (Z.shiftr (le_combine l) (4 * Z.of_nat k)) 15.
+Proof.
+  intros l k.
+  rewrite comb_byte_nth_land.
+  assert (Hkd : (k = 2 * (k / 2) + k mod 2)%nat) by (apply Nat.div_mod_eq).
+  replace (4 * Z.of_nat k)
+    with (8 * Z.of_nat (k / 2)%nat + Z.of_nat (4 * (k mod 2))%nat) by lia.
+  rewrite <- Z.shiftr_shiftr by lia.
+  set (Y := Z.shiftr (le_combine l) (8 * Z.of_nat (k / 2)%nat)).
+  assert (Hk : (k mod 2 = 0 \/ k mod 2 = 1)%nat)
+    by (pose proof (Nat.mod_upper_bound k 2); lia).
+  destruct Hk as [Hk | Hk]; rewrite Hk.
+  - change (Z.of_nat (4 * 0)%nat) with 0.
+    rewrite !Z.shiftr_0_r, <- Z.land_assoc. reflexivity.
+  - change (Z.of_nat (4 * 1)%nat) with 4.
+    rewrite Z.shiftr_land, <- Z.land_assoc. reflexivity.
+Qed.
+
+(** The partial sum over the low [m] nibbles is exactly the low [4m]
+    bits of the scalar. *)
+Lemma comb_partial_sum_nat_mod :
+  forall (l : list Byte.byte) (m : nat),
+    comb_partial_sum_nat l m = le_combine l mod 2 ^ (4 * Z.of_nat m).
+Proof.
+  intros l m. induction m as [|k IH].
+  - cbn [comb_partial_sum_nat].
+    change (4 * Z.of_nat 0%nat) with 0. rewrite Z.pow_0_r, Z.mod_1_r. reflexivity.
+  - cbn [comb_partial_sum_nat]. rewrite IH, comb_nibble_le_combine.
+    change 15 with (Z.ones 4). rewrite Z.land_ones by lia.
+    rewrite Z.shiftr_div_pow2 by lia.
+    replace (4 * Z.of_nat (S k)) with (4 * Z.of_nat k + 4) by lia.
+    rewrite Z.pow_add_r by lia.
+    rewrite Z.rem_mul_r by (try apply Z.pow_nonzero; lia).
+    change (2 ^ 4) with 16. lia.
+Qed.
+
 (** At [i = 64], the partial sum covers all 256 bits of the scalar and
-    equals the integer encoded by [scalar].  Provable by induction
-    on [i] with [coqutil.Word.LittleEndianList.le_combine] /
-    [Byte.to_N] decomposition — left as a one-line Admitted shim
-    here (used only in §4's terminal step). *)
+    equals the integer encoded by [scalar]. *)
 Lemma comb_partial_sum_full :
   forall scalar,
     length scalar = 32%nat ->
     comb_partial_sum scalar 64
     = coqutil.Word.LittleEndianList.le_combine scalar.
 Proof.
-  (* Sketch: induct on the nibble index k from 0..64.  Each step
-     unpacks one 4-bit nibble of [scalar[k/2]] and rebuilds the
-     [le_combine] little-endian decomposition.  Mechanical 30-line
-     induction over byte/nibble dual. *)
-Admitted.
+  intros scalar Hlen. unfold comb_partial_sum.
+  rewrite comb_partial_sum_nat_mod.
+  pose proof (le_combine_bound scalar) as Hb. rewrite Hlen in Hb.
+  replace (2 ^ (8 * Z.of_nat 32%nat)) with (2 ^ (4 * Z.of_nat (Z.to_nat 64))) in Hb
+    by (f_equal; reflexivity).
+  apply Z.mod_small. exact Hb.
+Qed.
 
 (* ================================================================ *)
 (* §4.  Correctness theorem                                          *)

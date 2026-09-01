@@ -1,7 +1,7 @@
 (** * Algebraic correctness specifications for BLS12 pairing.
 
     Defines the target theorems connecting bedrock2 implementations
-    to the Gallina pairing model in Spec.BLS12Pairing.Pairing.
+    to the Gallina pairing model in Theory.BLS12Pairing.Pairing.
 
     These are SPECIFICATIONS ONLY — no proofs yet.
 
@@ -14,7 +14,7 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Spec.BLS12Pairing.Pairing.
+Require Import Theory.BLS12Pairing.Pairing.
 
 Local Open Scope Z_scope.
 

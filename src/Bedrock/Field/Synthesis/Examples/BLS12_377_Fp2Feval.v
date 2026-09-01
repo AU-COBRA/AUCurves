@@ -2,7 +2,7 @@
 
     Each lemma shows that the Fp2 bin_model / un_model from the
     AbstractField FieldParameters instance (which the WP proofs use)
-    equals the corresponding operation in Spec.BLS12Pairing.Fp6 (the
+    equals the corresponding operation in Theory.BLS12Pairing.Fp6 (the
     parameterized Gallina spec).
 
     For add/sub/neg/conjugate the models are definitionally equal.
@@ -17,8 +17,8 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Spec.BLS12Pairing.Fp6.
-Module Fp6Spec := Spec.BLS12Pairing.Fp6.
+Require Theory.BLS12Pairing.Fp6.
+Module Fp6Spec := Theory.BLS12Pairing.Fp6.
 Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.

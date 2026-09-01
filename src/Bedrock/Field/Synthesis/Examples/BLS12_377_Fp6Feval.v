@@ -24,8 +24,8 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Spec.BLS12Pairing.Fp6.
-Module Fp6Spec := Spec.BLS12Pairing.Fp6.
+Require Theory.BLS12Pairing.Fp6.
+Module Fp6Spec := Theory.BLS12Pairing.Fp6.
 Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 

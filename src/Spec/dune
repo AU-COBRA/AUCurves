@@ -3,4 +3,12 @@
 (coq.theory
  (name Spec)
  (mode vo)
- (theories Stdlib Crypto Bedrock))
+
+ ; Theory: BLSSignatureInstance.v requires Theory.BLS12Pairing.*, which used
+ ; to live in this theory as Spec.BLS12Pairing.*.  That placement was a
+ ; dependency cycle -- this theory depends on Bedrock, and eighteen Bedrock
+ ; files require the pairing spec -- so the seven files that need nothing but
+ ; Stdlib and Crypto moved to src/Theory/BLS12Pairing.  BLSSignatureInstance
+ ; stays here because it alone requires Spec.HashToCurve, and nothing
+ ; requires it.
+ (theories Stdlib Crypto Bedrock Theory))

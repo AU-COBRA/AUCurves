@@ -19,7 +19,7 @@
 
 From Stdlib Require Import ZArith.ZArith.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Spec.BLS12Pairing.Pairing.
+Require Import Theory.BLS12Pairing.Pairing.
 
 Section Bilinearity.
 

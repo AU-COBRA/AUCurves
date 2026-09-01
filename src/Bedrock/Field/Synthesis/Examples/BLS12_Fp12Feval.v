@@ -1,8 +1,8 @@
 (** * Fp12 feval bridge: bedrock2 algebraic models = Pairing.v Gallina models.
  *
- *  Each lemma shows that the Fp12 operation from Spec.BLS12Pairing.Fp12
+ *  Each lemma shows that the Fp12 operation from Theory.BLS12Pairing.Fp12
  *  (which the bedrock2 FieldParameters instance uses as Fmul, Fadd, etc.)
- *  equals the corresponding operation in Spec.BLS12Pairing.Pairing.
+ *  equals the corresponding operation in Theory.BLS12Pairing.Pairing.
  *
  *  Proof strategy: since both Fp12.v and Pairing.v use the same algebraic
  *  structure (Karatsuba etc.) differing only in the underlying Fp6/Fp2 ops,
@@ -15,9 +15,9 @@
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
 Require Import Crypto.Spec.ModularArithmetic.
-Require Import Spec.BLS12Pairing.Pairing.
-Require Import Spec.BLS12Pairing.Fp6.
-Require Import Spec.BLS12Pairing.Fp12.
+Require Import Theory.BLS12Pairing.Pairing.
+Require Import Theory.BLS12Pairing.Fp6.
+Require Import Theory.BLS12Pairing.Fp12.
 
 Local Open Scope Z_scope.
 

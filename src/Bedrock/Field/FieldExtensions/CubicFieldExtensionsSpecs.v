@@ -20,8 +20,8 @@ Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Bedrock.Field.FieldExtensions.Theory.FieldsUtil.
 Require Import Crypto.Algebra.Hierarchy.
-Require Spec.BLS12Pairing.Fp6.
-Module BLS12Fp6Spec := Spec.BLS12Pairing.Fp6.
+Require Theory.BLS12Pairing.Fp6.
+Module BLS12Fp6Spec := Theory.BLS12Pairing.Fp6.
 From Stdlib Require Import Numbers.DecimalString.
 
 Local Open Scope Z_scope.
@@ -65,7 +65,7 @@ Section CubicExtension.
     @Fp2_field_representation width BW word mem prime_parameters field_representation beta fp2_prefix.
 
   (* ================================================================ *)
-  (* Fp6 Gallina operations (from Spec.BLS12Pairing.Fp6)              *)
+  (* Fp6 Gallina operations (from Theory.BLS12Pairing.Fp6)              *)
   (* ================================================================ *)
 
   Local Definition fp6_zero_val : Fp6 := BLS12Fp6Spec.fp6_zero M_pos.

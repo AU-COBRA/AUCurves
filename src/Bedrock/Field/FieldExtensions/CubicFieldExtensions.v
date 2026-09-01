@@ -16,7 +16,7 @@ Require Import Bedrock.Specs.AbstractField.
 Require Import Bedrock.Specs.PrimeField.
 Require Import Bedrock.Field.FieldExtensions.Theory.QuadraticExtensions.
 Require Export Crypto.Spec.ModularArithmetic.
-Require Import Spec.BLS12Pairing.Fp6.
+Require Import Theory.BLS12Pairing.Fp6.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Require Import bedrock2.WeakestPrecondition.

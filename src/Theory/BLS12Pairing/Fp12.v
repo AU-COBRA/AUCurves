@@ -13,7 +13,7 @@ From Stdlib Require Import ZArith BinPos List.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Crypto.Algebra.Ring.
-Require Import Spec.BLS12Pairing.Fp6.
+Require Import Theory.BLS12Pairing.Fp6.
 
 Import ListNotations.
 

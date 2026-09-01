@@ -33,7 +33,7 @@ jobs:
         with:
           path: ~/.opam
           # Bump the suffix to force a rebuild of the switch.
-          key: opam-rocq9-${{ runner.os }}-v2
+          key: opam-rocq9-${{ runner.os }}-v3
 
       - name: Set up Rocq 9.0 and the development's dependencies
         run: |
@@ -41,7 +41,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y opam m4 pkg-config
           opam init --bare --disable-sandboxing --yes || true
-          opam switch create rocq-9 5.2.0 --yes || opam switch rocq-9
+          # OCaml 4.14.2, not 5.x, and this is load-bearing.  Rocq 9.0 and 9.1
+          # DISABLE native_compute when compiled with OCaml 5 -- reenabling it
+          # is the headline change of Rocq 9.2.0 ("Reenable support for
+          # native_compute when compiled with OCaml 5").  With OCaml 5 here,
+          # coqc answers "Native compiler is disabled" whatever rocq-native
+          # says, and every (mode native) target fails for want of a .cmxs.
+          # 4.14.2 also matches the local rocq-9 switch exactly, so a green
+          # run means the same thing here as it does on a developer machine.
+          opam switch create rocq-9 4.14.2 --yes || opam switch rocq-9
           eval $(opam env --switch=rocq-9)
           opam repo add rocq-released https://rocq-prover.org/opam/released --yes || true
           # rocq-native is required, not optional: src/Bedrock/dune and

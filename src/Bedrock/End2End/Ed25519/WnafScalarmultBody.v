@@ -340,85 +340,42 @@ Definition wnaf_digits_correct (digits scalar : list Byte.byte) : Prop :=
 (* §6.  Correctness theorem                                          *)
 (* ================================================================ *)
 
-(** [wnaf_scalarmult_body_correct]: under the helpers' contracts and
-    a valid wNAF representation of the scalar, the body computes
-    [ed25519_scalarmult_gallina scalar P] in the dest slot.
+(** [wnaf_scalarmult_body_correct] -- REMOVED, it was false.
 
-    PROOF STRATEGY.
-      1. The 9-call table-build cascade produces T[k] = (2k+1)·P
-         (k = 0..7), inductively threading each xyzt_add_decomposed_correct
-         on the running multiplicand.
-      2. The 52-step REdFor loop invariant: after [j] iterations,
-         [Q] holds the partial signed-digit sum
-            Σ_{i=52-j..51} d[i] * 2^(5*(i - (52-j))) · P
-         scaled by 2^(5*j) — i.e., the MSB-first interpretation of the
-         top-j wNAF digits, all left-shifted by the remaining
-         (52-j) windows worth of doublings still to come.
-      3. The CT table lookup obligation requires that each cascaded
-         REdSelect picks T[abs_idx] when abs_idx ∈ 0..7 — proved by
-         case-splitting on the value of abs_idx and observing that
-         each [SSub (SVar abs_idx_var) (SLit k)] eval is zero iff
-         abs_idx = k.
-      4. The is_nonzero mask handles the digit-zero case as a no-op.
-      5. The 5 inner xyzt_double_decomposed calls advance the
-         multiplier by a factor of 32 = 2^w per outer iteration.
-      6. Final state Q = wnaf_eval · P, and by [wnaf_digits_correct]
-         we have wnaf_eval = scalar mod r (and inside the curve group
-         that equals scalar's action by the order of P).
-      7. xyzt_copy moves Q into dest.
+    The statement is not reachable by finishing the proof sketch that
+    stood here, for two independent reasons.  One is a proof-side defect
+    it shares with its siblings; the other is a defect in the BODY, and
+    no proof can repair that one.
 
-    COST: ~250-400 LoC of mechanical induction + invariant threading.
-    Left as a single [Admitted] for a follow-up session; the
-    framework discharge is Qed-clean.  All field-op axioms are
-    inherited from Phase A's [xyzt_add_body_decomposed_correct] and
-    [xyzt_double_body_decomposed_correct] — no new mathematical
-    axioms enter here.
+    PROOF-SIDE.  [fe25519_callees_honoured_wnaf] constrains only
+    [loc_type].  [rexec_call] defers the whole state transition to the
+    oracle, so such a hypothesis admits a callee that never writes its
+    destination, and a conclusion about the value in [dest] does not
+    follow.  This is the same defect that made
+    [xyzt_add_body_decomposed_correct] and
+    [xyzt_double_body_decomposed_correct] refutable.  Both of those are
+    now repaired -- see XyztAddStrong.v and XyztDoubleStrong.v, which
+    pin each leaf's value AND its frame -- so the foundation the sketch
+    below leans on (steps (b) and (d)) exists for the first time.  The
+    same strengthening applied to [fe25519_callees_honoured_wnaf] would
+    settle this half.
 
-    NOTE: the pragmatic PoC omits the on-the-fly conditional negate
-    described in the file header.  The lemma's [wnaf_digits_correct]
-    precondition therefore implicitly assumes positive digits only —
-    a production deployment will need to either pre-negate the
-    table or add a separate verified [xyzt_neg_decomposed] leaf
-    invoked under a sign-bit guard. *)
-Theorem wnaf_scalarmult_body_correct :
-  forall callee_post callee_post_n function_table
-         (digits P dest : located_ed)
-         (rs1 rs2 : rust_state_ed)
-         (digits_bs scalar_bs p_bs : list Byte.byte),
-    wnaf_helpers_present function_table ->
-    wnaf_digits_correct digits_bs scalar_bs ->
-    fe25519_callees_honoured_wnaf callee_post ->
-    length p_bs = 200%nat ->
-    dest.(loc_type) = TBytes 200 ->
-    rs_get_tower_ed rs1 digits.(loc_var)
-      = Some (exist_tval_ed (TBytes 64) (VBytes 64 digits_bs)) ->
-    rs_get_tower_ed rs1 P.(loc_var)
-      = Some (exist_tval_ed (TBytes 200) (VBytes 200 p_bs)) ->
-    rust_exec_ed callee_post callee_post_n function_table
-                 (wnaf_scalarmult_body dest [digits; P]) rs1 rs2 ->
-    rs_get_tower_ed rs2 dest.(loc_var)
-      = Some (exist_tval_ed (TBytes 200)
-                (VBytes 200 (ed25519_scalarmult_gallina scalar_bs p_bs))).
-Proof.
-  intros callee_post callee_post_n function_table digits P dest rs1 rs2
-         digits_bs scalar_bs p_bs Hpresent Hdigits Hhonoured Hp_len
-         Hdest_type Hdigits_in HP_in Hexec.
-  (* Remaining work, in order:
-       (a) Unfold [wnaf_scalarmult_body], invert the 12 [rexec_let_zero]
-           steps to introduce T0..T7, TwoP, Q, lookup_buf, Q_plus as
-           freshly-zeroed 200B slots.
-       (b) Apply [build_wnaf_table_body_correct] (auxiliary lemma —
-           inline; threads through xyzt_double_decomposed_correct once
-           on P -> TwoP and xyzt_add_decomposed_correct 8 times to fill
-           T0..T7).
-       (c) Apply the 2 [rexec_byte_store] inversions to install
-           identity (Y[0] = 1, Z[0] = 1) in Q.
-       (d) Inductively traverse the 52 [rexec_for_succ] frames with
-           the wNAF-partial-sum invariant.
-       (e) Apply [xyzt_copy_body_correct] for the final dest write.
-     STATUS: 0 progress here; parallel to Phase B + C's bit-loop and
-     base-cascade [Admitted]s. *)
-Admitted.
+    BODY-SIDE, and this one is not a proof problem.  The body has no
+    conditional negation.  The file header concedes this and the old
+    comment here spelled it out: the PoC "omits the on-the-fly
+    conditional negate", so the statement "implicitly assumes positive
+    digits only".  wNAF digits are signed by construction -- the digit
+    decoder in this tree maps the byte 0x83 to -3 -- so for any scalar
+    whose representation contains a negative digit the body computes
+    something other than [ed25519_scalarmult_gallina scalar_bs p_bs].
+    Closing this needs either a verified [xyzt_neg_decomposed] leaf
+    invoked under a sign-bit guard, or a pre-negated table, i.e. a
+    change to [wnaf_scalarmult_body] itself.
+
+    The body and [wnaf_digits_correct] are untouched.  Restate the
+    theorem once the negate leaf exists and the honoured-predicate is
+    strengthened; do not attempt the old statement against the current
+    body. *)
 
 (* ================================================================ *)
 (* §7.  Sanity                                                       *)

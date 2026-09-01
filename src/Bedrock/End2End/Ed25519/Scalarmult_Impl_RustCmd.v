@@ -316,32 +316,53 @@ Definition extended_valid (c : extended_coords) : Prop :=
 Definition extended_to_affine (c : extended_coords) : F25519 * F25519 :=
   let '(X, Y, Z, _, _) := c in (F.div X Z, F.div Y Z).
 
-(** Predicate: out_bytes encodes a valid extended-Edwards point that
-    projects (via affine division by Z) to the same affine point as
-    [Curve25519.E.B * decode_scalar(scalar_bytes)].
+(** What the two theorems below actually establish about [out_bytes]:
+    it decodes to a well-formed extended-Edwards point.
 
-    This is the SCALAR-MULTIPLICATION CORRECTNESS predicate.  The
-    proof requires showing: (a) the 4-call execution chain in
-    [ed25519_scalarmult_base_rs] preserves [extended_valid], and
-    (b) the loop invariant [running ACC = E.mul (high-order bits of
-    scalar) B] holds across all 256 iterations.  Both are proper
-    obligations on the callee_post oracle and the loop body. *)
-Definition out_encodes_scalarmult
+    This predicate deliberately says nothing about WHICH point.  An
+    earlier version was named [out_encodes_scalarmult] and carried
+    [True] as its final conjunct, with a comment describing the missing
+    scalar-multiplication clause.  Both consumers were Qed, so the file
+    read as though scalar multiplication had been verified when only
+    point validity had.  The name and the statement now agree.
+
+    The missing obligation is stated, unproved and unclaimed, as
+    [out_is_scalarmult] below. *)
+Definition out_is_valid_extended_point
     (out_bytes scalar_bytes : list Byte.byte) : Prop :=
   length out_bytes = 200%nat /\
   length scalar_bytes = 32%nat /\
   exists c,
     decode_extended_point out_bytes = Some c /\
-    extended_valid c /\
-    (* Scalarmult correctness: the affine projection equals the
-       abstract [E.mul (decode_scalar scalar_bytes) B].  Stated
-       informally as a placeholder closed Prop — the full version
-       computes [E.mul] in [Curve25519.E] and compares affine
-       coordinates.  Replacing [True] here is the final remaining
-       step; predicate framework is otherwise complete. *)
-    True.
+    extended_valid c.
 
-(** Strong correctness for the parametric form.  Combines
+(** Iterated addition in the abstract group, used only to state the
+    obligation below. *)
+Fixpoint E_mul (n : nat) (P : Curve25519.E.point) : Curve25519.E.point :=
+  match n with
+  | O => Curve25519.E.zero
+  | S k => Curve25519.E.add P (E_mul k P)
+  end.
+
+(** The scalar-multiplication obligation, stated so that it can be
+    cited as open rather than silently absent.  NO THEOREM IN THIS FILE
+    PROVES THIS.  Discharging it needs (a) that the four-call chain in
+    [ed25519_scalarmult_base_rs] preserves [extended_valid], which the
+    [cmd_produces_extended_valid] hypothesis already supplies, and (b)
+    the 256-iteration loop invariant
+    [running ACC = E_mul (high bits of scalar) B], which does not
+    exist. *)
+Definition out_is_scalarmult
+    (out_bytes scalar_bytes : list Byte.byte) : Prop :=
+  exists c,
+    decode_extended_point out_bytes = Some c /\
+    extended_to_affine c
+      = proj1_sig (E_mul (Z.to_nat (decode_scalar scalar_bytes))
+                         Curve25519.E.B).
+
+(** Well-formedness and output validity for the parametric form.
+    NOT scalar-multiplication correctness; see [out_is_scalarmult].
+    Combines
     well-formedness preservation (via [rust_exec_ed_preserves_wf])
     with the encoding predicate.  The encoding predicate is currently
     reflexive on its scalarmult-equality conjunct (True modulo
@@ -367,7 +388,7 @@ Definition cmd_produces_extended_valid
     length out_bytes = 200%nat ->
     exists ec, decode_extended_point out_bytes = Some ec /\ extended_valid ec.
 
-Theorem ed25519_scalarmult_base_parametric_rs_correct_strong :
+Theorem ed25519_scalarmult_base_parametric_rs_wf_and_valid :
   forall callee_post callee_post_n function_table rs1 rs2,
     callee_post_well_formed callee_post ->
     callee_post_n_well_formed callee_post_n ->
@@ -380,22 +401,23 @@ Theorem ed25519_scalarmult_base_parametric_rs_correct_strong :
       get_scalar_bytes rs1 = Some scalar_bytes ->
       length scalar_bytes = 32%nat ->
       length out_bytes = 200%nat ->
-      out_encodes_scalarmult out_bytes scalar_bytes.
+      out_is_valid_extended_point out_bytes scalar_bytes.
 Proof.
   intros callee_post callee_post_n function_table rs1 rs2 Hcp Hcpn Hep Hwf Hexec.
   split.
   - eapply rust_exec_ed_preserves_wf; eassumption.
   - intros out_bytes scalar_bytes Hout Hscalar Hlen_s Hlen_o.
-    unfold out_encodes_scalarmult.
+    unfold out_is_valid_extended_point.
     split; [exact Hlen_o |].
     split; [exact Hlen_s |].
     (* Apply Hep directly: it gives us the extended_valid witness. *)
     destruct (Hep rs1 rs2 out_bytes Hexec Hout Hlen_o) as [ec [Hec Hev]].
-    exists ec. split; [exact Hec | split; [exact Hev | exact I]].
+    exists ec. split; [exact Hec | exact Hev].
 Qed.
 
-(** Strong correctness for the 2-arg wrapper. *)
-Theorem ed25519_scalarmult_base_rs_correct_strong :
+(** Well-formedness and output validity for the 2-arg wrapper.
+    NOT scalar-multiplication correctness; see [out_is_scalarmult]. *)
+Theorem ed25519_scalarmult_base_rs_wf_and_valid :
   forall callee_post callee_post_n function_table rs1 rs2,
     callee_post_well_formed callee_post ->
     callee_post_n_well_formed callee_post_n ->
@@ -408,23 +430,23 @@ Theorem ed25519_scalarmult_base_rs_correct_strong :
       get_scalar_bytes rs1 = Some scalar_bytes ->
       length scalar_bytes = 32%nat ->
       length out_bytes = 200%nat ->
-      out_encodes_scalarmult out_bytes scalar_bytes.
+      out_is_valid_extended_point out_bytes scalar_bytes.
 Proof.
   intros callee_post callee_post_n function_table rs1 rs2 Hcp Hcpn Hep Hwf Hexec.
   split.
   - eapply rust_exec_ed_preserves_wf; eassumption.
   - intros out_bytes scalar_bytes Hout Hscalar Hlen_s Hlen_o.
-    unfold out_encodes_scalarmult.
+    unfold out_is_valid_extended_point.
     split; [exact Hlen_o |].
     split; [exact Hlen_s |].
     destruct (Hep rs1 rs2 out_bytes Hexec Hout Hlen_o) as [ec [Hec Hev]].
-    exists ec. split; [exact Hec | split; [exact Hev | exact I]].
+    exists ec. split; [exact Hec | exact Hev].
 Qed.
 
 (** Architectural note: when [decode_extended_point] is replaced with
     its real implementation (felem-decode each 40-byte chunk then
     compose into Extended.point with curve-equation proof), the
-    [out_encodes_scalarmult] predicate becomes:
+    [out_is_scalarmult] predicate becomes:
 
       decode_extended_point out_bytes =
         Some (EdwardsXYZT25519.scalarmult
@@ -433,6 +455,6 @@ Qed.
 
     Discharging this requires the 256-iter loop invariant proof
     (~150 LoC), which lives inside
-    [ed25519_scalarmult_base_parametric_rs_correct_strong]'s
+    [ed25519_scalarmult_base_parametric_rs_wf_and_valid]'s
     second conjunct.  The framework infrastructure here remains the
     same; only the ProP body strengthens. *)

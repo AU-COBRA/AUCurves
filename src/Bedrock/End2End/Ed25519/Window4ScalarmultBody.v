@@ -26,8 +26,18 @@
  *
  *  Body Definition: Qed-clean.  Correctness theorem
  *  [window4_scalarmult_body_correct] is [Admitted] at PoC level,
- *  matching [comb_scalarmult_base_body_correct] /
- *  [wnaf_scalarmult_body_correct].
+ *  matching [comb_scalarmult_base_body_correct].
+ *
+ *  It also shares their defect.  [fe25519_callees_honoured_*] here
+ *  constrains only [loc_type], and [rexec_call] defers the whole state
+ *  transition to the oracle, so the hypothesis admits a callee that
+ *  never writes its destination.  The statement below is therefore not
+ *  merely unproved; as written it does not follow.  The repair is the
+ *  one carried out in XyztAddStrong.v and XyztDoubleStrong.v: pin each
+ *  leaf's value AND its frame, [rs2 = set_fp rs1 dst.(loc_var) limbs].
+ *  The sibling [wnaf_scalarmult_body_correct] was removed for this
+ *  reason, plus a body defect specific to signed digits; see the note
+ *  in WnafScalarmultBody.v.
  *)
 
 From Stdlib Require Import Strings.String.
@@ -393,7 +403,9 @@ Theorem window4_scalarmult_body_correct :
                 (VBytes 200 (ed25519_scalarmult_gallina scalar_bs P_bs))).
 Proof.
   (* PROOF STRATEGY (Admitted at PoC level, parallel to
-     comb_scalarmult_base_body_correct and wnaf_scalarmult_body_correct):
+     comb_scalarmult_base_body_correct).  See the header: the honoured
+     predicate must be strengthened to pin each leaf's frame before this
+     statement follows at all.
      1. Inversion through 19 REdLetZero + 6 REdByteStore initialisations.
      2. Build phase: 15 [REdCallFn xyzt_*] inversions yield T[k] = k·P.
      3. Window-loop induction over [REdFor "i" 64] with invariant:

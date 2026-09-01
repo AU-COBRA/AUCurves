@@ -209,17 +209,22 @@ Definition straus_2msm_helpers_present
 (* §5.  Correctness theorem (Admitted, PoC)                          *)
 (* ================================================================ *)
 
-Theorem straus_2msm_body_correct :
-  forall (function_table : function_table_ed)
-         (s k B A dest : located_ed)
-         (s_bs k_bs B_bs A_bs : list Byte.byte),
-    straus_2msm_helpers_present function_table ->
-    length s_bs = 32%nat ->
-    length k_bs = 32%nat ->
-    length B_bs = 200%nat ->
-    length A_bs = 200%nat ->
-    (* dest holds the 200-byte XYZT encoding of s·B + k·A. *)
-    True.  (* TODO: replace [True] with the gallina-level
-              [VBytes 200 (ed25519_straus_2msm_gallina s_bs k_bs B_bs A_bs)]
-              once that spec is in [ScalarmultVerified.v]. *)
-Proof. trivial. Qed.
+(** [straus_2msm_body_correct] -- REMOVED.  It was not a theorem.
+
+    What stood here was a [Theorem] whose conclusion, after eight
+    hypotheses about helper presence and byte lengths, was [True],
+    closed by [Proof. trivial. Qed.].  It established nothing, and
+    because it was Qed rather than Admitted it did not appear in any
+    admit count -- the file read as though the Straus double-scalar
+    multiplication had been verified.
+
+    There is nothing here to finish.  The specification the statement
+    would need, [ed25519_straus_2msm_gallina], does not exist anywhere
+    in the tree; the placeholder comment named it as a TODO against
+    ScalarmultVerified.v, where it was never written.  A real statement
+    has to be authored from that spec outwards, so keeping an empty
+    shell of one only obscures the gap.
+
+    The body [straus_2msm_body] and [straus_2msm_helpers_present] above
+    are untouched and still typecheck; they are what a future statement
+    would be about. *)

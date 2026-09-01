@@ -126,6 +126,28 @@
      Field.Synthesis.Examples.BLS12_377_GLV_ScalarMultBedrock
      ; Emission drivers: write Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
+     ; Requires theories this project does not depend on: Group/ScalarMult/Test.v
+     ; pulls compiler.MMIO / compiler.Pipeline / compiler.NaiveRiscvWordProperties
+     ; and riscv.Utility.*, i.e. the bedrock2 compiler and riscv-coq, neither of
+     ; which is in the opam install list or in any dune (theories ...) here.
+     ; It has never produced a .vo and nothing Requires it.
+     Group.ScalarMult.Test
+     ; Requires Crypto.Bedrock.End2End.X25519.MontgomeryLadder, which does not
+     ; exist in the vendored fiat-crypto (checked: the file is absent, as are
+     ; Examples/p256_prime.v and Examples/p256_bridge.v that the same chain
+     ; wants).  Emission driver; no .vo, no consumer.
+     Field.FieldExtensions.ExtractCurve25519Jasmin
+     ; The two Pasta hand-written WP files.  Their proofs are real --
+     ; Pallas_add_func_ok / Vesta_add_func_ok are Qed with 0 Admitted -- but
+     ; they were deleted from git on 2026-04-27 (944da57) and only exist here
+     ; as an untracked restore from 944da57^.  They do not compile against the
+     ; current fiat-crypto without separation-logic repair.  The route being
+     ; taken instead is a CurveAdd.ladderstep_correct instantiation per curve
+     ; (see Group/ScalarMult/BN254_Ladderstep.v), which is ~233 lines against
+     ; their ~800 and shares its proof with every other a = 0 curve.  Excluded
+     ; so the untracked restore does not break a local build.
+     Curve.PallasCurve_G1_bedrock
+     Curve.VestaCurve_G1_bedrock
      Curve.EmitA3Rust
      Curve.EmitWnafRust
      Curve.EmitDoubleA0Rust
@@ -133,8 +155,6 @@
      ; no theorems.  Run by hand, not part of the build.
      Examples.CheckBNDouble
      Curve.P256Curve_G1_bedrock
-     Curve.PallasCurve_G1_bedrock
-     Curve.VestaCurve_G1_bedrock
      Examples.felem_copy_32
      Examples.felem_copy_64
      Examples.felem_copy_p224_64

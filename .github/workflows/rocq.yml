@@ -33,7 +33,7 @@ jobs:
         with:
           path: ~/.opam
           # Bump the suffix to force a rebuild of the switch.
-          key: opam-rocq9-${{ runner.os }}-v1
+          key: opam-rocq9-${{ runner.os }}-v2
 
       - name: Set up Rocq 9.0 and the development's dependencies
         run: |
@@ -44,8 +44,16 @@ jobs:
           opam switch create rocq-9 5.2.0 --yes || opam switch rocq-9
           eval $(opam env --switch=rocq-9)
           opam repo add rocq-released https://rocq-prover.org/opam/released --yes || true
+          # rocq-native is required, not optional: src/Bedrock/dune and
+          # src/Theory/dune declare (mode native), so dune demands a .cmi and
+          # a .cmxs beside every .vo.  Without this package Rocq is built with
+          # the native compiler disabled and coqc answers
+          #   "Native compiler is disabled, -native-compiler on option ignored"
+          # then emits only the .vo, and every target fails with
+          #   "Rule failed to generate ... N<Module>.cmi / .cmxs".
+          # The proofs check either way; it is the artifacts that are missing.
           opam install --yes \
-            rocq-prover.9.0.0 coq-coqutil coq-bedrock2 coq-rupicola \
+            rocq-prover.9.0.0 rocq-native coq-coqutil coq-bedrock2 coq-rupicola \
             coq-rewriter coq-coqprime coq-bignums dune
 
       # ulimit and OCAMLRUNPARAM are required, not optional: without

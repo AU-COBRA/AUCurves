@@ -195,49 +195,49 @@ Definition fe25519_callees_honoured_dbl
 (* §3.  Correctness theorem                                          *)
 (* ================================================================ *)
 
-(** [xyzt_double_body_decomposed_correct]: under the field-op
-    contracts plus a 200-byte input pre-condition, the decomposed
-    body produces the 200-byte output specified by
-    [ed25519_xyzt_double_gallina].
+(** [xyzt_double_body_decomposed_correct] -- REMOVED, it was false.
 
-    PROOF SKELETON.  Each [REdLetZero] inverts via [rexec_let_zero]
-    (introducing a zero felem at the named slot); each [REdSeq]
-    splits via [rexec_seq]; each [REdCall] inverts via [rexec_call]
-    (consuming one fe25519 contract from
-    [fe25519_callees_honoured_dbl]).  After the 13 + 1 unpack + 7 ops
-    + 1 pack = 22 inversion steps, the goal reduces to checking that
-    the packed output bytes match [ed25519_xyzt_double_gallina]'s
-    output bytes — which is true by [parse_xyzt5 / pack_xyzt5]
-    round-trip + the Z-level computation chain.
+    The statement that stood here was refuted twice over, and neither
+    defect is repairable by finishing the proof.
 
-    Cost: ~100-150 LoC of mechanical [inversion] / [eapply] glue
-    chained through 22 transitions.  Left as [Admitted] for the next
-    session; the body itself is Qed-clean. *)
-Theorem xyzt_double_body_decomposed_correct :
-  forall callee_post callee_post_n function_table
-         (P dest : located_ed)
-         (rs1 rs2 : rust_state_ed)
-         (p_bs : list Byte.byte),
-    fe25519_callees_honoured_dbl callee_post callee_post_n ->
-    length p_bs = 200%nat ->
-    dest.(loc_type) = TBytes 200 ->
-    rs_get_tower_ed rs1 P.(loc_var)
-      = Some (exist_tval_ed (TBytes 200) (VBytes 200 p_bs)) ->
-    rust_exec_ed callee_post callee_post_n function_table
-                 (xyzt_double_body_decomposed dest [P]) rs1 rs2 ->
-    rs_get_tower_ed rs2 dest.(loc_var)
-      = Some (exist_tval_ed (TBytes 200)
-                (VBytes 200 (ed25519_xyzt_double_gallina p_bs))).
-Proof.
-  intros callee_post callee_post_n function_table P dest rs1 rs2 p_bs
-         Hhonoured Hlen Hdest_type HPin Hexec.
-  (* Remaining cascade — see the comment above.  Each step is one
-     [rexec_let_zero] or [rexec_seq] or [rexec_call/rexec_calln]
-     inversion, threading [Hhonoured]'s components to pull the post
-     value out of each oracle hit.  ~22 transitions total.
+    FIRST DEFECT: a vacuous oracle hypothesis.  [rexec_call]
+    (SafeRustEd25519Sim.v) defers the ENTIRE state transition to
+    [callee_post].  The old [fe25519_callees_honoured_dbl] constrained
+    only [loc_type], so it admits an oracle that never writes its
+    destination: [stale_pair_honours_old_dbl] in XyztDoubleStrong.v
+    exhibits one and proves it satisfies the predicate, and
+    [stale_pair_never_writes] states that it leaves the state alone.
+    A hypothesis that permits a do-nothing callee cannot yield a
+    conclusion about the value in [dest].
 
-     STATUS: 0 progress here; leaves the obligation visible. *)
-Admitted.
+    SECOND DEFECT, independent of the first: the spec is the wrong
+    function.  [ed25519_xyzt_double_gallina p] is definitionally
+    [ed25519_xyzt_add_spec p p] (pinned by [double_spec_is_add_spec_at_pp],
+    Qed), i.e. the UNIFIED addition evaluated at (P, P).  The body
+    computes the DEDICATED Hisil 2008 SS3.3 doubling.  Under the curve
+    equation these agree only projectively:
+    [dbl_dedicated_vs_unified_scaling] (Qed) gives e_u = 2E, g_u = 2G,
+    h_u = -2H, f_u = -2F, so X3/Y3/Z3 differ by a factor of -4 and the
+    cached pair (Ta3, Tb3) by (2, -2).  The conclusion asserted equality
+    of the 200 output BYTES, which no amount of proof effort can
+    establish.  The spec also inherits the [extended_T] convention
+    defect from XyztAddVerified.v, which is a third, separate problem.
+
+    Also missing, independently of both: freshness side conditions.  The
+    thirteen-slot [REdLetZero] prologue below writes [rs_set_tower_ed]
+    unconditionally, so an input whose [loc_var] aliases a scratch name
+    is clobbered before the unpack reads it.
+
+    THE REPLACEMENT, proved: [xyzt_double_body_decomposed_correct_strong]
+    in End2End/Ed25519/XyztDoubleStrong.v.  It pins each leaf's value AND
+    its frame ([rs2 = set_fp rs1 dst.(loc_var) limbs]), requires
+    [~ In P.(loc_var) xyzt_double_scratch_vars] and the [TBytes 200] types,
+    and concludes against [ed25519_xyzt_double_gallina_fixed], the
+    dedicated-doubling spec the body actually computes.  Qed, and
+    [Print Assumptions] reports Closed under the global context.  That
+    file also carries [witness_honours_dbl], which exhibits a concrete
+    state-transforming oracle satisfying the strengthened hypothesis, so
+    the repair does not trade a false statement for an unsatisfiable one. *)
 
 (* Print Assumptions xyzt_double_body_decomposed. *)
 (* Print Assumptions xyzt_double_body_decomposed_correct. *)

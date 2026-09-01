@@ -35,6 +35,41 @@ CryptOpt assembly, verbatim from seeds CryptOpt equivalence-checked
 against fiat-crypto, with a per-crate differential test and a fiat
 fallback when the host lacks BMI2/ADX.
 
+### P-256 against libcrux
+
+libcrux's P-256 is the other verified-extraction pipeline emitting safe
+Rust for this curve: HACL* C, verified in F* for memory safety,
+functional correctness and secret independence, translated to safe Rust
+by the procedure of *Compiling C to Safe Rust, Formalized*
+(arXiv:2412.15042).  It is the only comparison in this file between two
+pipelines of the same kind.
+
+`libcrux-p256` 0.0.8 publishes no point addition, doubling or bare
+scalar multiplication even under `expose-hacl`; its surface at this
+level is ECDH.  Both arms therefore run bytes in, bytes out, and both
+pay the same deserialisation, inversion to affine and serialisation.
+These rows are not comparable to the projective rows above.  The two
+arms are checked to agree byte-for-byte before any timing runs.
+
+| Operation | Ours | libcrux 0.0.8 | Ratio |
+|---|---:|---:|---:|
+| `ecdh_keygen` (`k·G`, fixed base) |  68.5k |  268.1k | **0.26x** |
+| `ecdh_shared` (`k·P`, variable base) | 340.6k |  695.9k | **0.49x** |
+
+Both `k·G` arms use a precomputed generator table: ours a 5-bit comb
+over the 2387-entry `G_TABLE` read by a constant-time linear scan per
+window, theirs `point_mul_g` over `p256_precomptable`.  For `k·P`,
+libcrux's `load_point_vartime` parses and curve-checks the public peer
+key in variable time, as its name records; ours checks it with the same
+field leaves as everything else.  Both scalar multiplications are
+constant time.
+
+Read against the RustCrypto rows above, these say that the P-256
+deficit is a property of RustCrypto's hand-written P-256 field backend
+rather than of verified extraction: the same generated code that trails
+RustCrypto by 7-9% leads the other verified pipeline by 2.0x to 3.9x.
+Run with `--features libcrux_arm`.
+
 ### Pairing curves
 
 | Curve | Operation | Ours | blst 0.3 | arkworks 0.5 |

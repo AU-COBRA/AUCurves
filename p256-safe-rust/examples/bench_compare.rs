@@ -31,16 +31,17 @@
 //!
 //! ## WHAT IS AND IS NOT COMPARABLE
 //!
-//! * `g1_add` / `g1_double`.  Ours is a line-by-line transcription of the
-//!   Qed-proved bedrock2 body `P256_G1_add`
-//!   (`src/Bedrock/Curve/P256_G1_Add_Spec.v`), which is Renes-Costello-Batina
-//!   2015 **Algorithm 1**, the complete addition for *general* `a`, 40 field
-//!   operations; doubling is self-addition through that same routine.
-//!   RustCrypto dispatches on `EquationAIsMinusThree` and uses the
-//!   `a = -3` specialisations, RCB **Algorithm 4** (add) and **Algorithm 6**
-//!   (double).  P-256 has `a = -3`, so the specialised formulas are available
-//!   to us too and are simply not what the proved body implements.  A slower
-//!   number here is a formula-choice gap, not a field-arithmetic gap.
+//! * `g1_add` / `g1_double`.  **Both arms use the `a = -3` specialisations**,
+//!   Renes-Costello-Batina 2015 **Algorithm 4** (add) and **Algorithm 6**
+//!   (double).  Ours is the Rocq-derived body of `CurveAddA3.v` /
+//!   `CurveDoubleA3.v`, reached through `group::g1_add` / `g1_double`;
+//!   `group::g1_add_general_a` keeps the 40-field-op **Algorithm 1** chain
+//!   (complete addition for general `a`, transcribed from the Qed-proved
+//!   bedrock2 body `P256_G1_add`) as the differential-test reference, and
+//!   `CurveA3Equiv.v` proves the two agree as polynomial identities.
+//!   RustCrypto dispatches on `EquationAIsMinusThree` to the same two
+//!   formulas.  What remains between the arms is the field layer, not the
+//!   formula.
 //!
 //! * `g1_scalar_mul`.  **Both arms are variable-base, and both are now a
 //!   4-bit fixed window.**  Ours builds a 15-entry table of multiples of the
@@ -54,12 +55,56 @@
 //!   `group::g1_scalar_mul_width1` keeps the width-1 double-and-add-always
 //!   ladder this arm used to run, as the differential-test reference.
 //!
-//! * Neither arm is a fixed-base benchmark.  `primeorder` 0.13.6 has no
-//!   precomputed generator tables at all -- its `MulByGenerator` impl is
-//!   literally `Self::generator() * scalar`, carrying a `TODO(tarcieri)` for
-//!   the tables -- so there is no fixed-base path in this version to compare
-//!   against, and the point fed to both arms below is the same non-generator
-//!   point in any case.
+//! * Against RustCrypto, neither arm is a fixed-base benchmark.
+//!   `primeorder` 0.13.6 has no precomputed generator tables at all -- its
+//!   `MulByGenerator` impl is literally `Self::generator() * scalar`,
+//!   carrying a `TODO(tarcieri)` for the tables -- so there is no fixed-base
+//!   path in that crate to compare against, and the point fed to both arms
+//!   below is the same non-generator point in any case.  The libcrux arm
+//!   described next does have one, and supplies the fixed-base comparison.
+//!
+//! ## THE LIBCRUX ARM (`--features libcrux_arm`)
+//!
+//! libcrux's P-256 is the closest peer this project has: another verified
+//! pipeline emitting safe Rust for the same curve.  It is hacl-rs -- HACL* C,
+//! verified in F* for memory safety, functional correctness and secret
+//! independence, mechanically translated to safe Rust by the procedure of
+//! "Compiling C to Safe Rust, Formalized" (arXiv:2412.15042).  The two rows
+//! below are the only ones where a like-for-like comparison is possible, and
+//! they are shaped by what libcrux exposes.
+//!
+//! * Granularity is forced.  `libcrux-p256` publishes no point addition,
+//!   doubling, or bare scalar multiplication, even with `expose-hacl`.  Its
+//!   public surface at this level is ECDH: `dh_initiator` (a scalar to a
+//!   64-byte public key) and `dh_responder` (a 64-byte peer key and a scalar
+//!   to a 64-byte shared secret).  So these two rows are **bytes in, bytes
+//!   out**, and both arms pay the same deserialisation, inversion to affine,
+//!   and serialisation.  They are NOT comparable to the `add`, `double` and
+//!   `scalar_mul` rows above, which are in-memory projective operations.
+//!
+//! * `ecdh_keygen` is the fixed-base row, `k * G`.  Both arms use a
+//!   precomputed table of multiples of the generator: ours is
+//!   `group::g1_scalar_mul_base`, a 5-bit comb over the 2387-entry
+//!   `G_TABLE` read by a full constant-time linear scan per window; libcrux's
+//!   is `point_mul_g` over `p256_precomptable`.
+//!
+//! * `ecdh_shared` is the variable-base row, `k * P`.  Ours parses the peer
+//!   point, checks it is on the curve, and runs the same 4-bit-window
+//!   `g1_scalar_mul` as the row above.  libcrux's `dh_responder` parses with
+//!   `load_point_vartime` -- **whose own name records that the parse and the
+//!   on-curve check are variable time** -- then runs `point_mul`.  The
+//!   validity check is over a public peer key in both arms, so this is not a
+//!   secret-dependent difference, but the two are not doing identical work
+//!   and the row should not be read to three significant figures.
+//!
+//! * Both arms are checked to agree byte-for-byte before any timing runs.  A
+//!   benchmark of two functions computing different values is worthless, so
+//!   `main` aborts rather than reporting a number if they diverge.
+//!
+//! * libcrux additionally range-checks the scalar
+//!   (`bn_is_lt_order_and_gt_zero_mask4`) in both entry points; ours does
+//!   not.  It is a four-limb comparison against the group order and is
+//!   negligible against a scalar multiplication, but it is there.
 //!
 //! * Constant time.  **Both arms are constant time** with respect to the
 //!   scalar and the point coordinates.  Ours: complete formulas, straight-line
@@ -168,6 +213,76 @@ fn scalar_be() -> [u8; 32] {
     k
 }
 
+// ---------------------------------------------------------------------------
+// libcrux arm: byte-level ECDH helpers
+// ---------------------------------------------------------------------------
+//
+// libcrux speaks 32-byte big-endian scalars and 64-byte big-endian raw points
+// (x || y, affine, canonical -- not Montgomery).  fiat's `to_bytes` /
+// `from_bytes` are little-endian, so each conversion reverses.
+
+/// Montgomery `Fp` -> 32 canonical big-endian bytes.
+#[cfg(feature = "libcrux_arm")]
+fn fp_to_be32(x: &p256::Fp) -> [u8; 32] {
+    use fiat_crypto::p256_64::{fiat_p256_from_montgomery, fiat_p256_to_bytes};
+    let mut raw = p256::FpRaw([0u64; 4]);
+    fiat_p256_from_montgomery(&mut raw, x);
+    let mut b = [0u8; 32];
+    fiat_p256_to_bytes(&mut b, &raw.0);
+    b.reverse();
+    b
+}
+
+/// 32 canonical big-endian bytes -> Montgomery `Fp`.
+#[cfg(feature = "libcrux_arm")]
+fn fp_from_be32(be: &[u8; 32]) -> p256::Fp {
+    use fiat_crypto::p256_64::{fiat_p256_from_bytes, fiat_p256_to_montgomery};
+    let mut le = *be;
+    le.reverse();
+    let mut limbs = [0u64; 4];
+    fiat_p256_from_bytes(&mut limbs, &le);
+    let mut m = p256::Fp([0u64; 4]);
+    fiat_p256_to_montgomery(&mut m, &p256::FpRaw(limbs));
+    m
+}
+
+/// Our `dh_initiator`: fixed-base `k * G`, serialised the way libcrux does.
+///
+/// Returns the identity encoding (all zero) for the scalar-zero case, which
+/// is what `point_store` on the point at infinity produces on the other side.
+#[cfg(feature = "libcrux_arm")]
+fn ours_dh_initiator(k: &[u8; 32]) -> [u8; 64] {
+    let p = p256::group::g1_scalar_mul_base(k);
+    let mut out = [0u8; 64];
+    if let Some((x, y)) = p256::group::g1_to_affine(&p) {
+        out[..32].copy_from_slice(&fp_to_be32(&x));
+        out[32..].copy_from_slice(&fp_to_be32(&y));
+    }
+    out
+}
+
+/// Our `dh_responder`: parse, validate, variable-base `k * P`, serialise.
+#[cfg(feature = "libcrux_arm")]
+fn ours_dh_responder(their_pk: &[u8; 64], k: &[u8; 32]) -> Option<[u8; 64]> {
+    let mut xb = [0u8; 32];
+    let mut yb = [0u8; 32];
+    xb.copy_from_slice(&their_pk[..32]);
+    yb.copy_from_slice(&their_pk[32..]);
+    let x = fp_from_be32(&xb);
+    let y = fp_from_be32(&yb);
+    if !p256::group::g1_affine_on_curve(&x, &y) {
+        return None;
+    }
+    let p = p256::group::g1_from_affine(&x, &y);
+    let q = p256::group::g1_scalar_mul(k, &p);
+    let mut out = [0u8; 64];
+    if let Some((ax, ay)) = p256::group::g1_to_affine(&q) {
+        out[..32].copy_from_slice(&fp_to_be32(&ax));
+        out[32..].copy_from_slice(&fp_to_be32(&ay));
+    }
+    Some(out)
+}
+
 fn main() {
     let k = scalar_be();
 
@@ -216,6 +331,61 @@ fn main() {
     #[cfg(feature = "extracted")]
     let mut o_wnaf = M::worst();
 
+    // ---- libcrux arm: agreement check, then the two ECDH measurements ----
+    #[cfg(feature = "libcrux_arm")]
+    let (mut o_kg, mut l_kg, mut o_ss, mut l_ss) =
+        (M::worst(), M::worst(), M::worst(), M::worst());
+    #[cfg(feature = "libcrux_arm")]
+    let peer_pk: [u8; 64];
+
+    #[cfg(feature = "libcrux_arm")]
+    {
+        // A second scalar, for the peer's key.  Same construction as `k`, so
+        // it is likewise below the group order and libcrux accepts it.
+        let mut k2 = [0u8; 32];
+        k2[0] = 0x0b;
+        for (i, b) in k2.iter_mut().enumerate().skip(1) {
+            *b = (i as u8).wrapping_mul(53).wrapping_add(7);
+        }
+
+        // Agreement, checked before anything is timed.  Comparing the speed
+        // of two functions that compute different values would be
+        // meaningless, so a mismatch aborts instead of printing a figure.
+        let mine_pk = ours_dh_initiator(&k);
+        let mut theirs_pk = [0u8; 64];
+        assert!(
+            libcrux_p256::dh_initiator(&mut theirs_pk, &k),
+            "libcrux rejected the benchmark scalar"
+        );
+        assert_eq!(
+            mine_pk, theirs_pk,
+            "k*G disagrees between this crate and libcrux -- the benchmark \
+             below would be comparing two different computations"
+        );
+
+        peer_pk = ours_dh_initiator(&k2);
+        let mine_ss = ours_dh_responder(&peer_pk, &k)
+            .expect("peer key generated by this crate must be on the curve");
+        let mut theirs_ss = [0u8; 64];
+        assert!(
+            libcrux_p256::dh_responder(&mut theirs_ss, &peer_pk, &k),
+            "libcrux rejected the peer key or the scalar"
+        );
+        assert_eq!(
+            mine_ss, theirs_ss,
+            "k*P disagrees between this crate and libcrux -- the benchmark \
+             below would be comparing two different computations"
+        );
+
+        // Warm up both arms before any timing, as the other rows do.
+        for _ in 0..N_MUL / 5 + 1 {
+            black_box(ours_dh_initiator(black_box(&k)));
+            let mut t = [0u8; 64];
+            black_box(libcrux_p256::dh_initiator(&mut t, black_box(&k)));
+            black_box(&t);
+        }
+    }
+
     for _ in 0..ROUNDS {
         // --- add: ours, then theirs ---
         let mut acc = g2;
@@ -261,6 +431,31 @@ fn main() {
                 acc = g1_scalar_mul_wnaf(black_box(&k), black_box(&g2))
             }));
             black_box(&acc);
+        }
+
+        // --- ECDH keygen (fixed base, k*G -> 64 bytes): ours, then libcrux ---
+        #[cfg(feature = "libcrux_arm")]
+        {
+            let mut out = [0u8; 64];
+            o_kg = o_kg.min(round(N_MUL, || out = ours_dh_initiator(black_box(&k))));
+            black_box(&out);
+            let mut lout = [0u8; 64];
+            l_kg = l_kg.min(round(N_MUL, || {
+                libcrux_p256::dh_initiator(&mut lout, black_box(&k));
+            }));
+            black_box(&lout);
+
+            // --- ECDH shared secret (variable base, k*P -> 64 bytes) ---
+            let mut sout = [0u8; 64];
+            o_ss = o_ss.min(round(N_MUL, || {
+                sout = ours_dh_responder(black_box(&peer_pk), black_box(&k)).unwrap()
+            }));
+            black_box(&sout);
+            let mut lsout = [0u8; 64];
+            l_ss = l_ss.min(round(N_MUL, || {
+                libcrux_p256::dh_responder(&mut lsout, black_box(&peer_pk), black_box(&k));
+            }));
+            black_box(&lsout);
         }
     }
 
@@ -319,6 +514,39 @@ fn main() {
 
     println!();
     println!("ratio = ours / RustCrypto on CYCLES; below 1.00 means this work is faster.");
+
+    #[cfg(feature = "libcrux_arm")]
+    {
+        // An ECDH operation is a scalar multiplication plus an inversion; it
+        // cannot be cheaper than the bare scalar multiplication floor.
+        for (n, m) in [("ours keygen", o_kg), ("libcrux keygen", l_kg),
+                       ("ours shared", o_ss), ("libcrux shared", l_ss)] {
+            assert_floor(n, m, 5_000.0);
+        }
+        println!();
+        println!("=== vs libcrux (hacl-rs) 0.0.8 — ECDH, bytes in / bytes out ===");
+        println!("{:<26} {:>14} {:>14} {:>12}", "operation", "ours (cyc)", "libcrux (cyc)", "ratio");
+        println!("{}", "-".repeat(70));
+        let lrow = |name: &str, ours: M, theirs: M| {
+            println!(
+                "{:<26} {:>14.1} {:>14.1} {:>11.2}x",
+                name, ours.cyc, theirs.cyc, ours.cyc / theirs.cyc
+            );
+        };
+        lrow("ecdh_keygen  (k*G)", o_kg, l_kg);
+        lrow("ecdh_shared  (k*P)", o_ss, l_ss);
+        println!();
+        println!("Both arms verified to agree byte-for-byte before timing.");
+        println!("These two rows include deserialisation, the inversion to affine and");
+        println!("serialisation, so they are NOT comparable to the projective rows above.");
+        println!("libcrux exposes no add/double/scalar-mul, so this is the finest");
+        println!("granularity at which the two can be compared at all.");
+        println!("k*G: both use a precomputed generator table (ours 5-bit comb over");
+        println!("G_TABLE, constant-time scan; theirs point_mul_g over p256_precomptable).");
+        println!("k*P: libcrux's load_point_vartime parses and curve-checks the PUBLIC");
+        println!("peer key in variable time; ours checks it with the same field leaves");
+        println!("as everything else.  Both scalar multiplications are constant time.");
+    }
     println!("TSC reference rate here: {:.3} GHz (from the add row).", o_add.cyc / o_add.ns);
     println!();
     println!("Caveats (full text at the head of this file):");

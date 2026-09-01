@@ -25,6 +25,21 @@ path = "examples/bench_field.rs"
 fiat-crypto = { path = "../fiat-crypto/fiat-rust" }
 safegcd     = { path = "../safegcd-rs" }
 
+# libcrux's P-256, for the `libcrux_arm` rows of examples/bench_compare.rs.
+#
+# This is hacl-rs: HACL* C, verified in F* for memory safety, functional
+# correctness and secret independence, then mechanically translated to safe
+# Rust ("Compiling C to Safe Rust, Formalized", arXiv:2412.15042).  It is the
+# closest peer this project has -- another verified-extraction pipeline
+# emitting safe Rust for the same curve -- which is why it is worth a row.
+#
+# Optional, and taken from the registry rather than by path: the workspace is
+# built with `cargo build --workspace` in CI, so an out-of-tree path
+# dependency here would break a clean checkout at manifest-resolution time
+# (curve25519-jasmin-rs can path-depend on a local libcrux clone only because
+# it is excluded from this workspace).
+libcrux-p256 = { version = "0.0.8", features = ["expose-hacl"], optional = true }
+
 [dev-dependencies]
 # RustCrypto reference implementation for examples/bench_compare.rs.
 # Renamed because this crate's own [lib] is also called `p256`.
@@ -43,3 +58,7 @@ harness = false
 
 [features]
 extracted = []
+
+# Adds the libcrux (hacl-rs) arm to examples/bench_compare.rs.  Off by
+# default so the workspace build does not compile it.
+libcrux_arm = ["dep:libcrux-p256"]

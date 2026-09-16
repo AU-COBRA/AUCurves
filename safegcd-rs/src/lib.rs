@@ -15,6 +15,8 @@ pub mod safegcd_secp256k1;
 pub mod safegcd_p224;
 pub mod safegcd_p256;
 pub mod safegcd_p384;
+/// The P-384 group order, the scalar field ECDSA inverts in.
+pub mod safegcd_p384_order;
 pub mod safegcd_p521;
 pub mod safegcd_bn254;
 pub mod safegcd_bn256;

@@ -26,6 +26,30 @@
 //! `P384_NO_CRYPTOPT=1` is set, the fiat leaves are used unchanged.
 //! [`fp_mul_fiat`] and [`fp_square_fiat`] always name the fiat versions, so
 //! the two paths can be compared in the same binary.
+//!
+//! # The s2n-bignum field configuration
+//!
+//! With `P384_S2N_FIELD=<path>` at build time, `build.rs` sets
+//! `cfg(p384_s2n_field)` and the two leaves call s2n-bignum's
+//! `bignum_montmul_p384(z, x, y)` and `bignum_montsqr_p384(z, x)`.  Their
+//! header comments in `x86_att/p384/bignum_montmul_p384.S` and
+//! `bignum_montsqr_p384.S` state `z := (2^-384 * x * y) mod p_384` and
+//! `z := (x^2 / 2^384) mod p_384` over little-endian `uint64_t[6]`, under
+//! `x * y <= 2^384 * p_384` (resp. `x^2 <= 2^384 * p_384`), which holds for
+//! inputs below `p`; the HOL Light theorems `BIGNUM_MONTMUL_P384_SUBROUTINE_CORRECT`
+//! and `BIGNUM_MONTSQR_P384_SUBROUTINE_CORRECT` state the same post-condition
+//! with `MOD p_384`, so the output is fully reduced.  That is the function
+//! `fiat_p384_mul` / `fiat_p384_square` compute on the Montgomery-domain
+//! `[u64; 6]`, with `R = 2^384`.
+//!
+//! When the path is a `.s` file, `build.rs` also sets
+//! `cfg(p384_s2n_montmul_only)`: the file provides only
+//! `bignum_montmul_p384_encoded`, the re-encoding of s2n-bignum's montmul
+//! whose body bytes CatCrypt proves correct, and [`fp_square`] is
+//! `montmul(x, x)`.  `P384_NO_CRYPTOPT` takes precedence over
+//! `P384_S2N_FIELD`, which takes precedence over CryptOpt.
+//! [`FIELD_CONFIG`] names the configuration a binary was built with, and
+//! `tests/s2n_field_diff.rs` compares it against fiat.
 
 #![allow(non_snake_case, non_camel_case_types)]
 
@@ -42,9 +66,45 @@ unsafe extern "C" {
     fn p384_cryptopt_square(out: *mut u64, x: *const u64);
 }
 
+#[cfg(all(p384_s2n_field, not(p384_s2n_montmul_only)))]
+unsafe extern "C" {
+    /// `z = 2^-384 * x * y mod p_384`, for `x * y <= 2^384 * p_384`.
+    /// s2n-bignum `x86_att/p384/bignum_montmul_p384.S`.
+    fn bignum_montmul_p384(z: *mut u64, x: *const u64, y: *const u64);
+    /// `z = 2^-384 * x^2 mod p_384`, for `x^2 <= 2^384 * p_384`.
+    /// s2n-bignum `x86_att/p384/bignum_montsqr_p384.S`.
+    fn bignum_montsqr_p384(z: *mut u64, x: *const u64);
+}
+
+#[cfg(all(p384_s2n_field, p384_s2n_montmul_only))]
+unsafe extern "C" {
+    /// s2n-bignum's `bignum_montmul_p384`, re-encoded by CatCrypt's encoder;
+    /// same function and calling convention.
+    #[link_name = "bignum_montmul_p384_encoded"]
+    fn bignum_montmul_p384(z: *mut u64, x: *const u64, y: *const u64);
+}
+
 /// Whether this build calls the CryptOpt assembly for [`fp_mul`] and
-/// [`fp_square`].  `false` means the fiat-rust leaves are in use.
+/// [`fp_square`].  `false` means some other configuration is in use; see
+/// [`FIELD_CONFIG`].
 pub const CRYPTOPT_ASM: bool = cfg!(p384_cryptopt_asm);
+
+/// Whether this build calls s2n-bignum kernels for [`fp_mul`] and
+/// [`fp_square`] (either `P384_S2N_FIELD` form).
+pub const S2N_FIELD: bool = cfg!(p384_s2n_field);
+
+/// The implementation behind [`fp_mul`] and [`fp_square`] in this binary:
+/// `"fiat"`, `"cryptopt"`, `"s2n-bignum"` (montmul + montsqr) or
+/// `"s2n-montmul-encoded"` (the re-encoded montmul for both operations).
+pub const FIELD_CONFIG: &str = if cfg!(all(p384_s2n_field, p384_s2n_montmul_only)) {
+    "s2n-montmul-encoded"
+} else if cfg!(p384_s2n_field) {
+    "s2n-bignum"
+} else if cfg!(p384_cryptopt_asm) {
+    "cryptopt"
+} else {
+    "fiat"
+};
 
 #[inline] pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp)     { fiat_p384_add(out, x, y) }
 #[inline] pub fn fp_sub(out: &mut Fp, x: &Fp, y: &Fp)     { fiat_p384_sub(out, x, y) }
@@ -57,24 +117,39 @@ pub fn fp_mul(out: &mut Fp, x: &Fp, y: &Fp) {
     // writable) bytes, which is exactly what the callee touches; it retains
     // nothing.  `out` cannot alias `x` or `y`, because holding `&mut Fp` and
     // `&Fp` to the same element at once is not expressible in safe Rust and
-    // this function is safe.
-    #[cfg(p384_cryptopt_asm)]
+    // this function is safe.  The s2n kernels additionally require
+    // `x * y <= 2^384 * p`, which holds for `x, y < p`, the range the fiat
+    // field operations return.
+    #[cfg(p384_s2n_field)]
+    unsafe {
+        bignum_montmul_p384(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr())
+    }
+    #[cfg(all(p384_cryptopt_asm, not(p384_s2n_field)))]
     unsafe {
         p384_cryptopt_mul(out.0.as_mut_ptr(), x.0.as_ptr(), y.0.as_ptr())
     }
-    #[cfg(not(p384_cryptopt_asm))]
+    #[cfg(not(any(p384_cryptopt_asm, p384_s2n_field)))]
     fiat_p384_mul(out, x, y)
 }
 
 /// `out = x * x * R^-1 mod p`.
 #[inline]
 pub fn fp_square(out: &mut Fp, x: &Fp) {
-    // SAFETY: as for `fp_mul`.
-    #[cfg(p384_cryptopt_asm)]
+    // SAFETY: as for `fp_mul`.  Under `p384_s2n_montmul_only` both input
+    // pointers name `x`, which the montmul kernel only reads.
+    #[cfg(all(p384_s2n_field, not(p384_s2n_montmul_only)))]
+    unsafe {
+        bignum_montsqr_p384(out.0.as_mut_ptr(), x.0.as_ptr())
+    }
+    #[cfg(all(p384_s2n_field, p384_s2n_montmul_only))]
+    unsafe {
+        bignum_montmul_p384(out.0.as_mut_ptr(), x.0.as_ptr(), x.0.as_ptr())
+    }
+    #[cfg(all(p384_cryptopt_asm, not(p384_s2n_field)))]
     unsafe {
         p384_cryptopt_square(out.0.as_mut_ptr(), x.0.as_ptr())
     }
-    #[cfg(not(p384_cryptopt_asm))]
+    #[cfg(not(any(p384_cryptopt_asm, p384_s2n_field)))]
     fiat_p384_square(out, x)
 }
 

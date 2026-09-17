@@ -42,3 +42,18 @@ harness = false
 
 [features]
 extracted = []
+
+# Field-leaf selection from a dependent's manifest; `build.rs` states the
+# precedence.  With none of the three enabled, the selection is by the
+# environment variables `P384_NO_CRYPTOPT` and `P384_S2N_FIELD`, as before.
+#
+# `fiat`: the fiat-rust `fp_mul` / `fp_square`, with no autodetection of
+# CryptOpt.
+fiat = []
+# `cryptopt`: the CryptOpt assembly in `generated/`; the build fails when it
+# cannot be linked.
+cryptopt = []
+# `catcrypt-montmul`: `fp_mul` and `fp_square` call
+# `bignum_montmul_p384_encoded`, supplied by `P384_CATCRYPT_MONTMUL_S=<file.s>`
+# or by another crate of the final link.
+catcrypt-montmul = []

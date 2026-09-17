@@ -53,6 +53,38 @@ of its own build:
 P384_S2N_FIELD=/path/to/s2n-bignum/x86/libs2nbignum.a cargo build --release --offline
 ```
 
+### Cargo features
+
+A dependent crate can instead fix the configuration in its manifest. With
+none of the three features below enabled, the rules above are unchanged.
+
+| feature            | configuration         | notes |
+|--------------------|-----------------------|-------|
+| `fiat`             | `"fiat"`              | no CryptOpt autodetection; `P384_NO_CRYPTOPT` and `P384_S2N_FIELD` still apply as above |
+| `cryptopt`         | `"cryptopt"`          | the build fails where the automatic selection would fall back to fiat |
+| `catcrypt-montmul` | `"s2n-montmul-encoded"` | `fp_mul` and `fp_square` call `bignum_montmul_p384_encoded`; see below |
+
+Under `catcrypt-montmul`, `P384_CATCRYPT_MONTMUL_S=<file.s>` names an
+assembly source defining the global `bignum_montmul_p384_encoded`, which
+`build.rs` assembles with `as --64` and links. Without that variable nothing
+is linked, and the symbol must be supplied by another crate of the final
+link; the `asm-montmul` feature of CatCrypt's `catcrypt-p384` crate does this
+with its vendored copy of the framed, CatCrypt-encoded montmul. A link
+without the symbol fails with `undefined symbol: bignum_montmul_p384_encoded`.
+
+`cryptopt` together with `catcrypt-montmul` fails the build, and so does
+either of them together with `P384_NO_CRYPTOPT` or `P384_S2N_FIELD`.
+Enabled together with `fiat`, either of them takes precedence. Both require
+a native x86-64 Linux build on a host with BMI2 and ADX and fail the build
+otherwise.
+
+```
+cargo test --offline --release -p p384-safe-rust --features extracted,fiat
+cargo test --offline --release -p p384-safe-rust --features extracted,cryptopt
+P384_CATCRYPT_MONTMUL_S=/path/to/bignum_montmul_p384_encoded.s \
+  cargo test --offline --release -p p384-safe-rust --features extracted,catcrypt-montmul
+```
+
 ### What is ours and what is external under `P384_S2N_FIELD`
 
 The group law, the variable-base window, the fixed-base comb and table, the
@@ -124,7 +156,11 @@ Results of the full suite with `--features extracted` (unit tests in
 | s2n-montmul-encoded    | 22   | 8       | 7             | 1              | 14          | 7              | 6               |
 
 All passed. The `.o` form (the two objects combined with `ld -r`) passed
-`s2n_field_diff` as well.
+`s2n_field_diff` as well. The feature selections `extracted,fiat`,
+`extracted,cryptopt` and `extracted,catcrypt-montmul` (the last with
+`P384_CATCRYPT_MONTMUL_S` naming the framed montmul vendored in
+`catcrypt-p384/asm/`) pass with the counts of the `fiat`, `cryptopt` and
+`s2n-montmul-encoded` rows respectively.
 
 ## Measurements
 

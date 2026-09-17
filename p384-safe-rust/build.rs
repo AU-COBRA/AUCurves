@@ -27,8 +27,30 @@
 //!    and ADX, and `nasm` builds it; the fiat-rust leaves when any of these
 //!    fails.
 //!
+//! # Cargo features
+//!
+//! With none of the features `fiat`, `cryptopt`, `catcrypt-montmul` enabled,
+//! the selection above is the whole rule.  The features let a dependent crate
+//! choose the configuration in its manifest:
+//!
+//! * `cryptopt`: the CryptOpt assembly, and a build failure where the
+//!   automatic selection would fall back to fiat.
+//! * `catcrypt-montmul`: the `s2n-montmul-encoded` configuration
+//!   (`cfg(p384_s2n_field)` and `cfg(p384_s2n_montmul_only)`).  When
+//!   `P384_CATCRYPT_MONTMUL_S=<path>` names a `.s` file defining
+//!   `bignum_montmul_p384_encoded`, it is assembled and linked here, as for a
+//!   `.s` in `P384_S2N_FIELD`; otherwise nothing is linked and the symbol must
+//!   come from another crate of the final link (a missing symbol is a link
+//!   error).
+//! * `fiat`: the fiat-rust leaves, unless `P384_NO_CRYPTOPT` or
+//!   `P384_S2N_FIELD` is set, in which case the selection above applies.
+//!
+//! `cryptopt` together with `catcrypt-montmul`, and either of the two
+//! together with `P384_NO_CRYPTOPT` or `P384_S2N_FIELD`, fails the build.
+//! `fiat` together with either of the two is overridden by it.
+//!
 //! The crate carries no path into another repository: the s2n-bignum
-//! artifact is whatever `P384_S2N_FIELD` names.
+//! artifact is whatever `P384_S2N_FIELD` or `P384_CATCRYPT_MONTMUL_S` names.
 
 use std::env;
 use std::ffi::OsStr;
@@ -42,9 +64,24 @@ fn main() {
     println!("cargo:rerun-if-changed=generated/p384_square_cryptopt.asm");
     println!("cargo:rerun-if-env-changed=P384_NO_CRYPTOPT");
     println!("cargo:rerun-if-env-changed=P384_S2N_FIELD");
+    println!("cargo:rerun-if-env-changed=P384_CATCRYPT_MONTMUL_S");
     println!("cargo:rustc-check-cfg=cfg(p384_cryptopt_asm)");
     println!("cargo:rustc-check-cfg=cfg(p384_s2n_field)");
     println!("cargo:rustc-check-cfg=cfg(p384_s2n_montmul_only)");
+
+    let feature_fiat = env::var_os("CARGO_FEATURE_FIAT").is_some();
+    let feature_cryptopt = env::var_os("CARGO_FEATURE_CRYPTOPT").is_some();
+    let feature_montmul = env::var_os("CARGO_FEATURE_CATCRYPT_MONTMUL").is_some();
+    if feature_cryptopt || feature_montmul {
+        feature_request(feature_cryptopt, feature_montmul);
+        return;
+    }
+    if feature_fiat
+        && env::var_os("P384_NO_CRYPTOPT").is_none()
+        && env::var_os("P384_S2N_FIELD").is_none()
+    {
+        return;
+    }
 
     if env::var_os("P384_NO_CRYPTOPT").is_some() {
         if env::var_os("P384_S2N_FIELD").is_some() {
@@ -143,10 +180,7 @@ fn s2n_field(path: &Path, manifest: &Path, out_dir: &Path) {
             let text = fs::read_to_string(&path).unwrap_or_else(|e| {
                 panic!("P384_S2N_FIELD: reading {} failed: {e}", path.display())
             });
-            if !text.lines().any(|l| {
-                let mut w = l.split_whitespace();
-                w.next() == Some(".globl") && w.next() == Some("bignum_montmul_p384_encoded")
-            }) {
+            if !defines_encoded_montmul(&text) {
                 panic!(
                     "P384_S2N_FIELD={}: a `.s` source must define the global symbol \
                      `bignum_montmul_p384_encoded`",
@@ -176,6 +210,92 @@ fn s2n_field(path: &Path, manifest: &Path, out_dir: &Path) {
         if montmul_only { "montmul (encoded; square = montmul(x, x))" } else { "montmul + montsqr" },
         path.display()
     );
+}
+
+/// Applies the `cryptopt` or `catcrypt-montmul` feature, or panics.
+///
+/// Both features are explicit requests for assembly, so every condition under
+/// which the automatic selection would fall back to fiat is a build failure
+/// here, as is a conflicting environment variable.
+fn feature_request(cryptopt: bool, montmul: bool) {
+    if cryptopt && montmul {
+        panic!(
+            "features `cryptopt` and `catcrypt-montmul` select different field leaves; \
+             enable one"
+        );
+    }
+    let feature = if cryptopt { "cryptopt" } else { "catcrypt-montmul" };
+    for var in ["P384_NO_CRYPTOPT", "P384_S2N_FIELD"] {
+        if env::var_os(var).is_some() {
+            panic!(
+                "feature `{feature}` is enabled and {var} is set; they select different \
+                 field leaves"
+            );
+        }
+    }
+    if !native_x86_64_linux_with_bmi2_adx() {
+        panic!(
+            "feature `{feature}` needs a native x86-64 Linux build on a host with BMI2 and ADX"
+        );
+    }
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let exec = |cmd: &mut Command, tool: &str| match cmd.status() {
+        Ok(s) if s.success() => {}
+        Ok(s) => panic!("feature `{feature}`: `{tool}` exited with {s}"),
+        Err(e) => panic!("feature `{feature}`: cannot run `{tool}`: {e}"),
+    };
+
+    if cryptopt {
+        exec(
+            Command::new("sh")
+                .arg(manifest.join("build.sh"))
+                .env("OUT_DIR", &out_dir)
+                .current_dir(&manifest),
+            "build.sh",
+        );
+        println!("cargo:rustc-link-search=native={}", out_dir.display());
+        println!("cargo:rustc-link-lib=static=p384_cryptopt");
+        println!("cargo:rustc-cfg=p384_cryptopt_asm");
+        return;
+    }
+
+    if let Some(path) = env::var_os("P384_CATCRYPT_MONTMUL_S") {
+        let path = PathBuf::from(path);
+        let path = if path.is_absolute() { path } else { manifest.join(path) };
+        println!("cargo:rerun-if-changed={}", path.display());
+        if path.extension().and_then(OsStr::to_str) != Some("s") {
+            panic!("P384_CATCRYPT_MONTMUL_S={}: expected a `.s` source", path.display());
+        }
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!("P384_CATCRYPT_MONTMUL_S: reading {} failed: {e}", path.display())
+        });
+        if !defines_encoded_montmul(&text) {
+            panic!(
+                "P384_CATCRYPT_MONTMUL_S={}: the source must define the global symbol \
+                 `bignum_montmul_p384_encoded`",
+                path.display()
+            );
+        }
+        let obj = out_dir.join("p384_catcrypt_montmul.o");
+        let archive = out_dir.join("libp384_catcrypt_montmul.a");
+        let _ = fs::remove_file(&archive);
+        exec(Command::new("as").arg("--64").arg("-o").arg(&obj).arg(&path), "as");
+        exec(Command::new("ar").arg("rcs").arg(&archive).arg(&obj), "ar");
+        println!("cargo:rustc-link-search=native={}", out_dir.display());
+        println!("cargo:rustc-link-lib=static=p384_catcrypt_montmul");
+    }
+    println!("cargo:rustc-cfg=p384_s2n_field");
+    println!("cargo:rustc-cfg=p384_s2n_montmul_only");
+}
+
+/// Whether an assembly source has a `.globl bignum_montmul_p384_encoded` line.
+fn defines_encoded_montmul(text: &str) -> bool {
+    text.lines().any(|l| {
+        let mut w = l.split_whitespace();
+        w.next() == Some(".globl") && w.next() == Some("bignum_montmul_p384_encoded")
+    })
 }
 
 fn run(cmd: &mut Command, tool: &str) {

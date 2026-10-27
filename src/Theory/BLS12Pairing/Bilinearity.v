@@ -1,23 +1,27 @@
-(** * Bilinearity axioms for the BLS12 optimal Ate pairing.
+(** * Bilinearity laws for the BLS12 optimal Ate pairing.
 
-    These axioms state the standard mathematical properties of the
-    pairing: bilinearity and non-degeneracy. They are sound because
-    the optimal Ate pairing is a well-established mathematical
-    construction (Vercauteren 2007, IETF RFC 9380).
+    This file states bilinearity, non-degeneracy and the correctness of
+    [pairing_check] as propositions about the pairing of [Pairing.v].
+    They are not assumed: a theorem that needs them takes
+    [pairing_laws ...] as a hypothesis (see [BLSSignature.v]).
 
-    No formal proof of pairing bilinearity exists in any proof
-    assistant as of 2026. The proof requires divisor theory on
-    elliptic curves (PhD-thesis scope). These axioms enable
-    verification of cryptographic protocols (BLS signatures, SNARKs)
-    without requiring the full mathematical proof.
+    They used to be [Axiom]s inside a section parameterised by the prime
+    [p], the Frobenius constants, the scalar multiplications and the
+    generators.  Closing the section generalised each axiom over all of
+    these, which is inconsistent: [pairing_non_degenerate_p1] below shows
+    that for [p = 1] every pairing value equals [fp12_one], so
+    non-degeneracy fails for every choice of generators.
 
-    Trust model: the pairing definition in Pairing.v correctly
-    implements the optimal Ate pairing formula. Bilinearity is a
-    mathematical property of that formula, not an implementation
-    choice.
+    The laws hold only for the BLS12-381 prime and Frobenius constants,
+    for the actual group operations, and for points of the order-r
+    subgroups.  Stating them as hypotheses leaves it to the user to supply
+    exactly those instances.
+
+    No formal proof of pairing bilinearity exists in any proof assistant
+    as of 2026; it requires divisor theory on elliptic curves.
 *)
 
-From Stdlib Require Import ZArith.ZArith.
+From Stdlib Require Import ZArith.ZArith Eqdep_dec.
 Require Import Crypto.Spec.ModularArithmetic.
 Require Import Theory.BLS12Pairing.Pairing.
 
@@ -27,6 +31,7 @@ Section Bilinearity.
 
   (* Frobenius constants — needed for final_exponentiation *)
   Variable gamma1_p2 gamma2_p2 coeff_p2_c1 : F p * F p.
+
   Variable fp12_eq_dec : forall (a b : (((F p * F p) * (F p * F p) * (F p * F p)) *
     ((F p * F p) * (F p * F p) * (F p * F p)))),
     {a = b} + {a <> b}.
@@ -41,15 +46,14 @@ Section Bilinearity.
   Local Notation e := (pairing p gamma1_p2 gamma2_p2 coeff_p2_c1).
 
   (* ================================================================ *)
-  (** ** Group operations (abstract)                                   *)
-  (*                                                                   *)
-  (* The axioms are stated with abstract group operations. These are   *)
-  (* the mathematical operations on the elliptic curve groups, not     *)
-  (* the bedrock2 implementations.                                     *)
+  (** ** Group operations                                              *)
   (* ================================================================ *)
 
   Variable g1_add : G1 -> G1 -> G1.
   Variable g1_scalar_mult : Z -> G1 -> G1.
+  Variable g2_scalar_mult : Z -> G2 -> G2.
+  Variable g1_generator : G1.
+  Variable g2_generator : G2.
 
   (* ================================================================ *)
   (** ** GT (multiplicative subgroup of Fp12-star)                     *)
@@ -62,54 +66,58 @@ Section Bilinearity.
     fp12_pow_Z p base exp (Z.to_nat (Z.log2 exp + 1)).
 
   (* ================================================================ *)
-  (** ** Bilinearity axioms                                            *)
+  (** ** The laws                                                      *)
   (* ================================================================ *)
 
-  (** Bilinearity in the first argument:
-      e(aP, Q) = e(P, Q)^a for all a ∈ Z, P ∈ G1, Q ∈ G2. *)
-  Axiom pairing_bilinear_left :
-    forall (a : Z) (P : G1) (Q : G2),
-      e (g1_scalar_mult a P) Q = fp12_pow (e P Q) a.
-
-  (** Bilinearity in the second argument:
-      e(P, bQ) = e(P, Q)^b for all b ∈ Z, P ∈ G1, Q ∈ G2.
-      (Requires G2 scalar multiplication — stated abstractly.) *)
-  Variable g2_scalar_mult : Z -> G2 -> G2.
-
-  Axiom pairing_bilinear_right :
-    forall (b : Z) (P : G1) (Q : G2),
-      e P (g2_scalar_mult b Q) = fp12_pow (e P Q) b.
-
-  (** Additive form of bilinearity:
-      e(P + Q, R) = e(P, R) * e(Q, R) *)
-  Axiom pairing_additive_left :
-    forall (P Q : G1) (R : G2),
-      e (g1_add P Q) R = fp12_mul (e P R) (e Q R).
-
-  (** Non-degeneracy: there exist P, Q such that e(P, Q) ≠ 1.
-      Equivalently: for generators g1 ∈ G1, g2 ∈ G2,
-      e(g1, g2) generates GT. *)
-  Variable g1_generator : G1.
-  Variable g2_generator : G2.
-
-  Axiom pairing_non_degenerate :
-    e g1_generator g2_generator <> fp12_one.
-
-  (* ================================================================ *)
-  (** ** Derived properties                                            *)
-  (* ================================================================ *)
-
-  (** e(0, Q) = 1 (follows from bilinearity: e(0, Q) = e(P-P, Q) = e(P,Q)*e(-P,Q)) *)
-  (** e(P, 0) = 1 *)
-  (** e(-P, Q) = e(P, Q)^{-1} *)
-  (** Pairing check: e(P1,Q1) = e(P2,Q2) iff e(P1,Q1) * e(-P2,Q2) = 1 *)
-
-  (** The pairing_check function from Pairing.v is correct: *)
-  Axiom pairing_check_correct :
-    forall (P1 : G1) (Q1 : G2) (P2 : G1) (Q2 : G2),
-      pairing_check p gamma1_p2 gamma2_p2 coeff_p2_c1 fp12_eq_dec
-        P1 Q1 P2 Q2 = true
-      <->
-      e P1 Q1 = e P2 Q2.
+  Record pairing_laws : Prop := {
+    (** e(aP, Q) = e(P, Q)^a *)
+    pairing_bilinear_left :
+      forall (a : Z) (P : G1) (Q : G2),
+        e (g1_scalar_mult a P) Q = fp12_pow (e P Q) a;
+    (** e(P, bQ) = e(P, Q)^b *)
+    pairing_bilinear_right :
+      forall (b : Z) (P : G1) (Q : G2),
+        e P (g2_scalar_mult b Q) = fp12_pow (e P Q) b;
+    (** e(P + Q, R) = e(P, R) * e(Q, R) *)
+    pairing_additive_left :
+      forall (P Q : G1) (R : G2),
+        e (g1_add P Q) R = fp12_mul (e P R) (e Q R);
+    (** e(g1, g2) <> 1 *)
+    pairing_non_degenerate :
+      e g1_generator g2_generator <> fp12_one;
+    (** [pairing_check] decides equality of pairings. *)
+    pairing_check_correct :
+      forall (P1 : G1) (Q1 : G2) (P2 : G1) (Q2 : G2),
+        pairing_check p gamma1_p2 gamma2_p2 coeff_p2_c1 fp12_eq_dec
+          P1 Q1 P2 Q2 = true
+        <->
+        e P1 Q1 = e P2 Q2
+  }.
 
 End Bilinearity.
+
+(* ================================================================ *)
+(** ** Why the laws cannot be axioms over arbitrary parameters        *)
+(* ================================================================ *)
+
+(** Every element of [F 1] is zero. *)
+Lemma F1_all_eq (x y : F 1) : x = y.
+Proof.
+  destruct x as [x Hx], y as [y Hy].
+  assert (Ex : x = 0%Z) by (rewrite Hx; apply Z.mod_1_r).
+  assert (Ey : y = 0%Z) by (rewrite Hy; apply Z.mod_1_r).
+  subst x y.
+  f_equal; apply UIP_dec, Z.eq_dec.
+Qed.
+
+(** For [p = 1] the pairing is constant, so non-degeneracy fails for
+    every choice of generators and Frobenius constants. *)
+Lemma pairing_non_degenerate_p1
+  (gamma1_p2 gamma2_p2 coeff_p2_c1 : F 1 * F 1) (P : G1Affine 1) (Q : G2Affine 1) :
+  pairing 1 gamma1_p2 gamma2_p2 coeff_p2_c1 P Q = fp12_one 1.
+Proof.
+  destruct (pairing 1 gamma1_p2 gamma2_p2 coeff_p2_c1 P Q)
+    as [[[[a0 a1] [a2 a3]] [a4 a5]] [[[b0 b1] [b2 b3]] [b4 b5]]].
+  unfold fp12_one, fp12_build, fp6_one, fp6_zero, fp6_build, fp2_one, fp2_zero.
+  repeat f_equal; apply F1_all_eq.
+Qed.

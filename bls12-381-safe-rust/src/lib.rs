@@ -29,6 +29,9 @@ mod g1_double_a0_test;
 
 pub mod shake128;
 
+/// G1 and G2 group operations over the tower (hand-written group law).
+pub mod group;
+
 pub use tower::{Fp, Fp2, Fp6, Fp12};
 
 pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp) { tower::bls12_add(out, x, y) }

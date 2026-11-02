@@ -223,16 +223,27 @@ Ltac slot_holds_set_tower_other_repeat_with H neq_tac :=
 (* §A.4. [peel_all_let_zero] — peel leading REdLetZero allocations    *)
 (* ================================================================ *)
 
-(** [peel_all_let_zero] inverts every leading [REdLetZero] cell in a
+(** [peel_all_let_zero] peels every leading [REdLetZero] cell in a
     [rust_exec_ed] hypothesis (i.e. the leading allocation block at
     the start of each protocol body).  After this the hypothesis has
     the form [rust_exec_ed _ _ _ <inner-body> rs_alloc rs2] where
-    [rs_alloc] is the state after all the fresh-slot allocations. *)
+    [rs_alloc] is the state after all the fresh-slot allocations.
+
+    Each step uses [rexec_let_zero_inv] (from [Sign_Strong_Correctness])
+    instead of [inversion], whose cost grows with the unfolded program
+    that remains (docs/slow-proofs.md).  Each step leaves the same
+    hypotheses as [inversion] did, up to names: the allocated value
+    [v], its [well_formed_ed v], and the residual execution from
+    [rs_set_tower_ed rs1 x (exist_tval_ed t v)]. *)
 Ltac peel_all_let_zero :=
   repeat
     match goal with
     | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
-        inversion H; subst; clear H
+        let v := fresh "v" in
+        let Hwf := fresh "Hwf" in
+        let Hr := fresh "Hr" in
+        destruct (rexec_let_zero_inv _ _ _ _ _ _ _ _ H) as (v & Hwf & Hr);
+        clear H; subst
     end.
 
 (* ================================================================ *)

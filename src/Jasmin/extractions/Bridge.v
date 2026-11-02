@@ -15,6 +15,7 @@
 From Stdlib Require Import ZArith String List.
 From Stdlib Require Import Extraction ExtrOcamlBasic ExtrOcamlString.
 From Stdlib Require Import Uint63.
+From Stdlib Require ExtrOCamlInt63.
 Import ListNotations.
 
 Require Import JasminBridge.BridgeReal.

@@ -172,15 +172,12 @@ Qed.
        [m := ((ℓ+1)/2 · n) mod ℓ] satisfies [2m ≡ n (mod ℓ)], hence
        [nB n = nB m + nB m] by [scalarmult_mod_order].
 
-       PERF-DEFERRED (Admitted): the proof below is logically complete (verified
-       end-to-end in rocq-mcp, 677 ms across the full assembly), but its Qed
-       kernel-conversion OOMs (>4 GB and growing) on this 14 GB machine due to
-       the setoid-rewrite chain over the bridge's [s_mod_order] wrapper.
-       Same perf-wall class as [BOrderBridge.E_mul_l_B_zero]. *)
-Axiom surjectivity_witness :
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory (past 4 GB on a
+       14 GB machine).  The proof kept in its comment closes unchanged on Rocq 9.2. *)
+Lemma surjectivity_witness :
   forall (n : nat),
   exists m : nat, Eeq (nB n) (Curve25519.E.add (nB m) (nB m)).
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
+Proof.
   intro n.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (nB_eq_scalarmult n) as HnB.
@@ -207,7 +204,8 @@ Axiom surjectivity_witness :
   exists m.
   rewrite HnB. rewrite (nB_eq_scalarmult m). rewrite Hmeq. rewrite <- s_add.
   rewrite <- (s_mod_order (Z.of_nat n)), <- (s_mod_order (mz + mz)).
-  rewrite HZ. reflexivity. *)
+  rewrite HZ. reflexivity.
+Qed.
 
 (** ** Torsion-exclusion: any [nB n] with [arg = 0] is the identity.
        On-curve + [arg = 0] forces [xP·yP = 0], hence [fst(2·(nB n)) = 0], hence

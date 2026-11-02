@@ -6,7 +6,7 @@
     degeneracy.
 
     No [ord(B)]/order-divides lemma:
-    - [ℓ·B = E.zero] from [BOrderBridge.E_mul_l_B_zero] (the documented Qed-perf axiom).
+    - [ℓ·B = E.zero] from [BOrderBridge.E_mul_l_B_zero] (Qed).
     - 2-surjectivity via fiat's [scalarmult_mod_order] ([m := ((ℓ+1)/2·n) mod ℓ]).
     - torsion-exclusion: [double_x0_zero] (every on-curve [x=0] point doubles to 0)
       reduces all four [arg=0] cases uniformly: on-curve forces [xP·yP=0], so
@@ -114,13 +114,15 @@ Proof.
   - rewrite !s_one. reflexivity.
 Qed.
 
-(** ** Bézout torsion-kill: if [a·u + ℓ·v = 1] and [(a·k)·B = 0] then [k·B = 0]. *)
-Axiom S_torsion_kill : forall (a k u v : Z),
+(** ** Bézout torsion-kill: if [a·u + ℓ·v = 1] and [(a·k)·B = 0] then [k·B = 0].
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes on Rocq 9.2 once [intros] also names [a k u v]. *)
+Lemma S_torsion_kill : forall (a k u v : Z),
   (a * u + Z.pos l_pos * v = 1)%Z ->
   Eeq (Escalar (a * k) B) Curve25519.E.zero ->
   Eeq (Escalar k B) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
-  intros Hbez Hak.
+Proof.
+  intros a k u v Hbez Hak.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   transitivity (Escalar (k * 1) B); [ rewrite Z.mul_1_r; reflexivity | ].
   rewrite <- Hbez.
@@ -133,7 +135,8 @@ Axiom S_torsion_kill : forall (a k u v : Z),
   { rewrite <- (s_assoc u (a * k) B). rewrite Hak. apply ScalarMult.scalarmult_zero_r. }
   assert (H2 : Eeq (Escalar (Z.pos l_pos * (k * v)) B) Curve25519.E.zero).
   { exact (s_times_order (k * v)). }
-  rewrite H1, H2. reflexivity. *)
+  rewrite H1, H2. reflexivity.
+Qed.
 
 (** ** KEY: any on-curve point with [x = 0] doubles to the identity. *)
 Axiom double_x0_zero : forall (P : Curve25519.E.point),

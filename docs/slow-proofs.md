@@ -2,7 +2,7 @@
 
 Each pattern below cost minutes or gigabytes in a real file. Timings are from `dune build -j2` on Rocq 9.2 with
 4 cores and 16 GB. `scripts/check_slow_patterns.sh` counts the first four patterns and fails if a count rises; for `Axiom` it sees
-only statements on one line.
+only statements on one line. CI runs it on every push and pull request.
 
 A file over 5 minutes or 4 GB is a bug to investigate. `dune` prints per-sentence times for theories that set
 `-time`; start from the slowest sentence, not from the file.

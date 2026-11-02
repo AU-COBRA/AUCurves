@@ -1,0 +1,14 @@
+# Fails when a slow-proof pattern of docs/slow-proofs.md becomes more frequent in src/.
+# It only reads the sources, so it needs no Rocq toolchain and no submodules.
+name: slow-proof patterns
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check_slow_patterns.sh

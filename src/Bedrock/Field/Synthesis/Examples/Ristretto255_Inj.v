@@ -1194,7 +1194,7 @@ Proof.
   { transitivity (F.opp (Curve25519.E.d * (y * SQRT_M1 * (y * SQRT_M1))))%F.
     - transitivity (F.opp (Curve25519.E.d * (y * y) * (SQRT_M1 * SQRT_M1)))%F.
       + rewrite HSqi. ring.
-      + f_equal. ring.
+      + apply (f_equal (@F.opp _)). ring.
     - rewrite Hdysq. ring. }
   rewrite HaQ in Hoc.
   assert (Hy2_one : (y * y)%F = Fone).

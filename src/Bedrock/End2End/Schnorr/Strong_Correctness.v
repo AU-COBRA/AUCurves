@@ -265,24 +265,21 @@ Ltac neq_var_sn :=
   discriminate.
 
 (** Peel one call: pulls [strong_callee_post_schnorr] from the
-    inverted call hypothesis, destructures into frame + two scalar
-    frames + result, threads the two scalar slot equalities. *)
+    call hypothesis, destructures into frame + two scalar
+    frames + result, threads the two scalar slot equalities.  The
+    [REdSeq] and [REdCall] steps are peeled with [rexec_seq_inv] and
+    [rexec_call_inv] (from [Sign_Strong_Correctness]) rather than
+    [inversion] on the unfolded program (docs/slow-proofs.md). *)
 Ltac peel_call_seq_sn H Hframe Hres :=
   let Hcall := fresh "Hcall" in
   let Hrest := fresh "Hrest" in
   let Hsc1 := fresh "Hsc_sn_msg" in
   let Hsc2 := fresh "Hsc_sn_v_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
-      rename Hc into Hcall; rename Hr into Hrest
-  end;
-  inversion Hcall; subst; clear Hcall;
-  match goal with
-  | Hc : strong_callee_post_schnorr _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc1 [Hsc2 Hres]]]
-  end;
+  let rs_mid := fresh "rs" in
+  destruct (rexec_seq_inv _ _ _ _ _ _ _ H) as (rs_mid & Hcall & Hrest);
+  clear H; subst;
+  apply rexec_call_inv in Hcall; subst;
+  destruct Hcall as [Hframe [Hsc1 [Hsc2 Hres]]];
   (* Rewrite scalar-frame equalities into [Hmsg_len_alloc] if present. *)
   (try match goal with
    | Hh : rs_get_scalar_ed _ v_sn_msg_len = Some _ |- _ =>
@@ -298,11 +295,8 @@ Ltac peel_call_seq_sn H Hframe Hres :=
 Ltac peel_last_call_sn H Hframe Hres :=
   let Hsc1 := fresh "Hsc_sn_msg" in
   let Hsc2 := fresh "Hsc_sn_v_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : strong_callee_post_schnorr _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc1 [Hsc2 Hres]]]; clear Hsc1 Hsc2
-  end.
+  apply rexec_call_inv in H; subst;
+  destruct H as [Hframe [Hsc1 [Hsc2 Hres]]]; clear Hsc1 Hsc2.
 
 Theorem schnorr_sign_strong_correct :
   forall (callee_post_n :
@@ -407,7 +401,7 @@ Proof.
   clear Hframe Hsrc Hdst Htgt4 Htgt6.
 
   (* Peel REdLetU64 "sn_chal_hash_len" *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_cl
@@ -487,17 +481,11 @@ Ltac peel_call_seq_sn_v H Hframe Hres :=
   let Hrest := fresh "Hrest" in
   let Hsc1 := fresh "Hsc_sn_msg" in
   let Hsc2 := fresh "Hsc_sn_v_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
-      rename Hc into Hcall; rename Hr into Hrest
-  end;
-  inversion Hcall; subst; clear Hcall;
-  match goal with
-  | Hc : strong_callee_post_schnorr _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc1 [Hsc2 Hres]]]
-  end;
+  let rs_mid := fresh "rs" in
+  destruct (rexec_seq_inv _ _ _ _ _ _ _ H) as (rs_mid & Hcall & Hrest);
+  clear H; subst;
+  apply rexec_call_inv in Hcall; subst;
+  destruct Hcall as [Hframe [Hsc1 [Hsc2 Hres]]];
   (try match goal with
    | Hh : rs_get_scalar_ed _ v_sn_msg_len = Some _ |- _ =>
        rewrite Hsc1 in Hh
@@ -512,11 +500,8 @@ Ltac peel_call_seq_sn_v H Hframe Hres :=
 Ltac peel_last_call_sn_v H Hframe Hres :=
   let Hsc1 := fresh "Hsc_sn_msg" in
   let Hsc2 := fresh "Hsc_sn_v_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : strong_callee_post_schnorr _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc1 [Hsc2 Hres]]]; clear Hsc1 Hsc2
-  end.
+  apply rexec_call_inv in H; subst;
+  destruct H as [Hframe [Hsc1 [Hsc2 Hres]]]; clear Hsc1 Hsc2.
 
 Theorem schnorr_verify_strong_correct :
   forall (callee_post_n :
@@ -620,7 +605,7 @@ Proof.
   clear Hframe Hsrc Hdst Htgt6.
 
   (* Peel REdLetU64 "sn_verify_chal_len" *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_cl

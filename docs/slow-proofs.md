@@ -22,6 +22,11 @@ Prove an inversion lemma once for arbitrary commands, and use it with `destruct`
 
 `Sign_Strong_Correctness.v`: 381 s and 9.3 GB became 37 s and 1.3 GB, with the main `Qed` going from 62 s to 7 s.
 
+`rexec_seq_inv`, `rexec_call_inv`, `rexec_let_zero_inv` and `rexec_let_u64_inv` are in `Sign_Strong_Correctness.v`, which
+`StrongCorrectnessTactics.v` and every strong-correctness proof import; `peel_all_let_zero` and `peel_let_u64_step` use them.
+`Sign_Strong_Correctness_VerifiedClamp.v`: 418 s and 9.6 GB became 38 s and 1.3 GB; `Verify_Strong_Correctness.v`: 191 s and
+4.5 GB became 21 s and 0.8 GB; `Schnorr/Strong_Correctness.v`: 206 s and 4.5 GB became 24 s and 0.8 GB.
+
 ## `rewrite H at n` in a large goal or separation hypothesis
 
 `at n` goes through setoid rewriting, and its typeclass search can dominate the file. When the term occurs once,

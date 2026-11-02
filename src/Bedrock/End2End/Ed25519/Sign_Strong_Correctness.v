@@ -519,23 +519,47 @@ Ltac frame_through_call_conv_with Hframe neq_tac :=
     end in
   repeat (lift_one; frame_through_call_with Hframe neq_tac).
 
+(** Inversion lemmas for the four kinds of [rust_exec_ed] step that
+    [ed25519_sign_rs] takes, proved for arbitrary commands.  The proof
+    of [ed25519_sign_strong_correct] uses them in place of [inversion]
+    on the unfolded program, so that [inversion] does not generalize
+    over the whole program at every step. *)
+Local Lemma sign_rexec_seq_inv :
+  forall cp cpn ft c1 c2 rs1 rs3,
+    rust_exec_ed cp cpn ft (REdSeq c1 c2) rs1 rs3 ->
+    exists rs2, rust_exec_ed cp cpn ft c1 rs1 rs2 /\
+                rust_exec_ed cp cpn ft c2 rs2 rs3.
+Proof. intros * H; inversion H; subst; eauto. Qed.
+
+Local Lemma sign_rexec_call_inv :
+  forall cp cpn ft fname dst args rs1 rs2,
+    rust_exec_ed cp cpn ft (REdCall fname dst args) rs1 rs2 ->
+    cp fname args dst rs1 rs2.
+Proof. intros * H; inversion H; subst; assumption. Qed.
+
+Local Lemma sign_rexec_let_zero_inv :
+  forall cp cpn ft x t c rs1 rs2,
+    rust_exec_ed cp cpn ft (REdLetZero x t c) rs1 rs2 ->
+    exists v : rust_val_ed t, well_formed_ed v /\
+      rust_exec_ed cp cpn ft c (rs_set_tower_ed rs1 x (exist_tval_ed t v)) rs2.
+Proof. intros * H; inversion H; subst; eauto. Qed.
+
+Local Lemma sign_rexec_let_u64_inv :
+  forall cp cpn ft x e c rs1 rs2,
+    rust_exec_ed cp cpn ft (REdLetU64 x e c) rs1 rs2 ->
+    exists v, eval_sexpr_ed rs1 e = Some v /\
+      rust_exec_ed cp cpn ft c (rs_set_scalar_ed rs1 x v) rs2.
+Proof. intros * H; inversion H; subst; eauto. Qed.
+
 Ltac peel_call_seq H Hframe Hres :=
   let Hcall := fresh "Hcall" in
   let Hrest := fresh "Hrest" in
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
-      rename Hc into Hcall; rename Hr into Hrest
-  end;
-  let Hcp := fresh "Hcp" in
-  inversion Hcall; subst; clear Hcall;
-  match goal with
-  | Hc : strong_callee_post _ _ _ _ _ |- _ =>
-      rename Hc into Hcp
-  end;
-  destruct Hcp as [Hframe [Hsc Hres]];
+  let rs_mid := fresh "rs" in
+  destruct (sign_rexec_seq_inv _ _ _ _ _ _ _ H) as (rs_mid & Hcall & Hrest);
+  clear H; subst;
+  apply sign_rexec_call_inv in Hcall; subst;
+  destruct Hcall as [Hframe [Hsc Hres]];
   match goal with
   | Hh : rs_get_scalar_ed _ v_msg_len = Some _ |- _ =>
       rewrite Hsc in Hh; clear Hsc
@@ -544,11 +568,16 @@ Ltac peel_call_seq H Hframe Hres :=
 
 Ltac peel_last_call H Hframe Hres :=
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : strong_callee_post _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc Hres]]; clear Hsc
-  end.
+  apply sign_rexec_call_inv in H; subst;
+  destruct H as [Hframe [Hsc Hres]]; clear Hsc.
+
+(** Peel a [REdLetU64 x e body] step with [sign_rexec_let_u64_inv]. *)
+Ltac peel_let_u64_step H :=
+  let v := fresh "v" in
+  let Hev := fresh "Hev" in
+  let Hr := fresh "Hr" in
+  destruct (sign_rexec_let_u64_inv _ _ _ _ _ _ _ _ H) as (v & Hev & Hr);
+  clear H; subst.
 
 (** Peel a [REdLetU64 x e body] step:
     [inversion] on the hypothesis pulls out:
@@ -611,7 +640,11 @@ Proof.
   (* Stage A: peel 13 REdLetZero allocations. *)
   repeat (match goal with
           | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
-              inversion H; subst; clear H
+              let v := fresh "v" in
+              let Hwf := fresh "Hwf" in
+              let Hr := fresh "Hr" in
+              destruct (sign_rexec_let_zero_inv _ _ _ _ _ _ _ _ H) as (v & Hwf & Hr);
+              clear H; subst
           end).
 
   (* Propagate seed/msg/sig_init/msg_len across the 13 fresh slot allocations
@@ -695,7 +728,7 @@ Proof.
 
   (* Bug-A fix: peel the [REdLetU64 "nonce_hash_len" ...] step that
      computes the dynamic message-length argument [32 + msg_len]. *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_nl
@@ -777,7 +810,7 @@ Proof.
   clear Hframe Hsrc Hdst Htgt5 Htgt6 Htgt14.
 
   (* Bug-A fix: peel the [REdLetU64 "chal_hash_len" ...] step. *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_cl

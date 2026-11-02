@@ -1,0 +1,4 @@
+rewrite-at 47
+inversion-exec 267
+destruct-head-abstract 1
+axiom-large 0

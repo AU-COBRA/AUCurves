@@ -221,28 +221,18 @@ Qed.
 
 (** The affine image of the raw [ℓ·B] XYZT tuple is the affine identity [(0,1)].
 
-    PROOF METHOD (preserved as comment): a SINGLE sealed [native_decide] that runs the
-    252 doublings + one [F.inv = powmod (p-2)] once and seals via [native_cast_no_check].
-    Downstream ([E_mul_l_B_zero]) consumes this only via [exact], with the giant term
-    appearing as syntactically-identical subterms on both sides — never forced through
-    kernel conversion.
+    One [native_decide_eq] per coordinate: native code runs the 252 doublings and the
+    [F.inv = F.pow (p-2)], and the kernel checks the [native_cast_no_check] cast at Qed.
 
-    DEFERRED (Axiom) 2026-05-27 due to Rocq native-compile performance on this hardware:
-    despite the verified soundness of the proof tactic, the native_compile step on the
-    fully-elaborated 252-doubling expression peaks past available RAM on this 14 GB
-    machine (4–5 GB worker × multiple sessions = OOM).  Prior successful build
-    (2026-05-26 20:05) used cached .coq-native artifacts; once those were invalidated
-    by an unrelated edit, every rebuild from-scratch OOMs the native compiler.
-
-    Re-enable on a host with ≥32 GB RAM by replacing this [Axiom] with the [Lemma]
-    body preserved below.  The underlying fact is computationally verified at 0 axioms
-    by [Curve25519_B_Order.lB_is_xyzt_identity] (XYZT-form, native_decide ~17 s); the
-    bridge to the affine [(0,1)] form is what this axiom packages. *)
-Axiom to_affine_lB :
+    This was an [Axiom] from 2026-05-27, recorded as an out-of-memory failure of native
+    compilation on a 14 GB machine.  On 2026-11-02 (Rocq 9.2, 15 GB, no other build running)
+    the same proof took 20.6 s at Qed, with the compiler at 446 MB. *)
+Lemma to_affine_lB :
   to_affine_raw (Edwards_xyzt_smult_pos l_pos B_xyzt) = (F.zero, F.one).
-(* PRESERVED PROOF (logically complete; Rocq native-compile perf deferred):
+Proof.
   unfold to_affine_raw.
-  apply pair_equal_spec; split; native_decide_eq. *)
+  apply pair_equal_spec; split; native_decide_eq.
+Qed.
 
 (** [Escalar n] respects [E.eq], for an arbitrary scalar [n].  With [n] abstract, unification
     cannot unfold [scalarmult_ref n] (a [Z.peano_rect]). *)

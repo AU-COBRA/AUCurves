@@ -53,6 +53,22 @@ the large value in a `Module Type`. Both remain visible to `Print Assumptions`.
 Do not assume the cost is in a proof or in native compilation until the sentence is identified: the output of
 `-time` is buffered, so the last line printed before a stop may not be the sentence at fault.
 
+## `apply` of a `Proper` lemma on a goal with a concrete scalar multiplication
+
+`apply` unifies the unfolded `Proper` statement with the goal, and its unifier calls the kernel conversion,
+which can reduce the goal's terms. Fiat's `scalarmult_ref n P` is a `Z.peano_rect`, unary in `n`, so with
+`n = Z.pos l_pos` this does not finish:
+
+    apply (ScalarMult.Proper_scalarmult_ref (groupG := Egroup)).   (* goal: Escalar (Z.pos l_pos) _ = ... *)
+
+State the step for an abstract scalar, and use it with `exact`:
+
+    Lemma Escalar_Proper_r (n : Z) (P Q : Curve25519.E.point) :
+      E.eq P Q -> E.eq (Escalar n P) (Escalar n Q).
+
+`Ristretto255_BOrderBridge.v`: `E_mul_l_B_zero` had been left `Admitted` as a slow Qed; the slow step was this
+`apply` (still running after 60 s), and with `Escalar_Proper_r` each tactic and the Qed take at most 0.004 s.
+
 ## `f_equal` on a goal with concrete field constants
 
 `f_equal` tries to close its goals by reduction. On an `F.opp` goal with the curve constant `E.d` it took 486 s.

@@ -244,30 +244,30 @@ Axiom to_affine_lB :
   unfold to_affine_raw.
   apply pair_equal_spec; split; native_decide_eq. *)
 
-(** (B3) [ℓ·B = E.zero] in the affine Edwards group, via the sealed XYZT identity fact.
+(** [Escalar n] respects [E.eq], for an arbitrary scalar [n].  With [n] abstract, unification
+    cannot unfold [scalarmult_ref n] (a [Z.peano_rect]). *)
+Lemma Escalar_Proper_r (n : Z) (P Q : Curve25519.E.point) :
+  E.eq P Q -> E.eq (Escalar n P) (Escalar n Q).
+Proof.
+  intros HPQ. apply (ScalarMult.Proper_scalarmult_ref (groupG := Egroup)); [ reflexivity | exact HPQ ].
+Qed.
+
+(** (B3) [ℓ·B = E.zero] in the affine Edwards group, via the XYZT identity fact.
     [Escalar ℓ B] connects to the raw scalar mult by [smult_pos_repr_affine], and the raw
     result's affine image is [(0,1)] by [to_affine_lB].
 
-    PERF-DEFERRED (Admitted): the proof below is logically complete and uses ONLY the two
-    proven facts [smult_pos_repr_affine] and [to_affine_lB] (the latter 0-axiom, the giant
-    252-doubling sealed under [native_cast_no_check]).  The residual content is purely the
-    affine-group ASSEMBLY (transitivity + [Proper_scalarmult_ref] + [Eto_affine_B]).  Its Qed
-    kernel-conversion nonetheless grinds at ~360MB-steady (>7 min), the same giant-term
-    [Edwards_xyzt_smult_pos l_pos B_xyzt] reduction signature that the [set]+[clearbody] and
-    sealed-[exact] approaches both hit: some conversion in the assembly forces the Fixpoint
-    despite every occurrence being syntactically identical.  The FACT is 0-axiom in
-    [Curve25519_B_Order.lB_is_xyzt_identity] + [to_affine_lB] above. *)
-(* Stated as [Lemma ... Admitted] rather than [Axiom]: on Rocq 9.2 the [Axiom] declaration of this
-   statement exhausts memory (past 11 GB), while the statement itself elaborates at 469 MB.  It is
-   an assumption either way, and [Print Assumptions] reports it. *)
+    Earlier versions stepped from [Escalar ℓ B] to [Escalar ℓ (Eto_affine B_ext)] with
+    [apply (ScalarMult.Proper_scalarmult_ref (groupG := Egroup))] on the goal itself.  That
+    tactic, not the Qed, was the slow step: its unification calls the kernel conversion, which
+    reduces [scalarmult_ref (Z.pos l_pos) _], a unary [Z.peano_rect] (still running after 60 s
+    in rocq-mcp on 2026-11-02, and after 10 minutes in a local build).  [Escalar_Proper_r]
+    states the same step for an abstract scalar, and [exact] then matches it syntactically;
+    each tactic and the Qed take at most 0.004 s in `dune build`.
+
+    An [Axiom] declaration of this statement exceeded 11 GB on Rocq 9.2; see
+    docs/slow-proofs.md. *)
 Lemma E_mul_l_B_zero : E.eq (Escalar (Z.pos l_pos) Curve25519.E.B) Curve25519.E.zero.
-Proof. Admitted.
-(* PRESERVED PROOF (logically complete; Qed kernel-perf DEFERRED per user 2026-05-26 —
-   "defer with a clearly documented axiom").  Uses ONLY the two 0-axiom facts
-   [smult_pos_repr_affine] + [to_affine_lB]; the residual is the affine-group assembly
-   whose Qed kernel-conversion grinds ~360MB-steady >7min on the giant smult Fixpoint.
-   Re-enable by replacing [Axiom] with [Lemma ... Proof. <below> Qed.] once a
-   reduction-proof packaging (vm_cast transport / sealed scalarmult_ref) is found.
+Proof.
   pose proof (_ : RelationClasses.Equivalence (@E.eq (F p) (@eq (F p)) F.one (@F.add p) (@F.mul p) E.a E.d)) as HE.
   pose proof (smult_pos_repr_affine l_pos B_xyzt B_ext repr_B) as Hsm.
   destruct Hsm as [Q' [Hr' Haff']].
@@ -277,8 +277,8 @@ Proof. Admitted.
     exact to_affine_lB. }
   eapply RelationClasses.transitivity; [ | exact Hid ].
   eapply RelationClasses.transitivity; [ | symmetry; exact Haff' ].
-  apply (ScalarMult.Proper_scalarmult_ref (groupG := Egroup)); [ reflexivity | ].
-  symmetry. exact Eto_affine_B. *)
+  exact (Escalar_Proper_r (Z.pos l_pos) _ _ (RelationClasses.symmetry Eto_affine_B)).
+Qed.
 
 (** ** [Curve25519.E.add] is Proper for [E.eq] (from the group's monoid structure). *)
 Lemma Eadd_Proper :

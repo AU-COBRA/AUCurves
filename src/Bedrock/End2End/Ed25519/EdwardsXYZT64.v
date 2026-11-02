@@ -72,9 +72,9 @@ Module Ed25519XYZT64.
 
   Definition coords_to_point (c : projective_coords) : point.
     refine (exist _ (feval_projective_coords c) _).
-    abstract (destruct_head' projective_coords;
-      cbv [proj1_sig feval_projective_coords valid_projective_coords] in *;
-      destruct_head' prod; destruct_head' and; tauto).
+    (* The goal reduces to [valid_projective_coords X Y Z Ta Tb], the first
+       conjunct of the sig proof; [exact] checks this by conversion. *)
+    abstract (destruct c as [[[[[X Y] Z] Ta] Tb] p]; exact (proj1 p)).
   Defined.
 
   Definition valid_precomputed_coords (half_ypx half_ymx xyd : felem) :=
@@ -93,8 +93,9 @@ Module Ed25519XYZT64.
 
   Definition precomputed_coords_to_precomputed (c : precomputed_coords) : precomputed_point.
     refine (exist _ (feval_precomputed_coords c) _).
-    abstract (destruct_head' precomputed_coords; destruct_head' prod;
-    destruct_head' and; cbv [feval_precomputed_coords valid_precomputed_coords proj1_sig] in *; tauto).
+    (* The goal reduces to [valid_precomputed_coords half_ypx half_ymx xyd],
+       the first conjunct of the sig proof; [exact] checks this by conversion. *)
+    abstract (destruct c as [[[half_ypx half_ymx] xyd] p]; exact (proj1 p)).
   Defined.
 
   Definition valid_cached_coords (half_YmX half_YpX Z Td : felem):=

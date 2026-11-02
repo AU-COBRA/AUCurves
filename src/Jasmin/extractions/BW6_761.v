@@ -20,6 +20,7 @@ Import ListNotations.
 
 Require Import Bedrock.Jasmin.Core.
 Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime_ops.
 
 Import bedrock2.Syntax.
 Local Open Scope string_scope.

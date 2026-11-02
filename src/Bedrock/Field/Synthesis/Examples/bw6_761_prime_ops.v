@@ -1,0 +1,235 @@
+(** The BW6-761 field operations, synthesized by the fiat-crypto pipeline.
+
+    Running the pipeline over 12 limbs takes far longer than anything else in the
+    BW6-761 development, and only the extractions use its results, so it lives apart
+    from the field parameters of [bw6_761_prime.v]. *)
+
+Require Import Coq.Strings.String.
+Require Import Coq.Lists.List.
+Require Import Coq.ZArith.ZArith.
+Require Import Coq.ZArith.Znumtheory.
+Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import Crypto.Bedrock.Field.Synthesis.New.ComputedOp.
+Require Import Crypto.Bedrock.Field.Synthesis.New.WordByWordMontgomery.
+Require Import Crypto.Bedrock.Field.Translation.Parameters.Defaults64.
+Require Import Crypto.Bedrock.Specs.Field.
+Import ListNotations.
+Require Import Crypto.Bedrock.Field.Translation.Proofs.ValidComputable.Func.
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime_certif.
+Require Import bedrock2.WeakestPreconditionProperties.
+Require Import bedrock2.WeakestPrecondition.
+Require Import bedrock2.ProgramLogic.
+Require Import bedrock2.Map.Separation.
+Require Import bedrock2.Map.SeparationLogic.
+Require Import bedrock2.Syntax.
+Require Import coqutil.Word.Bitwidth64.
+Require Import bedrock2.BasicC64Semantics.
+Local Open Scope string_scope.
+Local Infix "*" := sep : sep_scope.
+Delimit Scope sep_scope with sep.
+Local Notation function_t := ((String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type).
+Local Notation functions_t := (list function_t).
+Local Open Scope sep_scope.
+Local Open Scope Z_scope.
+
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime.
+
+Section Field.
+  Existing Instances
+    Bitwidth64.BW64
+    Defaults64.default_parameters
+    Defaults64.default_parameters_ok
+    bw6_761_field_parameters
+    bw6_761_field_parameters_ok
+    bw6_761_frep
+    bw6_761_frep_raw
+    bw6_761_frep_ok
+    bw6_761_frep_raw_ok.
+
+  Definition to_mont_string := prefix ++ "to_mont".
+  Definition from_mont_string := prefix ++ "from_mont".
+
+  (* Call fiat-crypto pipeline on all field operations.
+     NOTE: With 12 limbs this is significantly slower than 4-limb curves.
+     Use a local native_compute variant of make_computed_op (per the
+     AUCurves CLAUDE.md "Repo Separation" policy -- don't patch
+     fiat-crypto's tactic, override it locally instead).  On 12 limbs
+     vm_compute would be intractable; native_compute cuts the WBW
+     synthesis to ~30 minutes wall on a 14 GB box. *)
+  Local Ltac make_computed_op_native :=
+    eapply Build_computed_op;
+    lazymatch goal with
+    | |- _ = ErrorT.Success _ => native_compute; reflexivity
+    | _ => idtac
+    end;
+    native_compute; reflexivity.
+  Instance bw6_761_ops : @word_by_word_Montgomery_ops from_mont_string to_mont_string _ _ _ _ _ _ _ _ _ _ (WordByWordMontgomery.n m machine_wordsize) m.
+  Proof using Type.
+    (* Split the record-build into one `Time make_computed_op_native`
+       per field, so `-time` reports per-op wall (otherwise the entire
+       9-op chain is one Vernac sentence and Coq prints nothing until
+       the whole Defined finishes -- which on a 12-limb prime can be
+       hours). *)
+    Time constructor.
+    (* word_by_word_Montgomery_ops has 11 fields: mul_op, add_op,
+       sub_op, opp_op, square_op, felem_copy_op, from_bytes_op,
+       to_bytes_op, from_mont_op, to_mont_op, select_znz_op.  One
+       Time per field gives per-op wall via `-time`. *)
+    Time make_computed_op_native.  (* op 1  / 11 *)
+    Time make_computed_op_native.  (* op 2  / 11 *)
+    Time make_computed_op_native.  (* op 3  / 11 *)
+    Time make_computed_op_native.  (* op 4  / 11 *)
+    Time make_computed_op_native.  (* op 5  / 11 *)
+    Time make_computed_op_native.  (* op 6  / 11 *)
+    Time make_computed_op_native.  (* op 7  / 11 *)
+    Time make_computed_op_native.  (* op 8  / 11 *)
+    Time make_computed_op_native.  (* op 9  / 11 *)
+    Time make_computed_op_native.  (* op 10 / 11 *)
+    Time make_computed_op_native.  (* op 11 / 11 *)
+  Defined.
+
+  (**** Translate each field operation into bedrock2 ****)
+
+  Local Notation functions_contain functions f :=
+    (Interface.map.get functions (fst f) = Some (snd f)).
+
+  Local Ltac begin_derive_bedrock2_func :=
+    lazymatch goal with
+    | |- context [spec_of_BinOp bin_mul] => eapply mul_func_correct
+    | |- context [spec_of_UnOp un_square] => eapply square_func_correct
+    | |- context [spec_of_BinOp bin_add] => eapply add_func_correct
+    | |- context [spec_of_BinOp bin_sub] => eapply sub_func_correct
+    | |- context [spec_of_UnOp un_opp] => eapply opp_func_correct
+    | |- context [spec_of_from_bytes] => eapply from_bytes_func_correct
+    | |- context [spec_of_to_bytes] => eapply to_bytes_func_correct
+    end.
+
+  Ltac epair :=
+    lazymatch goal with
+    | f := _ : string * Syntax.func |- _ =>
+      let p := open_constr:((_, _)) in
+      unify f p;
+      subst f
+    end.
+
+  Ltac derive_bedrock2_func op :=
+    epair;
+    begin_derive_bedrock2_func;
+    try lazymatch goal with
+      | |- _ = b2_func _ =>
+        solve [ native_compute; reflexivity | vm_compute; reflexivity ]
+      end;
+    lazymatch goal with
+    | |- _ = @ErrorT.Success ?ErrT unit tt =>
+      abstract (vm_cast_no_check (@eq_refl _ (@ErrorT.Success ErrT unit tt)))
+    | |- Func.valid_func _ =>
+      eapply Func.valid_func_bool_iff;
+      abstract vm_cast_no_check (eq_refl true)
+    | |- (_ = _)%Z => vm_compute; reflexivity
+    | |- (felem_size_in_bytes <= 2 ^ _)%Z => apply felem_size_ok
+    end.
+
+  Derive bw6_761_from_bytes
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_from_bytes ->
+                      spec_of_from_bytes
+                        (field_representation:=bw6_761_frep_raw)
+                        functions)
+         As bw6_761_from_bytes_correct.
+  Proof. Time derive_bedrock2_func from_bytes_op. Qed.
+
+  Derive bw6_761_to_bytes
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_to_bytes ->
+                      spec_of_to_bytes
+                        (field_representation:=bw6_761_frep_raw)
+                        functions)
+         As bw6_761_to_bytes_correct.
+  Proof. Time derive_bedrock2_func to_bytes_op. Qed.
+
+  Derive bw6_761_mul
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_mul ->
+                      spec_of_BinOp bin_mul
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_mul_correct.
+  Proof. Time derive_bedrock2_func mul_op. Qed.
+
+  Derive bw6_761_square
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_square ->
+                      spec_of_UnOp un_square
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_square_correct.
+  Proof. Time derive_bedrock2_func square_op. Qed.
+
+  Derive bw6_761_add
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_add ->
+                      spec_of_BinOp bin_add
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_add_correct.
+  Proof. Time derive_bedrock2_func add_op. Qed.
+
+  Derive bw6_761_sub
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_sub ->
+                      spec_of_BinOp bin_sub
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_sub_correct.
+  Proof. Time derive_bedrock2_func sub_op. Qed.
+
+  Derive bw6_761_from_mont
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_from_mont ->
+                      spec_of_UnOp un_from_mont
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_from_mont_correct.
+  Proof.
+    epair.
+    eapply (from_mont_func_correct _ _ _ from_mont_string to_mont_string).
+        - vm_compute; reflexivity.
+        - apply felem_size_ok.
+        - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
+          Unshelve.
+            + auto.
+            + auto.
+  Qed.
+
+  Derive bw6_761_to_mont
+         SuchThat (forall functions,
+                      functions_contain functions bw6_761_to_mont ->
+                      spec_of_UnOp un_to_mont
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_to_mont_correct.
+  Proof.
+    epair.
+    eapply (to_mont_func_correct _ _ _ from_mont_string to_mont_string).
+        - vm_compute; reflexivity.
+        - apply felem_size_ok.
+        - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
+          Unshelve. all: auto.
+   Qed.
+
+  Derive bw6_761_select_znz
+           SuchThat (forall functions,
+                      functions_contain functions bw6_761_select_znz ->
+                      spec_of_selectznz
+                        (field_representation:=bw6_761_frep)
+                        functions)
+         As bw6_761_select_znz_correct.
+  Proof.
+    epair.
+    eapply select_znz_func_correct. 1,2:auto.
+        - vm_compute; reflexivity.
+        - apply felem_size_ok.
+        - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
+   Qed.
+
+End Field.

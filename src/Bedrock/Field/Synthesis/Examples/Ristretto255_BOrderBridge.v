@@ -257,7 +257,11 @@ Axiom to_affine_lB :
     sealed-[exact] approaches both hit: some conversion in the assembly forces the Fixpoint
     despite every occurrence being syntactically identical.  The FACT is 0-axiom in
     [Curve25519_B_Order.lB_is_xyzt_identity] + [to_affine_lB] above. *)
-Axiom E_mul_l_B_zero : E.eq (Escalar (Z.pos l_pos) Curve25519.E.B) Curve25519.E.zero.
+(* Stated as [Lemma ... Admitted] rather than [Axiom]: on Rocq 9.2 the [Axiom] declaration of this
+   statement exhausts memory (past 11 GB), while the statement itself elaborates at 469 MB.  It is
+   an assumption either way, and [Print Assumptions] reports it. *)
+Lemma E_mul_l_B_zero : E.eq (Escalar (Z.pos l_pos) Curve25519.E.B) Curve25519.E.zero.
+Proof. Admitted.
 (* PRESERVED PROOF (logically complete; Qed kernel-perf DEFERRED per user 2026-05-26 —
    "defer with a clearly documented axiom").  Uses ONLY the two 0-axiom facts
    [smult_pos_repr_affine] + [to_affine_lB]; the residual is the affine-group assembly

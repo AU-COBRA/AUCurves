@@ -21,6 +21,8 @@
 From HB Require Import structures.
 From Jasmin Require Import expr psem_defs psem operators ident x86_instr_decl x86_extra.
 From mathcomp Require Import ssreflect ssrfun.
+(* MathComp 2.6 puts rewrite side conditions first; keep the old order. *)
+Set SsrOldRewriteGoalsOrder.
 From Stdlib Require Import Uint63.
 
 From Stdlib Require Import String ZArith List Ascii.

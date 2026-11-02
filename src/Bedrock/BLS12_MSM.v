@@ -4193,9 +4193,13 @@ Section PippengerSpec.
                          eq_refl). }
               rewrite <- Hidx_get_window.
               assert (Hidx_zero : word.unsigned idx_w = 0).
-              { rewrite Hidx_z. rewrite word.unsigned_of_Z. unfold word.wrap.
-                rewrite Z.mod_0_l by (apply Z.pow_nonzero; (try clear Hcv; try clear Hlv; Lia.lia)).
-                reflexivity. }
+              { (* The form of [Hidx_z] differs between Rocq 9.0 and 9.2. *)
+                first
+                  [ exact Hidx_z
+                  | rewrite Hidx_z; reflexivity
+                  | rewrite Hidx_z; rewrite word.unsigned_of_Z; unfold word.wrap;
+                    rewrite Z.mod_0_l by (apply Z.pow_nonzero; (try clear Hcv; try clear Hlv; Lia.lia));
+                    reflexivity ]. }
               exact Hidx_zero.
               }
               (* 15 conjuncts of the invariant. *)

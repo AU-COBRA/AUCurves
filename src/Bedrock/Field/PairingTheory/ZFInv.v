@@ -436,13 +436,14 @@ Section ZFp2InvLeftBeta.
       unfold F.div.
       assert (HinvB : (F.inv b * b)%F = 1%F) by (apply (@F.inv_nonzero q prime_q); exact Hb).
       assert (HinvB' : (b * F.inv b)%F = 1%F)
-        by (rewrite F.mul_comm; exact HinvB).
+        by (rewrite (commutative (op:=F.mul)); exact HinvB).
       (* (a/b)^2 = a^2 / b^2 = beta * b^2 / b^2 = beta *)
       transitivity ((a * a) * (F.inv b * F.inv b))%F; [ring|].
       rewrite Heq.
       replace ((F.of_Z q beta * (b * b)) * (F.inv b * F.inv b))%F
-        with (F.of_Z q beta * ((b * F.inv b) * (b * F.inv b)))%F by ring.
-      rewrite HinvB'. ring.
+        with (F.of_Z q beta * ((b * F.inv b) * (b * F.inv b)))%F
+        by (generalize (F.of_Z q beta); intro c; ring).
+      rewrite HinvB'. generalize (F.of_Z q beta); intro c; ring.
   Qed.
 
   (** If [a^2 - beta * b^2 = 0] in [F q], same conclusion. *)
@@ -451,8 +452,9 @@ Section ZFp2InvLeftBeta.
   Proof.
     intros a b H.
     apply Fp_a_sq_eq_beta_b_sq_implies_zero.
-    apply (f_equal (fun x => (x + F.of_Z q beta * (b * b))%F)) in H.
-    ring_simplify in H. rewrite H. ring.
+    set (c := F.of_Z q beta) in *.
+    transitivity ((a * a - c * (b * b)) + c * (b * b))%F; [ring|].
+    rewrite H. ring.
   Qed.
 
   (** Z-level: the norm [a^2 - beta*b^2 mod q] is nonzero on nonzero inputs. *)

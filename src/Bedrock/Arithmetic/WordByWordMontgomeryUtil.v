@@ -8,7 +8,7 @@ Require Import Coq.micromega.Lia.
 Require Import Coq.Lists.List.
 Require Import Crypto.Arithmetic.UniformWeight.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
-Require Import Coqprime.elliptic.GZnZ.
+From Theory Require Import Util.GZnZ.
 
 Open Scope Z_scope.
 

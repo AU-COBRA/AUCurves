@@ -16,7 +16,7 @@ Require Import Theory.WordByWordMontgomery.MontgomeryRingTheory.
 Require Import Theory.Fields.FieldsUtil.
 Require Import Theory.Fields.QuadraticFieldExtensions.
 Require Import Crypto.Algebra.Hierarchy.
-From Coqprime Require Import GZnZ.
+From Theory Require Import Util.GZnZ.
 Require Import Crypto.Curves.Weierstrass.P256.
 
 Local Open Scope Z_scope.

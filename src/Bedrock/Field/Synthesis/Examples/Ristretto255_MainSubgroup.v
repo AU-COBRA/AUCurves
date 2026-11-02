@@ -211,15 +211,16 @@ Qed.
        On-curve + [arg = 0] forces [xP·yP = 0], hence [fst(2·(nB n)) = 0], hence
        [4·(nB n) = 0] by [double_x0_zero], hence [nB n = 0] by Bézout([4,ℓ]=1).
        Factored as a separate [Qed] to keep [main_subgroup_doubling_nontrivial]'s
-       proof term small (and its kernel-conversion fast). *)
-Axiom arg_zero_kills :
+       proof term small (and its kernel-conversion fast).
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes unchanged on Rocq 9.2. *)
+Lemma arg_zero_kills :
   forall (n : nat),
   ((Fone + snd (point_coords (nB n))) * (Fone - snd (point_coords (nB n))) *
     (fst (point_coords (nB n)) * snd (point_coords (nB n)) *
      (fst (point_coords (nB n)) * snd (point_coords (nB n)))))%F = Fzero ->
   Eeq (nB n) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26 —
-   same perf-wall as [surjectivity_witness] / [E_mul_l_B_zero]):
+Proof.
   intros n Harg.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (nB_eq_scalarmult n) as HnB.
@@ -260,7 +261,8 @@ Axiom arg_zero_kills :
   rewrite <- (s_assoc 2 (Z.of_nat n * 2) B).
   rewrite <- (s_assoc 2 (Z.of_nat n) B).
   rewrite <- HnB.
-  exact Hdd. *)
+  exact Hdd.
+Qed.
 
 (** ** Main theorem: discharges the [Ristretto255_Inj.main_subgroup_doubling_nontrivial]
        axiom for [n <> 0]: every such [nB n] in [⟨B⟩] is the identity or a doubled

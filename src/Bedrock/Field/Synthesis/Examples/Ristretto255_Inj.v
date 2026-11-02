@@ -979,9 +979,9 @@ Qed.
 
 (** ===== Three residual per-leaf sign facts =====
 
-    Two of three are now closed as Qed lemmas (was: Axiom each).  The remaining
-    one ([encoder_decoder_neg_t], the deepest sign predicate) is kept as an
-    Axiom pending a per-leaf [is_negative] analysis.
+    Two of three are now closed as Qed lemmas (was: Axiom each).  The third
+    ([encoder_decoder_neg_t], the deepest sign predicate) rests on
+    [encoder_decoder_neg_t_residual], a Qed lemma since 2026-11-02 (it was an Axiom).
 
     Reduction strategy (used for both closed ones):
     - [encoder_on_jq] (existing, Qed in JQ.v) gives [on_jq s X] for the
@@ -1288,14 +1288,120 @@ Proof.
     destruct H1ps2; exact (H1ps_nz H).
 Qed.
 
-(** (B-β.2) Decoded [t = x_dec · y_dec] is non-negative.  REDUCED 2026-05-26 to
-    the sharper sub-axiom [encoder_decoder_neg_t_residual] below: the entire
-    [abs]/[*]/[1−s²] structure of the outer [is_negative] reduces (Qed-verified)
-    to a single sign-bit equality between [2s(1−s²)iv] and [2s·iv·(1+s²)] — the
-    encoder's per-leaf sign guarantee (8-leaf [ristretto_encode_aux] rotate/flip
-    analysis bridging [encinv] ↔ [iv]).  Net effect: the original opaque axiom is
-    now a [Lemma] (Qed) over a strictly-narrower residual axiom. *)
-Axiom encoder_decoder_neg_t_residual : forall (x y : Fp),
+(** The representative chosen by the encoder.  With [rot = is_negative (x*y)] (the encoder's
+    [rotate] once [z_inv = 1]), [Xsel] and [Y0] are [x] and [y], or [y*SQRT_M1] and
+    [x*SQRT_M1]; then [Xsel * Y0] is [x*y] or [-(x*y)], whichever is non-negative, and
+    [(Xsel, Y0)] is on the curve. *)
+Lemma encoder_rep_props : forall (x y Xsel Y0 : Fp) (rot : bool),
+  (Curve25519.E.a * (x * x) + y * y = Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
+  x <> Fzero -> y <> Fzero ->
+  rot = is_negative (x * y) ->
+  Xsel = (if rot then y * SQRT_M1 else x)%F ->
+  Y0 = (if rot then x * SQRT_M1 else y)%F ->
+  Xsel <> Fzero /\ (Xsel * Y0)%F <> Fzero /\ is_negative (Xsel * Y0) = false /\
+  (Curve25519.E.a * (Xsel * Xsel) + Y0 * Y0
+     = Fone + Curve25519.E.d * (Xsel * Xsel) * (Y0 * Y0))%F.
+Proof.
+  intros x y Xsel Y0 rot Hoc Hxnz Hynz Hrot HXsel HY0.
+  pose proof Ristretto255_Sqrt.SQRT_M1_nz as HSnz.
+  pose proof Ristretto255_Sqrt.SQRT_M1_sq as HS2.
+  assert (Hxy : (x * y)%F <> Fzero).
+  { intro Hk. destruct (Ristretto255_Sqrt.mul_zero_factor _ _ Hk) as [Hk' | Hk'];
+      [ exact (Hxnz Hk') | exact (Hynz Hk') ]. }
+  destruct rot; subst Xsel Y0.
+  - assert (HP : (y * SQRT_M1 * (x * SQRT_M1))%F = F.opp (x * y)).
+    { transitivity (x * y * (SQRT_M1 * SQRT_M1))%F; [ ring | rewrite HS2; ring ]. }
+    split; [ | split; [ | split ] ].
+    + intro Hk. destruct (Ristretto255_Sqrt.mul_zero_factor _ _ Hk) as [Hk' | Hk'];
+        [ exact (Hynz Hk') | exact (HSnz Hk') ].
+    + rewrite HP. intro Hk. apply Hxy.
+      transitivity (F.opp (F.opp (x * y)))%F; [ ring | rewrite Hk; ring ].
+    + rewrite HP, (Ristretto255_Sqrt.is_negative_opp_nonzero _ Hxy), <- Hrot. reflexivity.
+    + rewrite HaQ in Hoc |- *.
+      transitivity (F.opp Fone * (x * x) + y * y)%F.
+      * transitivity (y * y * F.opp (SQRT_M1 * SQRT_M1) + x * x * (SQRT_M1 * SQRT_M1))%F;
+          [ ring | rewrite HS2; ring ].
+      * rewrite Hoc.
+        transitivity (Fone + Curve25519.E.d * (x * x) * (y * y) * ((SQRT_M1 * SQRT_M1) * (SQRT_M1 * SQRT_M1)))%F;
+          [ rewrite HS2; ring | ring ].
+  - split; [ exact Hxnz | split; [ exact Hxy | split; [ symmetry; exact Hrot | exact Hoc ] ] ].
+Qed.
+
+(** What the decoder's sign check needs from the encoder output [s], with the encoder's
+    [let]s ([Xsel], [Y0], [Yf]) as existential witnesses: [s² (1 + Yf) = 1 - Yf], [Yf] is
+    [Y0] up to the encoder's flip on the sign of [Xsel], [Xsel * Y0] is non-zero and
+    non-negative, and [(Xsel, Yf)] is on the curve.  The first fact is [star_lemma] with
+    [M = 1], as in [main_inversion]. *)
+Lemma encoder_output_structure : forall (x y : Fp),
+  (Curve25519.E.a * (x * x) + y * y =
+     Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
+  ((Fone + y) * (Fone - y) * (x * y * (x * y)))%F <> Fzero ->
+  fst (sqrt_ratio_m1 Fone ((Fone + y) * (Fone - y) * (x * y * (x * y)))) = true ->
+  exists Xsel Y0 Yf : Fp,
+    (ristretto_encode_aux x y Fone (x * y) * ristretto_encode_aux x y Fone (x * y) * (Fone + Yf)
+       = Fone - Yf)%F /\
+    Yf = (if is_negative Xsel then F.opp Y0 else Y0) /\
+    Xsel <> Fzero /\ (Xsel * Y0)%F <> Fzero /\ is_negative (Xsel * Y0) = false /\
+    (Curve25519.E.a * (Xsel * Xsel) + Yf * Yf
+       = Fone + Curve25519.E.d * (Xsel * Xsel) * (Yf * Yf))%F.
+Proof.
+  intros x y Hoc Hargnz Hvalid.
+  set (u1 := ((Fone + y) * (Fone - y))%F) in *.
+  set (u2 := (x * y)%F) in *.
+  assert (Hu2nz0 : u2 <> Fzero) by (intro Hk; apply Hargnz; unfold u1, u2 in *; rewrite Hk; field).
+  assert (Hu1nz0 : u1 <> Fzero) by (intro Hk; apply Hargnz; unfold u1, u2 in *; rewrite Hk; field).
+  unfold ristretto_encode_aux. fold u1 u2.
+  pose proof (Ristretto255_Sqrt.sqrt_ratio_m1_correct Fone _ Hargnz) as Hsr.
+  destruct (sqrt_ratio_m1 Fone (u1 * (u2 * u2))) as [ws inv] eqn:Esr.
+  destruct Hsr as [Hsrcase Hinvneg].
+  simpl in Hvalid.
+  set (M := (inv * u1 * (inv * u2) * u2)%F) in *.
+  assert (HMfone : M = Fone).
+  { destruct Hsrcase as [[_ Hsq] | [Hwsf _]].
+    - transitivity (u1 * (u2 * u2) * inv * inv)%F; [ unfold M; field | exact Hsq ].
+    - rewrite Hvalid in Hwsf; discriminate. }
+  set (rot := is_negative (u2 * M)) in *.
+  set (Xsel := (if rot then y * SQRT_M1 else x)%F) in *.
+  set (Y0 := (if rot then x * SQRT_M1 else y)%F) in *.
+  set (den_inv := (if rot then inv * u1 * INVSQRT_A_MINUS_D else inv * u2)%F) in *.
+  set (flip := is_negative (Xsel * M)) in *.
+  set (Yf := (if flip then F.opp Y0 else Y0)%F) in *.
+  set (s := abs (den_inv * (Fone - Yf))) in *.
+  assert (Hs2 : (s * s = den_inv * (Fone - Yf) * (den_inv * (Fone - Yf)))%F)
+    by (unfold s; apply Ristretto255_Sqrt.abs_sq).
+  assert (HYf2 : (Yf * Yf = Y0 * Y0)%F) by (unfold Yf; destruct flip; [ field | reflexivity ]).
+  pose proof k2_fact as K2.
+  assert (Hcurve_id : ((Fone + x*x) * u1 = (u2 * u2) * (Curve25519.E.a - Curve25519.E.d))%F)
+    by exact (curve_id_lemma x y Hoc).
+  assert (Hmag : (den_inv * den_inv * (Fone - Yf * Yf) = M)%F)
+    by exact (mag_lemma x y inv u1 u2 den_inv Yf Y0 M rot
+                eq_refl eq_refl eq_refl eq_refl eq_refl HYf2 Hcurve_id K2 Hu1nz0).
+  assert (Hstar : (s * s * (Fone + Yf) = M * (Fone - Yf))%F)
+    by exact (star_lemma s den_inv Yf M Hs2 Hmag).
+  assert (Hxnz : x <> Fzero) by (intro Hk; apply Hu2nz0; unfold u2; rewrite Hk; ring).
+  assert (Hynz0 : y <> Fzero) by (intro Hk; apply Hu2nz0; unfold u2; rewrite Hk; ring).
+  assert (Hrot : rot = is_negative (x * y)).
+  { unfold rot. rewrite HMfone. replace (u2 * Fone)%F with u2 by ring. reflexivity. }
+  destruct (encoder_rep_props x y Xsel Y0 rot Hoc Hxnz Hynz0 Hrot eq_refl eq_refl)
+    as (HXnz & HPnz & HPneg & HocQ0).
+  exists Xsel, Y0, Yf.
+  split; [ rewrite Hstar, HMfone; ring | ].
+  split; [ unfold Yf, flip; rewrite HMfone; replace (Xsel * Fone)%F with Xsel by ring; reflexivity | ].
+  split; [ exact HXnz | split; [ exact HPnz | split; [ exact HPneg | ] ] ].
+  rewrite HYf2. exact HocQ0.
+Qed.
+
+(** (B-β.2) Decoded [t = x_dec · y_dec] is non-negative.  REDUCED 2026-05-26 to this
+    sign-bit equality between [2s(1−s²)iv] and [2s·iv·(1+s²)]; it was an Axiom until
+    2026-11-02.
+
+    Proof.  Let [A = 2s·iv·(1+s²)] (the decoder's [x] before [abs]).  From
+    [encoder_output_structure]: [1 - s² = Yf·(1+s²)], so [2s(1−s²)iv = A·Yf].  The decoder's
+    [iv² · jq_v s · (1+s²)² = 1] and [Xsel² · jq_v s = 4s²] (from the curve equation at
+    [(Xsel, Yf)]) give [A² = Xsel²], so [A = ±Xsel].  With [Yf = ±Y0] chosen by the sign of
+    [Xsel], [A·Yf] is [±(Xsel·Y0)] with the sign of [A]; [Xsel·Y0] is non-zero and
+    non-negative, so [A·Yf] and [A] have the same sign bit. *)
+Lemma encoder_decoder_neg_t_residual : forall (x y : Fp),
   (Curve25519.E.a * (x * x) + y * y =
      Fone + Curve25519.E.d * (x * x) * (y * y))%F ->
   ((Fone + y) * (Fone - y) * (x * y * (x * y)))%F <> Fzero ->
@@ -1307,6 +1413,55 @@ Axiom encoder_decoder_neg_t_residual : forall (x y : Fp),
       = (true, iv) ->
     is_negative (F.of_Z _ 2 * s * (Fone - s*s) * iv)
     = is_negative (F.of_Z _ 2 * s * (iv * (Fone + s*s))).
+Proof.
+  intros x y Hoc Harg Hws s iv Hsr.
+  destruct (encoder_output_structure x y Hoc Harg Hws)
+    as (Xsel & Y0 & Yf & Hstar & HYf & HXnz & HPnz & HPneg & HocQ).
+  fold s in Hstar.
+  destruct (sqrt_ratio_m1_true_inv _ _ Hsr) as [Hinv _].
+  clearbody s.
+  assert (Hu1 : (Fone - s*s = Yf * (Fone + s*s))%F).
+  { apply Ristretto255_Sqrt.sub_eq_zero.
+    transitivity ((Fone - Yf) - s * s * (Fone + Yf))%F; [ ring | rewrite Hstar; ring ]. }
+  assert (Hjq : (Xsel * Xsel * Ristretto255_JacobiQuartic.jq_v s = F.of_Z p 4 * (s * s))%F).
+  { unfold Ristretto255_JacobiQuartic.jq_v. rewrite Hu1.
+    rewrite HaQ in HocQ.
+    assert (Hd : (Curve25519.E.d * (Xsel * Xsel) * (Yf * Yf) = Yf * Yf - Xsel * Xsel - Fone)%F).
+    { transitivity ((Fone + Curve25519.E.d * (Xsel * Xsel) * (Yf * Yf)) - Fone)%F; [ ring | ].
+      rewrite <- HocQ. ring. }
+    transitivity (F.opp ((Fone + s*s) * (Fone + s*s))
+                  * (Curve25519.E.d * (Xsel * Xsel) * (Yf * Yf) + Xsel * Xsel))%F; [ ring | ].
+    rewrite Hd.
+    transitivity ((Fone + s*s) * (Fone + s*s) - (Yf * (Fone + s*s)) * (Yf * (Fone + s*s)))%F;
+      [ ring | ].
+    rewrite <- Hu1. ring. }
+  set (A := (F.of_Z p 2 * s * (iv * (Fone + s*s)))%F).
+  assert (HA1 : (F.of_Z p 2 * s * (Fone - s*s) * iv)%F = (A * Yf)%F) by (unfold A; rewrite Hu1; ring).
+  rewrite HA1.
+  assert (HA2 : (A * A = Xsel * Xsel)%F).
+  { unfold A.
+    transitivity (Xsel * Xsel * (Ristretto255_JacobiQuartic.jq_v s * ((Fone + s*s) * (Fone + s*s)) * iv * iv))%F.
+    - transitivity (F.of_Z p 4 * (s * s) * ((Fone + s*s) * (Fone + s*s)) * iv * iv)%F; [ ring | ].
+      rewrite <- Hjq. ring.
+    - rewrite Hinv. ring. }
+  assert (HA : A = Xsel \/ A = F.opp Xsel).
+  { assert (Hk : ((A - Xsel) * (A + Xsel))%F = Fzero).
+    { transitivity (A * A - Xsel * Xsel)%F; [ ring | rewrite HA2; ring ]. }
+    destruct (Ristretto255_Sqrt.mul_zero_factor _ _ Hk) as [Hk' | Hk'].
+    - left. exact (Ristretto255_Sqrt.sub_eq_zero _ _ Hk').
+    - right. exact (Ristretto255_Sqrt.add_eq_zero _ _ Hk'). }
+  clearbody A.
+  rewrite HYf.
+  destruct HA as [HA | HA]; rewrite HA; destruct (is_negative Xsel) eqn:HXn.
+  - replace (Xsel * F.opp Y0)%F with (F.opp (Xsel * Y0))%F by ring.
+    rewrite (Ristretto255_Sqrt.is_negative_opp_nonzero _ HPnz), HPneg. reflexivity.
+  - rewrite HPneg. reflexivity.
+  - replace (F.opp Xsel * F.opp Y0)%F with (Xsel * Y0)%F by ring.
+    rewrite HPneg, (Ristretto255_Sqrt.is_negative_opp_nonzero _ HXnz), HXn. reflexivity.
+  - replace (F.opp Xsel * Y0)%F with (F.opp (Xsel * Y0))%F by ring.
+    rewrite (Ristretto255_Sqrt.is_negative_opp_nonzero _ HPnz), HPneg,
+            (Ristretto255_Sqrt.is_negative_opp_nonzero _ HXnz), HXn. reflexivity.
+Qed.
 
 Lemma encoder_decoder_neg_t : forall (x y : Fp),
   (Curve25519.E.a * (x * x) + y * y =
@@ -1524,11 +1679,9 @@ Qed.
 (** WIRED 2026-05-26: this is now [Ristretto255_MainSubgroup.main_subgroup_doubling_nontrivial]
     (a proper [Lemma] / [Qed] assembly), discharged from the bridge's [E_mul_l_B_zero] via
     [scalarmult_mod_order]-based 2-surjectivity and [double_x0_zero]-based torsion-exclusion.
-    The cluster's residual axioms now live in [Ristretto255_MainSubgroup]: 5 documented
-    deferred axioms ([surjectivity_witness], [arg_zero_kills], [S_torsion_kill],
-    [double_x0_zero], and the bridge's [E_mul_l_B_zero]), each with the full proof
-    preserved in a [(* PRESERVED PROOF *)] comment — same kernel-perf-wall class as
-    [E_mul_l_B_zero], identifiable for re-attack as Rocq Qed perf improves. *)
+    The five assumptions it rested on ([surjectivity_witness], [arg_zero_kills],
+    [S_torsion_kill], [double_x0_zero] and the bridge's [E_mul_l_B_zero], with
+    [to_affine_lB] under it) are Qed lemmas since 2026-11-02. *)
 (* main_subgroup_doubling_nontrivial: imported from Ristretto255_MainSubgroup. *)
 
 (** Discharged from [nB_zero_coords] (n=0) + [main_subgroup_doubling_nontrivial] (n<>0).

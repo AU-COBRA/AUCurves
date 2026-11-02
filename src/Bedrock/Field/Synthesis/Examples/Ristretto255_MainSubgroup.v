@@ -138,12 +138,14 @@ Proof.
   rewrite H1, H2. reflexivity.
 Qed.
 
-(** ** KEY: any on-curve point with [x = 0] doubles to the identity. *)
-Axiom double_x0_zero : forall (P : Curve25519.E.point),
+(** ** KEY: any on-curve point with [x = 0] doubles to the identity.
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes on Rocq 9.2 once [intro] also names [P]. *)
+Lemma double_x0_zero : forall (P : Curve25519.E.point),
   fst (point_coords P) = Fzero ->
   Eeq (Escalar 2 P) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
-  intro Hx0.
+Proof.
+  intros P Hx0.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (point_oncurve P) as Honc.
   destruct (point_coords P) as [xP yP] eqn:HPc.
@@ -163,7 +165,8 @@ Axiom double_x0_zero : forall (P : Curve25519.E.point),
   - unfold F.div; ring.
   - replace (Fone - Curve25519.E.d * 0 * 0 * yP * yP)%F with Fone by ring.
     replace (yP * yP - Curve25519.E.a * 0 * 0)%F with (yP * yP)%F by ring.
-    rewrite Hy2. field. Decidable.vm_decide. *)
+    rewrite Hy2. field. Decidable.vm_decide.
+Qed.
 
 (** ** 2-surjectivity: every point in [⟨B⟩] is the double of some on-curve point.
        [m := ((ℓ+1)/2 · n) mod ℓ] satisfies [2m ≡ n (mod ℓ)], hence

@@ -11,7 +11,10 @@
     concrete byte-string messages.
 
     Trust model:
-    - Bilinearity axioms (mathematical, not implementation-dependent)
+    - The pairing laws (bilinearity, non-degeneracy, [pairing_check]
+      correctness) and two Fp12 monoid laws are hypotheses of the
+      correctness theorems, not axioms: as axioms over all points and
+      all exponents they are false (see [Bilinearity.v]).
     - SHA-256 axiom (HashToCurve.v uses SHA-256 XMD)
     - co-CDH for unforgeability (standard)
 *)
@@ -156,22 +159,28 @@ Definition bls12_aggregate (sigs : list G1) : G1 :=
 (** * Correctness theorems (instantiated)                              *)
 (* ================================================================== *)
 
-(** Bilinearity hypotheses — from Bilinearity.v *)
-Axiom bilinear_left :
+(** The correctness theorems are stated under the pairing laws of
+    [Bilinearity.v] at these parameters.  Stated for all points and all
+    exponents, as here, the laws are stronger than what the optimal Ate
+    pairing satisfies (it is bilinear on the order-r subgroups only), so
+    they are hypotheses rather than axioms. *)
+Section BLS12_Correctness.
+
+Hypothesis bilinear_left :
   forall (a : Z) (P : G1) (Q : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       (bls12_g1_scalar_mult a P) Q =
     fp12_pow bls12_p_pos
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P Q) a.
 
-Axiom bilinear_right :
+Hypothesis bilinear_right :
   forall (b : Z) (P : G1) (Q : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       P (bls12_g2_scalar_mult b Q) =
     fp12_pow bls12_p_pos
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P Q) b.
 
-Axiom additive_left :
+Hypothesis additive_left :
   forall (P Q : G1) (R : G2),
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
       (bls12_g1_add P Q) R =
@@ -179,12 +188,12 @@ Axiom additive_left :
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P R)
       (pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 Q R).
 
-Axiom non_degenerate :
+Hypothesis non_degenerate :
   pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1
     g1_generator g2_generator <>
   Pairing.fp12_one bls12_p_pos.
 
-Axiom check_correct :
+Hypothesis check_correct :
   forall (P1 : G1) (Q1 : G2) (P2 : G1) (Q2 : G2),
     pairing_check bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 fp12_eq_dec
       P1 Q1 P2 Q2 = true
@@ -192,11 +201,11 @@ Axiom check_correct :
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P1 Q1 =
     pairing bls12_p_pos gamma1_p2 gamma2_p2 coeff_p2_c1 P2 Q2.
 
-Axiom fp12_mul_one_r :
+Hypothesis fp12_mul_one_r :
   forall (x : Fp12),
     Pairing.fp12_mul bls12_p_pos x (Pairing.fp12_one bls12_p_pos) = x.
 
-Axiom fp12_mul_assoc :
+Hypothesis fp12_mul_assoc :
   forall (x y z : Fp12),
     Pairing.fp12_mul bls12_p_pos (Pairing.fp12_mul bls12_p_pos x y) z =
     Pairing.fp12_mul bls12_p_pos x (Pairing.fp12_mul bls12_p_pos y z).
@@ -249,6 +258,8 @@ Proof.
     sks msg Hne).
 Qed.
 
+End BLS12_Correctness.
+
 (** ------------------------------------------------------------------ *)
 (** Hash-to-curve produces valid curve points (from HashToCurveProof). *)
 (** ------------------------------------------------------------------ *)
@@ -262,7 +273,7 @@ Qed.
 (** ================================================================== *)
 (** Summary of trust assumptions:                                       *)
 (**                                                                     *)
-(**   1. Bilinearity axioms (mathematical, standard)                    *)
+(**   1. Pairing laws: hypotheses of the correctness theorems           *)
 (**   2. SHA-256 axiom (from SHA256_axiom.v)                            *)
 (**   3. G2 scalar multiplication (abstract)                            *)
 (**   4. Frobenius constants + fp12_eq_dec (computational)              *)

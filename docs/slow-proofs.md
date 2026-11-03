@@ -95,3 +95,11 @@ the same name for every store. When the goal is `(scalar addr ?v ⋆ ?R) m`, fin
 
 `BLS12_FinalExpH3.v`: the 19 stores took 12 to 82 s each, 1212 s in all, and now take 3 s; the file went from
 1225 s and 2.2 GB to 26 s and 1.5 GB.
+
+## `cbv` on a goal that projects a field of a large record
+
+`cbv` is call by value: before projecting `felem_size_in_words` from a field representation it normalizes every
+field of the record. `lazy` reduces only the field that is projected.
+
+`bls24_509_three_b.v`: `cbv` on `n <> 0%nat` took 318 s, and `lazy` takes 0.003 s; the file went from 405 s and
+2.1 GB to 102 s and 1.1 GB.

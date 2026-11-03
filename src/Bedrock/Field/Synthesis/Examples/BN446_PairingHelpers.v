@@ -546,6 +546,63 @@ Section BN446_PairingHelpers.
       - exact Ha.
     Qed.
 
+    (* Store step for solve_store_fp2_constant: find the scalar at the
+       store address by syntax in the flattened hypothesis and move it to
+       the front with [seps_nth_to_head].  Through [straightline], the
+       rebound [ecancel_assumption] (WPTactics.ecancel_assumption_fast)
+       took 10 s or more per store here. *)
+    Local Ltac find_scalar_at addr l :=
+      lazymatch l with
+      | cons (Scalars.scalar ?a _) ?tl =>
+          match constr:(Set) with
+          | _ => let _ := match constr:(Set) with _ => constr_eq a addr end in constr:(O)
+          | _ => let n := find_scalar_at addr tl in constr:(S n)
+          end
+      | cons _ ?tl => let n := find_scalar_at addr tl in constr:(S n)
+      end.
+
+    Local Ltac nth_atom i l :=
+      lazymatch i with
+      | O => lazymatch l with cons ?h _ => h end
+      | S ?j => lazymatch l with cons _ ?tl => nth_atom j tl end
+      end.
+
+    Local Ltac remove_atom i l :=
+      lazymatch i with
+      | O => lazymatch l with cons _ ?tl => tl end
+      | S ?j => lazymatch l with
+                | cons ?h ?tl => let r := remove_atom j tl in constr:(cons h r)
+                end
+      end.
+
+    Local Ltac pick_scalar_assumption :=
+      lazymatch goal with
+      | |- (Scalars.scalar ?addr _ ⋆ _)%sep ?m =>
+        match goal with
+        | H : (_ ⋆ _)%sep m |- _ =>
+          let H' := fresh in pose proof H as H';
+          flatten_seps_in H';
+          lazymatch type of H' with
+          | seps ?L _ =>
+            let i := find_scalar_at addr L in
+            let t := nth_atom i L in
+            let r := remove_atom i L in
+            apply (proj2 (seps_nth_to_head i L m)) in H';
+            change ((t ⋆ seps r)%sep m) in H';
+            cbv [seps] in H';
+            exact H'
+          end
+        end
+      end.
+
+    Local Ltac store_fp2_step :=
+      lazymatch goal with
+      | |- store access_size.word _ ?a _ _ =>
+          try (is_var a; subst a);
+          eapply Scalars.store_word_of_sep; [solve [pick_scalar_assumption] |]
+      | |- _ => straightline
+      end.
+
     (* Shared tactic for C3-C5 store-only constant loaders.
        After the function-specific setup (start_func, unfold, eexists, split),
        this tactic:
@@ -587,7 +644,7 @@ Section BN446_PairingHelpers.
         clear Ha Hrr Hd
       end;
       (* Phase 2: Process 8 stores *)
-      repeat straightline;
+      repeat store_fp2_step;
       (* Phase 3: Close postcondition *)
       eexists (_ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: []);
       apply conj_swap;

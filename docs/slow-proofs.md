@@ -95,6 +95,9 @@ the same name for every store. When the goal is `(scalar addr ?v ⋆ ?R) m`, fin
 
 `BLS12_FinalExpH3.v`: the 19 stores took 12 to 82 s each, 1212 s in all, and now take 3 s; the file went from
 1225 s and 2.2 GB to 26 s and 1.5 GB.
+`BLS12_PairingHelpers.v`: `repeat straightline` over 12 stores took about 800 s in each of three lemmas, even with the
+let-bound store address substituted; `store_fp2_step` does the stores with the same pick (`seps_nth_to_head`), and the
+file went from 2100 s to 106 s.
 
 ## `cbv` on a goal that projects a field of a large record
 

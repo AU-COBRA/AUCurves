@@ -84,3 +84,14 @@ usually harmless.
 `make_computed_op` over many limbs is the most expensive step in a field file, and many importers use only the
 field parameters. Keep the parameters and the synthesized operations in separate files.
 `bw6_761_prime.v` takes about 5 s since its operations moved to `bw6_761_prime_ops.v`.
+
+## `ecancel_assumption` after importing `WPTactics`
+
+`WPTactics.v` rebinds `ecancel_assumption` to `ecancel_assumption_fast`, an `impl1` search. When the hypothesis
+holds atoms that do not match, such as `array scalar` tails, one call can take a minute, and `straightline` uses
+the same name for every store. When the goal is `(scalar addr ?v ⋆ ?R) m`, find the scalar by `constr_eq` on
+`addr` in the flattened hypothesis and move it to the front with `seps_pick_iff1` (`pick_scalar_assumption` in
+`BLS12_FinalExpH3.v`). Calling `SeparationLogic.ecancel_assumption` instead does not help: it took 1426 s for the 19 stores.
+
+`BLS12_FinalExpH3.v`: the 19 stores took 12 to 82 s each, 1212 s in all, and now take 3 s; the file went from
+1225 s and 2.2 GB to 26 s and 1.5 GB.

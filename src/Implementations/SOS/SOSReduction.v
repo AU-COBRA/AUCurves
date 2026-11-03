@@ -154,16 +154,15 @@ Module WordByWordMontgomery.
         Local Lemma r_big : r > 1.
         Proof using lgr_big. clear -lgr_big; subst r. auto with zarith. Qed.
         Local Notation wprops := (@uwprops lgr lgr_big).
-        #[warnings="-fragile-hint-constr"]
-        Local Hint Immediate (wprops) : core.
-        #[warnings="-fragile-hint-constr"]
-        Local Hint Immediate (weight_0 wprops) : core.
-        #[warnings="-fragile-hint-constr"]
-        Local Hint Immediate (weight_positive wprops) : core.
-        #[warnings="-fragile-hint-constr"]
-        Local Hint Immediate (weight_multiples wprops) : core.
-        #[warnings="-fragile-hint-constr"]
-        Local Hint Immediate (weight_divides wprops) : core.
+        Local Definition weight_0_wprops := weight_0 wprops.
+        Local Definition weight_positive_wprops := weight_positive wprops.
+        Local Definition weight_multiples_wprops := weight_multiples wprops.
+        Local Definition weight_divides_wprops := weight_divides wprops.
+        Local Hint Extern 0 weight_properties => simple apply wprops : core.
+        Local Hint Immediate weight_0_wprops : core.
+        Local Hint Immediate weight_positive_wprops : core.
+        Local Hint Immediate weight_multiples_wprops : core.
+        Local Hint Immediate weight_divides_wprops : core.
         Local Hint Immediate r_big : core.
 
         Lemma length_small {n v} : @small n v -> length v = n.

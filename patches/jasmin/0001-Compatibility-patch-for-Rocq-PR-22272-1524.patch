@@ -1,0 +1,37 @@
+From 715821c5f24d86fcba242854e2d9b05353efa5ce Mon Sep 17 00:00:00 2001
+From: Valerii Huhnin <33845529+olympichek@users.noreply.github.com>
+Date: Mon, 20 Jul 2026 13:36:07 +0200
+Subject: [PATCH 1/4] Compatibility patch for Rocq PR #22272 (#1524)
+
+Avoid setoid rewriting through folded pointwise_lifting
+
+(cherry picked from commit a5eea1003591b0ad16c0aa49edf079ab337fcc03)
+---
+ proofs/lang/varmap.v | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/proofs/lang/varmap.v b/proofs/lang/varmap.v
+index 5f753c7..b2b80ce 100644
+--- a/proofs/lang/varmap.v
++++ b/proofs/lang/varmap.v
+@@ -712,7 +712,7 @@ Section REL.
+ 
+   #[export] Instance eq_ex_m :
+     Proper (Sv.Equal ==> @eq Vm.t ==> @eq Vm.t ==> iff) eq_ex.
+-  Proof. by move=> s1 s2 hS; apply vm_rel_m => // x; rewrite hS. Qed.
++  Proof. by move => s1 s2 hS; apply vm_rel_m => // x; exact: not_iff_compat. Qed.
+ 
+   #[export] Instance uincl_on_impl :
+     Proper (Basics.flip Sv.Subset ==> @eq Vm.t ==> @eq Vm.t ==> Basics.impl) uincl_on.
+@@ -728,7 +728,7 @@ Section REL.
+ 
+   #[export] Instance uincl_ex_m :
+     Proper (Sv.Equal ==> @eq Vm.t ==> @eq Vm.t ==> iff) uincl_ex.
+-  Proof. by move=> s1 s2 hS; apply vm_rel_m => // x; rewrite hS. Qed.
++  Proof. by move => s1 s2 hS; apply vm_rel_m => // x; exact: not_iff_compat. Qed.
+ 
+   Lemma vm_eq_vm_rel vm1 vm2 : vm_eq vm1 vm2 <-> vm_rel (@eq value) (fun _ => True) vm1 vm2.
+   Proof. by split => [h x _ | h x]; apply h. Qed.
+-- 
+2.43.0
+

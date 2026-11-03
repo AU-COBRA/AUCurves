@@ -6,7 +6,7 @@
     degeneracy.
 
     No [ord(B)]/order-divides lemma:
-    - [ℓ·B = E.zero] from [BOrderBridge.E_mul_l_B_zero] (the documented Qed-perf axiom).
+    - [ℓ·B = E.zero] from [BOrderBridge.E_mul_l_B_zero] (Qed).
     - 2-surjectivity via fiat's [scalarmult_mod_order] ([m := ((ℓ+1)/2·n) mod ℓ]).
     - torsion-exclusion: [double_x0_zero] (every on-curve [x=0] point doubles to 0)
       reduces all four [arg=0] cases uniformly: on-curve forces [xP·yP=0], so
@@ -114,13 +114,15 @@ Proof.
   - rewrite !s_one. reflexivity.
 Qed.
 
-(** ** Bézout torsion-kill: if [a·u + ℓ·v = 1] and [(a·k)·B = 0] then [k·B = 0]. *)
-Axiom S_torsion_kill : forall (a k u v : Z),
+(** ** Bézout torsion-kill: if [a·u + ℓ·v = 1] and [(a·k)·B = 0] then [k·B = 0].
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes on Rocq 9.2 once [intros] also names [a k u v]. *)
+Lemma S_torsion_kill : forall (a k u v : Z),
   (a * u + Z.pos l_pos * v = 1)%Z ->
   Eeq (Escalar (a * k) B) Curve25519.E.zero ->
   Eeq (Escalar k B) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
-  intros Hbez Hak.
+Proof.
+  intros a k u v Hbez Hak.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   transitivity (Escalar (k * 1) B); [ rewrite Z.mul_1_r; reflexivity | ].
   rewrite <- Hbez.
@@ -133,14 +135,17 @@ Axiom S_torsion_kill : forall (a k u v : Z),
   { rewrite <- (s_assoc u (a * k) B). rewrite Hak. apply ScalarMult.scalarmult_zero_r. }
   assert (H2 : Eeq (Escalar (Z.pos l_pos * (k * v)) B) Curve25519.E.zero).
   { exact (s_times_order (k * v)). }
-  rewrite H1, H2. reflexivity. *)
+  rewrite H1, H2. reflexivity.
+Qed.
 
-(** ** KEY: any on-curve point with [x = 0] doubles to the identity. *)
-Axiom double_x0_zero : forall (P : Curve25519.E.point),
+(** ** KEY: any on-curve point with [x = 0] doubles to the identity.
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes on Rocq 9.2 once [intro] also names [P]. *)
+Lemma double_x0_zero : forall (P : Curve25519.E.point),
   fst (point_coords P) = Fzero ->
   Eeq (Escalar 2 P) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
-  intro Hx0.
+Proof.
+  intros P Hx0.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (point_oncurve P) as Honc.
   destruct (point_coords P) as [xP yP] eqn:HPc.
@@ -160,21 +165,19 @@ Axiom double_x0_zero : forall (P : Curve25519.E.point),
   - unfold F.div; ring.
   - replace (Fone - Curve25519.E.d * 0 * 0 * yP * yP)%F with Fone by ring.
     replace (yP * yP - Curve25519.E.a * 0 * 0)%F with (yP * yP)%F by ring.
-    rewrite Hy2. field. Decidable.vm_decide. *)
+    rewrite Hy2. field. Decidable.vm_decide.
+Qed.
 
 (** ** 2-surjectivity: every point in [⟨B⟩] is the double of some on-curve point.
        [m := ((ℓ+1)/2 · n) mod ℓ] satisfies [2m ≡ n (mod ℓ)], hence
        [nB n = nB m + nB m] by [scalarmult_mod_order].
 
-       PERF-DEFERRED (Admitted): the proof below is logically complete (verified
-       end-to-end in rocq-mcp, 677 ms across the full assembly), but its Qed
-       kernel-conversion OOMs (>4 GB and growing) on this 14 GB machine due to
-       the setoid-rewrite chain over the bridge's [s_mod_order] wrapper.
-       Same perf-wall class as [BOrderBridge.E_mul_l_B_zero]. *)
-Axiom surjectivity_witness :
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory (past 4 GB on a
+       14 GB machine).  The proof kept in its comment closes unchanged on Rocq 9.2. *)
+Lemma surjectivity_witness :
   forall (n : nat),
   exists m : nat, Eeq (nB n) (Curve25519.E.add (nB m) (nB m)).
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26):
+Proof.
   intro n.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (nB_eq_scalarmult n) as HnB.
@@ -201,21 +204,23 @@ Axiom surjectivity_witness :
   exists m.
   rewrite HnB. rewrite (nB_eq_scalarmult m). rewrite Hmeq. rewrite <- s_add.
   rewrite <- (s_mod_order (Z.of_nat n)), <- (s_mod_order (mz + mz)).
-  rewrite HZ. reflexivity. *)
+  rewrite HZ. reflexivity.
+Qed.
 
 (** ** Torsion-exclusion: any [nB n] with [arg = 0] is the identity.
        On-curve + [arg = 0] forces [xP·yP = 0], hence [fst(2·(nB n)) = 0], hence
        [4·(nB n) = 0] by [double_x0_zero], hence [nB n = 0] by Bézout([4,ℓ]=1).
        Factored as a separate [Qed] to keep [main_subgroup_doubling_nontrivial]'s
-       proof term small (and its kernel-conversion fast). *)
-Axiom arg_zero_kills :
+       proof term small (and its kernel-conversion fast).
+       This was an [Axiom] from 2026-05-26, recorded as a Qed out of memory.  The proof kept in
+       its comment closes unchanged on Rocq 9.2. *)
+Lemma arg_zero_kills :
   forall (n : nat),
   ((Fone + snd (point_coords (nB n))) * (Fone - snd (point_coords (nB n))) *
     (fst (point_coords (nB n)) * snd (point_coords (nB n)) *
      (fst (point_coords (nB n)) * snd (point_coords (nB n)))))%F = Fzero ->
   Eeq (nB n) Curve25519.E.zero.
-(* PRESERVED PROOF (logically complete; Qed kernel-OOM deferred 2026-05-26 —
-   same perf-wall as [surjectivity_witness] / [E_mul_l_B_zero]):
+Proof.
   intros n Harg.
   pose proof (_ : RelationClasses.Equivalence Eeq) as HE.
   pose proof (nB_eq_scalarmult n) as HnB.
@@ -256,7 +261,8 @@ Axiom arg_zero_kills :
   rewrite <- (s_assoc 2 (Z.of_nat n * 2) B).
   rewrite <- (s_assoc 2 (Z.of_nat n) B).
   rewrite <- HnB.
-  exact Hdd. *)
+  exact Hdd.
+Qed.
 
 (** ** Main theorem: discharges the [Ristretto255_Inj.main_subgroup_doubling_nontrivial]
        axiom for [n <> 0]: every such [nB n] in [⟨B⟩] is the identity or a doubled

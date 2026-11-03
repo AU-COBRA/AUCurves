@@ -62,7 +62,7 @@ Section UList.
   Proof.
     intros l x H; remember (length l) as len; generalize dependent l; induction len as [| len' IHlen'].
       - intros l H1 H2; assert (l = []) as Hnil by (destruct l; auto; discriminate);
-        rewrite Hnil; apply ulist_nil.
+        rewrite Hnil; apply NoDup_nil.
       - intros l H1 H2; destruct l as [| x' l']; try auto; simpl in H2; inversion H2 as [H3]; simpl;
         destruct (dec_eq x x') as [Hxval | Hxval] eqn:dec.
           + simpl; apply IHlen'; try inversion H1; auto.

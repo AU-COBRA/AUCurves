@@ -201,4 +201,4 @@
      Field.Synthesis.Examples.Secp256k1_FpInv_half_proved
      Field.Synthesis.Examples.Vesta_FpInv_closed
      Field.Synthesis.Examples.Vesta_FpInv_half_proved))
- (theories Stdlib Crypto Theory Implementations bedrock2 coqutil))
+ (theories Stdlib micromega_plugin Crypto Theory Implementations bedrock2 coqutil))

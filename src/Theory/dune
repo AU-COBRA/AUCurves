@@ -15,4 +15,4 @@
  ; -time: per-sentence timing in build output, negligible overhead,
  ;   makes slow sentences immediately visible without re-runs.
  (flags -time -profile-ltac -profile-ltac-cutoff 1)
- (theories Stdlib Crypto Coqprime))
+ (theories Stdlib micromega_plugin Crypto Coqprime))

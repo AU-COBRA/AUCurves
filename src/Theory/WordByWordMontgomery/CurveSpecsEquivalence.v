@@ -13,7 +13,7 @@ Require Import Crypto.Arithmetic.Partition.
 Require Import Crypto.Util.Decidable.
 Require Import Crypto.Algebra.Field.
 Require Import Theory.Fields.FieldsUtil.
-From Coqprime Require Import GZnZ.
+From Theory Require Import Util.GZnZ.
 Require Import Field.
 Require Import Crypto.Util.ZUtil.Tactics.PullPush.Modulo.
 Require Import ZArith.Znumtheory.

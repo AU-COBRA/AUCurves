@@ -37,6 +37,8 @@ The repository backs three papers, each building on the one before it.
    references (blst, RustCrypto, dalek, arkworks).
 5. **`src/*/README.md`** — per-subtree detail for `Theory`, `Spec`,
    `Bedrock`, `Jasmin`, and the rest.
+6. **[docs/slow-proofs.md](docs/slow-proofs.md)** — proof patterns that cost minutes or
+   gigabytes, what to write instead, and `scripts/check_slow_patterns.sh`, which counts them.
 
 ## Build in three commands
 

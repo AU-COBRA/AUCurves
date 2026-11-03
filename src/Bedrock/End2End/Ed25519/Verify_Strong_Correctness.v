@@ -329,23 +329,19 @@ Ltac neq_var_v :=
        v_k_full v_k_slot v_seed v_msg_len];
   discriminate.
 
+(** Peel one call.  The [REdSeq] and [REdCall] steps are peeled with
+    [rexec_seq_inv] and [rexec_call_inv] (from [Sign_Strong_Correctness])
+    rather than [inversion] on the unfolded program
+    (docs/slow-proofs.md). *)
 Ltac peel_call_seq_v H Hframe Hres :=
   let Hcall := fresh "Hcall" in
   let Hrest := fresh "Hrest" in
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
-      rename Hc into Hcall; rename Hr into Hrest
-  end;
-  let Hcp := fresh "Hcp" in
-  inversion Hcall; subst; clear Hcall;
-  match goal with
-  | Hc : strong_callee_post_verify _ _ _ _ _ |- _ =>
-      rename Hc into Hcp
-  end;
-  destruct Hcp as [Hframe [Hsc Hres]];
+  let rs_mid := fresh "rs" in
+  destruct (rexec_seq_inv _ _ _ _ _ _ _ H) as (rs_mid & Hcall & Hrest);
+  clear H; subst;
+  apply rexec_call_inv in Hcall; subst;
+  destruct Hcall as [Hframe [Hsc Hres]];
   match goal with
   | Hh : rs_get_scalar_ed _ v_msg_len = Some _ |- _ =>
       rewrite Hsc in Hh; clear Hsc
@@ -354,11 +350,8 @@ Ltac peel_call_seq_v H Hframe Hres :=
 
 Ltac peel_last_call_v H Hframe Hres :=
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : strong_callee_post_verify _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc Hres]]; clear Hsc
-  end.
+  apply rexec_call_inv in H; subst;
+  destruct H as [Hframe [Hsc Hres]]; clear Hsc.
 
 (* ================================================================ *)
 (* §5. Strong correctness theorem                                    *)
@@ -408,7 +401,11 @@ Proof.
   (* Stage A: peel 12 REdLetZero allocations (Bug-D adds v_check_sB_bytes). *)
   repeat (match goal with
           | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
-              inversion H; subst; clear H
+              let v := fresh "v" in
+              let Hwf := fresh "Hwf" in
+              let Hr := fresh "Hr" in
+              destruct (rexec_let_zero_inv _ _ _ _ _ _ _ _ H) as (v & Hwf & Hr);
+              clear H; subst
           end).
 
   (* Propagate sig_in/pub/msg/sig_out/msg_len across the 12 fresh slot
@@ -486,7 +483,7 @@ Proof.
 
   (* Bug-B fix: peel the [REdLetU64 "verify_chal_len" ...] step that
      computes the dynamic message-length argument [64 + msg_len]. *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_cl

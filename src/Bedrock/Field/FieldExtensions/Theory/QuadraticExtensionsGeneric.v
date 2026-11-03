@@ -10,7 +10,7 @@ Require Import Crypto.Algebra.Hierarchy.
 Require Import Crypto.Algebra.Field.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 From Coq Require Import Field.
-Require Import Coqprime.elliptic.GZnZ.
+From Theory Require Import Util.GZnZ.
 
 Section Fp2Generic.
 

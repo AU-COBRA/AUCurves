@@ -111,7 +111,7 @@ Section Field.
       | WordByWordMontgomery.field_representation _ =>
         exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_ok)
       | bls377_frep => exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_ok)
-      | _ => felem_size_fast
+      | _ => apply felem_size_ok
       end
     end.
 

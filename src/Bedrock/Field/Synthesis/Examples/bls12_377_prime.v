@@ -97,6 +97,24 @@ Section Field.
     Lia.lia.
   Defined.
 
+  (* [apply felem_size_ok] leaves the FieldRepresentation_ok instance to typeclass
+     search, which tries [bls377_frep_raw_ok] first (it is declared last).  Failing to
+     unify [field_representation_raw m] with [field_representation m] took about
+     60 s per goal, nine goals in this file.  Name the instance instead. *)
+  Local Ltac felem_size_fast :=
+    lazymatch goal with
+    | |- (@felem_size_in_bytes _ _ _ _ _ ?fr <= 2 ^ _)%Z =>
+      lazymatch fr with
+      | WordByWordMontgomery.field_representation_raw _ =>
+        exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_raw_ok)
+      | bls377_frep_raw => exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_raw_ok)
+      | WordByWordMontgomery.field_representation _ =>
+        exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_ok)
+      | bls377_frep => exact (@felem_size_ok _ _ _ _ _ _ bls377_frep_ok)
+      | _ => felem_size_fast
+      end
+    end.
+
   (**** Translate each field operation into bedrock2 ****)
 
   Local Notation functions_contain functions f :=
@@ -134,7 +152,7 @@ Section Field.
       eapply Func.valid_func_bool_iff;
       abstract vm_cast_no_check (eq_refl true)
     | |- (_ = _)%Z => vm_compute; reflexivity
-    | |- (felem_size_in_bytes <= 2 ^ _)%Z => apply felem_size_ok
+    | |- (felem_size_in_bytes <= 2 ^ _)%Z => felem_size_fast
     end.
 
   Derive bls377_from_bytes
@@ -202,7 +220,7 @@ Section Field.
     epair.
     eapply (from_mont_func_correct _ _ _ from_mont_string to_mont_string).
         - vm_compute; reflexivity.
-        - apply felem_size_ok.
+        - felem_size_fast.
         - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
           Unshelve.
             + auto.
@@ -220,7 +238,7 @@ Section Field.
     epair.
     eapply (to_mont_func_correct _ _ _ from_mont_string to_mont_string).
         - vm_compute; reflexivity.
-        - apply felem_size_ok.
+        - felem_size_fast.
         - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
           Unshelve. all: auto.
    Qed.
@@ -236,7 +254,7 @@ Section Field.
     epair.
     eapply select_znz_func_correct. 1,2:auto.
         - vm_compute; reflexivity.
-        - apply felem_size_ok.
+        - felem_size_fast.
         - eapply Func.valid_func_bool_iff. abstract vm_cast_no_check (eq_refl true).
    Qed.
 

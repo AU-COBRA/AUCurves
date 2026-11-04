@@ -3,14 +3,12 @@
  * Proves that the h3 exponent used in the BLS12-381 final exponentiation
  * equals (p^4 - p^2 + 1) / r, the hard-part cofactor.
  *
- * NOTE: The DSD-optimized Gallina model [final_exp_hard_dsd] in Pairing.v
- * computes the WRONG exponent. The exponent
- *   p + p^2 + p^3 - x^4 + x^3 - 3x^2 - 2x - 2
- * does NOT equal h3 (it's ~1143 bits vs h3's ~1268 bits), and they
- * are not congruent mod r or mod Phi_12(p). The actual C code uses
- * the correct h3 array via square-and-multiply (bls12_final_exp),
- * NOT the DSD decomposition. A correct DSD implementation would need
- * the multi-scalar decomposition h3 = l0 + l1*p + l2*p^2 + l3*p^3.
+ * It also proves the two exponent identities behind the DSD-style hard part
+ * (Hayashida-Hayasaka-Teruya, eprint 2020/875), with u = |x|:
+ *   3 h3 = 3 + (u^2-1+p^2) (u+1)^2 (p-u)            (the published chain, f^{3 h3})
+ *   h3   = 1 + (u^2-1+p^2) (u+1) ((u+1)/3) (p-u)    (the chain used here, f^{h3})
+ * The second holds because 3 divides u+1; [final_exp_hard_dsd] in Pairing.v
+ * and the bedrock2 [bls12_final_exp_hard_dsd] compute f^{h3}.
  *)
 
 From Stdlib Require Import ZArith.
@@ -71,13 +69,34 @@ Section BLS12_381_h3.
   Lemma h3_exact_division : (bls_p^4 - bls_p^2 + 1) mod bls_r = 0.
   Proof. vm_compute. reflexivity. Qed.
 
-  (** The corrected DSD (Hayashida-Hayasaka-Teruya, eprint 2020/875)
-      computes f^{3*h3}. The gnark algorithm's exponent trace:
-        3 + (|x|²-1+p²) * (|x|+1)² * (p-|x|) = 3*h3
-      Verified numerically: *)
+  (** The published DSD chain (Hayashida-Hayasaka-Teruya, eprint 2020/875,
+      as in gnark-crypto) computes f^{3*h3}:
+        3 + (|x|²-1+p²) * (|x|+1)² * (p-|x|) = 3*h3 *)
   Lemma dsd_corrected_computes_3h3 :
     let u := bls_x_abs in
     3 * h3_exp = 3 + (u^2 - 1 + bls_p^2) * (u + 1)^2 * (bls_p - u).
-  Proof. native_compute. reflexivity. Qed.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (** 3 divides |x|+1. *)
+  Lemma bls_x_abs_plus_1_mod_3 : (bls_x_abs + 1) mod 3 = 0.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (** c = (|x|+1)/3, the 63-bit exponent of the first exponentiation. *)
+  Definition bls_c : Z := 0x460055555555aaab.
+
+  Lemma bls_c_eq : bls_c = (bls_x_abs + 1) / 3.
+  Proof. vm_compute. reflexivity. Qed.
+
+  (** The exact chain: replacing one factor (|x|+1) by c = (|x|+1)/3 and the
+      final f^3 by f gives the exponent h3 itself. *)
+  Lemma h3_exact_chain :
+    let u := bls_x_abs in
+    h3_exp = 1 + (u^2 - 1 + bls_p^2) * (u + 1) * ((u + 1) / 3) * (bls_p - u).
+  Proof. vm_compute. reflexivity. Qed.
+
+  Lemma h3_exact_chain_c :
+    let u := bls_x_abs in
+    h3_exp = 1 + (u^2 - 1 + bls_p^2) * (u + 1) * bls_c * (bls_p - u).
+  Proof. vm_compute. reflexivity. Qed.
 
 End BLS12_381_h3.

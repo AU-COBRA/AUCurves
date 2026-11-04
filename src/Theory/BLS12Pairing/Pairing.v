@@ -596,7 +596,8 @@ Section BLS12_Pairing.
   (** ** Optimized final exponentiation (DSD decomposition)           *)
   (* ================================================================ *)
 
-  (** Raise to |x|/2 = 0x6900800000008000 (half the unsigned BLS parameter). *)
+  (** Raise to |x|/2 = 0x6900800000008000 (half the unsigned BLS parameter).
+      No longer used by [final_exp_hard_dsd]; kept for downstream users. *)
   Definition fp12_pow_bls_x_half (f : Fp12) : Fp12 :=
     fp12_pow_Z f (bls_x / 2) 63.
 
@@ -604,38 +605,46 @@ Section BLS12_Pairing.
   Definition fp12_pow_bls_x_half_signed (f : Fp12) : Fp12 :=
     fp12_conjugate (fp12_pow_bls_x_half f).
 
-  (** Hard part of final exponentiation using the Hayashida-Hayasaka-Teruya
-      algorithm (eprint 2020/875).  Computes f^{3*h3} where h3 = (p⁴-p²+1)/r.
+  (** c = (|x|+1)/3 = 0x460055555555aaab (63 bits, 28 of them set).
+      3 divides |x|+1 for BLS12-381 (FinalExpEquiv.v, bls_x_abs_plus_1_mod_3). *)
+  Definition bls_c : Z := 0x460055555555aaab.
 
-      The factor of 3 is compensated in the overall final exponentiation:
-      since 3 | (p-1), the easy part f^{(p⁶-1)(p²+1)} already ensures
-      the result lies in the correct subgroup.
+  (** Raise to c and to -c. *)
+  Definition fp12_pow_bls_c (f : Fp12) : Fp12 :=
+    fp12_pow_Z f bls_c 63.
 
-      Uses 5 exp-by-x + 1 exp-by-(x/2) + 2 Frobenius + ~9 Fp12_mul,
-      requiring ~5×64 = 320 squarings instead of 1268 for naive h3.
+  Definition fp12_pow_bls_c_signed (f : Fp12) : Fp12 :=
+    fp12_conjugate (fp12_pow_bls_c f).
 
-      Algorithm from gnark-crypto (Consensys), verified numerically
-      to produce exponent 3*h3.
-  *)
+  (** Hard part of the final exponentiation, after the Hayashida-Hayasaka-Teruya
+      algorithm (eprint 2020/875), arranged to compute f^{h3} exactly, with
+      h3 = (p⁴-p²+1)/r and u = |x|:
+
+        h3 = 1 + (u²-1+p²) (u+1) ((u+1)/3) (p-u)
+
+      (FinalExpEquiv.v, h3_exact_chain).  The original chain computes
+      f^{3 h3} = f^{3 + (u²-1+p²)(u+1)²(p-u)}; here the first factor u+1 is
+      replaced by c = (u+1)/3 and the final f³ by f, so the result is the
+      standard pairing e, not e³.  Cost: 1 exp by c and 4 exp by u
+      (5 × 63 squarings), 2 Frobenius maps, 5 Fp12 multiplications.
+
+      The conjugate is the inverse only on the cyclotomic subgroup, which
+      contains the output of the easy part. *)
   Definition final_exp_hard_dsd (f : Fp12) : Fp12 :=
-    let t0 := fp12_sqr f in                        (* f² *)
-    let t1 := fp12_pow_bls_x_half_signed t0 in     (* (f²)^{-|x|/2} = f^{-|x|} *)
-    let t2 := fp12_conjugate f in                   (* f^{-1} *)
-    let t1 := fp12_mul t1 t2 in                     (* f^{-|x|-1} *)
-    let t2 := fp12_pow_bls_x_signed t1 in           (* (f^{-|x|-1})^{-|x|} = f^{|x|²+|x|} *)
-    let t1 := fp12_conjugate t1 in                  (* f^{|x|+1} *)
-    let t1 := fp12_mul t1 t2 in                     (* f^{|x|²+2|x|+1} = f^{(|x|+1)²} *)
-    let t2 := fp12_pow_bls_x_signed t1 in           (* f^{-|x|(|x|+1)²} *)
-    let t1 := fp12_frobenius t1 in                  (* f^{p(|x|+1)²} *)
-    let t1 := fp12_mul t1 t2 in                     (* f^{(|x|+1)²(p-|x|)} *)
-    let result := fp12_mul f t0 in                  (* f³ *)
-    let t0 := fp12_pow_bls_x_signed t1 in           (* f^{-|x|(|x|+1)²(p-|x|)} *)
-    let t2 := fp12_pow_bls_x_signed t0 in           (* f^{|x|²(|x|+1)²(p-|x|)} *)
-    let t0 := fp12_frobenius_p2 t1 in               (* f^{p²(|x|+1)²(p-|x|)} *)
-    let t1 := fp12_conjugate t1 in                  (* f^{-(|x|+1)²(p-|x|)} *)
-    let t1 := fp12_mul t1 t2 in                     (* f^{(|x|²-1)(|x|+1)²(p-|x|)} *)
-    let t1 := fp12_mul t1 t0 in                     (* f^{(|x|²-1+p²)(|x|+1)²(p-|x|)} *)
-    fp12_mul result t1.                              (* f³ · f^{...} = f^{3·h3} *)
+    let t1 := fp12_pow_bls_c_signed f in            (* f^{-c} *)
+    let t2 := fp12_pow_bls_x_signed t1 in           (* f^{c|x|} *)
+    let t1 := fp12_conjugate t1 in                  (* f^{c} *)
+    let t1 := fp12_mul t1 t2 in                     (* f^{c(|x|+1)} =: A *)
+    let t2 := fp12_pow_bls_x_signed t1 in           (* A^{-|x|} *)
+    let t0 := fp12_frobenius t1 in                  (* A^{p} *)
+    let t1 := fp12_mul t0 t2 in                     (* A^{p-|x|} =: B *)
+    let t0 := fp12_pow_bls_x_signed t1 in           (* B^{-|x|} *)
+    let t2 := fp12_pow_bls_x_signed t0 in           (* B^{|x|²} *)
+    let t0 := fp12_frobenius_p2 t1 in               (* B^{p²} *)
+    let t1 := fp12_conjugate t1 in                  (* B^{-1} *)
+    let t1 := fp12_mul t1 t2 in                     (* B^{|x|²-1} *)
+    let t1 := fp12_mul t1 t0 in                     (* B^{|x|²-1+p²} *)
+    fp12_mul f t1.                                   (* f^{1 + (|x|²-1+p²) c (|x|+1)(p-|x|)} = f^{h3} *)
 
   (** Optimized final exponentiation using DSD for the hard part. *)
   Definition final_exponentiation_dsd (f : Fp12) : Fp12 :=

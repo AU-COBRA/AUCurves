@@ -624,9 +624,12 @@ Section BLS12_Pairing.
 
       (FinalExpEquiv.v, h3_exact_chain).  The original chain computes
       f^{3 h3} = f^{3 + (u²-1+p²)(u+1)²(p-u)}; here the first factor u+1 is
-      replaced by c = (u+1)/3 and the final f³ by f, so the result is the
-      standard pairing e, not e³.  Cost: 1 exp by c and 4 exp by u
-      (5 × 63 squarings), 2 Frobenius maps, 5 Fp12 multiplications.
+      replaced by c = (u+1)/3 and the final f³ by f, so the hard part is
+      f^{h3} itself and [final_exponentiation_dsd] has the exponent
+      (p¹²-1)/r of [final_exponentiation], not three times it.  (blst and
+      arkworks use the published chain and return the cube.)  Cost: 1 exp
+      by c and 4 exp by u (5 × 63 squarings), 2 Frobenius maps, 5 Fp12
+      multiplications.
 
       The conjugate is the inverse only on the cyclotomic subgroup, which
       contains the output of the easy part. *)

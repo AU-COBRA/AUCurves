@@ -84,3 +84,25 @@ usually harmless.
 `make_computed_op` over many limbs is the most expensive step in a field file, and many importers use only the
 field parameters. Keep the parameters and the synthesized operations in separate files.
 `bw6_761_prime.v` takes about 5 s since its operations moved to `bw6_761_prime_ops.v`.
+
+## `ecancel_assumption` after importing `WPTactics`
+
+`WPTactics.v` rebinds `ecancel_assumption` to `ecancel_assumption_fast`, an `impl1` search. When the hypothesis
+holds atoms that do not match, such as `array scalar` tails, one call can take a minute, and `straightline` uses
+the same name for every store. When the goal is `(scalar addr ?v ⋆ ?R) m`, find the scalar by `constr_eq` on
+`addr` in the flattened hypothesis and move it to the front with `seps_pick_iff1` (`pick_scalar_assumption` in
+`BLS12_FinalExpH3.v`). Calling `SeparationLogic.ecancel_assumption` instead does not help: it took 1426 s for the 19 stores.
+
+`BLS12_FinalExpH3.v`: the 19 stores took 12 to 82 s each, 1212 s in all, and now take 3 s; the file went from
+1225 s and 2.2 GB to 26 s and 1.5 GB.
+`BLS12_PairingHelpers.v`: `repeat straightline` over 12 stores took about 800 s in each of three lemmas, even with the
+let-bound store address substituted; `store_fp2_step` does the stores with the same pick (`seps_nth_to_head`), and the
+file went from 2100 s to 106 s. `BN446_PairingHelpers.v` has the same tactic with 14 stores: 2875 s became 123 s.
+
+## `cbv` on a goal that projects a field of a large record
+
+`cbv` is call by value: before projecting `felem_size_in_words` from a field representation it normalizes every
+field of the record. `lazy` reduces only the field that is projected.
+
+`bls24_509_three_b.v`: `cbv` on `n <> 0%nat` took 318 s, and `lazy` takes 0.003 s; the file went from 405 s and
+2.1 GB to 102 s and 1.1 GB.

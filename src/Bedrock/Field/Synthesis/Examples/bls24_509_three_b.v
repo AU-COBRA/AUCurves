@@ -87,7 +87,7 @@ Section FromListF.
   Proof. reflexivity. Qed.
 
   Lemma n_nz : n <> 0%nat.
-  Proof. cbv. congruence. Qed.
+  Proof. lazy. congruence. Qed.
 
   Definition from_mont_correct := WordByWordMontgomery.from_montgomerymod_correct 64 n M r' m' r'_correct m'_correct bw_big M_big n_nz M_small.
   Definition to_mont_correct :=  WordByWordMontgomery.to_montgomerymod_correct 64 n M r' m' r'_correct m'_correct bw_big M_big n_nz M_small.

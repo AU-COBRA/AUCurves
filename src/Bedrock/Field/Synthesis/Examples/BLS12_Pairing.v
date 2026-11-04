@@ -653,22 +653,24 @@ Section BLS12_Pairing.
 
     (* ============================================================== *)
 
-    (* Corrected DSD hard part: Hayashida-Hayasaka-Teruya, eprint 2020/875.
-       Computes f^[3 h3] using inline exp-by-x with cyclotomic squaring.
-       Proved: 3 h3 = 3 + [u^2-1+p^2] [u+1]^2 [p-u] in FinalExpEquiv.v.
-       Uses inline exp-by-x loops, not function calls, to avoid overhead.
-       Each exp-by-x: 63 squarings + about 5 Fp12 multiplications. *)
+    (* Exact DSD hard part, after Hayashida-Hayasaka-Teruya, eprint 2020/875.
+       Computes f^{h3}, h3 = (p^4-p^2+1)/r, using
+         h3 = 1 + [u^2-1+p^2] [u+1] [(u+1)/3] [p-u],   u = |x|
+       (FinalExpEquiv.v, h3_exact_chain).  The published chain computes
+       f^{3 h3} = f^{3 + [u^2-1+p^2] [u+1]^2 [p-u]}; here one factor u+1 is
+       replaced by c = (u+1)/3 = 0x460055555555aaab and the final f^3 by f.
+       The exponentiations are the functions bls12_Fp12_cyc_exp_c_neg and
+       bls12_Fp12_cyc_exp_x_neg below, which use cyclotomic squaring. *)
 
-    (* Helper: inline exp-by-x loop body.
-       Uses cyclotomic squaring (cyc_sqr_body) instead of dense Fp12_sqr;
-       requires cyc_t0 and cyc_t1 (Fp6 buffers) to be in scope, stackalloc'd
-       by the caller bls12_final_exp_hard_dsd below. *)
-    Local Definition dsd_exp_x_loop : Syntax.cmd.cmd :=
+    (* One step of left-to-right square-and-multiply by the 64-bit literal e,
+       with the cyclotomic squaring cyc_sqr_body: valid only on the cyclotomic
+       subgroup.  Requires cyc_t0, cyc_t1 (Fp6) and cyc_one (Fp, holding 1). *)
+    Local Definition cyc_exp_loop (e : Z) : Syntax.cmd.cmd :=
       cmd_seq_list [
         cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
         cyc_sqr_body "result" "result";
         cmd.set "bit" (expr.op bopname.and
-          (expr.op bopname.sru (expr.literal 0xd201000000010000) (expr.var "i"))
+          (expr.op bopname.sru (expr.literal e) (expr.var "i"))
           (expr.literal 1));
         cmd.cond (expr.var "bit")
           (cmd.call [] fp12_mul_name
@@ -676,50 +678,40 @@ Section BLS12_Pairing.
           cmd.skip
       ].
 
-    (* Helper: inline exp-by-x/2 loop body. Same cyc_sqr substitution. *)
-    Local Definition dsd_exp_x_half_loop : Syntax.cmd.cmd :=
+    (* out = conjugate(base^e) = base^{-e} on the cyclotomic subgroup.
+       result starts at 1 and the loop scans all 64 bits of e, so no
+       assumption on the top bit of e is made. *)
+    Local Definition cyc_exp_neg_body (e : Z) : Syntax.cmd.cmd :=
       cmd_seq_list [
-        cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
-        cyc_sqr_body "result" "result";
-        cmd.set "bit" (expr.op bopname.and
-          (expr.op bopname.sru (expr.literal 0x6900800000008000) (expr.var "i"))
-          (expr.literal 1));
-        cmd.cond (expr.var "bit")
-          (cmd.call [] fp12_mul_name
-            [expr.var "result"; expr.var "result"; expr.var "base"])
-          cmd.skip
-      ].
-
-    (* Inline exp_x_signed: result = base^{-|x|} = conjugate(base^{|x|}) *)
-    Local Definition dsd_inline_exp_x (out_var base_var : string) : Syntax.cmd.cmd :=
-      cmd_seq_list [
-        cmd.call [] fp12_copy_name [expr.var "result"; expr.var base_var];
-        cmd.call [] fp12_copy_name [expr.var "base"; expr.var base_var];
-        cmd.set "i" (expr.literal 63);
-        cmd.while (expr.var "i") dsd_exp_x_loop;
-        cmd.call [] fp12_conjugate_name [expr.var out_var; expr.var "result"]
-      ].
-
-    (* Inline exp_x_half_signed: result = base^{-|x|/2}
-
-       BUG FIX (2026-04-10): the previous version copied [base] into
-       [result] before the loop, which implicitly adds a leading 1-bit
-       at position 63. That is correct for [exp_x] (since |x| has
-       bit 63 set), but WRONG for [exp_x_half] since |x|/2 =
-       0x6900800000008000 has bit 63 = 0 (MSB is at bit 62). The
-       implicit leading 1 computed f^{2^63 + |x|/2} instead of f^{|x|/2}.
-
-       Fix: initialize [result] to 1 (Fp12 identity) so the 63-bit loop
-       scans all 63 bits without a spurious implicit bit. Since |x|/2 has
-       bit 62 set, the first effective multiply happens at i=62. *)
-    Local Definition dsd_inline_exp_x_half (out_var base_var : string) : Syntax.cmd.cmd :=
-      cmd_seq_list [
+        cmd.call [] from_word_name [expr.var "cyc_one"; expr.literal 1];
         fp12_set_one "result";
-        cmd.call [] fp12_copy_name [expr.var "base"; expr.var base_var];
-        cmd.set "i" (expr.literal 63);
-        cmd.while (expr.var "i") dsd_exp_x_half_loop;
-        cmd.call [] fp12_conjugate_name [expr.var out_var; expr.var "result"]
+        cmd.set "i" (expr.literal 64);
+        cmd.while (expr.var "i") (cyc_exp_loop e);
+        cmd.call [] fp12_conjugate_name [expr.var "out"; expr.var "result"]
       ].
+
+    Local Definition cyc_exp_neg_fn (name : string) (e : Z) : function_t :=
+      (name,
+       (["out"; "base"], []:list String.string,
+        bedrock_func_body:(
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as result;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t0;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t1;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as cyc_one;
+          coq:(cyc_exp_neg_body e)
+        ))).
+
+    (* base^{-|x|}, |x| = 0xd201000000010000 *)
+    Definition bls12_Fp12_cyc_exp_x_neg : function_t :=
+      Eval cbv [cyc_exp_neg_fn] in
+      cyc_exp_neg_fn "bls12_Fp12_cyc_exp_x_neg" 0xd201000000010000.
+
+    (* base^{-c}, c = (|x|+1)/3 = 0x460055555555aaab *)
+    Definition bls12_Fp12_cyc_exp_c_neg : function_t :=
+      Eval cbv [cyc_exp_neg_fn] in
+      cyc_exp_neg_fn "bls12_Fp12_cyc_exp_c_neg" 0x460055555555aaab.
+
+    (* WP proofs: see BLS12_CycExp.v *)
 
     Local Definition final_exp_hard_dsd_body : Syntax.cmd.cmd :=
       cmd_seq_list [
@@ -728,67 +720,54 @@ Section BLS12_Pairing.
         cmd.call [] "bls12_load_gamma2" [expr.var "gamma2"];
         cmd.call [] "bls12_load_w_frob_c1" [expr.var "w_frob_c1"];
 
-        (* t0 = f² *)
-        cmd.call [] fp12_sqr_name [expr.var "t0"; expr.var "f"];
+        (* t1 = f^{-c} *)
+        cmd.call [] "bls12_Fp12_cyc_exp_c_neg" [expr.var "t1"; expr.var "f"];
 
-        (* t1 = t0^{-|x|/2} = f^{-|x|} *)
-        dsd_inline_exp_x_half "t1" "t0";
+        (* t2 = t1^{-|x|} = f^{c|x|} *)
+        cmd.call [] "bls12_Fp12_cyc_exp_x_neg" [expr.var "t2"; expr.var "t1"];
 
-        (* t2 = f^{-1} *)
-        cmd.call [] fp12_conjugate_name [expr.var "t2"; expr.var "f"];
-
-        (* t1 = t1 * t2 = f^{-|x|-1} *)
-        cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t1"; expr.var "t2"];
-
-        (* t2 = t1^{-|x|} = f^{|x|²+|x|} *)
-        dsd_inline_exp_x "t2" "t1";
-
-        (* t1 = t1^{-1} = f^{|x|+1} *)
+        (* t1 = t1^{-1} = f^{c} *)
         cmd.call [] fp12_conjugate_name [expr.var "t1"; expr.var "t1"];
 
-        (* t1 = t1 * t2 = f^{(|x|+1)²} *)
+        (* t1 = t1 * t2 = f^{c(|x|+1)} =: A *)
         cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t1"; expr.var "t2"];
 
-        (* t2 = t1^{-|x|} = f^{-|x|(|x|+1)²} *)
-        dsd_inline_exp_x "t2" "t1";
+        (* t2 = A^{-|x|} *)
+        cmd.call [] "bls12_Fp12_cyc_exp_x_neg" [expr.var "t2"; expr.var "t1"];
 
-        (* t1 = Frob(t1) = f^{p(|x|+1)²} *)
+        (* t0 = Frob(A) = A^p *)
         cmd.call [] fp12_frobenius_name
-          [expr.var "t1"; expr.var "t1";
+          [expr.var "t0"; expr.var "t1";
            expr.var "gamma1"; expr.var "gamma2"; expr.var "w_frob_c1"];
 
-        (* t1 = t1 * t2 = f^{(|x|+1)²(p-|x|)} *)
-        cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t1"; expr.var "t2"];
+        (* t1 = t0 * t2 = A^{p-|x|} =: B *)
+        cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t0"; expr.var "t2"];
 
-        (* t3 = f * t0 = f³ *)
-        cmd.call [] fp12_mul_name [expr.var "t3"; expr.var "f"; expr.var "t0"];
+        (* t0 = B^{-|x|} *)
+        cmd.call [] "bls12_Fp12_cyc_exp_x_neg" [expr.var "t0"; expr.var "t1"];
 
-        (* t0 = t1^{-|x|} *)
-        dsd_inline_exp_x "t0" "t1";
+        (* t2 = t0^{-|x|} = B^{|x|^2} *)
+        cmd.call [] "bls12_Fp12_cyc_exp_x_neg" [expr.var "t2"; expr.var "t0"];
 
-        (* t2 = t0^{-|x|} *)
-        dsd_inline_exp_x "t2" "t0";
-
-        (* t0 = Frob²(t1) — needs gamma1_p2, gamma2_p2, w_frob_p2_c1 *)
+        (* t0 = Frob^2(B) = B^{p^2} *)
         cmd.call [] fp12_frobenius_p2_name
           [expr.var "t0"; expr.var "t1";
            expr.var "gamma1_p2"; expr.var "gamma2_p2";
            expr.var "w_frob_p2_c1"];
 
-        (* t1 = t1^{-1} *)
+        (* t1 = B^{-1} *)
         cmd.call [] fp12_conjugate_name [expr.var "t1"; expr.var "t1"];
 
-        (* t1 = t1 * t2 *)
+        (* t1 = t1 * t2 = B^{|x|^2-1} *)
         cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t1"; expr.var "t2"];
 
-        (* t1 = t1 * t0 *)
+        (* t1 = t1 * t0 = B^{|x|^2-1+p^2} *)
         cmd.call [] fp12_mul_name [expr.var "t1"; expr.var "t1"; expr.var "t0"];
 
-        (* out = t3 * t1 = f³ · f^{...} = f^{3·h3} *)
-        cmd.call [] fp12_mul_name [expr.var "out"; expr.var "t3"; expr.var "t1"]
+        (* out = f * t1 = f^{1 + (|x|^2-1+p^2) c (|x|+1) (p-|x|)} = f^{h3} *)
+        cmd.call [] fp12_mul_name [expr.var "out"; expr.var "f"; expr.var "t1"]
       ].
 
-    (* DSD now needs frobenius_p2 constants too *)
     Definition bls12_final_exp_hard_dsd : function_t :=
       ("bls12_final_exp_hard_dsd",
        (["out"; "f"; "gamma1_p2"; "gamma2_p2"; "w_frob_p2_c1"], []:list String.string,
@@ -796,20 +775,14 @@ Section BLS12_Pairing.
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as t0;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as t1;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as t2;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as t3;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as result;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as base;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as gamma1;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as gamma2;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as w_frob_c1;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t0;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t1;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as cyc_one;
-          coq:(cmd.seq (cmd.call [] from_word_name [expr.var "cyc_one"; expr.literal 1])
-                       final_exp_hard_dsd_body)
+          coq:(final_exp_hard_dsd_body)
         ))).
 
-    (* WP proof: see BLS12_FinalExp.v *)
+    (* WP proof: see BLS12_FinalExpHardDSD.v *)
+
 
     (* ============================================================== *)
     (* Miller loop (real body — processes 63 bits of BLS parameter)    *)
@@ -1051,7 +1024,10 @@ Section BLS12_Pairing.
 
        Easy part 1: result = conj(f) x inv(f) = f^[p^6-1]
        Easy part 2: result = frob_p2(result) x result = result^[p^2+1]
-       Hard part:   result = DSD(result) = result^[3 h3] *)
+       Hard part:   out = bls12_final_exp_hard_dsd(result) = result^[h3]
+
+       h3_store_limbs and h3_loop_body above are the earlier hard part
+       (square-and-multiply by the 1268-bit h3); they are no longer called. *)
     Local Definition final_exp_full_body : Syntax.cmd.cmd :=
       cmd_seq_list [
         (* Easy part 1: f^{p^6-1} *)
@@ -1068,21 +1044,11 @@ Section BLS12_Pairing.
            expr.var "w_frob_p2_c1"];
         cmd.call [] fp12_mul_name
           [expr.var "result"; expr.var "tmp"; expr.var "result"];
-        (* Hard part: square-and-multiply with 1268-bit h3 exponent.
-           Save easy-part result to base, set result to 1, then iterate
-           1280 bits of h3.  The fp12_set_one is used by the WP proof in
-           BLS12_FinalExp.v to anchor the loop invariant on result=1; the
-           started flag preserves the leading-zero-skip optimisation
-           (overwriting result on the first set bit). *)
-        cmd.call [] fp12_copy_name
-          [expr.var "base"; expr.var "result"];
-        fp12_set_one "result";
-        h3_store_limbs;
-        cmd.set "started" (expr.literal 0);
-        cmd.set "i" (expr.literal 1280);
-        cmd.while (expr.var "i") h3_loop_body;
-        cmd.call [] fp12_copy_name
-          [expr.var "out"; expr.var "result"]
+        (* Hard part: result^{h3} *)
+        cmd.call [] "bls12_final_exp_hard_dsd"
+          [expr.var "out"; expr.var "result";
+           expr.var "gamma1_p2"; expr.var "gamma2_p2";
+           expr.var "w_frob_p2_c1"]
       ].
 
     Definition bls12_final_exp : function_t :=
@@ -1092,8 +1058,6 @@ Section BLS12_Pairing.
         bedrock_func_body:(
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as result;
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as tmp;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as base;
-          stackalloc 160 as h3;
           coq:(final_exp_full_body)
         ))).
 
@@ -1500,6 +1464,8 @@ Section BLS12_Pairing.
         bls12_load_w_frob_c1;
         bls12_load_w_frob_p3_c1;
         bls12_Fp12_pow_x;
+        bls12_Fp12_cyc_exp_c_neg;
+        bls12_Fp12_cyc_exp_x_neg;
         bls12_final_exp_hard_dsd;
         bls12_miller_loop;
         bls12_final_exp;

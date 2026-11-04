@@ -99,6 +99,26 @@ the same name for every store. When the goal is `(scalar addr ?v ⋆ ?R) m`, fin
 let-bound store address substituted; `store_fp2_step` does the stores with the same pick (`seps_nth_to_head`), and the
 file went from 2100 s to 106 s. `BN446_PairingHelpers.v` has the same tactic with 14 stores: 2875 s became 123 s.
 
+## Stack-frame `anybytes` facts left in the context
+
+After a `stackalloc` has been converted by hand (`FElem_from_bytes`) and folded into the separation hypothesis, its
+`Memory.anybytes` fact and the stack split stay in the context unless cleared. bedrock2's `straightline_stackalloc`,
+which every `straightline` step tries, matches each such fact and, for every separation hypothesis, runs an
+`ecancel_assumption` search (`ecancel_assumption_fast` under `WPTactics`). Clear the `anybytes` facts and the splits
+once the frames are in the separation hypothesis; the deallocation derives them again from `FElem_to_bytes`.
+
+`BLS12_377_FinalExpHardDSD.v`: the first `repeat straightline` took 1018 s and each later one about 47 s; the file went
+from 2160 s to 27 s. The same pattern makes `BLS12_FinalExp.v` slow.
+
+## `apply` of a class field with two candidate instances
+
+`apply felem_size_ok` leaves the `FieldRepresentation_ok` instance to typeclass search. In the prime files the raw
+instance is declared last and is tried first; failing to unify `field_representation_raw m` with
+`field_representation m` took about 60 s per goal. Name the instance that matches the goal's representation
+(`felem_size_fast` in `bls12_prime.v`).
+
+`bls12_377_prime.v`: 640 s became 170 s; `bls12_prime.v`: 595 s became about 120 s. Each had nine such goals.
+
 ## `cbv` on a goal that projects a field of a large record
 
 `cbv` is call by value: before projecting `felem_size_in_words` from a field representation it normalizes every

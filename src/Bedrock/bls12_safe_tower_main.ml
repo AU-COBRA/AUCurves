@@ -14,6 +14,11 @@
  *     the wrappers are componentwise.
  *   - [bls12_Fp2_inv] (Fermat-style norm + componentwise mul, calls
  *     [_bls12_inv] from stubs.rs).
+ *   - [bls12_Fp2_mul] reads its inputs without copying them, and
+ *     [bls12_Fp2_square] is the beta = -1 squaring (2 Fp squares +
+ *     1 Fp mul).  These two came from bls12_safe_tower.rs, where they
+ *     had been edited without this driver; the heredoc now carries them,
+ *     so the driver reproduces the committed file.
  *
  * Usage:
  *   ./bls12_safe_tower_main <output.rs>
@@ -37,8 +42,7 @@ let () =
   Printf.eprintf "[bls12_safe_tower] %d tower functions, 6 limbs\n" n_tower;
   let decls = ocaml_string (type_decls n) in
   let bodies = ocaml_string (safe_rust_module n funcs) in
-  let leaf_wrappers = {|
-unsafe extern "C" {
+  let leaf_wrappers = {|unsafe extern "C" {
     fn _bls12_add(o: *mut u64, x: *const u64, y: *const u64);
     fn _bls12_sub(o: *mut u64, x: *const u64, y: *const u64);
     fn _bls12_mul(o: *mut u64, x: *const u64, y: *const u64);
@@ -63,27 +67,44 @@ unsafe extern "C" {
 #[inline] pub fn bls12_Fp2_sub(o: &mut Fp2, x: &Fp2, y: &Fp2) { bls12_sub(&mut o.c0, &x.c0, &y.c0); bls12_sub(&mut o.c1, &x.c1, &y.c1); }
 #[inline]
 pub fn bls12_Fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) {
-    // Schoolbook: 4 Fp muls + 2 Fp add/sub.
-    // Karatsuba (3 muls + 5 add/sub) was tried but is slower in practice
-    // here because (a) bls12_mul via CryptOpt is only ~33 ns -- the gap
-    // between mul and add/sub is small, (b) the extra Fp scratch vars
-    // (5 vs 4) inflate the per-call frame, (c) the saved mul doesn't
-    // amortise the extra inter-leaf call overhead.  Real lazy-reduction
-    // (defer Montgomery normalisation to combine the mul + sub) needs new
-    // fiat-crypto reified ops and is out of scope here.
-    let xv = *x; let yv = *y;
+    // Schoolbook: 4 Fp muls + 2 Fp add/sub.  (See history for Karatsuba
+    // / lazy-reduction discussion.)
+    //
+    // _nocopy: dropped the original `let xv = *x; let yv = *y;` Fp2-level
+    // pre-copies (192 bytes each).  Safe because the body's structure is
+    // read-all-inputs-then-write-output: all four bls12_mul calls read
+    // x/y and write to fresh local Fp temporaries t0..t3; the two final
+    // bls12_sub/bls12_add then write to out.c0/out.c1 from those temps.
+    // No out write happens until after all x/y reads complete, so even
+    // if caller-side aliasing slipped past the borrow checker (it
+    // doesn't — &mut out coexisting with &x or &y is rejected at the
+    // call site), the algebra would still hold.
     let mut t0 = Fp::zero(); let mut t1 = Fp::zero();
     let mut t2 = Fp::zero(); let mut t3 = Fp::zero();
-    bls12_mul(&mut t0, &xv.c0, &yv.c0);
-    bls12_mul(&mut t1, &xv.c1, &yv.c1);
-    bls12_mul(&mut t2, &xv.c0, &yv.c1);
-    bls12_mul(&mut t3, &xv.c1, &yv.c0);
+    bls12_mul(&mut t0, &x.c0, &y.c0);
+    bls12_mul(&mut t1, &x.c1, &y.c1);
+    bls12_mul(&mut t2, &x.c0, &y.c1);
+    bls12_mul(&mut t3, &x.c1, &y.c0);
     bls12_sub(&mut out.c0, &t0, &t1);
     bls12_add(&mut out.c1, &t2, &t3);
 }
 #[inline]
 pub fn bls12_Fp2_square(out: &mut Fp2, x: &Fp2) {
-    let xv = *x; bls12_Fp2_mul(out, &xv, &xv);
+    // Specialised Fp2 squaring for β = −1:
+    //   (a + bu)² = (a² − b²) + 2ab·u
+    // 2 Fp_squares + 1 Fp_mul vs the 4 Fp_muls in bls12_Fp2_mul(out, x, x).
+    // Same algorithm as bn254_Fp2_square / bn256_Fp2_square (same β).
+    // No defensive copy of x: each leaf call reads x.{c0,c1} into fresh
+    // Fp locals (v0, v1, out.c1) before any subsequent read; Rust's borrow
+    // checker prevents `out` from aliasing `x` at the call site.
+    let mut v0 = Fp::zero();
+    let mut v1 = Fp::zero();
+    bls12_square(&mut v0, &x.c0);          // v0 = a²
+    bls12_square(&mut v1, &x.c1);          // v1 = b²
+    bls12_mul(&mut out.c1, &x.c0, &x.c1);  // out.c1 = a·b
+    let ab = out.c1;
+    bls12_add(&mut out.c1, &ab, &ab);      // out.c1 = 2ab
+    bls12_sub(&mut out.c0, &v0, &v1);      // out.c0 = a² − b²
 }
 #[inline]
 pub fn bls12_Fp2_inv(out: &mut Fp2, x: &Fp2) {

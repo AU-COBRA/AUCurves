@@ -394,6 +394,15 @@ Section BLS12_377_FinalExpHardDSD.
       { exists mS_w, mC_g2. exact (conj HmS_w' (conj Hwi Hsep6)). }
 
       clear Hsep Hsep1 Hsep2 Hsep3 Hsep4 Hsep5 Hsep6.
+      (* The anybytes facts of the seven stack frames are now in Hsep_all, and the
+         deallocation below derives them again from FElem_to_bytes.  Left in the
+         context, they make bedrock2's [straightline_stackalloc] try, at every
+         [straightline] step, to cancel each of them against every separation
+         hypothesis with WPTactics' [ecancel_assumption]: about 47 s per step,
+         2,100 s in all.  Clear them, with the splits that go with them. *)
+      clear HaS_t0 HaS_t1 HaS_t2 HaS_t3 HaS_g1 HaS_g2 HaS_w
+            HmS_t0 HmS_t1 HmS_t2 HmS_t3 HmS_g1 HmS_g2 HmS_w
+            HmS_t0' HmS_t1' HmS_t2' HmS_t3' HmS_g1' HmS_g2' HmS_w'.
 
       (* ================================================================ *)
       (* Call 1: bls377_load_gamma1(gamma1)                               *)

@@ -2,7 +2,8 @@
 #
 # Bit-exact verification of the BLS12-381 safe-Rust tower extraction.
 #
-# 1. Build BLS12_Pairing.vo (the source of bls12_all_pairing_funcs).
+# 1. Build BLS12_Pairing.vo (the source of bls12_all_pairing_funcs) and
+#    bls12_Fp2.vo, which ExtractSafeTowerBLS12.v imports.
 # 2. Compile ExtractSafeTowerBLS12.v manually (excluded from dune
 #    because it runs Coq's Extraction "..." command at compile time).
 # 3. Build the OCaml driver from extracted .ml.
@@ -22,8 +23,9 @@ eval "$(opam env --switch=rocq-9 --set-switch)"
 ulimit -s unlimited
 export OCAMLRUNPARAM="b,l=1000000000"
 
-echo "[1/4] Building BLS12_Pairing.vo (cached if up-to-date)"
-stdbuf -oL -eL dune build src/Bedrock/Field/Synthesis/Examples/BLS12_Pairing.vo
+echo "[1/4] Building BLS12_Pairing.vo and bls12_Fp2.vo (cached if up-to-date)"
+stdbuf -oL -eL dune build src/Bedrock/Field/Synthesis/Examples/BLS12_Pairing.vo \
+  src/Bedrock/Field/Synthesis/Examples/bls12_Fp2.vo
 
 echo "[2/4] Re-extracting bls12_rust_extracted.{ml,mli}"
 # ExtractSafeTowerBLS12.v is dune-excluded; invoke rocq compile by hand

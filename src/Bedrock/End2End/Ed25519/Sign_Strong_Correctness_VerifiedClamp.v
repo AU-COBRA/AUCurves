@@ -206,24 +206,19 @@ Proof.
   apply (Hframe x Hne).
 Qed.
 
-(** Custom [peel_call_seq] for [strong_callee_post_no_clamp]. *)
+(** Custom [peel_call_seq] for [strong_callee_post_no_clamp].  The
+    [REdSeq] and [REdCall] steps are peeled with [rexec_seq_inv] and
+    [rexec_call_inv] (from [Sign_Strong_Correctness]) rather than
+    [inversion] on the unfolded program (docs/slow-proofs.md). *)
 Ltac peel_call_seq_nc H Hframe Hres :=
   let Hcall := fresh "Hcall" in
   let Hrest := fresh "Hrest" in
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : rust_exec_ed _ _ _ (REdCall _ _ _) _ _,
-    Hr : rust_exec_ed _ _ _ _ _ _ |- _ =>
-      rename Hc into Hcall; rename Hr into Hrest
-  end;
-  let Hcp := fresh "Hcp" in
-  inversion Hcall; subst; clear Hcall;
-  match goal with
-  | Hc : strong_callee_post_no_clamp _ _ _ _ _ |- _ =>
-      rename Hc into Hcp
-  end;
-  destruct Hcp as [Hframe [Hsc Hres]];
+  let rs_mid := fresh "rs" in
+  destruct (rexec_seq_inv _ _ _ _ _ _ _ H) as (rs_mid & Hcall & Hrest);
+  clear H; subst;
+  apply rexec_call_inv in Hcall; subst;
+  destruct Hcall as [Hframe [Hsc Hres]];
   match goal with
   | Hh : rs_get_scalar_ed _ v_msg_len = Some _ |- _ =>
       rewrite Hsc in Hh; clear Hsc
@@ -232,11 +227,8 @@ Ltac peel_call_seq_nc H Hframe Hres :=
 
 Ltac peel_last_call_nc H Hframe Hres :=
   let Hsc := fresh "Hsc_msg" in
-  inversion H; subst; clear H;
-  match goal with
-  | Hc : strong_callee_post_no_clamp _ _ _ _ _ |- _ =>
-      destruct Hc as [Hframe [Hsc Hres]]; clear Hsc
-  end.
+  apply rexec_call_inv in H; subst;
+  destruct H as [Hframe [Hsc Hres]]; clear Hsc.
 
 (* ================================================================ *)
 (* §2. Gallina reference with [clamp_64_gallina] substituted        *)
@@ -447,7 +439,11 @@ Proof.
   (* Stage A: peel 13 REdLetZero allocations. *)
   repeat (match goal with
           | H : rust_exec_ed _ _ _ (REdLetZero _ _ _) _ _ |- _ =>
-              inversion H; subst; clear H
+              let v := fresh "v" in
+              let Hwf := fresh "Hwf" in
+              let Hr := fresh "Hr" in
+              destruct (rexec_let_zero_inv _ _ _ _ _ _ _ _ H) as (v & Hwf & Hr);
+              clear H; subst
           end).
 
   match goal with
@@ -482,15 +478,9 @@ Proof.
 
   (* === C3: clamp_64 — REdCallFn (verified body) === *)
   (* Peel the outer REdSeq, then invert rexec_callfn. *)
-  inversion Hexec; subst; clear Hexec.
-  match goal with
-  | Hcfn : rust_exec_ed _ _ _ (REdCallFn _ _ _) _ _ |- _ =>
-      rename Hcfn into HclampFn
-  end.
-  match goal with
-  | Hrest : rust_exec_ed _ _ _ (REdSeq _ _) _ _ |- _ =>
-      rename Hrest into Hexec
-  end.
+  destruct (rexec_seq_inv _ _ _ _ _ _ _ Hexec) as (rs_c3 & HclampFn & Hrest_c3).
+  clear Hexec; subst.
+  rename Hrest_c3 into Hexec.
   inversion HclampFn; subst; clear HclampFn.
   (* Two new hypotheses: [find ... = Some (..., body)] and
      [rust_exec_ed ... (body dest args) rs rs'].  Locate by shape. *)
@@ -560,7 +550,7 @@ Proof.
   clear Hframe Hsrc Hdst Htgt7.
 
   (* Bug-A fix: peel the [REdLetU64 "nonce_hash_len" ...] step. *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_nl
@@ -636,7 +626,7 @@ Proof.
   clear Hframe Hsrc Hdst Htgt5 Htgt6 Htgt14.
 
   (* Bug-A fix: peel the [REdLetU64 "chal_hash_len" ...] step. *)
-  inversion Hexec; subst; clear Hexec.
+  peel_let_u64_step Hexec.
   match goal with
   | Hev : eval_sexpr_ed _ _ = Some _ |- _ =>
       rename Hev into Heval_cl

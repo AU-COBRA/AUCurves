@@ -860,6 +860,12 @@ Section BLS12_377_MillerLoop.
         pose proof Htmp as H'. ecancel_assumption.
       }
 
+      (* The stack frames are in Hmaster, so the anybytes facts from the 8
+         stackallocs are stale.  Left in the context, straightline falls through
+         to straightline_stackalloc on every cmd.call goal, which runs a failing
+         ecancel_assumption search for each of them.  See docs/slow-proofs.md. *)
+      clear HanyF HanyTx HanyTy HanyLam HanyTmp1 HanyTmp2 HanyLine HanyU6p2.
+
       (* === Phase 2: Process init calls + loop + dealloc === *)
 
       unfold BLS12_377_Pairing.miller_loop_full_body.

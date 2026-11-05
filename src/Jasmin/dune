@@ -9,6 +9,6 @@
  (name JasminBridge)
  (mode vo)
  (plugins rocq-elpi.elpi)
- (theories Stdlib Ltac2 coqutil bedrock2 Crypto Bedrock
+ (theories Stdlib micromega_plugin Ltac2 coqutil bedrock2 Crypto Bedrock
            HB elpi elpi_elpi mathcomp extructures deriving Equations ITree ExtLib Paco
            Jasmin))

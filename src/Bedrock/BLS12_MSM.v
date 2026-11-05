@@ -3715,8 +3715,8 @@ Section PippengerSpec.
                 + rewrite Hbidx_unsigned. cbv [num_buckets c] in Hlx.
                   change (2^9 - 1) with 511 in Hlx. (try clear Hcv; try clear Hlv; Lia.lia).
                 + pose proof (word.unsigned_range bucket_idx_w). (try clear Hcv; try clear Hlv; Lia.lia). }
-              assert (Hd_lt_y : (d < length bs_y')%nat) by (try clear Hcv; try clear Hlv; Lia.lia).
-              assert (Hd_lt_z : (d < length bs_z')%nat) by (try clear Hcv; try clear Hlv; Lia.lia).
+              assert (Hd_lt_y : (d < length bs_y')%nat) by (clear - Hd_lt_x Hlx Hly; Lia.lia).
+              assert (Hd_lt_z : (d < length bs_z')%nat) by (clear - Hd_lt_x Hlx Hlz; Lia.lia).
               (* Phase B.2: point-cell bounds (n < length p{x,y,z}). *)
               assert (Hn_lt_px : (n < length px)%nat)
                 by (rewrite <- Hlen_s_px; exact Hn_lt).
@@ -3835,19 +3835,19 @@ Section PippengerSpec.
                   = length bs_x').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_x; Lia.lia). (clear - Hd_lt_x; Lia.lia). }
                 assert (Hlen_repl_y :
                   length (firstn d bs_y' ++ by' :: skipn (S d) bs_y')%list
                   = length bs_y').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_y; Lia.lia). (clear - Hd_lt_y; Lia.lia). }
                 assert (Hlen_repl_z :
                   length (firstn d bs_z' ++ bz' :: skipn (S d) bs_z')%list
                   = length bs_z').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_z; Lia.lia). (clear - Hd_lt_z; Lia.lia). }
                 (* C1-C3: length facts. *)
                 split; [rewrite Hlen_repl_x; exact Hlx|].
                 split; [rewrite Hlen_repl_y; exact Hly|].
@@ -3934,8 +3934,7 @@ Section PippengerSpec.
                                                 (Z.to_nat w) (Z.to_nat c)) = S d).
                   { rewrite <- Hidx_get_window.
                     subst d. rewrite Hbidx_unsigned.
-                    pose proof (word.unsigned_range idx_w).
-                    (try clear Hcv; try clear Hlv; Lia.lia). }
+                    clear - Hidx_pos; Lia.lia. }
                   (* Apply distribute_inv_step_pos with i = Z.of_nat (S n). *)
                   assert (Hlen_po_bs : length (points_of bs_x' bs_y' bs_z') = length bs_x').
                   { apply length_points_of_L3.
@@ -3952,22 +3951,25 @@ Section PippengerSpec.
                   assert (Hss_ps_eq : length (scalars_to_Z scalars)
                                       = length (points_of px py pz)).
                   { rewrite length_scalars_to_Z_L3, Hlen_po_p, <- Hlen_s_px. reflexivity. }
+                  (* The arithmetic side conditions below and in the two later copies of
+                     this block use [clear - ...] before [Lia.lia]: with the full context
+                     (dozens of Z/nat facts with Z.to_nat, nat subtraction, / and mod)
+                     lia's search took up to 840 s and several GB per call, e.g. for
+                     [Z.to_nat (Z.of_nat (S n) - 1) = n].  See docs/slow-proofs.md. *)
                   pose proof (distribute_inv_step_pos w (Z.of_nat (S n))
                                 (points_of bs_x' bs_y' bs_z')
                                 (scalars_to_Z scalars)
                                 (points_of px py pz)
                                 Hi_bound Hss_ps_eq) as Hstep.
                   cbv zeta in Hstep.
-                  replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
+                  replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by (clear - n; Lia.lia).
                   rewrite Hd_lemma in Hstep.
-                  specialize (Hstep ltac:(cbv [num_buckets c]; split; [(try clear Hcv; try clear Hlv; Lia.lia)|];
+                  specialize (Hstep ltac:(cbv [num_buckets c]; split; [clear - d; Lia.lia|];
                                          change (2^9 - 1) with 511;
-                                         pose proof Hidx_le;
-                                         pose proof (word.unsigned_range bucket_idx_w);
-                                         subst d; (try clear Hcv; try clear Hlv; Lia.lia))).
+                                         clear - Hd_unsigned Hidx_le Hbidx_unsigned; Lia.lia)).
                   specialize (Hstep Hdinv).
-                  replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
-                  replace (S d - 1)%nat with d in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
+                  replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by (clear - n; Lia.lia).
+                  replace (S d - 1)%nat with d in Hstep by (clear - d; Lia.lia).
                   (* Hstep:
                      distribute_inv w (Z.of_nat n)
                        (firstn d (points_of bs_x' bs_y' bs_z')
@@ -4193,9 +4195,13 @@ Section PippengerSpec.
                          eq_refl). }
               rewrite <- Hidx_get_window.
               assert (Hidx_zero : word.unsigned idx_w = 0).
-              { rewrite Hidx_z. rewrite word.unsigned_of_Z. unfold word.wrap.
-                rewrite Z.mod_0_l by (apply Z.pow_nonzero; (try clear Hcv; try clear Hlv; Lia.lia)).
-                reflexivity. }
+              { (* The form of [Hidx_z] differs between Rocq 9.0 and 9.2. *)
+                first
+                  [ exact Hidx_z
+                  | rewrite Hidx_z; reflexivity
+                  | rewrite Hidx_z; rewrite word.unsigned_of_Z; unfold word.wrap;
+                    rewrite Z.mod_0_l by (apply Z.pow_nonzero; (try clear Hcv; try clear Hlv; Lia.lia));
+                    reflexivity ]. }
               exact Hidx_zero.
               }
               (* 15 conjuncts of the invariant. *)
@@ -4203,13 +4209,13 @@ Section PippengerSpec.
               split; [exact Hly|].
               split; [exact Hlz|].
               split.
-              { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by (try clear Hcv; try clear Hlv; Lia.lia).
+              { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by (clear - n; Lia.lia).
                 apply distribute_inv_step_zero with (ps := points_of px py pz).
                 - rewrite length_points_of_L3 by assumption.
                   rewrite <- Hlen_s_px. (try clear Hcv; try clear Hlv; Lia.lia).
                 - rewrite length_scalars_to_Z_L3, length_points_of_L3 by assumption.
                   (try clear Hcv; try clear Hlv; Lia.lia).
-                - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by (try clear Hcv; try clear Hlv; Lia.lia).
+                - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by (clear - n; Lia.lia).
                   exact Hwindow_zero.
                 - exact Hdinv. }
               split; [exact Hsep1|].
@@ -4317,8 +4323,8 @@ Section PippengerSpec.
                 + rewrite Hbidx_unsigned. cbv [num_buckets c] in Hlx.
                   change (2^9 - 1) with 511 in Hlx. (try clear Hcv; try clear Hlv; Lia.lia).
                 + pose proof (word.unsigned_range bucket_idx_w). (try clear Hcv; try clear Hlv; Lia.lia). }
-              assert (Hd_lt_y : (d < length bs_y')%nat) by (try clear Hcv; try clear Hlv; Lia.lia).
-              assert (Hd_lt_z : (d < length bs_z')%nat) by (try clear Hcv; try clear Hlv; Lia.lia).
+              assert (Hd_lt_y : (d < length bs_y')%nat) by (clear - Hd_lt_x Hlx Hly; Lia.lia).
+              assert (Hd_lt_z : (d < length bs_z')%nat) by (clear - Hd_lt_x Hlx Hlz; Lia.lia).
               (* Phase B.2: point-cell bounds (n < length p{x,y,z}). *)
               assert (Hn_lt_px : (n < length px)%nat)
                 by (rewrite <- Hlen_s_px; exact Hn_lt).
@@ -4437,19 +4443,19 @@ Section PippengerSpec.
                   = length bs_x').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_x; Lia.lia). (clear - Hd_lt_x; Lia.lia). }
                 assert (Hlen_repl_y :
                   length (firstn d bs_y' ++ by' :: skipn (S d) bs_y')%list
                   = length bs_y').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_y; Lia.lia). (clear - Hd_lt_y; Lia.lia). }
                 assert (Hlen_repl_z :
                   length (firstn d bs_z' ++ bz' :: skipn (S d) bs_z')%list
                   = length bs_z').
                 { rewrite length_app. cbn [length].
                   rewrite length_firstn, length_skipn.
-                  rewrite Nat.min_l by (try clear Hcv; try clear Hlv; Lia.lia). (try clear Hcv; try clear Hlv; Lia.lia). }
+                  rewrite Nat.min_l by (clear - Hd_lt_z; Lia.lia). (clear - Hd_lt_z; Lia.lia). }
                 (* C1-C3: length facts. *)
                 split; [rewrite Hlen_repl_x; exact Hlx|].
                 split; [rewrite Hlen_repl_y; exact Hly|].
@@ -4514,8 +4520,8 @@ Section PippengerSpec.
                   { eapply ScalarsArray_length_at; [exact Hn_lt|ecancel_assumption]. }
                   pose proof (get_window_word_correct
                                 (nth n scalars []) w val1_w
-                                ltac:(cbv [num_windows c] in Hw_bd; (try clear Hcv; try clear Hlv; Lia.lia))
-                                ltac:(cbv [num_windows c] in Hw_bd; (try clear Hcv; try clear Hlv; Lia.lia))
+                                ltac:(exact (proj1 Hw_bd))
+                                ltac:(exact (proj2 Hw_bd))
                                 Hlen_n_scalars
                                 Hval1_unsigned) as Hgw.
                   assert (Hidx_eq : idx_w = word.and val1_w (word.of_Z (Z.ones c))).
@@ -4531,8 +4537,7 @@ Section PippengerSpec.
                                                 (Z.to_nat w) (Z.to_nat c)) = S d).
                   { rewrite <- Hidx_get_window.
                     subst d. rewrite Hbidx_unsigned.
-                    pose proof (word.unsigned_range idx_w).
-                    (try clear Hcv; try clear Hlv; Lia.lia). }
+                    clear - Hidx_pos; Lia.lia. }
                   (* Apply distribute_inv_step_pos with i = Z.of_nat (S n). *)
                   assert (Hlen_po_bs : length (points_of bs_x' bs_y' bs_z') = length bs_x').
                   { apply length_points_of_L3.
@@ -4555,16 +4560,14 @@ Section PippengerSpec.
                                 (points_of px py pz)
                                 Hi_bound Hss_ps_eq) as Hstep.
                   cbv zeta in Hstep.
-                  replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
+                  replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by (clear - n; Lia.lia).
                   rewrite Hd_lemma in Hstep.
-                  specialize (Hstep ltac:(cbv [num_buckets c]; split; [(try clear Hcv; try clear Hlv; Lia.lia)|];
+                  specialize (Hstep ltac:(cbv [num_buckets c]; split; [clear - d; Lia.lia|];
                                          change (2^9 - 1) with 511;
-                                         pose proof Hidx_le;
-                                         pose proof (word.unsigned_range bucket_idx_w);
-                                         subst d; (try clear Hcv; try clear Hlv; Lia.lia))).
+                                         clear - Hd_unsigned Hidx_le Hbidx_unsigned; Lia.lia)).
                   specialize (Hstep Hdinv).
-                  replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
-                  replace (S d - 1)%nat with d in Hstep by (try clear Hcv; try clear Hlv; Lia.lia).
+                  replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by (clear - n; Lia.lia).
+                  replace (S d - 1)%nat with d in Hstep by (clear - d; Lia.lia).
                   (* Hstep:
                      distribute_inv w (Z.of_nat n)
                        (firstn d (points_of bs_x' bs_y' bs_z')
@@ -4774,8 +4777,8 @@ Section PippengerSpec.
               { eapply ScalarsArray_length_at; [exact Hn_lt|ecancel_assumption]. }
               pose proof (get_window_word_correct
                             (nth n scalars []) w val1_w
-                            ltac:(cbv [num_windows c] in Hw_bd; (try clear Hcv; try clear Hlv; Lia.lia))
-                            ltac:(cbv [num_windows c] in Hw_bd; (try clear Hcv; try clear Hlv; Lia.lia))
+                            ltac:(exact (proj1 Hw_bd))
+                            ltac:(exact (proj2 Hw_bd))
                             Hlen_n_scalars
                             Hval1_unsigned) as Hgw.
               (* Step 4: connect word.unsigned idx_w to word.unsigned (val1_w & (Z.ones c)). *)
@@ -4794,13 +4797,13 @@ Section PippengerSpec.
               split; [exact Hly|].
               split; [exact Hlz|].
               split.
-              { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by (try clear Hcv; try clear Hlv; Lia.lia).
+              { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by (clear - n; Lia.lia).
                 apply distribute_inv_step_zero with (ps := points_of px py pz).
                 - rewrite length_points_of_L3 by assumption.
                   rewrite <- Hlen_s_px. (try clear Hcv; try clear Hlv; Lia.lia).
                 - rewrite length_scalars_to_Z_L3, length_points_of_L3 by assumption.
                   (try clear Hcv; try clear Hlv; Lia.lia).
-                - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by (try clear Hcv; try clear Hlv; Lia.lia).
+                - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by (clear - n; Lia.lia).
                   exact Hwindow_zero.
                 - exact Hdinv. }
               split; [exact Hsep1|].
@@ -4901,8 +4904,8 @@ Section PippengerSpec.
               + rewrite Hbidx_unsigned. cbv [num_buckets c] in Hlx.
                 change (2^9 - 1) with 511 in Hlx. Lia.lia.
               + pose proof (word.unsigned_range bucket_idx_w). Lia.lia. }
-            assert (Hd_lt_y : (d < length bs_y')%nat) by Lia.lia.
-            assert (Hd_lt_z : (d < length bs_z')%nat) by Lia.lia.
+            assert (Hd_lt_y : (d < length bs_y')%nat) by (clear - Hd_lt_x Hlx Hly; Lia.lia).
+            assert (Hd_lt_z : (d < length bs_z')%nat) by (clear - Hd_lt_x Hlx Hlz; Lia.lia).
             (* Phase B.2: point-cell bounds (n < length p{x,y,z}). *)
             assert (Hn_lt_px : (n < length px)%nat)
               by (rewrite <- Hlen_s_px; exact Hn_lt).
@@ -5021,19 +5024,19 @@ Section PippengerSpec.
                 = length bs_x').
               { rewrite length_app. cbn [length].
                 rewrite length_firstn, length_skipn.
-                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+                rewrite Nat.min_l by (clear - Hd_lt_x; Lia.lia). (clear - Hd_lt_x; Lia.lia). }
               assert (Hlen_repl_y :
                 length (firstn d bs_y' ++ by' :: skipn (S d) bs_y')%list
                 = length bs_y').
               { rewrite length_app. cbn [length].
                 rewrite length_firstn, length_skipn.
-                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+                rewrite Nat.min_l by (clear - Hd_lt_y; Lia.lia). (clear - Hd_lt_y; Lia.lia). }
               assert (Hlen_repl_z :
                 length (firstn d bs_z' ++ bz' :: skipn (S d) bs_z')%list
                 = length bs_z').
               { rewrite length_app. cbn [length].
                 rewrite length_firstn, length_skipn.
-                rewrite Nat.min_l by Lia.lia. Lia.lia. }
+                rewrite Nat.min_l by (clear - Hd_lt_z; Lia.lia). (clear - Hd_lt_z; Lia.lia). }
               (* C1-C3: length facts. *)
               split; [rewrite Hlen_repl_x; exact Hlx|].
               split; [rewrite Hlen_repl_y; exact Hly|].
@@ -5081,8 +5084,8 @@ Section PippengerSpec.
                 { eapply ScalarsArray_length_at; [exact Hn_lt|ecancel_assumption]. }
                 pose proof (get_window_word_correct
                               (nth n scalars []) w val1_w
-                              ltac:(cbv [num_windows c] in Hw_bd; Lia.lia)
-                              ltac:(cbv [num_windows c] in Hw_bd; Lia.lia)
+                              ltac:(exact (proj1 Hw_bd))
+                              ltac:(exact (proj2 Hw_bd))
                               Hlen_n_scalars
                               Hval1_unsigned) as Hgw.
                 assert (Hidx_eq : idx_w = word.and val1_w (word.of_Z (Z.ones c))).
@@ -5098,8 +5101,7 @@ Section PippengerSpec.
                                               (Z.to_nat w) (Z.to_nat c)) = S d).
                 { rewrite <- Hidx_get_window.
                   subst d. rewrite Hbidx_unsigned.
-                  pose proof (word.unsigned_range idx_w).
-                  Lia.lia. }
+                  clear - Hidx_pos; Lia.lia. }
                 (* Apply distribute_inv_step_pos with i = Z.of_nat (S n). *)
                 assert (Hlen_po_bs : length (points_of bs_x' bs_y' bs_z') = length bs_x').
                 { apply length_points_of_L3.
@@ -5122,16 +5124,14 @@ Section PippengerSpec.
                               (points_of px py pz)
                               Hi_bound Hss_ps_eq) as Hstep.
                 cbv zeta in Hstep.
-                replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by Lia.lia.
+                replace (Z.to_nat (Z.of_nat (S n) - 1)) with n in Hstep by (clear - n; Lia.lia).
                 rewrite Hd_lemma in Hstep.
-                specialize (Hstep ltac:(cbv [num_buckets c]; split; [Lia.lia|];
+                specialize (Hstep ltac:(cbv [num_buckets c]; split; [clear - d; Lia.lia|];
                                        change (2^9 - 1) with 511;
-                                       pose proof Hidx_le;
-                                       pose proof (word.unsigned_range bucket_idx_w);
-                                       subst d; Lia.lia)).
+                                       clear - Hd_unsigned Hidx_le Hbidx_unsigned; Lia.lia)).
                 specialize (Hstep Hdinv).
-                replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by Lia.lia.
-                replace (S d - 1)%nat with d in Hstep by Lia.lia.
+                replace (Z.of_nat (S n) - 1) with (Z.of_nat n) in Hstep by (clear - n; Lia.lia).
+                replace (S d - 1)%nat with d in Hstep by (clear - d; Lia.lia).
                 (* Hstep:
                    distribute_inv w (Z.of_nat n)
                      (firstn d (points_of bs_x' bs_y' bs_z')
@@ -5324,8 +5324,8 @@ Section PippengerSpec.
             { eapply ScalarsArray_length_at; [exact Hn_lt|ecancel_assumption]. }
             pose proof (get_window_word_correct
                           (nth n scalars []) w val1_w
-                          ltac:(cbv [num_windows c] in Hw_bd; Lia.lia)
-                          ltac:(cbv [num_windows c] in Hw_bd; Lia.lia)
+                          ltac:(exact (proj1 Hw_bd))
+                          ltac:(exact (proj2 Hw_bd))
                           Hlen_n_scalars
                           Hval1_unsigned) as Hgw.
             (* Step 4: connect word.unsigned idx_w to word.unsigned (val1_w & (Z.ones c)). *)
@@ -5344,13 +5344,13 @@ Section PippengerSpec.
             split; [exact Hly|].
             split; [exact Hlz|].
             split.
-            { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by Lia.lia.
+            { replace (Z.of_nat n) with (Z.of_nat (S n) - 1) by (clear - n; Lia.lia).
               apply distribute_inv_step_zero with (ps := points_of px py pz).
               - rewrite length_points_of_L3 by assumption.
                 rewrite <- Hlen_s_px. Lia.lia.
               - rewrite length_scalars_to_Z_L3, length_points_of_L3 by assumption.
                 Lia.lia.
-              - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by Lia.lia.
+              - replace (Z.to_nat (Z.of_nat (S n) - 1)) with n by (clear - n; Lia.lia).
                 exact Hwindow_zero.
               - exact Hdinv. }
             split; [exact Hsep1|].

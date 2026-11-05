@@ -1,6 +1,6 @@
 Require Import ZArith Znumtheory.
 Require Import Coq.setoid_ring.Field.
-From Coqprime Require Import GZnZ.
+From Theory Require Import Util.GZnZ.
 From Coqprime Require Import Pmod.
 Require Import Crypto.Algebra.Hierarchy.
 Require Import Crypto.Algebra.Ring.

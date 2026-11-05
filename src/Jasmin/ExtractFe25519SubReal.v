@@ -11,6 +11,8 @@
 From HB Require Import structures.
 From Jasmin Require Import expr x86_instr_decl x86_extra arch_extra.
 From mathcomp Require Import ssreflect ssrfun ssrnat seq.
+(* MathComp 2.6 puts rewrite side conditions first; keep the old order. *)
+Set SsrOldRewriteGoalsOrder.
 From Stdlib Require Import Strings.String.
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.

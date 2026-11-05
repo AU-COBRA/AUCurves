@@ -26,6 +26,7 @@ From Stdlib Require Import Strings.String ZArith.ZArith.
 Require Import bedrock2.ToCString bedrock2.Syntax.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bw6_761_prime_ops.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_Instances.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoop.
 Require Import Bedrock.Field.Synthesis.Examples.BW6_761_MillerLoopOptimal.

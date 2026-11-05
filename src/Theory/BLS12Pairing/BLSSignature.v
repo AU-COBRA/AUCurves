@@ -9,7 +9,8 @@
     The proofs rely only on bilinearity of the pairing; no
     computational hardness assumptions are needed for correctness.
 
-    Trust model: inherits the bilinearity axioms from Bilinearity.v.
+    Trust model: the pairing laws are hypotheses of this section (see
+    Bilinearity.v); nothing here is an axiom.
 *)
 
 From Stdlib Require Import ZArith.ZArith.

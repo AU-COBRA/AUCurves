@@ -222,7 +222,9 @@ Section CMov5Felems.
         (* Step 2 — Split Hsep using sep_eq_of_list_word_at_app twice.
            Result: Hsep contains the 3 chunks (pref, middle, suf) as separate
            sep clauses + (src + R). *)
-        rewrite Hsplit_out' in Hsep at 1.
+        (* out' occurs once in Hsep, so a plain rewrite does what [at 1] did,
+           without the setoid-rewriting search that [at 1] goes through. *)
+        rewrite Hsplit_out' in Hsep.
         seprewrite_in (SeparationMemory.sep_eq_of_list_word_at_app out_ptr
                          (List.firstn offset out')
                          (List.firstn 8 (List.skipn offset out') ++ List.skipn (offset + 8) out')%list
@@ -272,7 +274,8 @@ Section CMov5Felems.
           f_equal.
           rewrite <- (List.firstn_skipn 8 (List.skipn offset src)) at 1.
           f_equal. rewrite skipn_skipn. f_equal. Lia.lia. }
-        rewrite Hsplit_src in Hsep at 1.
+        (* src occurs once in Hsep; plain rewrite, as for Hsplit_out' above. *)
+        rewrite Hsplit_src in Hsep.
         seprewrite_in (SeparationMemory.sep_eq_of_list_word_at_app src_ptr
                          (List.firstn offset src)
                          (List.firstn 8 (List.skipn offset src) ++ List.skipn (offset + 8) src)%list
@@ -552,7 +555,8 @@ Section CMov5Felems.
         + (* 11. sep predicate via iff1ToEq trick:
              Convert each iff1 to a functional equation via `iff1ToEq`, then use
              standard `rewrite` (no Proper instance needed). *)
-          subst out''. rewrite Hsplit_src at 1.
+          (* src occurs once in the goal; plain rewrite instead of [at 1]. *)
+          subst out''. rewrite Hsplit_src.
           epose proof (SeparationMemory.sep_eq_of_list_word_at_app out_ptr
                          (List.firstn offset out')
                          (new_middle ++ List.skipn (offset + 8) out')%list

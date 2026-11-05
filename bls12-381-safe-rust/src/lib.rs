@@ -79,7 +79,10 @@ pub fn miller_loop_proj(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2
     tower::bls12_miller_loop_proj(out, p_x, p_y, q_x, q_y)
 }
 
-/// Final exponentiation on an Fp12 value (typically a Miller-loop output).
+/// Final exponentiation on an Fp12 value (typically a Miller-loop output):
+/// f^((p^12-1)/r) exactly (easy part, then the hard part f^h3 by
+/// h3 = 1 + (u^2-1+p^2)(u+1)((u+1)/3)(p-u)).  blst and arkworks raise to
+/// three times this exponent; see tests/pairing_reference.rs.
 ///
 /// Thin wrapper around the verified `tower::bls12_final_exp` that loads
 /// the gamma / frobenius constants. Exposed so callers can implement

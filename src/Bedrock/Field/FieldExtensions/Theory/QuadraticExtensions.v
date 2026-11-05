@@ -9,7 +9,7 @@ Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 From Coq Require Import Field.
 (* From Coqprime Require Import Euler.
 From Coqprime Require Import UList. *)
-Require Import Coqprime.elliptic.GZnZ.
+From Theory Require Import Util.GZnZ.
 From Coqprime Require Import Zp.
 From Coqprime Require Import Pmod.
 (*From QuickChick Require Import QuickChick.

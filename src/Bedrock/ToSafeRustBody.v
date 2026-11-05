@@ -354,6 +354,8 @@ Definition param_table : list (string * list string) := [
   ("bls12_load_gamma2", ["Fp2"]); ("bls12_load_w_frob_c1", ["Fp2"]);
   ("bls12_load_w_frob_p3_c1", ["Fp2"]);
   ("bls12_Fp12_pow_x", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_cyc_exp_c_neg", ["Fp12";"Fp12"]);
+  ("bls12_Fp12_cyc_exp_x_neg", ["Fp12";"Fp12"]);
   ("bls12_final_exp_hard_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bls12_final_exp", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bls12_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);

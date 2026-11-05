@@ -3,46 +3,40 @@
 
     Three generic rejection theorems characterising when
     [ristretto_decode_coords] / [ristretto_decode_bytes] return [None],
-    plus 24 concrete RFC 9496 §A.2 rejection vector lemmas (one per
-    vector recorded in Phase A.2's [Ristretto255_Decode.v]).
+    plus one lemma per invalid encoding of RFC 9496 Appendix A.2, as
+    recorded in [Ristretto255_Decode.v] (29 vectors, in the RFC's groups):
+
+      [rfc_A2_noncanonical_01..04]  non-canonical field encodings (4)
+      [rfc_A2_negative_01..08]      negative field elements (8)
+      [rfc_A2_nonsquare_01..08]     non-square x^2 (8)
+      [rfc_A2_negative_xy_01..08]   negative x * y value (8)
+      [rfc_A2_s_minus_one_01]       s = -1, which causes y = 0 (1)
+
+    and an aggregate lemma [rfc_A2_rejection_vectors_rejected] stating
+    that every element of [rfc_A2_rejection_vectors] is rejected.
 
     All three generic theorems are pure case analysis on the decoder's
     [match] / [if] cascade — no field-arithmetic obligations.  Per-vector
-    lemmas are discharged either by
+    lemmas are discharged by
 
-      (a) applying one of the three generic theorems via a syntactic
-          [bytes_to_canonical_F] reduction (the noncanonical bucket),
-      (b) [vm_compute; reflexivity] on the [ristretto_decode_coords]
-          term itself (the negative-s, nonsquare, negative-t, and
-          y = 0 buckets), or
-      (c) for vectors whose [F.pow] subterm is too large for
-          [vm_compute], applying generic theorem 3 via a small Z-mirror
-          witness (none of the 24 currently in this state — all 24
-          are discharged by (a) or (b)).
+      (a) generic theorem 1 (structural form) for the 4 non-canonical
+          vectors, with [bytes_to_canonical_F v = None] obtained by a
+          boolean reduction, and
+      (b) for the other 25, a boolean reduction
+          [match ristretto_decode_coords v with None => true | Some _ =>
+          false end = true] closed by [vm_compute; reflexivity].
+
+    Running [vm_compute] on the [option (Fp * Fp)] goal itself normalizes
+    the type [F.F (2^255-19)] and does not finish in Rocq 9.2; the
+    boolean reduction avoids this.
 
     Companion files:
       - Ristretto255_Encode.v  (Phase A.1, §4.3.2 encode)
       - Ristretto255_Decode.v  (Phase A.2, §4.3.1 decode + vectors)
 
     Status: all three generic theorems Qed; 2 lifted [decode_bytes]
-    corollaries Qed; helper [option_pair_eq_convoy_None] Qed.
-
-    Of the 24 §A.2 per-vector lemmas, 8 are Qed inline below (the 7
-    noncanonical + neg_s_01 vectors, which short-circuit before the
-    heavy [sqrt_ratio_m1]).  The remaining 16 (nonsquare/neg_t/y_zero)
-    are declared with the intended type but discharged via [Admitted]
-    because each [vm_compute] proof's kernel typecheck-cache (~3 GiB
-    peak) exceeds the typical workstation's free RAM in this tree.
-
-    Companion files [Ristretto255_Reject_Nonsquare.v],
-    [Ristretto255_Reject_NegT.v], [Ristretto255_Reject_YZero.v]
-    contain the same lemma statements with [Proof. vm_compute. Qed.]
-    bodies; compiling them is OPTIONAL.  On a workstation with ≥6 GiB
-    free RAM the companions Qed; on tighter machines they OOM and
-    should be split further or deferred to the Phase B.5 Z-mirror
-    pipeline.  This main file does NOT depend on the companions —
-    they sit in a separate compile unit so failures there don't
-    cascade into the rest of the Ristretto pipeline. *)
+    corollaries Qed; helper [option_pair_eq_convoy_None] Qed; all 29
+    per-vector lemmas and the aggregate lemma Qed. *)
 
 From Stdlib Require Import ZArith.ZArith.
 From Stdlib Require Import Lists.List.
@@ -226,174 +220,219 @@ Proof.
 Qed.
 
 (** ============================================================
-    RFC 9496 §A.2 — per-vector rejection lemmas.
+    RFC 9496 §A.2 — per-vector rejection lemmas (29).
 
-    Each lemma either:
-      - reduces by [vm_compute] to [None] (preferred), or
-      - applies one of the three generic theorems with a small
-        [vm_compute]'d witness.
-
-    The 7 noncanonical vectors are dispatched by generic theorem 1;
-    the [neg_s_01] vector by direct [vm_compute] (it short-circuits
-    on the [is_negative] check, no [F.pow] needed); the remaining 16
-    (nonsquare / neg_t / y_zero) by direct [vm_compute] on the full
-    decoder (all reductions stay in [Z mod p], so [F.pow]'s
-    [Pos.iter_op] is tractable for the [(p-5)/8] exponent).
+    Two small helpers turn a [None] goal into a [bool] equality, which
+    [vm_compute; reflexivity] closes without normalizing the type
+    [F.F (2^255-19)].
 ============================================================ *)
 
-(** *** A.2.1 — non-canonical field encodings (7). *)
+Lemma bytes_to_canonical_F_None_of_bool :
+  forall bs : list Byte.byte,
+    match bytes_to_canonical_F bs with None => true | Some _ => false end = true ->
+    bytes_to_canonical_F bs = None.
+Proof.
+  intros bs H. destruct (bytes_to_canonical_F bs); [discriminate H | reflexivity].
+Qed.
+
+Lemma decode_coords_None_of_bool :
+  forall bs : list Byte.byte,
+    match ristretto_decode_coords bs with None => true | Some _ => false end = true ->
+    ristretto_decode_coords bs = None.
+Proof.
+  intros bs H. destruct (ristretto_decode_coords bs); [discriminate H | reflexivity].
+Qed.
+
+(** *** Non-canonical field encodings (4) — generic theorem 1. *)
 
 Lemma rfc_A2_noncanonical_01_rejects :
   ristretto_decode_coords rfc_A2_noncanonical_01 = None.
-Proof. Admitted.
+Proof.
+  apply ristretto_decode_coords_rejects_non_canonical_struct.
+  apply bytes_to_canonical_F_None_of_bool. vm_compute. reflexivity.
+Qed.
 
 Lemma rfc_A2_noncanonical_02_rejects :
   ristretto_decode_coords rfc_A2_noncanonical_02 = None.
-Proof. Admitted.
+Proof.
+  apply ristretto_decode_coords_rejects_non_canonical_struct.
+  apply bytes_to_canonical_F_None_of_bool. vm_compute. reflexivity.
+Qed.
 
 Lemma rfc_A2_noncanonical_03_rejects :
   ristretto_decode_coords rfc_A2_noncanonical_03 = None.
-Proof. Admitted.
+Proof.
+  apply ristretto_decode_coords_rejects_non_canonical_struct.
+  apply bytes_to_canonical_F_None_of_bool. vm_compute. reflexivity.
+Qed.
 
 Lemma rfc_A2_noncanonical_04_rejects :
   ristretto_decode_coords rfc_A2_noncanonical_04 = None.
-Proof. Admitted.
+Proof.
+  apply ristretto_decode_coords_rejects_non_canonical_struct.
+  apply bytes_to_canonical_F_None_of_bool. vm_compute. reflexivity.
+Qed.
 
-Lemma rfc_A2_noncanonical_05_rejects :
-  ristretto_decode_coords rfc_A2_noncanonical_05 = None.
-Proof. Admitted.
+(** *** Negative field elements (8). *)
 
-Lemma rfc_A2_noncanonical_06_rejects :
-  ristretto_decode_coords rfc_A2_noncanonical_06 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_01_rejects :
+  ristretto_decode_coords rfc_A2_negative_01 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_noncanonical_07_rejects :
-  ristretto_decode_coords rfc_A2_noncanonical_07 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_02_rejects :
+  ristretto_decode_coords rfc_A2_negative_02 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-(** *** A.2.2 — negative s. *)
+Lemma rfc_A2_negative_03_rejects :
+  ristretto_decode_coords rfc_A2_negative_03 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_neg_s_01_rejects :
-  ristretto_decode_coords rfc_A2_neg_s_01 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_04_rejects :
+  ristretto_decode_coords rfc_A2_negative_04 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-(** *** A.2.3 / A.2.4 / A.2.5 — deferred to a companion file.
+Lemma rfc_A2_negative_05_rejects :
+  ristretto_decode_coords rfc_A2_negative_05 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-    The remaining 16 RFC §A.2 vectors (6 non-square, 4 negative-t, 6
-    y-zero) all execute the FULL decoder body, including the
-    [sqrt_ratio_m1] call whose internal [F.pow] uses an exponent of
-    order 2^252.  Each individual lemma is straightforwardly provable
-    via [vm_compute; reflexivity] (~10s wall time, ~3 GiB peak RAM in
-    the kernel's typecheck cache).  However, processing 16 such Qeds
-    in a single compile process on a 14 GiB workstation exceeds the
-    available memory budget when the kernel pages do not release
-    between consecutive [Qed]s.
+Lemma rfc_A2_negative_06_rejects :
+  ristretto_decode_coords rfc_A2_negative_06 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-    To keep this file's compile under 2 minutes and within memory
-    budget on a 14 GiB machine, the 16 hard vector lemmas are
-    declared here as [Lemma]s with the EXPECTED type and discharged
-    by a single placeholder tactic that delegates to companion file
-    [Ristretto255_DecodeReject_HardVectors.v].  Until that companion
-    file is built, each lemma below uses [Admitted] with the
-    in-source recipe -- vm_compute; reflexivity -- preserved
-    in a comment, so that anyone with a larger RAM budget can flip
-    them locally.
+Lemma rfc_A2_negative_07_rejects :
+  ristretto_decode_coords rfc_A2_negative_07 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-    The 8 lemmas above (7 noncanonical + 1 neg_s) ARE Qed'd inline
-    via generic theorems 1 and 2 with a small [vm_compute]'d
-    witness, avoiding the [F.pow] altogether. *)
+Lemma rfc_A2_negative_08_rejects :
+  ristretto_decode_coords rfc_A2_negative_08 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-(** Per-vector recipe (preserved in comment; flip to Qed on ≥6 GiB
-    free RAM, or build the companion file
-    [Ristretto255_Reject_<bucket>.v] for an isolated unit):
-        Proof. vm_compute. reflexivity. Qed.
-*)
+(** *** Non-square x^2 (8). *)
 
 Lemma rfc_A2_nonsquare_01_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_01 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
 Lemma rfc_A2_nonsquare_02_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_02 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
 Lemma rfc_A2_nonsquare_03_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_03 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
 Lemma rfc_A2_nonsquare_04_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_04 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
 Lemma rfc_A2_nonsquare_05_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_05 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
 Lemma rfc_A2_nonsquare_06_rejects :
   ristretto_decode_coords rfc_A2_nonsquare_06 = None.
-Proof. Admitted.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_neg_t_01_rejects :
-  ristretto_decode_coords rfc_A2_neg_t_01 = None.
-Proof. Admitted.
+Lemma rfc_A2_nonsquare_07_rejects :
+  ristretto_decode_coords rfc_A2_nonsquare_07 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_neg_t_02_rejects :
-  ristretto_decode_coords rfc_A2_neg_t_02 = None.
-Proof. Admitted.
+Lemma rfc_A2_nonsquare_08_rejects :
+  ristretto_decode_coords rfc_A2_nonsquare_08 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_neg_t_03_rejects :
-  ristretto_decode_coords rfc_A2_neg_t_03 = None.
-Proof. Admitted.
+(** *** Negative x * y value (8). *)
 
-Lemma rfc_A2_neg_t_04_rejects :
-  ristretto_decode_coords rfc_A2_neg_t_04 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_01_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_01 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_01_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_01 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_02_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_02 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_02_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_02 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_03_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_03 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_03_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_03 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_04_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_04 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_04_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_04 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_05_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_05 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_05_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_05 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_06_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_06 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-Lemma rfc_A2_y_zero_06_rejects :
-  ristretto_decode_coords rfc_A2_y_zero_06 = None.
-Proof. Admitted.
+Lemma rfc_A2_negative_xy_07_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_07 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-(** ** Aggregate: every vector in [rfc_A2_rejection_vectors] is rejected.
+Lemma rfc_A2_negative_xy_08_rejects :
+  ristretto_decode_coords rfc_A2_negative_xy_08 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
 
-    NOTE: We deliberately do NOT prove a Forall theorem over
-    [rfc_A2_rejection_vectors] here.  The per-vector lemmas above are
-    each individually closed via [vm_compute], and the obvious
-    aggregation [repeat constructor; first [exact ...]] runs Coq's
-    kernel out of memory on a 14 GiB machine because each [exact]
-    re-elaborates the heavy proof term.  Callers that need an aggregate
-    can [apply List.Forall_forall; intros; repeat match goal with ...]
-    on their own.  The list-length lemma [rfc_A2_rejection_vectors_length]
-    in [Ristretto255_Decode.v] is sufficient for downstream wiring. *)
+(** *** s = -1, which causes y = 0 (1). *)
+
+Lemma rfc_A2_s_minus_one_01_rejects :
+  ristretto_decode_coords rfc_A2_s_minus_one_01 = None.
+Proof. apply decode_coords_None_of_bool. vm_compute. reflexivity. Qed.
+
+(** ** Aggregate: every vector in [rfc_A2_rejection_vectors] is rejected. *)
+
+Lemma rfc_A2_rejection_vectors_rejected :
+  List.Forall (fun v => ristretto_decode_coords v = None) rfc_A2_rejection_vectors.
+Proof.
+  unfold rfc_A2_rejection_vectors.
+  apply Forall_cons; [exact rfc_A2_noncanonical_01_rejects|].
+  apply Forall_cons; [exact rfc_A2_noncanonical_02_rejects|].
+  apply Forall_cons; [exact rfc_A2_noncanonical_03_rejects|].
+  apply Forall_cons; [exact rfc_A2_noncanonical_04_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_01_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_02_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_03_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_04_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_05_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_06_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_07_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_08_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_01_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_02_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_03_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_04_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_05_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_06_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_07_rejects|].
+  apply Forall_cons; [exact rfc_A2_nonsquare_08_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_01_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_02_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_03_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_04_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_05_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_06_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_07_rejects|].
+  apply Forall_cons; [exact rfc_A2_negative_xy_08_rejects|].
+  apply Forall_cons; [exact rfc_A2_s_minus_one_01_rejects|].
+  apply Forall_nil.
+Qed.
+
+Corollary rfc_A2_rejection_vectors_rejected_forall :
+  forall v, List.In v rfc_A2_rejection_vectors -> ristretto_decode_coords v = None.
+Proof.
+  apply List.Forall_forall, rfc_A2_rejection_vectors_rejected.
+Qed.
 
 (** ** Phase B.3 deliverables:
       - 3 generic rejection theorems (non-canonical / negative s /
         post-sqrt), each Qed.
-      - 24 of 24 RFC §A.2 vector lemmas Qed:
-          + 8 inline via [vm_compute] (the 7 noncanonical and the
-            neg_s_01 vectors, which short-circuit before the heavy
-            [sqrt_ratio_m1]).
-          + 16 in companion files (see header) to keep each Qed's
-            typecheck-cache within the workstation's RAM budget.
+      - 29 of 29 RFC 9496 §A.2 vector lemmas Qed: 4 non-canonical via
+        generic theorem 1, 25 (8 negative, 8 non-square, 8 negative
+        x * y, 1 s = -1) via the boolean [vm_compute] reduction.
+      - The aggregate [rfc_A2_rejection_vectors_rejected] (Forall) and
+        its [In] form, Qed.
       - Two lifted corollaries on [ristretto_decode_bytes] (the typed
         version threaded through the Phase-B on-curve obligation).
       - One [option_pair_eq_convoy_None] helper lemma extracting the

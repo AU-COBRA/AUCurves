@@ -133,12 +133,47 @@ Section H3Store.
       try peel_array_head_in H;
       try normalize_addr_in H.
 
+    (* Find the scalar at the goal's address by syntax in the flattened
+       hypothesis and move it to the front with [seps_pick_iff1].  The
+       rebound [ecancel_assumption] (WPTactics.ecancel_assumption_fast)
+       took 12-82 s per store here. *)
+    Local Ltac find_scalar_at addr l :=
+      lazymatch l with
+      | cons (scalar ?a _) ?tl =>
+          match constr:(Set) with
+          | _ => let _ := match constr:(Set) with _ => constr_eq a addr end in constr:(O)
+          | _ => let n := find_scalar_at addr tl in constr:(S n)
+          end
+      | cons _ ?tl => let n := find_scalar_at addr tl in constr:(S n)
+      end.
+
+    Local Ltac pick_scalar_assumption :=
+      lazymatch goal with
+      | |- (scalar ?addr _ ⋆ _)%sep ?m =>
+        match goal with
+        | H : (_ ⋆ _)%sep m |- _ =>
+          let H' := fresh in pose proof H as H';
+          flatten_seps_in_strict H';
+          lazymatch type of H' with
+          | seps ?L _ =>
+            let i := find_scalar_at addr L in
+            apply (proj1 (seps_pick_iff1 L i ltac:(cbv [List.length]; lia) m)) in H';
+            cbn [List.nth List.firstn List.skipn List.app] in H';
+            lazymatch type of H' with
+            | seps (?t :: ?rest) ?m' =>
+                apply (proj1 (SeparationLogic.seps_cons t rest m')) in H'
+            end;
+            exact H'
+          end
+        end
+      end.
+
     Local Ltac fast_store_step :=
       eexists; split; [solve [solve_dexpr] |];
       eexists; split; [solve [solve_dexpr] |];
       eapply Scalars.store_word_of_sep;
       [ (* Sep goal: find scalar in hypothesis *)
-        cbv [Semantics.interp_binop]; ecancel_assumption
+        cbv [Semantics.interp_binop]; pick_scalar_assumption
       | (* Continuation: intro, clear old, normalize for next *)
         cbv [Semantics.interp_binop]; cbv beta;
         let m := fresh "m" in let H := fresh "H" in

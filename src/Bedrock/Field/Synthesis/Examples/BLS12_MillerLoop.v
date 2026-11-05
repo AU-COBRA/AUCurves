@@ -810,6 +810,14 @@ Section BLS12_MillerLoop.
       eassert (Hpair1 : (FElem_Fp2 a_f (c0_felem (d0_felem f_val')) ⋆ _) mComb_line).
       { pose proof Hsep_expanded as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair1.
+
+      (* The stack frames are in the separation hypotheses (Hsep_expanded, Hpair1),
+         so the anybytes facts from the 7 stackallocs are stale.  Left in the
+         context, straightline falls through to straightline_stackalloc on every
+         cmd.call goal, which runs a failing ecancel_assumption search for each
+         of them (over 3 h at the first from_word call).  The deallocation
+         derives them again from FElem_to_bytes.  See docs/slow-proofs.md. *)
+      clear HanyF HanyTx HanyTy HanyLam HanyTmp1 HanyTmp2 HanyLine.
       (* Now Hpair1 : (FElem_Fp a_f (fst_felem ...) ⋆
                          (FElem_Fp (a_f+fp_off) (snd_felem ...) ⋆ R)) mComb_line *)
 

@@ -4,4 +4,4 @@
  (name Implementations)
  (mode vo)
  (flags -time)
- (theories Stdlib Crypto Theory))
+ (theories Stdlib micromega_plugin Crypto Theory))

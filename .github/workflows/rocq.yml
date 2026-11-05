@@ -80,8 +80,13 @@ jobs:
             cd proofs
             VF="$(grep '\.v$' _CoqProject | grep -vx lang/extraction.v | tr '\n' ' ')"
             rocq makefile -f _CoqProject -o Makefile.coq
-            make -f Makefile.coq -j2 VFILES="$VF"
-            make -f Makefile.coq install VFILES="$VF"
+            # No native precompilation: coq-mathcomp-word is built by dune
+            # without native files, so precompiling 3rdparty/ssrring.vo
+            # fails with "Unbound module Nmathcomp_word_word_ssrZ".
+            # src/Jasmin is built (mode vo) and needs only the .vo files.
+            NF='COQEXTRAFLAGS=-native-compiler ondemand'
+            make -f Makefile.coq -j2 VFILES="$VF" "$NF"
+            make -f Makefile.coq install VFILES="$VF" "$NF"
           fi
 
       # After the Jasmin step, which installs into the switch.

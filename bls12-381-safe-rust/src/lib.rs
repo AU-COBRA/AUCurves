@@ -29,7 +29,8 @@ mod g1_double_a0_test;
 
 pub mod shake128;
 
-/// G1 and G2 group operations over the tower (hand-written group law).
+/// G1 and G2 group operations over the tower.  The group law is hand-written
+/// and not verified; it is tested against `blst` (`tests/group_vs_blst.rs`).
 pub mod group;
 
 pub use tower::{Fp, Fp2, Fp6, Fp12};

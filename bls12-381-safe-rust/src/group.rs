@@ -5,9 +5,9 @@
 //! Field elements are in the Montgomery form of the tower (R = 2^384).
 //!
 //! The field operations are the verified leaves of this crate.  The group law
-//! in this file is hand-written (EFD dbl-2009-l / add-2007-bl, ported from
-//! `bls12-jasmin-rs`); it is not extracted from Rocq and is checked against
-//! `blst` in `tests/group_vs_blst.rs`.  Scalar multiplication branches on the
+//! in this file is not verified: it is hand-written (EFD dbl-2009-l /
+//! add-2007-bl, ported from `bls12-jasmin-rs`), not extracted from Rocq, and
+//! checked against `blst` in `tests/group_vs_blst.rs`.  Scalar multiplication branches on the
 //! scalar and is not constant time.
 
 use crate::{fp2_add, fp2_mul, fp2_sub, fp_add, fp_mul, fp_square, fp_sub, Fp, Fp2};

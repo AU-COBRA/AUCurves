@@ -16,7 +16,6 @@ Require Export Crypto.Spec.ModularArithmetic.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.WeakestPrecondition.
 Require Import Ltac2.Ltac2.
-From Hammer Require Import Tactics.
 Set Default Proof Mode "Classic".
 
 Section Fp12.

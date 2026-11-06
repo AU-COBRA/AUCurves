@@ -31,7 +31,7 @@ GEN="$PWD/generated"
 JASMINC="${JASMINC:-jasminc}"
 
 # Leaf source selection (#219 spill-policy re-test).
-#   BN254_LEAVES=spill   (default) — bn254_leaves.jazz, the pp_module emit
+#   BN254_LEAVES=spill              — bn254_leaves.jazz, the pp_module emit
 #                                    (all non-bool temps #[spill] reg u64).
 #   BN254_LEAVES=nospill            — bn254_leaves_nospill.jazz, the
 #                                    pp_module_nospill emit on the leaves
@@ -45,9 +45,18 @@ JASMINC="${JASMINC:-jasminc}"
 # pp_locals_decls_nospill_drops_spill / pp_locals_decls_spill_form in
 # src/Bedrock/Jasmin/Core.v (#[spill] is a register-allocation hint with
 # no effect on the program denotation).
-case "${BN254_LEAVES:-spill}" in
+#   BN254_LEAVES=live    (default) — bn254_leaves_live.jazz, emitted by
+#                                    src/Bedrock/Jasmin/ExtractBN254LeavesLive.v:
+#                                    AdcChain.polish_func_adc (fiat's addcarryx
+#                                    windows as #ADCX chains, adc_cmd_correct)
+#                                    and SpillLiveness.pp_module_live (#[spill]
+#                                    only where the liveness pressure model needs
+#                                    it; pp_module_live_erases: the hints erase to
+#                                    pp_module_nospill).
+case "${BN254_LEAVES:-live}" in
   nospill) LEAVES_SRC="$GEN/bn254_leaves_nospill.jazz" ;;
-  *)       LEAVES_SRC="$GEN/bn254_leaves.jazz" ;;
+  spill)   LEAVES_SRC="$GEN/bn254_leaves.jazz" ;;
+  *)       LEAVES_SRC="$GEN/bn254_leaves_live.jazz" ;;
 esac
 
 # 1. Rename bn254_mul → bn254_mul_jasmin in the .jazz source so it doesn't

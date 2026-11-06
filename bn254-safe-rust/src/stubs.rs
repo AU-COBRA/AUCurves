@@ -58,11 +58,13 @@ fn sub_p_if_ge(r: [u64; 5]) -> [u64; 4] {
     }
 }
 
-// Rust stubs for _bn254_add and _bn254_sub: kept unconditional because
-// measurement shows they outperform Jasmin's auto-spilled add/sub
-// (`automatic spilling is experimental` warning at jasminc time).  The
-// Jasmin alias shim does NOT redirect _bn254_add / _bn254_sub for the
-// same reason.
+// Rust stubs for _bn254_add and _bn254_sub.  _bn254_sub stays
+// unconditional: it outperforms Jasmin's sub.  _bn254_add is only the
+// fallback: with liveness-chosen #[spill] hints the Jasmin add is at or
+// below this stub, and generated/jasmin_aliases.s routes _bn254_add to it.
+// With the jasmin build, _bn254_add comes from the Jasmin leaf
+// (generated/jasmin_aliases.s); this stub is the fallback and the oracle.
+#[cfg(not(feature = "jasmin"))]
 #[no_mangle]
 pub unsafe extern "C" fn _bn254_add(out: *mut u64, x: *const u64, y: *const u64) {
     let a = read4(x);

@@ -132,10 +132,12 @@ void bls12_Fp2_mul(br_word_t out, br_word_t x, br_word_t y) {
 /* (a0+a1*u)^2 = ((a0+a1)(a0-a1), 2*a0*a1) */
 void bls12_Fp2_square(br_word_t out, br_word_t x) {
     uint64_t sum[6], diff[6], prod[6];
+    /* All reads of x happen before the first write of out, so out may alias x
+       (bls12_Fp2_square(t, t)); previously out.re was written before x.re*x.im was read. */
     bls12_add((br_word_t)sum, FP2_REAL(x), FP2_IMAG(x));
     bls12_sub((br_word_t)diff, FP2_REAL(x), FP2_IMAG(x));
-    bls12_mul(FP2_REAL(out), (br_word_t)sum, (br_word_t)diff);
     bls12_mul((br_word_t)prod, FP2_REAL(x), FP2_IMAG(x));
+    bls12_mul(FP2_REAL(out), (br_word_t)sum, (br_word_t)diff);
     bls12_add(FP2_IMAG(out), (br_word_t)prod, (br_word_t)prod);
 }
 

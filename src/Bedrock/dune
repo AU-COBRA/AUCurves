@@ -108,7 +108,9 @@
      ; windowed constant-time form, where shifting destroys the scalar
      ; in place and forces a bit-serial ladder.  No Rust or Jasmin
      ; artifact in this tree contains a "shift_scalar"; it never shipped.
-     Group.CurveAdd.BignumShift
+     ; [BignumShift] itself builds again (the divergent rewrite is now a
+     ; directed left-to-right rewrite in the hypothesis) and is no longer
+     ; excluded; the five ladder files below still are.
      Group.CurveAdd.LoopBody
      Group.CurveAdd.ScalarMult
      Group.CurveAdd.ScalarMultAlt
@@ -122,8 +124,9 @@
      ; the only one being the cluster above.  Both are also unbuilt and
      ; were failing silently in the build.  wNAF_GLV_Func.v is the
      ; surviving route.
-     Field.Synthesis.Examples.BLS12_GLV_ScalarMultBedrock
-     Field.Synthesis.Examples.BLS12_377_GLV_ScalarMultBedrock
+     ; The two GLV drivers build (about 1 min, 1 GB each) and are no
+     ; longer excluded; [glv_shamir_ok] still takes the shift_scalar,
+     ; group_cmov_alt and Leibniz group-law premises described above.
      ; Emission drivers: write Rust text to /tmp via [Redirect], like
      ; ExtractSafeRust above.  Run by hand, not part of the build.
      ; Requires theories this project does not depend on: Group/ScalarMult/Test.v

@@ -9,6 +9,20 @@
 //!   - xi = 1 + u (BLS12 nonresidue) instead of 9 + u
 //!   - optimal ate Miller loop parameter |u| with Hamming weight 6
 //!   - DSD final exponentiation specific to BLS12
+//!
+//! Provenance of the G1 group operations (module [`group`]):
+//!   - emitted from proved bedrock2 functions into `src/g1_msm_extracted.rs`
+//!     by the trusted printer `src/Bedrock/ToSafeRustArena.v` (no simulation
+//!     proof): the complete addition and doubling (`ladderstep_correct`,
+//!     `rcb_double_a0_correct`), the scalar multiplication
+//!     (`BLS12_MSM_Closed.g1_scalar_mul_closed`) and the Pippenger MSM
+//!     (`BLS12_MSM_Closed.msm_bls12_closed`).  The two closed theorems assume
+//!     only the contracts of the field leaves (`bls12_mul/add/sub`,
+//!     `bls12_zero/one`), which the hand-written runtime `src/bedrock_rt.rs`
+//!     routes to this crate's leaves;
+//!   - hand-written: that runtime, the wrappers in `group.rs` (memory layout,
+//!     `to_affine`, generators), and all of G2.
+//! The tower itself is printed by the trusted printer `ToSafeRustBody`.
 
 #![allow(non_snake_case, non_camel_case_types)]
 #![allow(unused_assignments, unused_variables, unused_mut, unused_parens, dead_code)]
@@ -29,8 +43,21 @@ mod g1_double_a0_test;
 
 pub mod shake128;
 
-/// G1 and G2 group operations over the tower.  The group law is hand-written
-/// and not verified; it is tested against `blst` (`tests/group_vs_blst.rs`).
+/// Safe runtime (memory, word helpers, field leaves) for the emitted
+/// bedrock2 code in [`g1_msm_extracted`].  Hand-written.
+pub mod bedrock_rt;
+/// Rocq-emitted safe Rust: BLS12-381 G1 Pippenger MSM (`msm_bls12`), scalar
+/// multiplication (`g1_scalar_mul`) and the complete projective addition /
+/// doubling (RCB 2015 Alg. 7 / 9), printed from bedrock2 by the trusted
+/// printer `src/Bedrock/ToSafeRustArena.v`.  Do not edit.
+pub mod g1_msm_extracted;
+
+/// G1 and G2 group operations over the tower.  G1 addition, doubling,
+/// scalar multiplication and MSM go through [`g1_msm_extracted`]; G1
+/// `to_affine` and all of G2 are hand-written.  See the module documentation
+/// for what is verified; everything is tested against `blst`
+/// (`tests/group_vs_blst.rs`, `tests/msm_vs_blst.rs`,
+/// `tests/scalar_mul_vs_blst.rs`).
 pub mod group;
 
 pub use tower::{Fp, Fp2, Fp6, Fp12};

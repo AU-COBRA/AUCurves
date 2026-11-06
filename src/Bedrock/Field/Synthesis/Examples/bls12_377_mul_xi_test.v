@@ -368,7 +368,7 @@ Local Definition bls377_ftf := @Algebra.Field.field_theory_for_stdlib_tactic
   (@F.opp bls377_M) (@F.add bls377_M) (@F.mul bls377_M) (@F.sub bls377_M)
   (@F.inv bls377_M) (@F.div bls377_M)
   (@F.field_modulo bls377_M prime_bls12_377).
-Local Add Field bls377_ftf_field : bls377_ftf.
+Add Field bls377_ftf_field : bls377_ftf.  (* [Local] is not supported by [Add Field] in Rocq 9.2 *)
 
 Local Lemma opp_five_generic (v : F.F bls377_M) :
   F.opp (F.add (F.add (F.add v v) (F.add v v)) v) =

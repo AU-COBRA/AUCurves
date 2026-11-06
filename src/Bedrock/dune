@@ -114,6 +114,50 @@
      Group.CurveAdd.ScalarMultAlt
      Group.CurveAdd.Test
      Group.CurveAdd.TestFp2
+     ; scalarmultest: scratch test of the BLS12-381 G1 addition, written against the
+     ; old [Field.PrimeFieldParameters] API (now Bedrock.Specs.PrimeField, or fiat-crypto's
+     ; [Field.FieldParameters], which bls12_prime instantiates as bls12_field_parameters).
+     ; Line 26 fails; behind it [Field.prime_field_parameters] (line 33), [FieldNames],
+     ; [Field.m'], [spec_of_add]/[spec_of_sub]/[spec_of_mul], the arguments of
+     ; [spec_of_ladderstep] and [CurveAdd.spec_of_from_list] are gone or changed, so it
+     ; needs a rewrite, not a port.  It states no theorem (its one proof is commented
+     ; out) and nothing Requires it.
+     Group.CurveAdd.scalarmultest
+     ; p224_Fp2: unfinished draft.  [Instance spec_of_p224_felem_copy] and
+     ; [Lemma p224_Fp2_add_ok] have no proof, [Section p224_Fp2] is never closed, and it
+     ; Requires bedrock2's Bytedump, which the opam bedrock2 does not install.  Line 14
+     ; passes a fiat-crypto [Field.FieldParameters] where PrimeField.PrimeFieldParameters
+     ; is expected.  Nothing Requires it.
+     Field.Synthesis.Examples.p224_Fp2
+     ; DodecicFieldExtensionsMulNocopy: draft against an earlier AbstractField/Specs API
+     ; (Fp2/Fp6/Fp12 parameters as notations with old argument lists, old argument order
+     ; of AbstractField.UnOp, no fp12_prefix); its Fp12_mul_nocopy_ok proof (lines
+     ; 252-612) has never been checked.  Nothing Requires it; Fp12_mul_nocopy itself is
+     ; also defined in DodecicFieldExtensions.v.
+     Field.FieldExtensions.DodecicFieldExtensionsMulNocopy
+     ; BW6-761: bw6_761_prime.v takes about 7.5 h (its prime-field synthesis), so it
+     ; and the modules that need it are not part of the default build.  Remove these
+     ; lines to build them.
+     Field.Synthesis.Examples.bw6_761_prime
+     Field.Synthesis.Examples.bw6_761_prime_ops
+     Field.Synthesis.Examples.BW6_761_Extract
+     Field.Synthesis.Examples.BW6_761_FinalExp
+     Field.Synthesis.Examples.BW6_761_FinalExp_proof
+     Field.Synthesis.Examples.BW6_761_FinalExp_wired
+     Field.Synthesis.Examples.BW6_761_FrobConsts
+     Field.Synthesis.Examples.BW6_761_FrobLibBridge
+     Field.Synthesis.Examples.BW6_761_FrobRupicola
+     Field.Synthesis.Examples.BW6_761_Instances
+     Field.Synthesis.Examples.BW6_761_MillerLoop
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal
+     Field.Synthesis.Examples.BW6_761_MillerLoopOptimal_proof_Common
+     Field.Synthesis.Examples.BW6_761_MillerLoop_proof
+     Field.Synthesis.Examples.BW6_761_PairingHelpers
+     Field.Synthesis.Examples.BW6_761_Pairing_stub
+     Field.Synthesis.Examples.BW6_761_ProjOps
+     Curve.BW6_761Curve_G1_BignumSpecs
+     Curve.BW6_761Curve_G1_WiredSpecs
+     Curve.BW6_761Curve_G2_bedrock
      ; The two GLV bedrock2 drivers that assume the same primitive.
      ; Both copy the spec locally -- their own comment reads "Local spec
      ; for shift_scalar (from BignumShift.v, not compiled)" -- and take

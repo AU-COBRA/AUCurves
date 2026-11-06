@@ -22,6 +22,14 @@ Require Import Bedrock.Field.PairingTheory.CanonicityHelpers.
 
 Local Open Scope Z_scope.
 
+(** [F.to_Z] of a difference.  fiat-crypto's [ModularArithmeticTheorems]
+    has [F.to_Z_add], [F.to_Z_mul] and [F.to_Z_opp] but no [F.to_Z_sub];
+    the proof is that of [to_Z_sub] in fiat-crypto's
+    [Bedrock/P256/Specs.v]. *)
+Local Lemma F_to_Z_sub {m} (x y : F m) :
+  F.to_Z (F.sub x y) = (F.to_Z x - F.to_Z y) mod m.
+Proof. cbv [F.sub]. rewrite F.to_Z_add, F.to_Z_opp, Zdiv.Zplus_mod_idemp_r; trivial. Qed.
+
 (** Helper: [(x mod m)^k mod m = x^k mod m]. *)
 Lemma Z_mod_pow_l : forall x k (m : Z),
   0 < m -> 0 <= k -> ((x mod m) ^ k) mod m = (x ^ k) mod m.
@@ -468,12 +476,12 @@ Section ZFp2InvLeftBeta.
     assert (HF : (F.of_Z q a * F.of_Z q a -
                   F.of_Z q beta * (F.of_Z q b * F.of_Z q b))%F = 0%F).
     { apply F.eq_to_Z_iff.
-      rewrite F.to_Z_sub, !F.to_Z_mul, !F.to_Z_of_Z, F.to_Z_0.
+      rewrite F_to_Z_sub, !F.to_Z_mul, !F.to_Z_of_Z, F.to_Z_0.
       unfold zfp_sub, zfp_mul in H.
       rewrite (Z.mod_small a) by lia.
       rewrite (Z.mod_small b) by lia.
       rewrite <- H. f_equal.
-      push_Zmod. pull_Zmod. f_equal. ring. }
+      push_Zmod. pull_Zmod. reflexivity. }
     apply Fp_norm_zero_implies_zero in HF.
     destruct HF as [Ha0 Hb0].
     apply Hab.

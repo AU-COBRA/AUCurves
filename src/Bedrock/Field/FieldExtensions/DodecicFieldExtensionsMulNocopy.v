@@ -17,7 +17,8 @@ Require Export Crypto.Spec.ModularArithmetic.
 Require Import bedrock2.NotationsCustomEntry.
 Require Import bedrock2.WeakestPrecondition.
 Require Import Ltac2.Ltac2.
-From Hammer Require Import Tactics.
+(* [From Hammer Require Import Tactics.] removed: no Hammer tactic is used in this file,
+   and Hammer is not part of the development's dependencies (rocq.yml, INSTALL.md). *)
 Set Default Proof Mode "Classic".
 
 Section Fp12.

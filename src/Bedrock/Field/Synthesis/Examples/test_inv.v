@@ -163,6 +163,26 @@ Section P.
     end;
     subst mC; repeat straightline; saturate_disjointness.
 
+  (* Stack deallocation: prove [M = map.putmany ?r mk] for the stack map [mk] by moving [mk] to
+     the end of the [map.putmany] chain [M]: right-nest, commute [mk] past the rest, left-nest.
+     The right-hand side is set aside first so that the rewrites do not touch the evar. *)
+  Local Ltac split_last :=
+    lazymatch goal with
+    | |- _ = map.putmany ?r ?mk =>
+      let rhs := fresh "rhs" in
+      let Hrhs := fresh "Hrhs" in
+      remember (map.putmany r mk) as rhs eqn:Hrhs;
+      rewrite <- ?map.putmany_assoc;
+      try lazymatch goal with
+        | |- context [map.putmany mk ?rest] =>
+          rewrite (map.putmany_comm mk rest) by
+            (repeat (apply (proj2 (map.disjoint_putmany_r _ _ _)); split);
+             first [ assumption | apply map.disjoint_comm; assumption ])
+        end;
+      rewrite ?map.putmany_assoc;
+      subst rhs; reflexivity
+    end.
+
   (* ================================================================ *)
   (* Nested-sep version of Fp2 inv (like mul_xi_nested)                *)
   (* ================================================================ *)
@@ -347,17 +367,17 @@ Section P.
     (* Dealloc norm (a1) *)
     eexists _, _. split. { eassumption. }
     split. { unfold map.split. split.
-      - rewrite !map.putmany_assoc. reflexivity.
+      - split_last.
       - map_disjoint_auto. }
     (* Dealloc bsq (a0) *)
     eexists _, _. split. { eassumption. }
     split. { unfold map.split. split.
-      - rewrite !map.putmany_assoc. reflexivity.
+      - split_last.
       - map_disjoint_auto. }
     (* Dealloc asq (a) *)
     eexists _, _. split. { eassumption. }
     split. { unfold map.split. split.
-      - rewrite !map.putmany_assoc. reflexivity.
+      - split_last.
       - map_disjoint_auto. }
     (* list_map simplification *)
     cbv [list_map WeakestPrecondition.get].

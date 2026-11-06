@@ -65,7 +65,7 @@ Section P.
     assert (Hms_get : forall k, map.get ms k =
               match map.get mq k with Some _ => None | None => map.get mrx k end).
     { subst ms. intro k.
-      apply (map.fold_spec
+      refine (map.fold_spec
         (fun (m_partial : mem) (acc : mem) =>
            forall k, map.get acc k =
              match map.get mq k with Some _ => None | None => map.get m_partial k end)

@@ -74,6 +74,12 @@ pub mod g2_extracted;
 /// `tests/scalar_mul_vs_blst.rs`).
 pub mod group;
 
+/// The Jasmin path (feature `jasmin`): the same bedrock2 functions as the
+/// tower and the group modules, compiled by jasminc, over CryptOpt mul/square
+/// and the safegcd inverse.  See the module documentation.
+#[cfg(feature = "jasmin")]
+pub mod jasmin;
+
 pub use tower::{Fp, Fp2, Fp6, Fp12};
 
 pub fn fp_add(out: &mut Fp, x: &Fp, y: &Fp) { tower::bls12_add(out, x, y) }

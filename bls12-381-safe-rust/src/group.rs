@@ -121,6 +121,7 @@ pub struct G2Affine { pub x: Fp2, pub y: Fp2 }
 /// the emitted complete formulas this type was Jacobian; the old code is
 /// [`handwritten::G1Jacobian`].)  Coordinates must be reduced (< p), as every
 /// value produced by the tower is.
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct G1Projective { pub x: Fp, pub y: Fp, pub z: Fp }
 
@@ -128,6 +129,7 @@ pub struct G1Projective { pub x: Fp, pub y: Fp, pub z: Fp }
 /// Z = 0 is the identity, represented as (0 : 1 : 0).  (Before the switch to
 /// the emitted complete formulas this type was Jacobian; the old code is
 /// [`handwritten::G2Jacobian`].)  Coordinates must be reduced (< p).
+#[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct G2Projective { pub x: Fp2, pub y: Fp2, pub z: Fp2 }
 

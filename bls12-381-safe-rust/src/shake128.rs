@@ -8,7 +8,7 @@
 //!   jade_xof_shake128_amd64_ref(output: *mut u8, output_length: u64,
 //!                                input: *const u8, input_length: u64) -> u64
 
-#[cfg(feature = "cryptopt")]
+#[cfg(shake128_jade)]
 unsafe extern "C" {
     fn jade_xof_shake128_amd64_ref(
         output: *mut u8,
@@ -19,7 +19,7 @@ unsafe extern "C" {
 }
 
 /// Compute SHAKE-128 XOF: produces `out_len` bytes from `input`.
-#[cfg(feature = "cryptopt")]
+#[cfg(shake128_jade)]
 pub fn shake128(input: &[u8], out_len: usize) -> Vec<u8> {
     let mut output = vec![0u8; out_len];
     unsafe {
@@ -34,7 +34,7 @@ pub fn shake128(input: &[u8], out_len: usize) -> Vec<u8> {
 }
 
 /// Fallback: pure-Rust Keccak (not verified, for testing without asm).
-#[cfg(not(feature = "cryptopt"))]
+#[cfg(not(shake128_jade))]
 pub fn shake128(_input: &[u8], out_len: usize) -> Vec<u8> {
     // Stub: returns zeros. Replace with a Rust Keccak if needed.
     vec![0u8; out_len]
@@ -45,7 +45,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg(feature = "cryptopt")]
+    #[cfg(shake128_jade)]
     fn test_shake128_empty_input() {
         // NIST test vector: SHAKE128("", 32) =
         // 7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26
@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cryptopt")]
+    #[cfg(shake128_jade)]
     fn test_shake128_length() {
         let out = shake128(b"hello", 100);
         assert_eq!(out.len(), 100);

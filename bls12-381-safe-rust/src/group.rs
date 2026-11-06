@@ -1,16 +1,49 @@
-//! G1 and G2 group operations for BLS12-381: Jacobian addition, doubling and
-//! double-and-add scalar multiplication, over the field tower of this crate.
+//! G1 and G2 group operations for BLS12-381 over the field tower of this crate.
 //!
 //! E : y² = x³ + 4 over Fp (G1) and E' : y² = x³ + 4(u + 1) over Fp2 (G2).
 //! Field elements are in the Montgomery form of the tower (R = 2^384).
 //!
-//! The field operations are the verified leaves of this crate.  The group law
-//! in this file is not verified: it is hand-written (EFD dbl-2009-l /
-//! add-2007-bl, ported from `bls12-jasmin-rs`), not extracted from Rocq, and
-//! checked against `blst` in `tests/group_vs_blst.rs`.  Scalar multiplication branches on the
-//! scalar and is not constant time.
+//! Provenance, operation by operation:
+//!
+//! * G1 addition [`g1_add`] and doubling [`g1_double`] call Rocq-emitted
+//!   safe Rust (`g1_msm_extracted.rs`) printed from the Rupicola-derived
+//!   bedrock2 bodies `CurveAdd.ladderstep_body` (RCB 2015 Algorithm 7, the
+//!   complete a = 0 addition; `ladderstep_correct`, Qed) and
+//!   `PointDoubleA0.rcb_double_a0_body` (Algorithm 9; `rcb_double_a0_correct`,
+//!   Qed).  These are complete homogeneous formulas, so [`G1Projective`] is
+//!   homogeneous: (x, y) = (X/Z, Y/Z), identity (0 : 1 : 0).  The printer
+//!   (`src/Bedrock/ToSafeRustArena.v`) is trusted, not proved.
+//! * G1 multi-scalar multiplication [`g1_msm`] calls the emitted bedrock2
+//!   Pippenger `msm_bls12`.  `BLS12_MSM_Closed.msm_bls12_closed` (Qed, closed
+//!   under the global context) covers exactly the emitted functions: on n
+//!   points satisfying y^2 z = x^3 + 4 z^3 (not (0:0:0)) with tight
+//!   coordinates and n scalars of four 64-bit limbs, the result is
+//!   projectively equal to sum k_i P_i (k_i the 256-bit limb integer, the sum
+//!   formed with the RCB addition, which is fiat-crypto's `Projective.add`).
+//!   Its premises are the contracts of the field leaves the runtime supplies
+//!   (`bls12_mul/add/sub`: fiat-crypto `spec_of_BinOp`; `bls12_zero/one`:
+//!   `spec_of_store_const`).  The printer stays trusted.  Also tested against
+//!   blst (`tests/msm_vs_blst.rs`).
+//! * G1 scalar multiplication [`g1_scalar_mul`] calls the emitted bedrock2
+//!   `g1_scalar_mul` (double-and-add, most significant bit first, over the
+//!   same copy-out wrappers as the MSM).  `BLS12_MSM_Closed.g1_scalar_mul_closed`
+//!   (Qed, closed) proves that for an on-curve P with tight coordinates the
+//!   result is projectively equal to kP, k the 256-bit limb integer; same
+//!   premises and trusted printer as the MSM.  [`g1_scalar_mul_loop`] keeps
+//!   the previous hand-written loop over the emitted addition/doubling.
+//! * G2 ([`g2_add`], [`g2_double`], [`g2_scalar_mul`]) is hand-written and
+//!   not verified (EFD dbl-2009-l / add-2007-bl in Jacobian coordinates,
+//!   ported from `bls12-jasmin-rs`): no verified G2 group law has a Rust
+//!   emitter yet.
+//! * [`handwritten`] keeps the previous unverified Jacobian G1 code, for
+//!   benchmarks and as a test oracle.
+//!
+//! Everything is checked against `blst` in `tests/group_vs_blst.rs`.
+//! Scalar multiplication branches on the scalar and is not constant time.
 
 use crate::{fp2_add, fp2_mul, fp2_sub, fp_add, fp_mul, fp_square, fp_sub, Fp, Fp2};
+use crate::bedrock_rt::{Mem, FE};
+use crate::g1_msm_extracted as emitted;
 
 /// Montgomery form of 1.
 pub const FP_ONE: Fp = Fp([
@@ -69,7 +102,11 @@ pub struct G1Affine { pub x: Fp, pub y: Fp }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct G2Affine { pub x: Fp2, pub y: Fp2 }
 
-/// G1 point in Jacobian coordinates: (x, y) = (X/Z², Y/Z³); Z = 0 is the identity.
+/// G1 point in homogeneous projective coordinates: (x, y) = (X/Z, Y/Z);
+/// Z = 0 is the identity, represented as (0 : 1 : 0).  (Before the switch to
+/// the emitted complete formulas this type was Jacobian; the old code is
+/// [`handwritten::G1Jacobian`].)  Coordinates must be reduced (< p), as every
+/// value produced by the tower is.
 #[derive(Clone, Copy, Debug)]
 pub struct G1Projective { pub x: Fp, pub y: Fp, pub z: Fp }
 
@@ -81,22 +118,144 @@ pub fn g1_generator() -> G1Affine { G1Affine { x: G1_GEN_X, y: G1_GEN_Y } }
 pub fn g2_generator() -> G2Affine { G2Affine { x: G2_GEN_X, y: G2_GEN_Y } }
 
 impl G1Projective {
-    pub fn identity() -> Self { G1Projective { x: FP_ONE, y: FP_ONE, z: Fp([0; 6]) } }
+    pub fn identity() -> Self { G1Projective { x: Fp([0; 6]), y: FP_ONE, z: Fp([0; 6]) } }
     pub fn is_identity(&self) -> bool { self.z == Fp([0; 6]) }
     pub fn from_affine(p: &G1Affine) -> Self { G1Projective { x: p.x, y: p.y, z: FP_ONE } }
 
     /// `None` for the identity.
     pub fn to_affine(&self) -> Option<G1Affine> {
         if self.is_identity() { return None; }
-        let (mut zi, mut zi2, mut zi3) = (Fp::zero(), Fp::zero(), Fp::zero());
+        let mut zi = Fp::zero();
         fp_inv(&mut zi, &self.z);
-        fp_square(&mut zi2, &zi);
-        fp_mul(&mut zi3, &zi2, &zi);
         let (mut x, mut y) = (Fp::zero(), Fp::zero());
-        fp_mul(&mut x, &self.x, &zi2);
-        fp_mul(&mut y, &self.y, &zi3);
+        fp_mul(&mut x, &self.x, &zi);
+        fp_mul(&mut y, &self.y, &zi);
         Some(G1Affine { x, y })
     }
+}
+
+// ---- G1 through the emitted bedrock2 code ----
+
+/// Fresh 3-felem region X ‖ Y ‖ Z holding `p`.
+fn put_g1(m: &mut Mem, p: &G1Projective) -> u64 {
+    let a = m.alloc(3 * FE);
+    m.write_fp(a, &p.x);
+    m.write_fp(a + FE, &p.y);
+    m.write_fp(a + 2 * FE, &p.z);
+    a
+}
+
+fn get_g1(m: &Mem, a: u64) -> G1Projective {
+    G1Projective { x: m.read_fp(a), y: m.read_fp(a + FE), z: m.read_fp(a + 2 * FE) }
+}
+
+/// out := p + q with the emitted `curve_add` (argument order
+/// X1 X2 Y1 Y2 Z1 Z2 Xout Yout Zout; output disjoint from the inputs).
+#[inline]
+fn em_add(m: &mut Mem, out: u64, p: u64, q: u64) {
+    emitted::curve_add(m, p, q, p + FE, q + FE, p + 2 * FE, q + 2 * FE,
+                       out, out + FE, out + 2 * FE);
+}
+
+/// out := 2p with the emitted `curve_double_a0` (output disjoint from input).
+#[inline]
+fn em_double(m: &mut Mem, out: u64, p: u64) {
+    emitted::curve_double_a0(m, p, p + FE, p + 2 * FE, out, out + FE, out + 2 * FE);
+}
+
+/// R = P + Q: emitted RCB Algorithm 7 (complete, no special cases).
+pub fn g1_add(r: &mut G1Projective, p: &G1Projective, q: &G1Projective) {
+    let mut m = Mem::with_capacity(2048);
+    let (pa, qa) = (put_g1(&mut m, p), put_g1(&mut m, q));
+    let ra = put_g1(&mut m, &G1Projective::identity());
+    em_add(&mut m, ra, pa, qa);
+    *r = get_g1(&m, ra);
+}
+
+/// R = 2P: emitted RCB Algorithm 9 (complete).
+pub fn g1_double(r: &mut G1Projective, p: &G1Projective) {
+    let mut m = Mem::with_capacity(2048);
+    let pa = put_g1(&mut m, p);
+    let ra = put_g1(&mut m, &G1Projective::identity());
+    em_double(&mut m, ra, pa);
+    *r = get_g1(&m, ra);
+}
+
+/// R = kP for a 256-bit little-endian scalar k (variable time: the loop
+/// branches on the bits of k), with the emitted bedrock2 `g1_scalar_mul`
+/// (double-and-add from the most significant bit).
+///
+/// Verification status: `BLS12_MSM_Closed.g1_scalar_mul_closed` (Qed, closed)
+/// covers the emitted functions: for P on the curve with reduced coordinates
+/// the output is projectively equal to kP (k the full 256-bit integer, not
+/// reduced mod r).  Premises: the field-leaf contracts of the runtime.
+pub fn g1_scalar_mul(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
+    let mut m = Mem::with_capacity(1024);
+    let out = put_g1(&mut m, &G1Projective::identity());
+    let sc = m.alloc(32);
+    for (j, w) in k.iter().enumerate() {
+        m.store64(sc + 8 * j as u64, *w);
+    }
+    let pa = put_g1(&mut m, p);
+    emitted::g1_scalar_mul(&mut m, out, out + FE, out + 2 * FE, sc, pa, pa + FE, pa + 2 * FE);
+    *r = get_g1(&m, out);
+}
+
+/// R = kP with a hand-written double-and-add loop (least significant bit
+/// first) over the emitted `curve_add` / `curve_double_a0`.  The loop is not
+/// verified; kept for the benchmark and as a test oracle for
+/// [`g1_scalar_mul`].
+pub fn g1_scalar_mul_loop(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
+    let mut m = Mem::with_capacity(4096);
+    let mut acc = put_g1(&mut m, &G1Projective::identity());
+    let mut acc_t = put_g1(&mut m, &G1Projective::identity());
+    let mut base = put_g1(&mut m, p);
+    let mut base_t = put_g1(&mut m, &G1Projective::identity());
+    for i in 0..256 {
+        if (k[i / 64] >> (i % 64)) & 1 == 1 {
+            em_add(&mut m, acc_t, acc, base);
+            core::mem::swap(&mut acc, &mut acc_t);
+        }
+        em_double(&mut m, base_t, base);
+        core::mem::swap(&mut base, &mut base_t);
+    }
+    *r = get_g1(&m, acc);
+}
+
+/// Σ scalars[i] · points[i] with the emitted bedrock2 Pippenger `msm_bls12`
+/// (window c = 9, 29 windows, 511 buckets; any 256-bit scalars).
+///
+/// Verification status: see the module documentation — the body is the
+/// bedrock2 program covered by `BLS12_MSM_Closed.msm_bls12_closed` (Qed):
+/// for on-curve inputs the output is projectively equal to the sum.
+///
+/// Panics if the slices differ in length.
+pub fn g1_msm(r: &mut G1Projective, points: &[G1Projective], scalars: &[[u64; 4]]) {
+    assert_eq!(points.len(), scalars.len(), "g1_msm: {} points, {} scalars", points.len(), scalars.len());
+    let n = points.len() as u64;
+    let mut m = Mem::with_capacity(points.len() * 176 + 80 * 1024);
+    let out = put_g1(&mut m, &G1Projective::identity());
+    let sc = m.alloc(32 * n.max(1));
+    let px = m.alloc(FE * n.max(1));
+    let py = m.alloc(FE * n.max(1));
+    let pz = m.alloc(FE * n.max(1));
+    for (i, (p, k)) in points.iter().zip(scalars).enumerate() {
+        let i = i as u64;
+        for (j, w) in k.iter().enumerate() {
+            m.store64(sc + 32 * i + 8 * j as u64, *w);
+        }
+        m.write_fp(px + FE * i, &p.x);
+        m.write_fp(py + FE * i, &p.y);
+        m.write_fp(pz + FE * i, &p.z);
+    }
+    emitted::msm_bls12(&mut m, out, out + FE, out + 2 * FE, sc, px, py, pz, n);
+    *r = get_g1(&m, out);
+}
+
+/// [`g1_msm`] on affine points.
+pub fn g1_msm_affine(r: &mut G1Projective, points: &[G1Affine], scalars: &[[u64; 4]]) {
+    let ps: Vec<G1Projective> = points.iter().map(G1Projective::from_affine).collect();
+    g1_msm(r, &ps, scalars)
 }
 
 impl G2Projective {
@@ -215,10 +374,41 @@ macro_rules! jacobian_law {
     };
 }
 
-jacobian_law!(Fp, G1Projective, Fp::zero(), fp_add, fp_sub, fp_mul,
-              g1_double, g1_add, g1_scalar_mul);
 jacobian_law!(Fp2, G2Projective, Fp2::zero(), fp2_add, fp2_sub, fp2_mul,
               g2_double, g2_add, g2_scalar_mul);
+
+/// The previous hand-written G1 group law (Jacobian coordinates, EFD
+/// dbl-2009-l / add-2007-bl, double-and-add).  Not verified; kept for the
+/// benchmark (`examples/bench_group.rs`) and as an independent test oracle.
+pub mod handwritten {
+    use super::*;
+
+    /// G1 point in Jacobian coordinates: (x, y) = (X/Z², Y/Z³); Z = 0 is the identity.
+    #[derive(Clone, Copy, Debug)]
+    pub struct G1Jacobian { pub x: Fp, pub y: Fp, pub z: Fp }
+
+    impl G1Jacobian {
+        pub fn identity() -> Self { G1Jacobian { x: FP_ONE, y: FP_ONE, z: Fp([0; 6]) } }
+        pub fn is_identity(&self) -> bool { self.z == Fp([0; 6]) }
+        pub fn from_affine(p: &G1Affine) -> Self { G1Jacobian { x: p.x, y: p.y, z: FP_ONE } }
+
+        /// `None` for the identity.
+        pub fn to_affine(&self) -> Option<G1Affine> {
+            if self.is_identity() { return None; }
+            let (mut zi, mut zi2, mut zi3) = (Fp::zero(), Fp::zero(), Fp::zero());
+            fp_inv(&mut zi, &self.z);
+            fp_square(&mut zi2, &zi);
+            fp_mul(&mut zi3, &zi2, &zi);
+            let (mut x, mut y) = (Fp::zero(), Fp::zero());
+            fp_mul(&mut x, &self.x, &zi2);
+            fp_mul(&mut y, &self.y, &zi3);
+            Some(G1Affine { x, y })
+        }
+    }
+
+    jacobian_law!(Fp, G1Jacobian, Fp::zero(), fp_add, fp_sub, fp_mul,
+                  g1j_double, g1j_add, g1j_scalar_mul);
+}
 
 /// e(P, Q) for affine points, through the crate's pairing.
 pub fn pairing_affine(out: &mut crate::Fp12, p: &G1Affine, q: &G2Affine) {

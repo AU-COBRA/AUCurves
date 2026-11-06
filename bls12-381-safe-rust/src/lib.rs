@@ -21,7 +21,15 @@
 //!     `bls12_zero/one`), which the hand-written runtime `src/bedrock_rt.rs`
 //!     routes to this crate's leaves;
 //!   - hand-written: that runtime, the wrappers in `group.rs` (memory layout,
-//!     `to_affine`, generators), and all of G2.
+//!     `to_affine`, generators).
+//! Provenance of the G2 group operations: addition, doubling and scalar
+//! multiplication are emitted into `src/g2_extracted.rs` by the same printer
+//! from the Rupicola bodies of `CurveAddAF.v` at Fp2 and the bedrock2
+//! double-and-add of `BLS12_G2_ScalarMul.v`; `BLS12_G2_Closed.g2_curve_add_closed`
+//! / `g2_curve_double_closed` prove the group law equal to fiat-crypto's
+//! `Projective.add` on E'(Fp2), and `BLS12_G2_ScalarMul.g2_scalar_mul_closed`
+//! the scalar multiplication projectively equal to kP, assuming only the
+//! contracts of the Fp2 leaves `bls12_Fp2_mul/add/sub`.
 //! The tower itself is printed by the trusted printer `ToSafeRustBody`.
 
 #![allow(non_snake_case, non_camel_case_types)]
@@ -44,17 +52,23 @@ mod g1_double_a0_test;
 pub mod shake128;
 
 /// Safe runtime (memory, word helpers, field leaves) for the emitted
-/// bedrock2 code in [`g1_msm_extracted`].  Hand-written.
+/// bedrock2 code in [`g1_msm_extracted`] and [`g2_extracted`].  Hand-written.
 pub mod bedrock_rt;
 /// Rocq-emitted safe Rust: BLS12-381 G1 Pippenger MSM (`msm_bls12`), scalar
 /// multiplication (`g1_scalar_mul`) and the complete projective addition /
 /// doubling (RCB 2015 Alg. 7 / 9), printed from bedrock2 by the trusted
 /// printer `src/Bedrock/ToSafeRustArena.v`.  Do not edit.
 pub mod g1_msm_extracted;
+/// Rocq-emitted safe Rust: BLS12-381 G2 scalar multiplication
+/// (`BLS12_G2_ScalarMul`) and complete projective addition / doubling over Fp2
+/// (RCB 2015 Alg. 7 / 9, `BLS12_G2_Closed`), printed from bedrock2 by the
+/// same trusted printer.  Do not edit.
+pub mod g2_extracted;
 
 /// G1 and G2 group operations over the tower.  G1 addition, doubling,
-/// scalar multiplication and MSM go through [`g1_msm_extracted`]; G1
-/// `to_affine` and all of G2 are hand-written.  See the module documentation
+/// scalar multiplication and MSM go through [`g1_msm_extracted`]; G2
+/// addition, doubling and scalar multiplication through [`g2_extracted`];
+/// `to_affine` is hand-written.  See the module documentation
 /// for what is verified; everything is tested against `blst`
 /// (`tests/group_vs_blst.rs`, `tests/msm_vs_blst.rs`,
 /// `tests/scalar_mul_vs_blst.rs`).

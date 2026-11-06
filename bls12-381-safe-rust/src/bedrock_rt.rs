@@ -1,4 +1,5 @@
-//! Runtime for the Rocq-emitted bedrock2 functions (`g1_msm_extracted.rs`).
+//! Runtime for the Rocq-emitted bedrock2 functions (`g1_msm_extracted.rs`,
+//! `g2_extracted.rs`).
 //!
 //! Hand-written, safe Rust.  The printer `src/Bedrock/ToSafeRustArena.v`
 //! keeps bedrock2's memory model: a bedrock2 pointer is a `u64` byte
@@ -12,13 +13,19 @@
 //! tower leaves (`tower::bls12_{mul,add,sub,from_word}`), lifted to
 //! operate on felems stored in [`Mem`] (6 little-endian u64 Montgomery
 //! limbs, 48 bytes — the bedrock2 `FElem` layout of `bls12_frep`).
+//! The G2 code calls the Fp2 leaves `bls12_Fp2_{mul,add,sub}`, lifted the
+//! same way from `tower::bls12_Fp2_{mul,add,sub}`: an Fp2 element is 12
+//! words, c0 then c1 (the layout of `QuadraticFieldExtensionsSpecs.
+//! Fp2_field_representation`: `fst_felem` / `snd_felem`).
 
-use crate::tower::{self, Fp};
+use crate::tower::{self, Fp, Fp2};
 
 /// Lowest address of [`Mem`]; nonzero so that no live pointer is 0.
 pub const BASE: u64 = 0x1000;
 /// Bytes per felem (6 limbs).
 pub const FE: u64 = 48;
+/// Bytes per Fp2 element (12 limbs, c0 then c1).
+pub const FE2: u64 = 96;
 
 /// Word-addressed little-endian memory, addressed by bedrock2 byte
 /// addresses `BASE..BASE + 8 * len`.  Grows on demand.
@@ -100,6 +107,15 @@ impl Mem {
         let i = self.idx(a);
         self.w[i..i + 6].copy_from_slice(&x.0);
     }
+    #[inline(always)]
+    pub fn read_fp2(&self, a: u64) -> Fp2 {
+        Fp2 { c0: self.read_fp(a), c1: self.read_fp(a + FE) }
+    }
+    #[inline(always)]
+    pub fn write_fp2(&mut self, a: u64, x: &Fp2) {
+        self.write_fp(a, &x.c0);
+        self.write_fp(a + FE, &x.c1);
+    }
 }
 
 // ---- word operations (coqutil Naive word semantics, width 64) ----
@@ -162,4 +178,30 @@ pub fn bls12_one(m: &mut Mem, o: u64) {
     let mut r = Fp::zero();
     tower::bls12_from_word(&mut r, 1);
     m.write_fp(o, &r);
+}
+
+// ---- Fp2 leaves, by the bedrock2 names of bls12_Fp2_field_parameters ----
+// Inputs are read before the output is written, so the in-place calls of the
+// emitted code (output pointer = an input pointer) are well defined.
+
+#[inline(always)]
+pub fn bls12_Fp2_mul(m: &mut Mem, o: u64, x: u64, y: u64) {
+    let (a, b) = (m.read_fp2(x), m.read_fp2(y));
+    let mut r = Fp2::zero();
+    tower::bls12_Fp2_mul(&mut r, &a, &b);
+    m.write_fp2(o, &r);
+}
+#[inline(always)]
+pub fn bls12_Fp2_add(m: &mut Mem, o: u64, x: u64, y: u64) {
+    let (a, b) = (m.read_fp2(x), m.read_fp2(y));
+    let mut r = Fp2::zero();
+    tower::bls12_Fp2_add(&mut r, &a, &b);
+    m.write_fp2(o, &r);
+}
+#[inline(always)]
+pub fn bls12_Fp2_sub(m: &mut Mem, o: u64, x: u64, y: u64) {
+    let (a, b) = (m.read_fp2(x), m.read_fp2(y));
+    let mut r = Fp2::zero();
+    tower::bls12_Fp2_sub(&mut r, &a, &b);
+    m.write_fp2(o, &r);
 }

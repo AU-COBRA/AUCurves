@@ -1,0 +1,60 @@
+(** * BN254 Fp leaves with liveness-chosen [#[spill]] hints.
+
+    The same leaf list as [deprecated/ExtractBN254Text.v]
+    ([bn254_add], [bn254_sub], [bn254_mul], [bn254_square],
+    [bn254_select_znz], [bn254_felem_copy]), translated by
+    [tr_func_sized 4] and [polish_func], printed three ways:
+
+      - [bn254_leaves_rocq]: [pp_module], every register local [#[spill]]
+        (the committed emission);
+      - [bn254_leaves_live_rocq]: the same functions through
+        [AdcChain.polish_func_adc] ([polish_func] plus the proved
+        [adc_func] rewrite of fiat's carry and borrow windows into
+        [#ADCX] / [#SBB] chains), printed by [pp_module_live] with hints
+        chosen by
+        [SpillLiveness.spill_choice] at [default_budget];
+      - the hint report: per leaf, the hinted variables and the
+        residual maximal register occupancy of the pressure model.
+
+    Compile the emission with [jasminc -auto-spill].  The hints are
+    inert: [bn254_leaves_live_erases] instantiates
+    [SpillLiveness.pp_module_live_erases]. *)
+
+From Stdlib Require Import String List ZArith.
+Import ListNotations.
+Require Import bedrock2.Syntax.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_prime.
+Require Import Bedrock.Field.Synthesis.Examples.bn254_felem_copy.
+Require Import Bedrock.Jasmin.Core.
+Require Import Bedrock.Jasmin.SpillLiveness.
+Require Import Bedrock.Jasmin.AdcChain.
+Local Open Scope string_scope.
+
+Local Notation function_t :=
+  (String.string * (list String.string * list String.string * Syntax.cmd.cmd))%type.
+
+Definition bn254_leaf_funcs : list function_t := Eval vm_compute in
+  [ bn254_add; bn254_sub; bn254_mul; bn254_square; bn254_select_znz;
+    ("bn254_felem_copy", bn254_felem_copy) ].
+
+Definition bn254_leaves_jasmin : list jasmin_func := Eval vm_compute in
+  List.map (fun f => polish_func (tr_func_sized 4 f)) bn254_leaf_funcs.
+
+Definition bn254_leaves_jasmin_adc : list jasmin_func := Eval vm_compute in
+  List.map (fun f => polish_func_adc (tr_func_sized 4 f)) bn254_leaf_funcs.
+
+(** The hinted module, with its annotations erased, is the hint-free
+    [pp_module_nospill] emission of the same AST. *)
+Lemma bn254_leaves_live_erases :
+  String.concat (LF ++ LF)
+    (List.map (fun f => render (erase (emit (spill_choice default_budget f) f)))
+              bn254_leaves_jasmin_adc)
+  = pp_module_nospill bn254_leaves_jasmin_adc.
+Proof. apply pp_module_live_erases. Qed.
+
+(** Hint report: per leaf, (name, hinted variables, residual occupancy). *)
+Eval vm_compute in
+  List.map (fun f => (jf_name f, analyse default_budget f)) bn254_leaves_jasmin_adc.
+
+Redirect "bn254_leaves_rocq" Eval vm_compute in pp_module bn254_leaves_jasmin.
+Redirect "bn254_leaves_live_rocq" Eval vm_compute in pp_module_live bn254_leaves_jasmin_adc.

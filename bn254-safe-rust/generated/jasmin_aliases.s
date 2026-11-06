@@ -1,38 +1,38 @@
 # Map the safe-tower's extern names to the actual symbol providers.
 #
 # mul    comes from CryptOpt (SMT-validated against fiat-crypto Montgomery).
-# square ALSO comes from CryptOpt now -- see below.
-# add and sub are NOT redirected here: Jasmin's auto-spilled add/sub
-# are slower than the Rust CIOS-style stubs (measured ~1.25x slowdown
-# on the full pairing).  The stubs in src/stubs.rs cover them.
+# square comes from Jasmin -- see below.
+# add    comes from Jasmin (bn254_leaves_live.jazz): with the hints chosen
+#        from liveness it runs at 6.6 cycles against 9.2 for the Rust stub
+#        (rdtsc cycles per call on a serial chain); the all-#[spill]
+#        emission runs at 14-16 cycles.
+# sub is NOT redirected: Jasmin's sub (10.4 cycles) is still slower than
+# the Rust stub (5.5); src/stubs.rs covers it.
 #
 # Each line is one jmp -- the cost of the indirection is one extra
 # branch per leaf call, which the LTO pass eliminates by inlining.
 .text
 
+.global _bn254_add
+_bn254_add: jmp bn254_add
+
 .global _bn254_mul
 _bn254_mul: jmp fiat_bn254_mul
 
-# square used to jump to Jasmin's `bn254_square`, which suffers exactly the
-# auto-spill problem that kept Jasmin's add and sub out of this file: it
-# copies both operands to the stack and reloads them.  Measured on Zen 4
-# as a serial dependency chain, that cost 694.7 cycles against 88.9 for
-# CryptOpt's multiply -- a squaring 7.8x more expensive than a general
-# multiply of the same width, which is never a real property of the
-# arithmetic, since squaring can always fall back to multiplying.
+# square comes from Jasmin again (bn254_leaves_live.jazz).  It used to jump to
+# Jasmin's `bn254_square`, which suffered the auto-spill problem: every
+# register local was #[spill], so it copied its operands to the stack and
+# reloaded them (694.7 cycles against 88.9 for CryptOpt's multiply on Zen 4),
+# and every carry was a data-dependent branch.  From then until now it was
+# routed to CryptOpt's multiply as mul(out, x, x).
 #
-# So route it to the multiply instead.  System V: square is
-# (out = rdi, x = rsi) and mul is (out = rdi, x = rsi, y = rdx), so
-# duplicating rsi into rdx turns square(out, x) into mul(out, x, x).
-# This computes exactly the same function -- the Rust reference
-# `stubs.rs::_bn254_square` is itself `mont_mul(xv, xv)` -- and
-# `examples/sqr_probe.rs` asserts the two agree.
-#
-# A dedicated CryptOpt square would be better still (fiat's own square
-# saves one operand load, ~8%), but CryptOpt ships no BN254 square seed
-# in this tree; only `bn254_mul_cryptopt.asm` was generated.  Generating
-# one is the obvious follow-up.
+# The leaf now comes through AdcChain.polish_func_adc (fiat's addcarryx /
+# subborrowx windows as #ADCX / #SBB chains, proved by adc_cmd_correct) with
+# #[spill] hints chosen from liveness (SpillLiveness.pp_module_live, proved
+# inert by pp_module_live_erases).  Measured on this tree's harness
+# (rdtsc, serial chain, median of 3 x median of 11 x 10^5 calls, cloud Xeon):
+# Jasmin bn254_square 54.6 cycles against 55.2 for CryptOpt mul(x, x)
+# (CryptOpt mul: 52.3; Jasmin mul: 55.0, so mul stays on CryptOpt).
+# System V: square is (out = rdi, x = rsi), the Jasmin export signature.
 .global _bn254_square
-_bn254_square:
-	mov %rsi, %rdx
-	jmp fiat_bn254_mul
+_bn254_square: jmp bn254_square

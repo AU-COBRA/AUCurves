@@ -38,6 +38,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.sh");
     println!("cargo:rerun-if-changed=generated/bn254_leaves.jazz");
+    println!("cargo:rerun-if-changed=generated/bn254_leaves_live.jazz");
     println!("cargo:rerun-if-changed=generated/bn254_mul_cryptopt.asm");
     println!("cargo:rerun-if-changed=generated/jasmin_aliases.s");
 }

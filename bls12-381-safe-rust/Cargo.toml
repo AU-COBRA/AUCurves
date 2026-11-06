@@ -7,6 +7,10 @@ license = "Apache-2.0"
 
 [features]
 cryptopt = []  # Enables CryptOpt-accelerated mul/square (set by build.rs when nasm available)
+# The pairing tower, G1/G2 group operations and the G1 MSM compiled by jasminc from
+# the bedrock2 functions (generated/bls12_{tower,group}_regptr.jazz), module `jasmin`.
+# Needs jasminc ($JASMINC or on PATH), nasm and as.
+jasmin = []
 # Opt out of the Bernstein-Yang (safegcd) Fp inversion and fall back to the
 # Fermat ladder x^(p-2).  Both are hand-written Rust in src/stubs.rs; the
 # Fermat ladder is ~20x slower.  Kept as a cross-check oracle for the KAT in
@@ -51,3 +55,7 @@ path = "examples/multilin_test.rs"
 [[example]]
 name = "ml_dump"
 path = "examples/ml_dump.rs"
+
+[[example]]
+name = "bench_jasmin"
+path = "examples/bench_jasmin.rs"

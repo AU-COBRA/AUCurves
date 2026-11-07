@@ -35,7 +35,7 @@
 #![allow(non_snake_case, non_camel_case_types)]
 #![allow(unused_assignments, unused_variables, unused_mut, unused_parens, dead_code)]
 
-mod tower {
+pub mod tower {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/bls12_safe_tower.rs"));
 }
 

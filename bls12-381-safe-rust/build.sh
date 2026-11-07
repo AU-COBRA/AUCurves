@@ -13,9 +13,12 @@
 #   bls12_tower_regptr.jazz    - pairing tower, src/Bedrock/ExtractBLS12TowerJasmin.v
 #   bls12_group_regptr.jazz    - G1/G2 group law, scalar mult, MSM,
 #                                src/Bedrock/ExtractBLS12GroupJasmin.v
-#   bls12_leaves_live.jazz     - the Fp leaves through polish_func_adc with
+#   bls12_leaves_live.jazz     - the Fp leaves through polish_func_adc and
+#                                CtSelect.ct_func (no branch) with
 #                                liveness-chosen #[spill] hints,
 #                                src/Bedrock/Jasmin/ExtractBLS12LeavesLive.v
+#                                (scripts/emit_bls12_leaves_live.sh;
+#                                scripts/check_ct_leaves.sh: jasmin-ct)
 #
 #   bls12_{tower,group}_regptr_ffi.jazz
 #                              - the same modules with mul/square behind the

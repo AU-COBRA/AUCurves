@@ -15,12 +15,16 @@ export fn bn254_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x12;
   reg u64 x14;
   reg u64 x15;
+  reg bool __ct_c;
   reg bool __bf;
   reg u64 x16;
   reg u64 x18;
   reg u64 x20;
   reg u64 x22;
   reg u64 x23;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg u64 __ct_m;
   reg u64 x26;
   reg u64 x29;
   reg u64 x32;
@@ -42,9 +46,7 @@ export fn bn254_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   __cf, x12 = #ADCX(x2, x6, __cf);
   __cf, x14 = #ADCX(x3, x7, __cf);
   x15 = 0;
-  if __cf {
-    x15 = 1;
-  }
+  __ct_c, x15 = #ADCX(x15, x15, __cf);
   __wtmp__ = 4332616871279656263;
   x16 = x8;
   _, __bf, _, _, _, x16 = #SUB(x16, __wtmp__);
@@ -58,29 +60,33 @@ export fn bn254_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   x22 = x14;
   _, __bf, _, _, _, x22 = #SBB(x22, __wtmp__, __bf);
   x23 = 0;
-  if __bf {
-    x23 = 1;
-  }
-  if ((x23 == 0)) {
-    x26 = x16;
-  } else {
-    x26 = x8;
-  }
-  if ((x23 == 0)) {
-    x29 = x18;
-  } else {
-    x29 = x10;
-  }
-  if ((x23 == 0)) {
-    x32 = x20;
-  } else {
-    x32 = x12;
-  }
-  if ((x23 == 0)) {
-    x35 = x22;
-  } else {
-    x35 = x14;
-  }
+  __ct_c, x23 = #ADCX(x23, x23, __bf);
+  __wtmp__ = 1;
+  __ct_t = x23;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x16;
+  __ct_t = (__ct_t ^ x8);
+  __ct_t = (__ct_t & __ct_m);
+  x26 = x8;
+  x26 = (x26 ^ __ct_t);
+  __ct_t = x18;
+  __ct_t = (__ct_t ^ x10);
+  __ct_t = (__ct_t & __ct_m);
+  x29 = x10;
+  x29 = (x29 ^ __ct_t);
+  __ct_t = x20;
+  __ct_t = (__ct_t ^ x12);
+  __ct_t = (__ct_t & __ct_m);
+  x32 = x12;
+  x32 = (x32 ^ __ct_t);
+  __ct_t = x22;
+  __ct_t = (__ct_t ^ x14);
+  __ct_t = (__ct_t & __ct_m);
+  x35 = x14;
+  x35 = (x35 ^ __ct_t);
   x36 = x26;
   x37 = x29;
   x38 = x32;
@@ -108,6 +114,7 @@ export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x12;
   reg u64 x14;
   reg u64 x15;
+  reg bool __ct_c;
   reg u64 x16;
   reg u64 x16_bp0;
   reg u64 __wtmp__;
@@ -159,10 +166,9 @@ export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   x14 = x3;
   _, __bf, _, _, _, x14 = #SBB(x14, __wtmp__, __bf);
   x15 = 0;
-  if __bf {
-    x15 = 0;
-    x15 = (x15 - 1);
-  }
+  __wtmp__ = x15;
+  x15 = x15;
+  _, __ct_c, _, _, _, x15 = #SBB(x15, __wtmp__, __bf);
   x16 = x8;
   x16_bp0 = x15;
   __wtmp__ = 4332616871279656263;
@@ -170,9 +176,7 @@ export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   x16 = (x16 + x16_bp0);
   __ltu_x17_bp0 = (x16 <u x8);
   x17_bp0 = 0;
-  if __ltu_x17_bp0 {
-    x17_bp0 = 1;
-  }
+  __ct_c, x17_bp0 = #ADCX(x17_bp0, x17_bp0, __ltu_x17_bp0);
   x17 = x17_bp0;
   x17 = (x17 + x10);
   x18 = x17;
@@ -182,17 +186,13 @@ export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   x18 = (x18 + x18_bp0);
   __ltu_x19_bp1 = (x17 <u x10);
   x19_bp1 = 0;
-  if __ltu_x19_bp1 {
-    x19_bp1 = 1;
-  }
+  __ct_c, x19_bp1 = #ADCX(x19_bp1, x19_bp1, __ltu_x19_bp1);
   x19_lt_b_bp2 = x15;
   __wtmp__ = 10917124144477883021;
   x19_lt_b_bp2 = (x19_lt_b_bp2 & __wtmp__);
   __ltu_x19_bp3 = (x18 <u x19_lt_b_bp2);
   x19_bp3 = 0;
-  if __ltu_x19_bp3 {
-    x19_bp3 = 1;
-  }
+  __ct_c, x19_bp3 = #ADCX(x19_bp3, x19_bp3, __ltu_x19_bp3);
   x19a_bp0 = x19_bp1;
   x19a_bp0 = (x19a_bp0 + x19_bp3);
   x19 = x19a_bp0;
@@ -204,17 +204,13 @@ export fn bn254_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   x20 = (x20 + x20_bp0);
   __ltu_x21_bp4 = (x19 <u x12);
   x21_bp4 = 0;
-  if __ltu_x21_bp4 {
-    x21_bp4 = 1;
-  }
+  __ct_c, x21_bp4 = #ADCX(x21_bp4, x21_bp4, __ltu_x21_bp4);
   x21_lt_b_bp5 = x15;
   __wtmp__ = 13281191951274694749;
   x21_lt_b_bp5 = (x21_lt_b_bp5 & __wtmp__);
   __ltu_x21_bp6 = (x20 <u x21_lt_b_bp5);
   x21_bp6 = 0;
-  if __ltu_x21_bp6 {
-    x21_bp6 = 1;
-  }
+  __ct_c, x21_bp6 = #ADCX(x21_bp6, x21_bp6, __ltu_x21_bp6);
   x21a_bp0 = x21_bp4;
   x21a_bp0 = (x21a_bp0 + x21_bp6);
   x21a_bp1 = x21a_bp0;
@@ -260,9 +256,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __cf_x21;
   #[spill] reg u64 x20;
   reg bool __adc_cf_x26;
-  #[spill] reg u64 x24;
+  reg u64 x24;
   reg bool __adc_cf_x31;
-  #[spill] reg u64 x29;
+  reg u64 x29;
   reg u64 x31;
   reg bool __adc_m_x31;
   reg u64 x32;
@@ -288,9 +284,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __cf_x56;
   reg u64 x55;
   reg bool __adc_cf_x61;
-  #[spill] reg u64 x59;
+  reg u64 x59;
   reg bool __adc_cf_x66;
-  #[spill] reg u64 x64;
+  reg u64 x64;
   reg bool __adc_cf_x71;
   reg u64 x69;
   reg bool __adc_cf_x76;
@@ -319,9 +315,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __adc_cf_x104;
   #[spill] reg u64 x102;
   reg bool __adc_cf_x109;
-  #[spill] reg u64 x107;
+  reg u64 x107;
   reg bool __adc_cf_x114;
-  #[spill] reg u64 x112;
+  reg u64 x112;
   reg bool __adc_cf_x119;
   reg u64 x117;
   reg u64 x119;
@@ -349,9 +345,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __adc_cf_x148;
   #[spill] reg u64 x146;
   reg bool __adc_cf_x153;
-  #[spill] reg u64 x151;
+  reg u64 x151;
   reg bool __adc_cf_x158;
-  #[spill] reg u64 x156;
+  reg u64 x156;
   reg bool __adc_cf_x163;
   reg u64 x161;
   reg u64 x163;
@@ -379,9 +375,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __adc_cf_x192;
   #[spill] reg u64 x190;
   reg bool __adc_cf_x197;
-  #[spill] reg u64 x195;
+  reg u64 x195;
   reg bool __adc_cf_x202;
-  #[spill] reg u64 x200;
+  reg u64 x200;
   reg bool __adc_cf_x207;
   reg u64 x205;
   reg u64 x207;
@@ -409,9 +405,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __adc_cf_x236;
   #[spill] reg u64 x234;
   reg bool __adc_cf_x241;
-  #[spill] reg u64 x239;
+  reg u64 x239;
   reg bool __adc_cf_x246;
-  #[spill] reg u64 x244;
+  reg u64 x244;
   reg bool __adc_cf_x251;
   reg u64 x249;
   reg u64 x251;
@@ -439,9 +435,9 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg bool __adc_cf_x280;
   #[spill] reg u64 x278;
   reg bool __adc_cf_x285;
-  #[spill] reg u64 x283;
+  reg u64 x283;
   reg bool __adc_cf_x290;
-  #[spill] reg u64 x288;
+  reg u64 x288;
   reg bool __adc_cf_x295;
   reg u64 x293;
   reg u64 x295;
@@ -491,6 +487,10 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x358;
   reg u64 x359;
   reg bool __adc_m_x359;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x362;
   reg u64 x365;
   reg u64 x368;
@@ -733,26 +733,32 @@ export fn bn254_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   _, __adc_cf_x359, _, _, _, x358 = #SUB(x358, __wtmp__);
   x359 = 0;
   __adc_m_x359, x359 = #ADCX(x359, x359, __adc_cf_x359);
-  if ((x359 == 0)) {
-    x362 = x341;
-  } else {
-    x362 = x322;
-  }
-  if ((x359 == 0)) {
-    x365 = x345;
-  } else {
-    x365 = x327;
-  }
-  if ((x359 == 0)) {
-    x368 = x350;
-  } else {
-    x368 = x332;
-  }
-  if ((x359 == 0)) {
-    x371 = x355;
-  } else {
-    x371 = x337;
-  }
+  __wtmp__ = 1;
+  __ct_t = x359;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x341;
+  __ct_t = (__ct_t ^ x322);
+  __ct_t = (__ct_t & __ct_m);
+  x362 = x322;
+  x362 = (x362 ^ __ct_t);
+  __ct_t = x345;
+  __ct_t = (__ct_t ^ x327);
+  __ct_t = (__ct_t & __ct_m);
+  x365 = x327;
+  x365 = (x365 ^ __ct_t);
+  __ct_t = x350;
+  __ct_t = (__ct_t ^ x332);
+  __ct_t = (__ct_t & __ct_m);
+  x368 = x332;
+  x368 = (x368 ^ __ct_t);
+  __ct_t = x355;
+  __ct_t = (__ct_t ^ x337);
+  __ct_t = (__ct_t & __ct_m);
+  x371 = x337;
+  x371 = (x371 ^ __ct_t);
   x372 = x362;
   x373 = x365;
   x374 = x368;
@@ -785,9 +791,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __cf_x17;
   #[spill] reg u64 x16;
   reg bool __adc_cf_x22;
-  #[spill] reg u64 x20;
+  reg u64 x20;
   reg bool __adc_cf_x27;
-  #[spill] reg u64 x25;
+  reg u64 x25;
   reg u64 x27;
   reg bool __adc_m_x27;
   reg u64 x28;
@@ -813,9 +819,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __cf_x52;
   reg u64 x51;
   reg bool __adc_cf_x57;
-  #[spill] reg u64 x55;
+  reg u64 x55;
   reg bool __adc_cf_x62;
-  #[spill] reg u64 x60;
+  reg u64 x60;
   reg bool __adc_cf_x67;
   reg u64 x65;
   reg bool __adc_cf_x72;
@@ -844,9 +850,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __adc_cf_x100;
   #[spill] reg u64 x98;
   reg bool __adc_cf_x105;
-  #[spill] reg u64 x103;
+  reg u64 x103;
   reg bool __adc_cf_x110;
-  #[spill] reg u64 x108;
+  reg u64 x108;
   reg bool __adc_cf_x115;
   reg u64 x113;
   reg u64 x115;
@@ -874,9 +880,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __adc_cf_x144;
   #[spill] reg u64 x142;
   reg bool __adc_cf_x149;
-  #[spill] reg u64 x147;
+  reg u64 x147;
   reg bool __adc_cf_x154;
-  #[spill] reg u64 x152;
+  reg u64 x152;
   reg bool __adc_cf_x159;
   reg u64 x157;
   reg u64 x159;
@@ -904,9 +910,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __adc_cf_x188;
   #[spill] reg u64 x186;
   reg bool __adc_cf_x193;
-  #[spill] reg u64 x191;
+  reg u64 x191;
   reg bool __adc_cf_x198;
-  #[spill] reg u64 x196;
+  reg u64 x196;
   reg bool __adc_cf_x203;
   reg u64 x201;
   reg u64 x203;
@@ -934,9 +940,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __adc_cf_x232;
   #[spill] reg u64 x230;
   reg bool __adc_cf_x237;
-  #[spill] reg u64 x235;
+  reg u64 x235;
   reg bool __adc_cf_x242;
-  #[spill] reg u64 x240;
+  reg u64 x240;
   reg bool __adc_cf_x247;
   reg u64 x245;
   reg u64 x247;
@@ -964,9 +970,9 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg bool __adc_cf_x276;
   #[spill] reg u64 x274;
   reg bool __adc_cf_x281;
-  #[spill] reg u64 x279;
+  reg u64 x279;
   reg bool __adc_cf_x286;
-  #[spill] reg u64 x284;
+  reg u64 x284;
   reg bool __adc_cf_x291;
   reg u64 x289;
   reg u64 x291;
@@ -1016,6 +1022,10 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   reg u64 x354;
   reg u64 x355;
   reg bool __adc_m_x355;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x358;
   reg u64 x361;
   reg u64 x364;
@@ -1254,26 +1264,32 @@ export fn bn254_square(#[spill] reg u64 out0, reg u64 in0) {
   _, __adc_cf_x355, _, _, _, x354 = #SUB(x354, __wtmp__);
   x355 = 0;
   __adc_m_x355, x355 = #ADCX(x355, x355, __adc_cf_x355);
-  if ((x355 == 0)) {
-    x358 = x337;
-  } else {
-    x358 = x318;
-  }
-  if ((x355 == 0)) {
-    x361 = x341;
-  } else {
-    x361 = x323;
-  }
-  if ((x355 == 0)) {
-    x364 = x346;
-  } else {
-    x364 = x328;
-  }
-  if ((x355 == 0)) {
-    x367 = x351;
-  } else {
-    x367 = x333;
-  }
+  __wtmp__ = 1;
+  __ct_t = x355;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x337;
+  __ct_t = (__ct_t ^ x318);
+  __ct_t = (__ct_t & __ct_m);
+  x358 = x318;
+  x358 = (x358 ^ __ct_t);
+  __ct_t = x341;
+  __ct_t = (__ct_t ^ x323);
+  __ct_t = (__ct_t & __ct_m);
+  x361 = x323;
+  x361 = (x361 ^ __ct_t);
+  __ct_t = x346;
+  __ct_t = (__ct_t ^ x328);
+  __ct_t = (__ct_t & __ct_m);
+  x364 = x328;
+  x364 = (x364 ^ __ct_t);
+  __ct_t = x351;
+  __ct_t = (__ct_t ^ x333);
+  __ct_t = (__ct_t & __ct_m);
+  x367 = x333;
+  x367 = (x367 ^ __ct_t);
   x368 = x358;
   x369 = x361;
   x370 = x364;
@@ -1296,6 +1312,10 @@ export fn bn254_select_znz(reg u64 out0, reg u64 in0, reg u64 in1, reg u64 in2) 
   reg u64 x5;
   reg u64 x6;
   reg u64 x7;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x10;
   reg u64 x13;
   reg u64 x16;
@@ -1312,26 +1332,32 @@ export fn bn254_select_znz(reg u64 out0, reg u64 in0, reg u64 in1, reg u64 in2) 
   x5 = [(in2 + 8) + 0];
   x6 = [(in2 + 16) + 0];
   x7 = [(in2 + 24) + 0];
-  if ((in0 == 0)) {
-    x10 = x0;
-  } else {
-    x10 = x4;
-  }
-  if ((in0 == 0)) {
-    x13 = x1;
-  } else {
-    x13 = x5;
-  }
-  if ((in0 == 0)) {
-    x16 = x2;
-  } else {
-    x16 = x6;
-  }
-  if ((in0 == 0)) {
-    x19 = x3;
-  } else {
-    x19 = x7;
-  }
+  __wtmp__ = 1;
+  __ct_t = in0;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x0;
+  __ct_t = (__ct_t ^ x4);
+  __ct_t = (__ct_t & __ct_m);
+  x10 = x4;
+  x10 = (x10 ^ __ct_t);
+  __ct_t = x1;
+  __ct_t = (__ct_t ^ x5);
+  __ct_t = (__ct_t & __ct_m);
+  x13 = x5;
+  x13 = (x13 ^ __ct_t);
+  __ct_t = x2;
+  __ct_t = (__ct_t ^ x6);
+  __ct_t = (__ct_t & __ct_m);
+  x16 = x6;
+  x16 = (x16 ^ __ct_t);
+  __ct_t = x3;
+  __ct_t = (__ct_t ^ x7);
+  __ct_t = (__ct_t & __ct_m);
+  x19 = x7;
+  x19 = (x19 ^ __ct_t);
   x20 = x10;
   x21 = x13;
   x22 = x16;

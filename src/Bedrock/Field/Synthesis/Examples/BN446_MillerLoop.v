@@ -109,8 +109,8 @@ Section BN446_MillerLoop.
     Let bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
 
     (* xi = (3, 1) for BN446 (cubic non-residue in Fp2 for Fp6 tower) *)
-    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
     (* ============================================================ *)
     (* Field extension instances                                     *)
@@ -842,6 +842,15 @@ Section BN446_MillerLoop.
         pose proof Htmp as H'. ecancel_assumption.
       }
 
+      (* The stack frames are in Hmaster, so the anybytes facts from the 8
+         stackallocs are stale.  Left in the context, straightline falls through
+         to straightline_stackalloc on every cmd.call goal, which runs a failing
+         ecancel_assumption search for each of them (bn446's compile was stopped
+         at the 1-hour cap in the first [repeat straightline] below).  The
+         deallocation derives them again from FElem_to_bytes.  As in
+         BLS12_MillerLoop.v and BLS12_377_MillerLoop.v; see docs/slow-proofs.md. *)
+      clear HanyF HanyTx HanyTy HanyLam HanyTmp1 HanyTmp2 HanyLine HanyU6p2.
+
       (* === Phase 2: Process init calls + loop + dealloc === *)
 
       unfold BN446_Pairing.miller_loop_full_body.
@@ -1381,6 +1390,13 @@ Section BN446_MillerLoop.
           unfold fst_felem, snd_felem,
             QuadraticFieldExtensionsSpecs.fst_felem,
             QuadraticFieldExtensionsSpecs.snd_felem.
+          (* Bind the Fp limb count with a lambda before the rewrites.  Each
+             [rewrite !] ends with a failing search for one more instance, and
+             with the constant in the goal the unifier evaluates the limb count
+             of the 446-bit representation at every candidate: 6 to 9 s per
+             rewrite, 85 s for the twelve; with the variable, 0.02 s.  See
+             docs/slow-proofs.md (bind with a lambda, not remember + clear). *)
+          generalize dependent Fp_fsw; intros.
           rewrite !(QuadraticFieldExtensions.firstn_app' _ _ _ Hlen_fw1).
           rewrite !(QuadraticFieldExtensions.skipn_app _ _ _ Hlen_fw1).
           rewrite !(QuadraticFieldExtensions.firstn_app' _ _ _ Hlen_fw3).
@@ -1423,6 +1439,14 @@ Section BN446_MillerLoop.
           [Htmp2_vi [Hline_vi [Hu6p2_vi [Hout_vi [Hpx_vi
           [Hpy_vi [Hqx_vi Hqy_vi]]]]]]]]]]]]]]]]]]]]]]]]]].
         subst ti.
+        (* The loop runs on mi, described by Hsep_vi.  The separation facts of
+           the code before the loop are on earlier memories and stale here; left
+           in the context, every ecancel_assumption_with_copy of the loop body
+           tries them first, and congruence and assumption scan them: about 2.5 s
+           per call instead of 1 s.  See docs/slow-proofs.md (clear the context). *)
+        repeat match goal with
+               | H : (_ ⋆ _)%sep ?m |- _ => assert_fails (constr_eq m mi); clear H
+               end.
 
         (* Evaluate branch condition: expr.var "i" *)
         exists (word.of_Z (Z.of_nat vi)).

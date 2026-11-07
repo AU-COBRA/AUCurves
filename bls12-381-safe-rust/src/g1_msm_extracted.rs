@@ -242,42 +242,237 @@ pub fn g1_scalar_mul(m: &mut Mem, mut v_outx: u64, mut v_outy: u64, mut v_outz: 
 }
 
 pub fn msm_curve_add(m: &mut Mem, mut v_X1: u64, mut v_X2: u64, mut v_Y1: u64, mut v_Y2: u64, mut v_Z1: u64, mut v_Z2: u64, mut v_Xout: u64, mut v_Yout: u64, mut v_Zout: u64) {
+    let mut v_e: u64 = 0;
+    let mut v_t5: u64 = 0;
+    let mut v_t0: u64 = 0;
+    let mut v_t1: u64 = 0;
+    let mut v_t3: u64 = 0;
+    let mut v_t4: u64 = 0;
+    let mut v_y3: u64 = 0;
+    let mut v_t2: u64 = 0;
+    let mut v_z3: u64 = 0;
     let mut v_tx: u64 = 0;
     let mut v_ty: u64 = 0;
     let mut v_tz: u64 = 0;
-    v_tx = m.alloc(48);
-    v_ty = m.alloc(48);
-    v_tz = m.alloc(48);
-    {
-        let a0: u64 = v_X1;
-        let a1: u64 = v_X2;
-        let a2: u64 = v_Y1;
-        let a3: u64 = v_Y2;
-        let a4: u64 = v_Z1;
-        let a5: u64 = v_Z2;
-        let a6: u64 = v_tx;
-        let a7: u64 = v_ty;
-        let a8: u64 = v_tz;
-        curve_add(m, a0, a1, a2, a3, a4, a5, a6, a7, a8);
+    v_e = 1u64;
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(0u64)) == 8505329371266088957u64) as u64));
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(8u64)) == 17002214543764226050u64) as u64));
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(16u64)) == 6865905132761471162u64) as u64));
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(24u64)) == 8632934651105793861u64) as u64));
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(32u64)) == 6631298214892334189u64) as u64));
+    v_e = (v_e & ((m.load64((v_Z2).wrapping_add(40u64)) == 1582556514881692819u64) as u64));
+    if v_e != 0 {
+        v_t5 = m.alloc(48);
+        {
+            let a0: u64 = v_t5;
+            bls12_three_b(m, a0);
+        }
+        v_t0 = m.alloc(48);
+        {
+            let a0: u64 = v_t0;
+            let a1: u64 = v_X1;
+            let a2: u64 = v_X2;
+            bls12_mul(m, a0, a1, a2);
+        }
+        v_t1 = m.alloc(48);
+        {
+            let a0: u64 = v_t1;
+            let a1: u64 = v_Y1;
+            let a2: u64 = v_Y2;
+            bls12_mul(m, a0, a1, a2);
+        }
+        v_t3 = m.alloc(48);
+        {
+            let a0: u64 = v_t3;
+            let a1: u64 = v_X2;
+            let a2: u64 = v_Y2;
+            bls12_add(m, a0, a1, a2);
+        }
+        v_t4 = m.alloc(48);
+        {
+            let a0: u64 = v_t4;
+            let a1: u64 = v_X1;
+            let a2: u64 = v_Y1;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t3;
+            let a1: u64 = v_t3;
+            let a2: u64 = v_t4;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t4;
+            let a1: u64 = v_t0;
+            let a2: u64 = v_t1;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t3;
+            let a1: u64 = v_t3;
+            let a2: u64 = v_t4;
+            bls12_sub(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t4;
+            let a1: u64 = v_Y2;
+            let a2: u64 = v_Z1;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t4;
+            let a1: u64 = v_t4;
+            let a2: u64 = v_Y1;
+            bls12_add(m, a0, a1, a2);
+        }
+        v_y3 = m.alloc(48);
+        {
+            let a0: u64 = v_y3;
+            let a1: u64 = v_X2;
+            let a2: u64 = v_Z1;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_y3;
+            let a1: u64 = v_y3;
+            let a2: u64 = v_X1;
+            bls12_add(m, a0, a1, a2);
+        }
+        v_t2 = m.alloc(48);
+        {
+            let a0: u64 = v_t2;
+            let a1: u64 = v_t0;
+            let a2: u64 = v_t0;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t0;
+            let a1: u64 = v_t2;
+            let a2: u64 = v_t0;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t2;
+            let a1: u64 = v_t5;
+            let a2: u64 = v_Z1;
+            bls12_mul(m, a0, a1, a2);
+        }
+        v_z3 = m.alloc(48);
+        {
+            let a0: u64 = v_z3;
+            let a1: u64 = v_t1;
+            let a2: u64 = v_t2;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t1;
+            let a1: u64 = v_t1;
+            let a2: u64 = v_t2;
+            bls12_sub(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_y3;
+            let a1: u64 = v_t5;
+            let a2: u64 = v_y3;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t5;
+            let a1: u64 = v_t4;
+            let a2: u64 = v_y3;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t2;
+            let a1: u64 = v_t3;
+            let a2: u64 = v_t1;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_Xout;
+            let a1: u64 = v_t2;
+            let a2: u64 = v_t5;
+            bls12_sub(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_y3;
+            let a1: u64 = v_y3;
+            let a2: u64 = v_t0;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t1;
+            let a1: u64 = v_t1;
+            let a2: u64 = v_z3;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_Yout;
+            let a1: u64 = v_t1;
+            let a2: u64 = v_y3;
+            bls12_add(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_t0;
+            let a1: u64 = v_t0;
+            let a2: u64 = v_t3;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_z3;
+            let a1: u64 = v_z3;
+            let a2: u64 = v_t4;
+            bls12_mul(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_Zout;
+            let a1: u64 = v_z3;
+            let a2: u64 = v_t0;
+            bls12_add(m, a0, a1, a2);
+        }
+        m.free(48);
+        m.free(48);
+        m.free(48);
+        m.free(48);
+        m.free(48);
+        m.free(48);
+        m.free(48);
+        m.free(48);
+    } else {
+        v_tx = m.alloc(48);
+        v_ty = m.alloc(48);
+        v_tz = m.alloc(48);
+        {
+            let a0: u64 = v_X1;
+            let a1: u64 = v_X2;
+            let a2: u64 = v_Y1;
+            let a3: u64 = v_Y2;
+            let a4: u64 = v_Z1;
+            let a5: u64 = v_Z2;
+            let a6: u64 = v_tx;
+            let a7: u64 = v_ty;
+            let a8: u64 = v_tz;
+            curve_add(m, a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        }
+        {
+            let a0: u64 = v_Xout;
+            let a1: u64 = v_tx;
+            bls12_felem_copy(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_Yout;
+            let a1: u64 = v_ty;
+            bls12_felem_copy(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_Zout;
+            let a1: u64 = v_tz;
+            bls12_felem_copy(m, a0, a1);
+        }
+        m.free(48);
+        m.free(48);
+        m.free(48);
     }
-    {
-        let a0: u64 = v_Xout;
-        let a1: u64 = v_tx;
-        bls12_felem_copy(m, a0, a1);
-    }
-    {
-        let a0: u64 = v_Yout;
-        let a1: u64 = v_ty;
-        bls12_felem_copy(m, a0, a1);
-    }
-    {
-        let a0: u64 = v_Zout;
-        let a1: u64 = v_tz;
-        bls12_felem_copy(m, a0, a1);
-    }
-    m.free(48);
-    m.free(48);
-    m.free(48);
 }
 
 pub fn msm_curve_double(m: &mut Mem, mut v_Xin: u64, mut v_Yin: u64, mut v_Zin: u64, mut v_Xout: u64, mut v_Yout: u64, mut v_Zout: u64) {

@@ -42,6 +42,7 @@ Require Import Bedrock.Group.CurveAdd.RcbAnyOut.
 Require Import Bedrock.BLS12_MSM.
 Require Import Bedrock.BLS12_MSM_Functional.
 Require Import Bedrock.BLS12_MSM_Wrappers.
+Require Import Bedrock.BLS12_MSM_MixedAdd.
 Require Import Bedrock.BLS12_G1ArenaRust.
 Require Import Bedrock.BLS12_G1_ScalarMul.
 Import ListNotations.
@@ -182,8 +183,10 @@ Section Closed.
   (** ** The callee contracts of the shipped functions
 
       From the bodies of [bls12_g1_funcs] and the field-leaf contracts:
-      the copy-out wrappers satisfy [CurveAddAliasedOK] /
-      [CurveDoubleInplaceOK] for the RCB formulas, and ["store_zero"]
+      ["msm_curve_add"] (mixed addition when Z2 = 1, else the copy-out
+      wrapper of the RCB addition; [msm_curve_add_mixed_ok]) satisfies
+      [CurveAddAliasedOK], the copy-out wrapper ["msm_curve_double"]
+      [CurveDoubleInplaceOK], for the RCB formulas, and ["store_zero"]
       satisfies [StoreZero3OK] for (0 : 1 : 0). *)
   Lemma bls12_g1_callees_ok (functions : Semantics.env) :
     map.get functions "msm_curve_add" = Some (snd BLS12_G1ArenaRust.msm_curve_add) ->
@@ -231,7 +234,7 @@ Section Closed.
            | |- ?g => idtac "UNEXPECTED" g
            end.
       all: rewrite rcb_double_a0_body_anyout_eq; exact Hcd. }
-    split; [ exact (copy_out_add_ok three_b_felem functions Hmca HaddS Hcopy) | ].
+    split; [ exact (msm_curve_add_mixed_ok functions Hmca HaddS Hcopy Hmul Hadd Hsub Hload) | ].
     split; [ exact (copy_out_double_ok three_b_felem functions Hmcd HdblS Hcopy) | ].
     exact (store_zero_ok3 "bls12_zero" "bls12_one" functions Hsz Hz Ho).
   Qed.

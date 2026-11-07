@@ -48,15 +48,22 @@
       [bls12_three_b_ok] (Qed).
     - ["bls12_felem_copy"]: [bls12_felem_copy.bls12_felem_copy],
       [felem_copy_ok] (Qed).
-    - ["msm_curve_add"], ["msm_curve_double"]: two copy-out wrappers
-      DEFINED HERE (also the callees of ["g1_scalar_mul"]): they call the derived
-      body with stack temporaries as outputs and then copy into the
-      output pointers, so that the MSM's aliased calls (output = first
-      input) are well-defined whatever order the derived body writes
-      its outputs in.  [CurveAddAliasedOK] / [CurveDoubleInplaceOK]
-      hold for them by [BLS12_MSM_Wrappers.copy_out_add_ok] /
-      [copy_out_double_ok] (via [RcbAnyOut], which re-derives the two
-      bodies with unconstrained output buffers).
+    - ["msm_curve_add"]: [BLS12_MSM_MixedAdd.msm_curve_add_mixed] (also the
+      callee of ["g1_scalar_mul"]): if the six words of Z2 are those of 1
+      in the Montgomery representation (the affine input points of an
+      MSM), RCB 2015 Algorithm 8, the complete mixed addition
+      ([MixedAddA0.madd_a0_cmd], derived by Rupicola, outputs written
+      once, after the last read of the inputs, so correct in place);
+      otherwise a copy-out wrapper of ["curve_add"]: the derived body
+      with stack temporaries as outputs, then copied into the output
+      pointers, so that the MSM's aliased calls (output = first input)
+      are well-defined whatever order the derived body writes its
+      outputs in.  [CurveAddAliasedOK] holds for it by
+      [BLS12_MSM_MixedAdd.msm_curve_add_mixed_ok] (via [RcbAnyOut], which
+      re-derives the RCB bodies with unconstrained output buffers).
+    - ["msm_curve_double"]: the copy-out wrapper DEFINED HERE for
+      ["curve_double_a0"]; [CurveDoubleInplaceOK] by
+      [BLS12_MSM_Wrappers.copy_out_double_ok].
 
     The field leaves ["bls12_mul"], ["bls12_add"], ["bls12_sub"] and the
     constant stores ["bls12_zero"], ["bls12_one"] are not printed: the
@@ -78,6 +85,7 @@ Require Import Bedrock.BLS12_MSM.
 Require Import Bedrock.BLS12_G1_ScalarMul.
 Require Import Bedrock.BLS12_G1_ScalarMulCT.
 Require Import Bedrock.Group.CurveAdd.CtSwap.
+Require Bedrock.BLS12_MSM_MixedAdd.
 Require Import Bedrock.ToSafeRustArena.
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -127,9 +135,9 @@ Section BLS12G1.
           (cmd.call [] "bls12_felem_copy" [expr.var (nth 1 outs ""); expr.var "ty"])
           (cmd.call [] "bls12_felem_copy" [expr.var (nth 2 outs ""); expr.var "tz"])))))))%list).
 
-  Definition msm_curve_add : function_t :=
-    copy_out_wrapper "msm_curve_add" "curve_add"
-      ["X1"; "X2"; "Y1"; "Y2"; "Z1"; "Z2"] ["Xout"; "Yout"; "Zout"].
+  (** The MSM's addition: RCB Algorithm 8 (mixed) when Z2 is the word list of 1, else the
+      copy-out wrapper of [curve_add] (BLS12_MSM_MixedAdd.v). *)
+  Definition msm_curve_add : function_t := BLS12_MSM_MixedAdd.msm_curve_add_mixed.
 
   Definition msm_curve_double : function_t :=
     copy_out_wrapper "msm_curve_double" "curve_double_a0"

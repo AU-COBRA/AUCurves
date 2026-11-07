@@ -114,6 +114,27 @@ fn msm_edge_cases() {
     assert_eq!(ours_msm(&points, &scalars), blst_msm(&points, &scalars));
 }
 
+/// Input points with Z != 1: `msm_curve_add` adds a point to a bucket with the mixed
+/// formula only when its Z is 1 (Montgomery words of one); the others, here every second
+/// point scaled to (l x : l y : l), take the complete projective addition.
+#[test]
+fn msm_projective_inputs() {
+    let (points, scalars) = random_instance(64, 64);
+    let lam = ours_of_blst(&blst_mul_gen(&[3, 0, 0, 0])).x; // a nonzero field element
+    let mut ps: Vec<G1Projective> = points.iter().map(ours_of_blst).collect();
+    for (i, p) in ps.iter_mut().enumerate() {
+        if i % 2 == 1 {
+            let (x, y, z) = (p.x, p.y, p.z);
+            bls12_381::fp_mul(&mut p.x, &x, &lam);
+            bls12_381::fp_mul(&mut p.y, &y, &lam);
+            bls12_381::fp_mul(&mut p.z, &z, &lam);
+        }
+    }
+    let mut r = G1Projective::identity();
+    g1_msm(&mut r, &ps, &scalars);
+    assert_eq!(r.to_affine().map(|a| (a.x.0, a.y.0)), blst_msm(&points, &scalars));
+}
+
 #[test]
 fn msm_sum_to_identity() {
     // k·P + (r - k)·P = 0.

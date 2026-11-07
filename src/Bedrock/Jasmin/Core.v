@@ -373,18 +373,34 @@ Fixpoint flatten_expr (n : nat) (base : string) (e : jasmin_expr)
     where [e1] and [e2] are the operands of the top-level binop.
 
     If [e] is an atom or has no binop top, just emit [JCset x e]. *)
+(** Whether a variable of [e] starts with [pre]. *)
+Fixpoint mentions_prefix (pre : string) (e : jasmin_expr) : bool :=
+  match e with
+  | JEvar v => String.prefix pre v
+  | JElit _ => false
+  | JEadd a b | JEsub a b | JEmul a b | JEmulhuu a b | JEand a b | JEor a b
+  | JExor a b | JEshr a b | JEshl a b | JEltu a b | JEeq a b =>
+      orb (mentions_prefix pre a) (mentions_prefix pre b)
+  | JEload b _ => mentions_prefix pre b
+  end.
+
 Definition lower_set (x : string) (e : jasmin_expr) : jasmin_cmd :=
   match binop_src1 e with
   | Some e1 =>
-      (* Materialize a flattened second operand. *)
-      let '(p2, a2, _) := flatten_expr 0 x
-        (match e with
-         | JEadd _ b | JEsub _ b | JEmul _ b
-         | JEand _ b | JEor _ b | JExor _ b
-         | JEshr _ b | JEshl _ b
-         | JEmulhuu _ b | JEltu _ b | JEeq _ b => b
-         | _ => JElit 0
-         end) in
+      (* Materialize a flattened second operand.  [lower_comparisons_func] has already named
+         the comparison temporaries of this assignment [x_bp<k>]; when the operand reads them,
+         its own temporaries are named [x_n_bp<k>], or a flattening step could overwrite a
+         comparison result before it is read (Commitments' fp_check:
+         r := lt5 | (eq5 & (lt4 | ...))). *)
+      let e2 := match e with
+                | JEadd _ b | JEsub _ b | JEmul _ b
+                | JEand _ b | JEor _ b | JExor _ b
+                | JEshr _ b | JEshl _ b
+                | JEmulhuu _ b | JEltu _ b | JEeq _ b => b
+                | _ => JElit 0
+                end in
+      let base2 := if mentions_prefix (x ++ "_bp") e2 then (x ++ "_n")%string else x in
+      let '(p2, a2, _) := flatten_expr 0 base2 e2 in
       (* Materialize the first operand into x via a flatten. *)
       let '(p1, a1, _) := flatten_expr 0 (x ++ "a") e1 in
       JCseq p1 (JCseq (JCset x a1)

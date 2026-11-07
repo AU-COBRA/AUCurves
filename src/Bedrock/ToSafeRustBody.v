@@ -497,6 +497,11 @@ Definition param_table : list (string * list string) := [
   ("bn446_final_exp_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
   ("bn446_miller_loop", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
   ("bn446_pairing_dsd", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  (* BN446 optimal ate (BN446_Pairing.v), as the bn254 entries above *)
+  ("bn446_make_line_corrected", ["Fp12";"Fp2";"Fp2";"Fp2";"Fp";"Fp"]);
+  ("bn446_load_q1_y_const", ["Fp2"]);
+  ("bn446_miller_loop_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
+  ("bn446_pairing_dsd_optimal", ["Fp12";"Fp";"Fp";"Fp2";"Fp2"]);
 
   (* === BLS24-509 tower entries.  Base Fp ops use the [bls24_509_*]
      prefix (8-limb 509-bit prime, 10-char prefix); tower ops use the

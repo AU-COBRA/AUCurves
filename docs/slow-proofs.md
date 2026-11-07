@@ -109,6 +109,36 @@ once the frames are in the separation hypothesis; the deallocation derives them 
 
 `BLS12_377_FinalExpHardDSD.v`: the first `repeat straightline` took 1018 s and each later one about 47 s; the file went
 from 2160 s to 27 s. The same pattern makes `BLS12_FinalExp.v` slow.
+`BN446_FinalExpHardDSD.v`: 935 s for the first `repeat straightline` and 34 to 57 s for each later one; the file went from
+2558 s to 40 s. `BN446_MillerLoop.v` had been stopped after an hour in its first `repeat straightline` after the frames;
+with the clear it builds in 315 s, and in 161 s with the two changes below. One fact can be enough: there,
+`straightline_stackalloc` with only the `line` frame's fact left ran past 60 s, while `straightline` with only the `f`
+frame's took 0.02 s.
+`BN254_FinalExpHardDSD.v`, `BN256_FinalExpHardDSD.v`, `BN254_MillerLoop.v` and `BN256_MillerLoop.v` have the same
+uncleared facts.
+
+## `rewrite !` with a large constant in the goal
+
+`rewrite !` ends with a search for one more instance that fails, and on a failed candidate the unifier reduces the
+constants in the goal. In `BN446_MillerLoop.v`, `rewrite !(firstn_app' _ _ _ Hlen)` over a goal with the Fp limb count
+(`felem_size_in_words` of the 446-bit representation) took 6 to 9 s each, 85 s for twelve; a single `rewrite` took
+0.5 s. Bind the constant with a λ first, as for `remember` below:
+
+    generalize dependent Fp_fsw; intros.
+
+Each rewrite then takes 0.02 s.
+
+## Stale separation facts before a loop body
+
+`Loops.while_localsmap` keeps the context of the code before the loop. There, `ecancel_assumption_with_copy` tries the
+separation hypotheses on earlier memories first, and `congruence` and `assumption` scan them. Clear them at the start
+of the loop body:
+
+    repeat match goal with
+           | H : (_ ⋆ _)%sep ?m |- _ => assert_fails (constr_eq m mi); clear H
+           end.
+
+`BN446_MillerLoop.v`: the 29 calls of the loop body went from 100 s to 53 s, the whole loop body from 162 s to 96 s.
 
 ## `apply` of a class field with two candidate instances
 

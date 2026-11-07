@@ -96,8 +96,8 @@ Section BN446_FinalExpHardDSD.
     Let fp12_prefix := "bn446_Fp12_".
 
     Let bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
-    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
     Instance bn446_Fp2_params' : AbstractField.FieldParameters Fp2 :=
       ltac:(let v := eval cbv [ext_Fp2_params append] in (ext_Fp2_params bn446_beta "bn446_") in exact v).
@@ -395,6 +395,17 @@ Section BN446_FinalExpHardDSD.
       { exists mS_w, mC_g2. exact (conj HmS_w' (conj Hwi Hsep6)). }
 
       clear Hsep Hsep1 Hsep2 Hsep3 Hsep4 Hsep5 Hsep6.
+      (* The anybytes facts of the seven stack frames are now in Hsep_all, and the
+         deallocation below derives them again from FElem_to_bytes.  Left in the
+         context, they make bedrock2's [straightline_stackalloc] try, at the end of
+         every [repeat straightline], to cancel each of them against every separation
+         hypothesis with WPTactics' [ecancel_assumption]: 935 s for the first
+         [repeat straightline] and 34 to 57 s for each of the 34 others, 2,515 s of
+         the file's 2,558 s.  Clear them, with the splits that go with them, as
+         BLS12_377_FinalExpHardDSD.v does.  See docs/slow-proofs.md. *)
+      clear HaS_t0 HaS_t1 HaS_t2 HaS_t3 HaS_g1 HaS_g2 HaS_w
+            HmS_t0 HmS_t1 HmS_t2 HmS_t3 HmS_g1 HmS_g2 HmS_w
+            HmS_t0' HmS_t1' HmS_t2' HmS_t3' HmS_g1' HmS_g2' HmS_w'.
 
       (* ================================================================ *)
       (* Call 1: bn446_load_gamma1(gamma1)                                *)

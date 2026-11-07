@@ -5,8 +5,8 @@
    Fp2 mul: (a+bu)(c+du) = (ac - bd) + ((a+b)(c+d) - ac - bd)u  [Karatsuba]
    Fp2 sqr: (a+bu)^2 = (a^2 - b^2) + 2ab*u
 
-   Fp6 nonresidue xi = 2 + 3u = (2, 3) in Fp2
-   mul_xi: (a+bu)*(2+3u) = (2a - 3b) + (3a + 2b)u *)
+   Fp6 nonresidue xi = 1 + 9u = (1, 9) in Fp2 (Curves/BN446_params.v)
+   mul_xi: (a+bu)*(1+9u) = (a - 9b) + (9a + b)u *)
 
 Require Import Coq.Strings.String.
 Require Import Coq.ZArith.ZArith.
@@ -197,30 +197,30 @@ Section bn446_Fp2.
       ))).
 
     (* ================================================================ *)
-    (* fp2_mul_xi: multiply by xi = (2, 3) in Fp2                       *)
-    (* (a + bu)*(2 + 3u) = (2a - 3b) + (3a + 2b)u                      *)
-    (* Multiply-by-2: x -> x+x (1 add)                                  *)
-    (* Multiply-by-3: x -> x+x -> x+x+x (2 adds)                       *)
+    (* fp2_mul_xi: multiply by xi = (1, 9) in Fp2                       *)
+    (* (a + bu)*(1 + 9u) = (a - 9b) + (9a + b)u                        *)
+    (* Multiply-by-9: x -> 2x -> 4x -> 8x -> 8x+x (4 adds)              *)
+    (* Same body as BN446_Pairing.v's bn446_Fp2_mul_xi.                 *)
     (* ================================================================ *)
 
     Definition Fp2_mul_xi : string * Syntax.func :=
       ("bn446_Fp2_mul_xi", (["out"; "x"], []:list String.string, bedrock_func_body:(
-        stackalloc (AbstractField.felem_size_in_bytes (F:=F)) as tmp_a3;
-        stackalloc (AbstractField.felem_size_in_bytes (F:=F)) as tmp_b3;
-        (* tmp_a3 = 3*a: 2a -> 2a+a *)
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a3"; expr.var "x"; expr.var "x"]);
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a3"; expr.var "tmp_a3"; expr.var "x"]);
-        (* tmp_b3 = 3*b: 2b -> 2b+b *)
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b3"; expr_2nd_felem (expr.var "x"); expr_2nd_felem (expr.var "x")]);
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b3"; expr.var "tmp_b3"; expr_2nd_felem (expr.var "x")]);
-        (* out.re = 2a - 3b: first compute 2a *)
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "out"; expr.var "x"; expr.var "x"]);
-        (* out.re = 2a - 3b *)
-        coq:(cmd.call [] (AbstractField.sub (F:=F)) [expr.var "out"; expr.var "out"; expr.var "tmp_b3"]);
-        (* out.im = 3a + 2b: first compute 2b *)
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr_2nd_felem (expr.var "out"); expr_2nd_felem (expr.var "x"); expr_2nd_felem (expr.var "x")]);
-        (* out.im = 3a + 2b *)
-        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr_2nd_felem (expr.var "out"); expr.var "tmp_a3"; expr_2nd_felem (expr.var "out")])
+        stackalloc (AbstractField.felem_size_in_bytes (F:=F)) as tmp_a9;
+        stackalloc (AbstractField.felem_size_in_bytes (F:=F)) as tmp_b9;
+        (* tmp_a9 = 9*a: 2a -> 4a -> 8a -> 8a+a *)
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a9"; expr.var "x"; expr.var "x"]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "tmp_a9"]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "tmp_a9"]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "x"]);
+        (* tmp_b9 = 9*b *)
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b9"; expr_2nd_felem (expr.var "x"); expr_2nd_felem (expr.var "x")]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b9"; expr.var "tmp_b9"; expr.var "tmp_b9"]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b9"; expr.var "tmp_b9"; expr.var "tmp_b9"]);
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr.var "tmp_b9"; expr.var "tmp_b9"; expr_2nd_felem (expr.var "x")]);
+        (* out.re = a - 9b *)
+        coq:(cmd.call [] (AbstractField.sub (F:=F)) [expr.var "out"; expr.var "x"; expr.var "tmp_b9"]);
+        (* out.im = 9a + b *)
+        coq:(cmd.call [] (AbstractField.add (F:=F)) [expr_2nd_felem (expr.var "out"); expr.var "tmp_a9"; expr_2nd_felem (expr.var "x")])
       ))).
 
     (* Fp2 conjugate: conj(a + bu) = a - bu *)

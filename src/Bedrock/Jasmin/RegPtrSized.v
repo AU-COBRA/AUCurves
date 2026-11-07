@@ -368,6 +368,13 @@ Section Printer.
     let '(r, o) := ro in
     match o with
     | JElit k => r ++ "[" ++ pp_int (Z.div k 8) ++ " + " ++ w ++ "]"
+    (* [(x << 3) + 8 k], a word index ([words_eq]'s [a + (i << 3)]): an element access, which
+       x86 scales by 8; jasminc does not assemble a shift inside an address *)
+    | JEadd (JEshl (JEvar x) (JElit 3)) (JElit k) =>
+        if Z.eqb (Z.modulo k 8) 0
+        then r ++ "[(int) " ++ x ++ " + " ++ pp_int (Z.div k 8) ++ " + " ++ w ++ "]"
+        else r ++ ".[u64 (int) (" ++ pp_expr o ++ ") + 8 * " ++ w ++ "]"
+    | JEshl (JEvar x) (JElit 3) => r ++ "[(int) " ++ x ++ " + " ++ w ++ "]"
     | _ => r ++ ".[u64 (int) (" ++ pp_expr o ++ ") + 8 * " ++ w ++ "]"
     end.
 
@@ -453,9 +460,44 @@ Section Printer.
     end.
 
   (** [for] copy of [len] words from [src] to [dst]. *)
+  (** A byte offset other than a literal or a variable ([fr_divlin]'s [k * 32]) is
+      computed into a register first: x86 scales an index by 1, 2, 4 or 8 only. *)
+  Definition hoist_off (indent tmp : string) (p : string * jasmin_expr)
+      : string * (string * jasmin_expr) :=
+    match snd p with
+    | JElit _ | JEvar _ => ("", p)
+    | e => (indent ++ tmp ++ " = " ++ pp_expr e ++ ";" ++ LF, (fst p, JEvar tmp))
+    end.
+
+  (** A copy of more than [copy_unroll_max] words (for instance a staged quotient
+      buffer, 16384 words) is a loop over a register byte offset [__jr__] instead of an
+      unrolled [for]: [base.[u64 (int) __jr__ + k]] for a literal offset [k], else the
+      address [__jx__] / [__jy__] = offset + [__jr__].  The copies of the tower, group and
+      KZG modules (at most 72 words) print as before. *)
+  Definition copy_unroll_max : Z := 256.
+
+  Definition pp_at_loop (ro : string * jasmin_expr) (tmp : string) : string * string :=
+    let '(r, o) := ro in
+    match o with
+    | JElit k => ("", r ++ ".[u64 (int) __jr__ + " ++ pp_int k ++ "]")
+    | _ => (tmp ++ " = " ++ pp_expr o ++ "; " ++ tmp ++ " += __jr__; ",
+            r ++ ".[u64 (int) " ++ tmp ++ "]")
+    end.
+
   Definition pp_copy (indent : string) (dst src : string * jasmin_expr) (len : Z) : string :=
-    indent ++ "for __j = 0 to " ++ pp_int len ++ " { __mv__ = " ++ pp_at src "__j" ++ "; "
-      ++ pp_at dst "__j" ++ " = __mv__; }" ++ LF.
+    let '(s1, src') := hoist_off indent "__ca__" src in
+    let '(s2, dst') := hoist_off indent "__cb__" dst in
+    if Z.leb len copy_unroll_max then
+      s1 ++ s2 ++
+      indent ++ "for __j = 0 to " ++ pp_int len ++ " { __mv__ = " ++ pp_at src' "__j" ++ "; "
+        ++ pp_at dst' "__j" ++ " = __mv__; }" ++ LF
+    else
+      let '(ps, as_) := pp_at_loop src' "__jx__" in
+      let '(pd, ad) := pp_at_loop dst' "__jy__" in
+      s1 ++ s2 ++
+      indent ++ "__jr__ = 0;" ++ LF ++
+      indent ++ "while (__jr__ <u " ++ pp_int (8 * len) ++ ") { " ++ ps ++ "__mv__ = " ++ as_
+        ++ "; " ++ pd ++ ad ++ " = __mv__; __jr__ += 8; }" ++ LF.
 
   (** [pp_copy] with the spilled pointer parameters reloaded (and the
       destination saved back). *)
@@ -469,6 +511,23 @@ Section Printer.
   Definition la (i : nat) : string := "__la" ++ pp_int (Z.of_nat i).
   Definition ffi_buf (f : string) : string := "__ffi_" ++ f.
   Definition whole (x : string) : string * jasmin_expr := (x, JElit 0).
+
+  (** The word index of a byte offset [e] built from literals divisible by 8, [x * c],
+      [c * x] and sums ([kn * 48]); [None] otherwise (then the argument is staged). *)
+  Fixpoint div8 (e : jasmin_expr) : option jasmin_expr :=
+    match e with
+    | JElit k => if Z.eqb (Z.modulo k 8) 0 then Some (JElit (Z.div k 8)) else None
+    | JEmul a (JElit c) => if Z.eqb (Z.modulo c 8) 0 then Some (JEmul a (JElit (Z.div c 8))) else None
+    | JEmul (JElit c) a => if Z.eqb (Z.modulo c 8) 0 then Some (JEmul a (JElit (Z.div c 8))) else None
+    | JEadd a b =>
+        match div8 a, div8 b with
+        | Some a', Some b' => Some (JEadd a' b')
+        | _, _ => None
+        end
+    | _ => None
+    end.
+
+  Definition is_lit (e : jasmin_expr) : bool := match e with JElit _ => true | _ => false end.
 
   (** One call [f(args)].  Scalars and literals go through [__la<i>]; pointers
       are staged, and the positions the callee writes are copied back.  For
@@ -535,6 +594,18 @@ Section Printer.
                      | Some (r', _) => andb (String.eqb r r') (written j)
                      | None => false
                      end))) idx
+          | Some (r, _) =>
+              (* a read-only argument at a run-time offset: no written argument of the
+                 same root may be passed in the same call *)
+              orb (written i)
+                (List.existsb (fun jb =>
+                   let '(j, b) := jb in
+                   andb (negb (Nat.eqb i j))
+                     (andb (negb (scalar_arg j b))
+                       (match addr ax b with
+                        | Some (r', _) => andb (String.eqb r r') (written j)
+                        | None => false
+                        end))) idx)
           | _ => true
           end in
         let direct i a :=
@@ -549,6 +620,14 @@ Section Printer.
                       keep the parameter in a register across the call *)
                    (orb (negb (string_in r (ax_params ax)))
                         (andb (negb (string_in f (rpc_inline cfg))) (whole_at i r k)))
+             | Some (r, off) =>
+                 (* [rpc_direct]: a read-only slice of a pointer parameter at a run-time
+                    offset [off] (bytes, of the forms of [div8]) is passed through
+                    [__rq<w>_<i> = r[__ix<i> : w]], [__ix<i> = off / 8] *)
+                 andb (rpc_direct cfg)
+                   (andb (string_in r (ax_params ax))
+                     (andb (match div8 off with Some _ => true | None => false end)
+                       (negb (clash i a))))
              | _ => false
              end) in
         (* a written slice (or the whole) of a pointer parameter, passed through [__rp<w>_<i>]:
@@ -564,7 +643,7 @@ Section Printer.
            one through [__rq<w>_<i> = r[k : w]]. *)
         let param_root a :=
           match addr ax a with
-          | Some (r, JElit _) => string_in r (ax_params ax)
+          | Some (r, _) => string_in r (ax_params ax)
           | _ => false
           end in
         let via_temp i a := andb (rpc_direct cfg) (andb (direct i a) (andb (written i) (param_root a))) in
@@ -585,10 +664,22 @@ Section Printer.
             | _ => ""
             end
           else sg (nthw cw i) i in
+        let ix i := "__ix" ++ pp_int (Z.of_nat i) in
         let slice_of i a :=
           match addr ax a with
           | Some (r, JElit k) => r ++ "[" ++ pp_int (Z.div k 8) ++ " : " ++ pp_int (nthw cw i) ++ "]"
+          | Some (r, _) => r ++ "[(uint) " ++ ix i ++ " : " ++ pp_int (nthw cw i) ++ "]"
           | _ => ""
+          end in
+        let set_ix i a :=
+          match addr ax a with
+          | Some (_, JElit _) => ""
+          | Some (_, off) =>
+              match div8 off with
+              | Some e => indent ++ ix i ++ " = " ++ pp_expr e ++ ";" ++ LF
+              | None => ""
+              end
+          | None => ""
           end in
         let setup :=
           String.concat ""
@@ -598,6 +689,7 @@ Section Printer.
                else if via_temp i a then
                  reload ax indent (root_of ax a) ++ indent ++ rp i ++ " = " ++ slice_of i a ++ ";" ++ LF
                else if via_rq i a then
+                 set_ix i a ++
                  reload ax indent (root_of ax a) ++ indent ++ rq i ++ " = " ++ slice_of i a ++ ";" ++ LF
                else if direct i a then reload ax indent (root_of ax a)
                else match addr ax a with
@@ -672,6 +764,9 @@ Section Printer.
             let b_ref := match b with JElit _ => "__wtmp__" | _ => pp_expr b end in
             b_load ++ indent ++ "__mulx_tmp__ = " ++ pp_expr a ++ ";" ++ LF ++
             indent ++ "(" ++ x ++ ", __mlo__) = #MULX(__mulx_tmp__, " ++ b_ref ++ ");" ++ LF
+        (* [k <u b] with a literal [k] ([fr_to_mont]'s [0 <u x]): x86 compares a register
+           with an immediate, so [b >u k] *)
+        | JEltu (JElit k) (JEvar b) => indent ++ x ++ " = (" ++ b ++ " >u " ++ pp_int k ++ ");" ++ LF
         | _ => reload_all ax indent (load_roots ax e) ++
                indent ++ x ++ " = " ++ pp_expr_ax ax e ++ ";" ++ LF
         end
@@ -716,14 +811,16 @@ Section Printer.
               reload_all ax indent (List.app (load_roots ax a) (load_roots ax b)) ++
               pp_scratch "__ca__" a ++
               pp_scratch "__cb__" b
-          | _ => ""
+          | JEvar _ => ""
+          (* any other word (ml_or_one's [i1 | i2]) is computed into [__ca__] first *)
+          | _ => reload_all ax indent (load_roots ax e) ++ indent ++ "__ca__ = " ++ pp_expr_ax ax e ++ ";" ++ LF
           end in
         let cond_str :=
           match e with
           | JEvar x => if string_in x bools then x else "(" ++ x ++ " != 0)"
           | JEltu a b => if atoms a b then "(" ++ pp_expr e ++ ")" else "(__ca__ <u __cb__)"
           | JEeq a b => if atoms a b then "(" ++ pp_expr e ++ ")" else "(__ca__ == __cb__)"
-          | _ => "(" ++ pp_expr e ++ " != 0)"
+          | _ => "(__ca__ != 0)"
           end in
         let else_part :=
           match cf with
@@ -781,21 +878,13 @@ Section Printer.
             else_part ++ indent ++ "}" ++ LF
         end
     | JCwhile e body =>
-        (* as for [JCif]: a comparison of two registers / a register and a
-           literal is a Jasmin [bool] and is the loop condition as it stands
-           ([while ((a <u b) != 0)] does not type: [bool] against [int]);
-           bedrock2's [while e] loops while [e <> 0], and [ltu] / [eq] are 0 or
-           1.  ([ct_cswap]'s word loop of the constant-time ladders is the
-           first loop with such a condition; every other condition prints as
-           before.) *)
-        let atoms a b := match a, b with JEvar _, JEvar _ | JEvar _, JElit _ => true | _, _ => false end in
-        let wcond :=
-          match e with
-          | JEltu a b | JEeq a b =>
-              if atoms a b then "(" ++ pp_expr e ++ ")" else "(" ++ pp_expr e ++ " != 0)"
-          | _ => "(" ++ pp_expr e ++ " != 0)"
-          end in
-        indent ++ "while " ++ wcond ++ " {" ++ LF ++
+        (* a comparison is a Jasmin bool already ([words_eq]'s [i <u n]); any other
+           condition is a word, tested against 0 *)
+        let c := match e with
+                 | JEltu _ _ | JEeq _ _ => pp_expr e
+                 | _ => pp_expr e ++ " != 0"
+                 end in
+        indent ++ "while (" ++ c ++ ") {" ++ LF ++
           pp_cmd_sized env we ax bools ("  " ++ indent) body ++
         indent ++ "}" ++ LF
     | JCdecl x ty body =>
@@ -839,7 +928,16 @@ Section Printer.
         then dedup_z acc r else dedup_z ((w, i) :: acc) r
     end.
 
-  Definition decls_for (env : regptr_env) (body : jasmin_cmd) : string :=
+  (** [str_occurs pat s]: [pat] occurs in [s]. *)
+  Fixpoint str_occurs (pat s : string) : bool :=
+    match s with
+    | EmptyString => String.eqb pat EmptyString
+    | String _ s' => orb (String.prefix pat s) (str_occurs pat s')
+    end.
+
+  (** [body_s] is the printed body: an [__ix<i>] register (a run-time offset of a read-only
+      pointer argument, [rpc_direct]) is declared only when the body assigns it. *)
+  Definition decls_for (env : regptr_env) (body : jasmin_cmd) (body_s : string) : string :=
     let cs := calls_of body in
     let max_arity := List.fold_left Nat.max (List.map (fun p => List.length (snd p)) cs) O in
     let sgs := dedup_z nil (List.concat (List.map (fun '(f, args) =>
@@ -854,7 +952,16 @@ Section Printer.
     "  reg u64 __ca__;" ++ LF ++
     "  reg u64 __cb__;" ++ LF ++
     "  inline int __j;" ++ LF ++
+    (if str_occurs "__jr__ = 0;" body_s
+     then "  reg u64 __jr__;" ++ LF ++ "  reg u64 __jx__;" ++ LF ++ "  reg u64 __jy__;" ++ LF
+     else "") ++
     String.concat "" (List.map (fun i => "  reg u64 " ++ la i ++ ";" ++ LF) (List.seq 0 max_arity)) ++
+    (if rpc_direct cfg then
+       String.concat "" (List.map (fun i =>
+         if str_occurs ("__ix" ++ pp_int (Z.of_nat i) ++ " =") body_s
+         then "  reg u64 __ix" ++ pp_int (Z.of_nat i) ++ ";" ++ LF else "")
+                           (List.seq 0 max_arity))
+     else "") ++
     String.concat "" (List.map (fun '(w, i) => "  stack u64[" ++ pp_int w ++ "] " ++ sg w i ++ ";" ++ LF) sgs) ++
     (if rpc_direct cfg then
        String.concat "" (List.map (fun '(w, i) =>
@@ -898,19 +1005,30 @@ Section Printer.
     | os => " -> " ++ String.concat ", " (List.map (fun ip => "reg ptr u64[" ++ pp_int (nthw ws (fst ip)) ++ "]") os)
     end.
 
+  (** Hint budgets of single functions: fiat's F_r functions (4 limbs; the Montgomery
+      conversions printed without [carry_func]) fail register
+      allocation at the leaf budget, as the Fp [to_mont] above 14. *)
+  Definition budget_override : list (string * nat) :=
+    [("bls12_fr_to_mont", 12%nat); ("bls12_fr_from_mont", 12%nat); ("bls12_fr_mul", 12%nat);
+     ("bls12_fr_add", 12%nat); ("bls12_fr_sub", 12%nat)].
+
   Definition pp_func_sized (env : regptr_env) (we : wenv) (f : jasmin_func) : string :=
     let bools := dedup_strings nil (collect_bool_vars (jf_body f)) in
     let locals := function_locals f in
     let ws := widths_of env (jf_name f) in
     let os := outs_of we f in
-    let hs := if rpc_hints cfg then hint_choice (rpc_budget cfg) f else nil in
+    let budget := match List.find (fun p => String.eqb (fst p) (jf_name f)) budget_override with
+                  | Some (_, b) => b | None => rpc_budget cfg end in
+    let hs := if rpc_hints cfg then hint_choice budget f else nil in
+    let ax := actx_of (if rpc_hints cfg then Some hs else None) ws f in
+    let body_s := pp_cmd_sized env we ax bools "  " (jf_body f) in
     pp_fn_keyword (jf_name f) ++ jf_name f ++ "(" ++
       pp_params we (if string_in (jf_name f) (rpc_inline cfg) then nil else hs)
         (jf_name f) ws (jf_params f) ++ ")"
       ++ pp_ret_ty we ws f ++ " {" ++ LF ++
     (if string_in "__wtmp__" locals then "" else "  reg u64 __wtmp__;" ++ LF) ++
     (if string_in "__mulx_tmp__" locals then "" else "  reg u64 __mulx_tmp__;" ++ LF) ++
-    decls_for env (jf_body f) ++
+    decls_for env (jf_body f) body_s ++
     (* Word locals of a function that is called (not inlined) carry the
        [#[spill]] hint, so that [jasminc -auto-spill] may keep them on the stack
        across calls: at a call only the six callee-saved registers survive.
@@ -922,14 +1040,13 @@ Section Printer.
     (if string_in (jf_name f) (rpc_inline cfg)
      then pp_locals_decls_nospill "  " bools locals
      else pp_locals_decls "  " bools (hint_nospill hs locals) locals) ++
-    let ax := actx_of (if rpc_hints cfg then Some hs else None) ws f in
     String.concat "" (List.map (fun ip =>
       let '(i, (p, _)) := ip in
       if string_in p (ax_spill ax) then
         "  stack ptr u64[" ++ pp_int (nthw ws i) ++ "] " ++ p ++ "__s;" ++ LF else "")
       (List.combine (List.seq 0 (List.length (jf_params f))) (jf_params f))) ++
     String.concat "" (List.map (fun p => "  " ++ p ++ "__s = " ++ p ++ ";" ++ LF) (ax_spill ax)) ++
-    pp_cmd_sized env we ax bools "  " (jf_body f) ++
+    body_s ++
     String.concat "" (List.map (fun ip => reload ax "  " (Some (snd ip))) os) ++
     (match os with nil => "" | _ => "  return " ++ String.concat ", " (List.map snd os) ++ ";" ++ LF end) ++
     "}" ++ LF.

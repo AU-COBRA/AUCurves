@@ -1169,7 +1169,6 @@ fn bls12_g1_double(reg ptr u64[18] out, reg const ptr u64[18] p) -> reg ptr u64[
 
 
 fn msm_curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr u64[6] Y1, reg const ptr u64[6] Y2, reg const ptr u64[6] Z1, reg const ptr u64[6] Z2, reg ptr u64[6] Xout, reg ptr u64[6] Yout, reg ptr u64[6] Zout) -> reg ptr u64[6], reg ptr u64[6], reg ptr u64[6] {
-  reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
   reg u64 __mlo__;
@@ -1213,6 +1212,21 @@ fn msm_curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr
   reg const ptr u64[6] __rq6_7;
   reg ptr u64[6] __rp6_8;
   reg const ptr u64[6] __rq6_8;
+  stack u64[18] __ffi_bls12_mul;
+  reg u64 e;
+  reg u64 __wtmp__;
+  reg bool __eq_e_bp0;
+  reg u64 e_bp0;
+  reg bool __eq_e_bp1;
+  reg u64 e_bp1;
+  reg bool __eq_e_bp2;
+  reg u64 e_bp2;
+  reg bool __eq_e_bp3;
+  reg u64 e_bp3;
+  reg bool __eq_e_bp4;
+  reg u64 e_bp4;
+  reg bool __eq_e_bp5;
+  reg u64 e_bp5;
   stack ptr u64[6] X1__s;
   stack ptr u64[6] X2__s;
   stack ptr u64[6] Y1__s;
@@ -1231,40 +1245,201 @@ fn msm_curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr
   Xout__s = Xout;
   Yout__s = Yout;
   Zout__s = Zout;
-  stack u64[6] tx;
-  stack u64[6] ty;
-  stack u64[6] tz;
-  X1 = X1__s;
-  __rq6_0 = X1[0 : 6];
-  X2 = X2__s;
-  __rq6_1 = X2[0 : 6];
-  Y1 = Y1__s;
-  __rq6_2 = Y1[0 : 6];
-  Y2 = Y2__s;
-  __rq6_3 = Y2[0 : 6];
-  Z1 = Z1__s;
-  __rq6_4 = Z1[0 : 6];
+  e = 1;
+  __wtmp__ = 8505329371266088957;
   Z2 = Z2__s;
-  __rq6_5 = Z2[0 : 6];
-  tx, ty, tz = curve_add(__rq6_0, __rq6_1, __rq6_2, __rq6_3, __rq6_4, __rq6_5, tx, ty, tz);
-  Xout = Xout__s;
-  __rp6_0 = Xout[0 : 6];
-  __rp6_0 = bls12_felem_copy(__rp6_0, tx);
-  Xout = Xout__s;
-  Xout[0 : 6] = __rp6_0;
-  Xout__s = Xout;
-  Yout = Yout__s;
-  __rp6_0 = Yout[0 : 6];
-  __rp6_0 = bls12_felem_copy(__rp6_0, ty);
-  Yout = Yout__s;
-  Yout[0 : 6] = __rp6_0;
-  Yout__s = Yout;
-  Zout = Zout__s;
-  __rp6_0 = Zout[0 : 6];
-  __rp6_0 = bls12_felem_copy(__rp6_0, tz);
-  Zout = Zout__s;
-  Zout[0 : 6] = __rp6_0;
-  Zout__s = Zout;
+  __eq_e_bp0 = (Z2[0 + 0] == __wtmp__);
+  e_bp0 = 0;
+  __wtmp__ = 1;
+  e_bp0 = __eq_e_bp0 ? __wtmp__ : e_bp0;
+  e = (e & e_bp0);
+  __wtmp__ = 17002214543764226050;
+  Z2 = Z2__s;
+  __eq_e_bp1 = (Z2[1 + 0] == __wtmp__);
+  e_bp1 = 0;
+  __wtmp__ = 1;
+  e_bp1 = __eq_e_bp1 ? __wtmp__ : e_bp1;
+  e = (e & e_bp1);
+  __wtmp__ = 6865905132761471162;
+  Z2 = Z2__s;
+  __eq_e_bp2 = (Z2[2 + 0] == __wtmp__);
+  e_bp2 = 0;
+  __wtmp__ = 1;
+  e_bp2 = __eq_e_bp2 ? __wtmp__ : e_bp2;
+  e = (e & e_bp2);
+  __wtmp__ = 8632934651105793861;
+  Z2 = Z2__s;
+  __eq_e_bp3 = (Z2[3 + 0] == __wtmp__);
+  e_bp3 = 0;
+  __wtmp__ = 1;
+  e_bp3 = __eq_e_bp3 ? __wtmp__ : e_bp3;
+  e = (e & e_bp3);
+  __wtmp__ = 6631298214892334189;
+  Z2 = Z2__s;
+  __eq_e_bp4 = (Z2[4 + 0] == __wtmp__);
+  e_bp4 = 0;
+  __wtmp__ = 1;
+  e_bp4 = __eq_e_bp4 ? __wtmp__ : e_bp4;
+  e = (e & e_bp4);
+  __wtmp__ = 1582556514881692819;
+  Z2 = Z2__s;
+  __eq_e_bp5 = (Z2[5 + 0] == __wtmp__);
+  e_bp5 = 0;
+  __wtmp__ = 1;
+  e_bp5 = __eq_e_bp5 ? __wtmp__ : e_bp5;
+  e = (e & e_bp5);
+  if (e != 0) {
+    stack u64[6] t5;
+    t5 = bls12_three_b(t5);
+    stack u64[6] t0;
+    X1 = X1__s;
+    for __j = 0 to 6 { __mv__ = X1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    X2 = X2__s;
+    for __j = 0 to 6 { __mv__ = X2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
+    stack u64[6] t1;
+    Y1 = Y1__s;
+    for __j = 0 to 6 { __mv__ = Y1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    Y2 = Y2__s;
+    for __j = 0 to 6 { __mv__ = Y2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t1[0 + __j] = __mv__; }
+    stack u64[6] t3;
+    X2 = X2__s;
+    __rq6_1 = X2[0 : 6];
+    Y2 = Y2__s;
+    __rq6_2 = Y2[0 : 6];
+    t3 = bls12_add(t3, __rq6_1, __rq6_2);
+    stack u64[6] t4;
+    X1 = X1__s;
+    __rq6_1 = X1[0 : 6];
+    Y1 = Y1__s;
+    __rq6_2 = Y1[0 : 6];
+    t4 = bls12_add(t4, __rq6_1, __rq6_2);
+    for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t3[0 + __j] = __mv__; }
+    t4 = bls12_add(t4, t0, t1);
+    for __j = 0 to 6 { __mv__ = t3[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+    t3 = bls12_sub(t3, __sg6_1, t4);
+    Y2 = Y2__s;
+    for __j = 0 to 6 { __mv__ = Y2[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    Z1 = Z1__s;
+    for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t4[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t4[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+    Y1 = Y1__s;
+    __rq6_2 = Y1[0 : 6];
+    t4 = bls12_add(t4, __sg6_1, __rq6_2);
+    stack u64[6] y3;
+    X2 = X2__s;
+    for __j = 0 to 6 { __mv__ = X2[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    Z1 = Z1__s;
+    for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; y3[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = y3[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+    X1 = X1__s;
+    __rq6_2 = X1[0 : 6];
+    y3 = bls12_add(y3, __sg6_1, __rq6_2);
+    stack u64[6] t2;
+    t2 = bls12_add(t2, t0, t0);
+    for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+    t0 = bls12_add(t0, t2, __sg6_2);
+    for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    Z1 = Z1__s;
+    for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t2[0 + __j] = __mv__; }
+    stack u64[6] z3;
+    z3 = bls12_add(z3, t1, t2);
+    for __j = 0 to 6 { __mv__ = t1[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+    t1 = bls12_sub(t1, __sg6_1, t2);
+    for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = y3[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; y3[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = y3[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t5[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t2[0 + __j] = __mv__; }
+    Xout = Xout__s;
+    __rp6_0 = Xout[0 : 6];
+    __rp6_0 = bls12_sub(__rp6_0, t2, t5);
+    Xout = Xout__s;
+    Xout[0 : 6] = __rp6_0;
+    Xout__s = Xout;
+    for __j = 0 to 6 { __mv__ = y3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t0[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; y3[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = z3[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t1[0 + __j] = __mv__; }
+    Yout = Yout__s;
+    __rp6_0 = Yout[0 : 6];
+    __rp6_0 = bls12_add(__rp6_0, t1, y3);
+    Yout = Yout__s;
+    Yout[0 : 6] = __rp6_0;
+    Yout__s = Yout;
+    for __j = 0 to 6 { __mv__ = t0[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = z3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+    for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
+    __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+    for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; z3[0 + __j] = __mv__; }
+    Zout = Zout__s;
+    __rp6_0 = Zout[0 : 6];
+    __rp6_0 = bls12_add(__rp6_0, z3, t0);
+    Zout = Zout__s;
+    Zout[0 : 6] = __rp6_0;
+    Zout__s = Zout;
+  } else {
+    stack u64[6] tx;
+    stack u64[6] ty;
+    stack u64[6] tz;
+    X1 = X1__s;
+    __rq6_0 = X1[0 : 6];
+    X2 = X2__s;
+    __rq6_1 = X2[0 : 6];
+    Y1 = Y1__s;
+    __rq6_2 = Y1[0 : 6];
+    Y2 = Y2__s;
+    __rq6_3 = Y2[0 : 6];
+    Z1 = Z1__s;
+    __rq6_4 = Z1[0 : 6];
+    Z2 = Z2__s;
+    __rq6_5 = Z2[0 : 6];
+    tx, ty, tz = curve_add(__rq6_0, __rq6_1, __rq6_2, __rq6_3, __rq6_4, __rq6_5, tx, ty, tz);
+    Xout = Xout__s;
+    __rp6_0 = Xout[0 : 6];
+    __rp6_0 = bls12_felem_copy(__rp6_0, tx);
+    Xout = Xout__s;
+    Xout[0 : 6] = __rp6_0;
+    Xout__s = Xout;
+    Yout = Yout__s;
+    __rp6_0 = Yout[0 : 6];
+    __rp6_0 = bls12_felem_copy(__rp6_0, ty);
+    Yout = Yout__s;
+    Yout[0 : 6] = __rp6_0;
+    Yout__s = Yout;
+    Zout = Zout__s;
+    __rp6_0 = Zout[0 : 6];
+    __rp6_0 = bls12_felem_copy(__rp6_0, tz);
+    Zout = Zout__s;
+    Zout[0 : 6] = __rp6_0;
+    Zout__s = Zout;
+  }
   Xout = Xout__s;
   Yout = Yout__s;
   Zout = Zout__s;

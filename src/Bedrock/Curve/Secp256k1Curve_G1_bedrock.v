@@ -36,6 +36,7 @@ Require Import Crypto.Algebra.Hierarchy.
 Require Import Crypto.Algebra.Ring.
 Require Import Crypto.Util.Decidable.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
+Require Import Crypto.Algebra.Field.  (* Field.div_one, for P_to_affine_of_affine *)
 
 Require Import Bedrock.Curve.Secp256k1_prime_certif.
 
@@ -62,7 +63,7 @@ Section Secp256k1_Algorithm_Equiv.
   Local Notation Ppoint :=
     (@Projective.point (F secp_prime) eq F.zero F.add F.mul secp_a secp_b).
   Local Notation Jpoint :=
-    (@Jacobian.point (F secp_prime) eq F.zero F.add F.mul secp_a secp_b).
+    (@Jacobian.point (F secp_prime) eq F.zero F.add F.mul secp_a secp_b _).
 
   (* Field instance for F secp_prime *)
   Local Instance secp_field :
@@ -73,21 +74,22 @@ Section Secp256k1_Algorithm_Equiv.
     @Ring.char_ge (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul 3.
   Proof.
     intros n Hn. apply (@F.char_gt secp_prime).
-    cbv [secp_prime]. lia.
+    (* [lia] does not terminate on the 256-bit literal under Rocq 9.2; compare by computation. *)
+    eapply Pos.lt_trans; [ eassumption | vm_compute; reflexivity ].
   Qed.
 
   Local Instance secp_char_ge_12 :
     @Ring.char_ge (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul 12.
   Proof.
     intros n Hn. apply (@F.char_gt secp_prime).
-    cbv [secp_prime]. lia.
+    eapply Pos.lt_trans; [ eassumption | vm_compute; reflexivity ].
   Qed.
 
   Local Instance secp_char_ge_21 :
     @Ring.char_ge (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul 21.
   Proof.
     intros n Hn. apply (@F.char_gt secp_prime).
-    cbv [secp_prime]. lia.
+    eapply Pos.lt_trans; [ eassumption | vm_compute; reflexivity ].
   Qed.
 
   Local Instance secp_Feq_dec : DecidableRel (@eq (F secp_prime))
@@ -123,14 +125,26 @@ Section Secp256k1_Algorithm_Equiv.
   Local Notation Padd := (@Projective.add
     (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
     secp_a secp_b _ secp_char_ge_3 _
-    secp_three_b secp_three_b_correct secp_discriminant).
+    secp_three_b secp_three_b_correct secp_discriminant secp_char_ge_21).
 
   Local Notation Jadd := (@Jacobian.add
     (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
     secp_a secp_b _ secp_char_ge_3 _).
 
   Local Notation P_to_affine := (@Projective.to_affine
-    (F secp_prime) eq F.zero F.add F.mul secp_a secp_b _ _).
+    (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+    secp_a secp_b _ _).
+
+  (* fiat-crypto's Projective.v no longer has [to_affine_of_affine] (only the Jacobian one,
+     Jacobian.v:144); this is the same statement, proved the same way. *)
+  Local Lemma P_to_affine_of_affine (W0 : Wpoint) :
+    W.eq (P_to_affine (Projective.of_affine W0)) W0.
+  Proof.
+    destruct W0 as [[[x y]|[]] HW]; cbv [W.eq P_to_affine Projective.to_affine
+      Projective.of_affine W.coordinates proj1_sig]; simpl.
+    - split; apply Field.div_one.
+    - trivial.
+  Qed.
 
   Local Notation J_to_affine := (@Jacobian.to_affine
     (F secp_prime) eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
@@ -164,8 +178,8 @@ Section Secp256k1_Algorithm_Equiv.
   Proof.
     intros W1 W2 except.
     apply secp256k1_proj_jacobian_affine_equiv.
-    - rewrite Projective.to_affine_of_affine. reflexivity.
-    - rewrite Projective.to_affine_of_affine. reflexivity.
+    - rewrite P_to_affine_of_affine, Jacobian.to_affine_of_affine. reflexivity.
+    - rewrite P_to_affine_of_affine, Jacobian.to_affine_of_affine. reflexivity.
   Qed.
 
 End Secp256k1_Algorithm_Equiv.
@@ -253,11 +267,23 @@ Section Secp256k1_CoZ_Bridge.
   Local Notation Wpoint :=
     (@W.point F eq F.add F.mul secp_a secp_b).
   Local Notation Jpoint :=
-    (@Jacobian.point F eq F.zero F.add F.mul secp_a secp_b).
+    (@Jacobian.point F eq F.zero F.add F.mul secp_a secp_b _).
 
   Local Notation Jadd := (@Jacobian.add
     F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
     secp_a secp_b _ secp_char_ge_3 _).
+
+  (* The instances and notations of section Secp256k1_Algorithm_Equiv are local to it. *)
+  Local Existing Instances secp_field secp_Feq_dec secp_char_ge_3 secp_char_ge_12 secp_char_ge_21.
+
+  Local Notation Padd := (@Projective.add
+    F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+    secp_a secp_b _ secp_char_ge_3 _
+    secp_three_b secp_three_b_correct secp_discriminant secp_char_ge_21).
+
+  Local Notation P_to_affine := (@Projective.to_affine
+    F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
+    secp_a secp_b _ _).
 
   Local Notation J_to_affine := (@Jacobian.to_affine
     F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
@@ -269,12 +295,14 @@ Section Secp256k1_CoZ_Bridge.
      [to_affine (Jacobian.add P Q)], which by [Jacobian.to_affine_add]
      equals [W.add (to_affine P) (to_affine Q)]. *)
 
-  Local Notation co_z := (@CoZ.co_z F eq F.zero F.add F.mul secp_a secp_b _ _).
-  Local Notation zaddu := (@CoZ.zaddu
+  (* CoZ.v keeps its definitions in an inner [Module Jacobian]; their section arguments are
+     those of the current fiat-crypto (zaddu takes no char_ge_3). *)
+  Local Notation co_z := (@CoZ.Jacobian.co_z F eq F.zero F.add F.mul secp_a secp_b _).
+  Local Notation zaddu := (@CoZ.Jacobian.zaddu
     F eq F.zero F.one F.opp F.add F.sub F.mul F.inv F.div
-    secp_a secp_b _ secp_char_ge_3 _).
-  Local Notation x_of := (@CoZ.x_of F eq F.zero F.add F.mul secp_a secp_b _ _).
-  Local Notation Jeq := (@Jacobian.eq F eq F.zero F.add F.mul secp_a secp_b _ _).
+    secp_a secp_b _ _).
+  Local Notation x_of := (@CoZ.Jacobian.x_of F eq F.zero F.add F.mul secp_a secp_b _).
+  Local Notation Jeq := (@Jacobian.eq F eq F.zero F.add F.mul secp_a secp_b _).
 
   (* Wrapper for zaddu_correct: extract just the affine equivalence
      from the Co-Z addition. *)
@@ -285,7 +313,7 @@ Section Secp256k1_CoZ_Bridge.
            (W.add (J_to_affine P) (J_to_affine Q)).
   Proof.
     intros P Q H Hneq.
-    pose proof (CoZ.zaddu_correct P Q H Hneq) as Hzaddu.
+    pose proof (CoZ.Jacobian.zaddu_correct P Q H Hneq) as Hzaddu.
     destruct (zaddu P Q H) as [R1 R2].
     destruct Hzaddu as [HR1 _].
     rewrite <- (Jacobian.to_affine_add P Q).

@@ -126,3 +126,20 @@ field of the record. `lazy` reduces only the field that is projected.
 
 `bls24_509_three_b.v`: `cbv` on `n <> 0%nat` took 318 s, and `lazy` takes 0.003 s; the file went from 405 s and
 2.1 GB to 102 s and 1.1 GB.
+
+## `remember` followed by `clear` of its equation
+
+`remember t as x eqn:E. clear E.` makes `x` opaque in the tactic context, but the proof term starts with
+`let x := t in`, as `Show Proof` shows. At `Qed` the kernel can unfold that `let` during a conversion and compute
+with `t`. Per-sentence times and the Ltac profiler do not show this cost, since the elaborator never unfolds `x`.
+`abstract` does not help, because the pieces are still checked under the `let`, and `Opaque` and `Strategy` act on
+global constants, not on local definitions. Bind `x` with a λ instead, after reverting the hypotheses that mention `t`:
+
+    revert Hlen.
+    generalize (t) as x.
+    intros x Hlen.
+
+CertiRocq's `LLVM_nonvacuity.v` (Rocq 9.1, not part of this repository): in `malloc_initial`, `t` is a list of
+16432 poison bytes, and the kernel computed with it while checking a `rewrite ... in Ha`. The `Qed` went from
+1722 s to 2.6 s and the file from 1733 s to 12.8 s. The script does not count this pattern. We have not checked
+whether `set` followed by `clearbody` leaves the same `let`.

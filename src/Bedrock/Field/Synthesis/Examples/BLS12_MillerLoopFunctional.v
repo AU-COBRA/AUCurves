@@ -43,6 +43,7 @@ Require Theory.BLS12Pairing.Fp12.
 Require Bedrock.Field.Synthesis.Examples.BLS12_Fp12Feval.
 Require Bedrock.Field.Synthesis.Examples.BLS12_PairingFeval.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_MillerStepFunctional.
+Require Bedrock.Field.Synthesis.Examples.BLS12_MulByLine.
 
 Import BinInt String List.ListNotations.
 
@@ -587,7 +588,7 @@ Section BLS12_MillerLoopFunctional.
         (HFp2inv : spec_of_Fp2_inv functions)
         (HFp2opp : spec_of_Fp2_opp functions)
         (HFp2copy : spec_of_Fp2_felem_copy functions)
-        (HFp12mul : spec_of_Fp12_mul functions)
+        (HMBL : BLS12_MulByLine.spec_of_mul_by_line functions)
         (HFp12sqr : spec_of_Fp12_sqr functions)
         (HFp12copy : spec_of_Fp12_felem_copy functions)
         (HFpmul : spec_of_Fp_mul functions)
@@ -1569,7 +1570,7 @@ Section BLS12_MillerLoopFunctional.
           miller_straightline. (* cmd.set "i" *)
           unfold dlet.dlet; cbv beta.
           eapply (miller_doubling_ok functions HFp2mul HFp2add HFp2sub HFp2sqr HFp2inv HFp2copy
-                    HFp12mul HFp12sqr HMLf
+                    HMBL HFp12sqr HMLf
                     a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py
                     f_vi tx_vi ty_vi lam_vi tmp1_vi tmp2_vi line_vi p_x p_y
                     (FElem_Fp12 pout old_out ⋆ (FElem_Fp2 p_qx q_x ⋆ (FElem_Fp2 p_qy q_y ⋆ Rr)))).
@@ -1595,7 +1596,7 @@ Section BLS12_MillerLoopFunctional.
           { (* bit = 1: addition step *)
             intro HbitT. destruct bit; [| exfalso; apply HbitT; reflexivity].
             eapply (miller_addition_ok functions HFp2mul HFp2sub HFp2sqr HFp2inv HFp2copy
-                      HFp12mul HMLf
+                      HMBL HMLf
                       a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py p_qx p_qy
                       fD txD tyD lamD t1D t2D lnD p_x p_y q_x q_y
                       (FElem_Fp12 pout old_out ⋆ Rr)).
@@ -1808,6 +1809,41 @@ Section BLS12_MillerLoopFunctional.
       rewrite miller_fold_model_unfold, (step_model_fold_eq Hinv).
       exact (BLS12_PairingFeval.bedrock2_miller_loop_eq PrimeField.M_pos
                Hadd Hsub Hmul Hmulv Hself Hcross P Q HP HQ).
+    Qed.
+
+    (** The bounds-only specification. *)
+    Corollary bls12_miller_loop_ok :
+      forall functions
+        (EnvContains : map.get functions "bls12_miller_loop" =
+          Some (snd bls12_miller_loop))
+        (HFp2mul : spec_of_Fp2_mul functions)
+        (HFp2add : spec_of_Fp2_add functions)
+        (HFp2sub : spec_of_Fp2_sub functions)
+        (HFp2sqr : spec_of_Fp2_sqr functions)
+        (HFp2inv : spec_of_Fp2_inv functions)
+        (HFp2opp : spec_of_Fp2_opp functions)
+        (HFp2copy : spec_of_Fp2_felem_copy functions)
+        (HMBL : BLS12_MulByLine.spec_of_mul_by_line functions)
+        (HFp12sqr : spec_of_Fp12_sqr functions)
+        (HFp12copy : spec_of_Fp12_felem_copy functions)
+        (HFpmul : spec_of_Fp_mul functions)
+        (HFpcopy : spec_of_Fp_felem_copy functions)
+        (HFfromword : spec_of_Fp_from_word functions)
+        (HMakeLine : map.get functions "bls12_make_line" =
+          Some (snd bls12_make_line))
+        (HFp2mulfpEnv : map.get functions "bls12_Fp2_mul_fp" =
+          Some (snd bls12_Fp2_mul_fp)),
+      spec_of_bls12_miller_loop functions.
+    Proof.
+      intros.
+      pose proof (bls12_miller_loop_functional_ok functions EnvContains HFp2mul HFp2add HFp2sub
+                    HFp2sqr HFp2inv HFp2opp HFp2copy HMBL HFp12sqr HFp12copy HFpmul HFpcopy
+                    HFfromword HMakeLine HFp2mulfpEnv) as H.
+      intros pout p_px p_py p_qx p_qy old_out p_x p_y q_x q_y Rr tr mem Hpre.
+      eapply Semantics.weaken_call;
+        [exact (H pout p_px p_py p_qx p_qy old_out p_x p_y q_x q_y Rr tr mem Hpre) |].
+      intros tr' mem' rets [Hr [Ht [out [_ [Hb Hs]]]]].
+      split; [exact Hr |]. split; [exact Ht |]. exists out. exact (conj Hb Hs).
     Qed.
 
 End BLS12_MillerLoopFunctional.

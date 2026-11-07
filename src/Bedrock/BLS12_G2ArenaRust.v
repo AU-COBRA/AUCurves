@@ -23,6 +23,15 @@
       result written over the first point ([af_curve_add_ip_correct],
       [af_curve_double_ip_correct], Qed; equal to Alg. 7 / 9 by
       [af_add_ip_eq] / [af_double_ip_eq]).
+    - ["g2_scalar_mul_ct"]: [BLS12_G2_ScalarMulCT.g2_scalar_mul_ct_func],
+      the constant-time variant of ["g2_scalar_mul"] (per bit: in-place
+      double, unconditional out-of-place ["g2_curve_add"] into three
+      caller scratch buffers, three ["ct_cswap"]);
+      [BLS12_G2_ScalarMulCT.g2_scalar_mul_ct_closed] (Qed, closed): same
+      conclusion as [g2_scalar_mul_closed].  ["g2_scalar_mul"] branches on
+      the scalar bits (variable time): for public scalars only.
+    - ["ct_cswap"]: [CtSwap.ct_cswap] at 12 words (one Fp2 element),
+      [CtSwap.ct_cswap_call] (Qed).
     - ["bls12_Fp2_three_b"]: [BLS12_G2_ThreeB.g2_three_b_body], 3b' = (12, 12)
       in Montgomery form; [g2_three_b_ok] (Qed).
 
@@ -39,6 +48,7 @@ Require Import bedrock2.BasicC64Semantics.
 Require Import Bedrock.BLS12_G2_ThreeB.
 Require Import Bedrock.BLS12_G2_Closed.
 Require Import Bedrock.BLS12_G2_ScalarMul.
+Require Import Bedrock.BLS12_G2_ScalarMulCT.
 Require Import Bedrock.ToSafeRustArena.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -51,7 +61,9 @@ Definition bls12_g2_funcs : list function_t :=
     ("g2_curve_double_ip", g2_double_ip_body);
     ("g2_curve_add", g2_add_body);
     ("g2_curve_double", g2_double_body);
-    ("bls12_Fp2_three_b", g2_three_b_body) ].
+    ("bls12_Fp2_three_b", g2_three_b_body);
+    ("g2_scalar_mul_ct", g2_scalar_mul_ct_func);
+    ("ct_cswap", g2_ct_cswap_func) ].
 
 Definition bls12_g2_rs_header : list string :=
   [ "//! Rocq-EMITTED safe Rust: BLS12-381 G2 scalar multiplication and complete";

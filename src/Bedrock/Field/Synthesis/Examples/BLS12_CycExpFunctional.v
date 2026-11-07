@@ -6,9 +6,15 @@
     bounds-only proofs drop).
 
       fp12_set_one_functional_wp  feval of the 12 from_word results = Pairing.fp12_one
-      cyc_sqr_functional_wp       feval out = cyc_sqr_model (feval in)    (CycExpModel.v)
-      cyc_exp_neg_functional_ok   post: cyclotomic (feval base) ->
-                                        feval out = conj (pw (feval base) e)
+      cyc_sqr_functional_wp       feval out = cyc_sqr_model (feval in)    (CycExpModel.v);
+                                  the Fp6-level squaring; the loop calls the Granger-Scott squaring
+      cyc_exp_neg_functional_ok   post: CyclotomicGS.gs (feval base) ->
+                                        feval out = conj (pw (feval base) e);
+                                  the loop squares with the Granger-Scott
+                                  [bls12_Fp12_cyclotomic_square]
+                                  (BLS12_CycSqrGS.cyc_sqr_gs_call)
+      cyc_exp_neg_bounds_of_functional, bls12_Fp12_cyc_exp_x_neg_ok / _c_neg_ok:
+                                  the bounds-only specs of BLS12_CycExp.v, as corollaries
       bls12_Fp12_cyc_exp_x_neg_functional_ok / _c_neg_:
                                   feval out = Pairing.fp12_pow_bls_x_signed / _c_signed (feval base)
 *)
@@ -50,6 +56,8 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_CycExp.
 Require Import Theory.BLS12Pairing.Fp12Ring.
 Require Import Theory.BLS12Pairing.Cyclotomic.
 Require Import Theory.BLS12Pairing.CycExpModel.
+Require Import Theory.BLS12Pairing.CyclotomicGS.
+Require Bedrock.Field.Synthesis.Examples.BLS12_CycSqrGS.
 Require Theory.BLS12Pairing.Pairing.
 Require Theory.BLS12Pairing.Fp6.
 Require Theory.BLS12Pairing.Fp12.
@@ -658,28 +666,24 @@ Section BLS12_CycExpFunctional.
           (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)) mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
-            (cyclotomic (Fp12_feval base_val) ->
+            (gs (Fp12_feval base_val) ->
              Fp12_feval out =
                P.fp12_conjugate PrimeField.M_pos (pw (Fp12_feval base_val) (Z.to_N e))) /\
             Fp12_bounded Fp12_loose out /\
             (FElem_Fp12 pout out ⋆ (FElem_Fp12 pbase base_val ⋆ Rr)) mem' }.
 
     Definition cyc_exp_inv_f (e : Z)
-      (a_r a_t0 a_t1 a_one pbase pout : word) (one_v : Fp_felem) (base_val old_out : Fp12_felem)
+      (a_r pbase pout : word) (base_val old_out : Fp12_felem)
       (Rr : mem -> Prop) (tr : Semantics.trace)
       (v : nat) (t : Semantics.trace) (m : mem) (l : locals) : Prop :=
       t = tr /\ (v <= 64)%nat /\
-      exists (r : Fp12_felem) (x0 x1 : Fp6_felem),
+      exists (r : Fp12_felem),
         Fp12_bounded Fp12_tight r /\
-        hidden (cyclotomic (Fp12_feval base_val) ->
+        hidden (gs (Fp12_feval base_val) ->
                 Fp12_feval r = pw (Fp12_feval base_val) (Z.to_N (Z.shiftr e (Z.of_nat v)))) /\
-        (FElem_Fp12 a_r r ⋆ (FElem_Fp6 a_t0 x0 ⋆ (FElem_Fp6 a_t1 x1 ⋆ (FElem_Fp a_one one_v ⋆
-          (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))))) m /\
+        (FElem_Fp12 a_r r ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr))) m /\
         map.get l "i" = Some (word.of_Z (Z.of_nat v)) /\
         map.get l "result" = Some a_r /\
-        map.get l "cyc_t0" = Some a_t0 /\
-        map.get l "cyc_t1" = Some a_t1 /\
-        map.get l "cyc_one" = Some a_one /\
         map.get l "base" = Some pbase /\
         map.get l "out" = Some pout.
 
@@ -723,14 +727,11 @@ Section BLS12_CycExpFunctional.
         (EnvContains : map.get functions name = Some (snd (BLS12_Pairing.cyc_exp_neg_fn name e)))
         (HFp12mul : BLS12_CycExp.spec_of_Fp12_mul functions)
         (HFp12conj : BLS12_CycExp.spec_of_Fp12_conjugate functions)
-        (HFp6mul : BLS12_CycExp.spec_of_Fp6_mul functions)
-        (HFp6add : BLS12_CycExp.spec_of_Fp6_add functions)
-        (HFp6mulv : BLS12_CycExp.spec_of_Fp6_mul_by_v functions)
-        (HFpadd : BLS12_CycExp.spec_of_Fp_add functions)
+        (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
         (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions),
       spec_of_cyc_exp_neg_functional name e functions.
     Proof.
-      intros name e functions He EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword.
+      intros name e functions He EnvContains HFp12mul HFp12conj HGS HFfromword.
       unfold spec_of_cyc_exp_neg_functional.
       intros pout pbase old_out base_val Rr tr mem0 [Hbbase Hsep].
       apply hide in He.
@@ -743,49 +744,19 @@ Section BLS12_CycExpFunctional.
       intros a_r mS_r mC_r HaS_r HmS_r.
       pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp12_params' _ _ _ _
         bls12_Fp12_rep' wordok mapok a_r mS_r) HaS_r) as [ri Hri].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_t0 mS_t0 mC_t0 HaS_t0 HmS_t0.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp6_params' _ _ _ _
-        bls12_Fp6_rep' wordok mapok a_t0 mS_t0) HaS_t0) as [t0i Ht0i].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_t1 mS_t1 mC_t1 HaS_t1 HmS_t1.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp6_params' _ _ _ _
-        bls12_Fp6_rep' wordok mapok a_t1 mS_t1) HaS_t1) as [t1i Ht1i].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_one mS_one mC_one HaS_one HmS_one.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ _ _ _ _ _
-        bls12_Fp_rep wordok mapok a_one mS_one) HaS_one) as [onei Honei].
 
       pose proof (proj1 (map.split_comm mC_r mem0 mS_r) HmS_r) as HmS_r'.
       assert (Hl1 : (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr))) mC_r).
       { exists mS_r, mem0. exact (conj HmS_r' (conj Hri Hsep)). }
-      pose proof (proj1 (map.split_comm mC_t0 mC_r mS_t0) HmS_t0) as HmS_t0'.
-      assert (Hl2 : (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))) mC_t0).
-      { exists mS_t0, mC_r. exact (conj HmS_t0' (conj Ht0i Hl1)). }
-      pose proof (proj1 (map.split_comm mC_t1 mC_t0 mS_t1) HmS_t1) as HmS_t1'.
-      assert (Hl3 : (FElem_Fp6 a_t1 t1i ⋆ (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr))))) mC_t1).
-      { exists mS_t1, mC_t0. exact (conj HmS_t1' (conj Ht1i Hl2)). }
-      pose proof (proj1 (map.split_comm mC_one mC_t1 mS_one) HmS_one) as HmS_one'.
-      assert (Hl4 : (FElem_Fp a_one onei ⋆ (FElem_Fp6 a_t1 t1i ⋆ (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))))) mC_one).
-      { exists mS_one, mC_t1. exact (conj HmS_one' (conj Honei Hl3)). }
-      clear Hsep Hl1 Hl2 Hl3 Hri Ht0i Ht1i Honei HaS_r HaS_t0 HaS_t1 HaS_one HmS_r HmS_t0 HmS_t1 HmS_one
-            HmS_r' HmS_t0' HmS_t1' HmS_one'.
+      clear Hsep Hri HaS_r HmS_r HmS_r'.
 
       unfold BLS12_Pairing.cyc_exp_neg_body, BLS12_Pairing.cmd_seq_list.
 
-      (* from_word(cyc_one, 1) *)
-      repeat straightline.
-      eapply Semantics.weaken_call.
-      1: { eapply (HFfromword _ _ onei). ecancel_assumption. }
-      intros ? ? ? [? [? [one_v [Hfe_one [Hb_one Hsep_one]]]]]. subst.
-      assert (Hone : Fp_feval one_v = F.one) by (rewrite Hfe_one; reflexivity).
-      clear Hfe_one. apply hide in Hone.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-
       (* fp12_set_one "result" *)
+      cbv beta delta [dlet.dlet]. intro l.
       unfold1_cmd_goal; cbv beta match delta [cmd_body].
       eapply (fp12_set_one_functional_wp functions HFfromword a_r ri).
-      { subst l2 l1 l0 l; solve_gets. }
+      { subst l; solve_gets. }
       { ecancel_assumption. }
       intros m1 one12 Hb12 Hfe12 Hs12.
       apply hide in Hfe12.
@@ -794,17 +765,17 @@ Section BLS12_CycExpFunctional.
       repeat straightline.
       eapply Loops.while_localsmap
         with (v0 := 64%nat) (lt := Nat.lt)
-             (invariant := cyc_exp_inv_f e a_r a_t0 a_t1 a_one pbase pout one_v base_val old_out Rr t').
+             (invariant := cyc_exp_inv_f e a_r pbase pout base_val old_out Rr tr).
       { exact lt_wf. }
       { unfold cyc_exp_inv_f. split; [reflexivity |]. split; [lia |].
-        exists one12, t0i, t1i. split; [exact Hb12 |].
+        exists one12. split; [exact Hb12 |].
         split.
         { constructor. intros _. apply unhide in Hfe12. rewrite Hfe12.
           symmetry. apply cyc_exp_init. exact (unhide _ He). }
         split; [ecancel_assumption |].
-        subst l3 l2 l1 l0 l i. repeat split; solve_gets. }
+        subst l0 l i. repeat split; solve_gets. }
       { intros v t_v m_v l_v Hinv.
-        destruct Hinv as [Ht [Hv_le [r_v [x0_v [x1_v [Hbr [Hfr [Hsep_v [Hgi [Hgr [Hgt0 [Hgt1 [Hgone [Hgb Hgo]]]]]]]]]]]]]].
+        destruct Hinv as [Ht [Hv_le [r_v [Hbr [Hfr [Hsep_v [Hgi [Hgr [Hgb Hgo]]]]]]]]].
         subst t_v.
         exists (word.of_Z (Z.of_nat v)). cbv [Markers.split].
         split. { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body WeakestPrecondition.get]. eexists. split; [exact Hgi | reflexivity]. }
@@ -817,15 +788,16 @@ Section BLS12_CycExpFunctional.
           { unfold DEXPR. repeat (first [ solve [eval_dexprs_fast] | straightline ]). }
           cbv beta delta [dlet.dlet].
           intro l4.
+          (* the Granger-Scott squaring, in place on the six Fp2 slots of result *)
           unfold1_cmd_goal; cbv beta match delta [cmd_body].
-          eapply (cyc_sqr_functional_wp functions HFp6mul HFp6add HFp6mulv HFpadd a_r a_t0 a_t1 a_one r_v x0_v x1_v one_v).
-          1-4: subst l4; solve_gets.
-          { exact Hbr. }
-          { exact Hb_one. }
-          { exact (unhide _ Hone). }
-          { ecancel_assumption. }
-          intros m2 r2 x0' x1' Hb2 Hfe2 Hs2.
+          eexists; split; [subst l4; eval_dexprs_fast |].
+          eapply Semantics.weaken_call.
+          1: { eapply (BLS12_CycSqrGS.cyc_sqr_gs_call functions HGS a_r r_v).
+               { exact Hbr. }
+               ecancel_assumption. }
+          intros ? ? ? [? [? [r2 [Hb2 [Hfe2 Hs2]]]]]. subst.
           apply hide in Hfe2.
+          cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
           eexists. split.
           { unfold DEXPR. subst l4. repeat (first [ solve [eval_dexprs_fast] | straightline ]). }
           cbv beta delta [dlet.dlet].
@@ -835,13 +807,14 @@ Section BLS12_CycExpFunctional.
           { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body WeakestPrecondition.get].
             eexists. split. { subst l5. rewrite map.get_put_same. reflexivity. } reflexivity. }
           (* the model of this iteration *)
-          assert (Hstep : forall HB : cyclotomic (Fp12_feval base_val),
+          assert (Hstep : forall HB : gs (Fp12_feval base_val),
             (if Z.testbit e (Z.of_nat (v - 1))
              then P.fp12_mul PrimeField.M_pos (Fp12_feval r2) (Fp12_feval base_val)
              else Fp12_feval r2)
             = pw (Fp12_feval base_val) (Z.to_N (Z.shiftr e (Z.of_nat (v - 1))))).
           { intros HB.
-            pose proof (cyc_exp_step (Fp12_feval base_val) e (v - 1) (proj1 (unhide _ He)) HB) as Hs.
+            pose proof (gs_cyc_exp_step (Fp12_feval base_val) e (v - 1) (proj1 (unhide _ He)) HB) as Hs.
+            change Prime381.p381 with (@PrimeField.M_pos bls12_pf_params) in Hs.
             replace (S (v - 1)) with v in Hs by lia.
             rewrite <- ((unhide _ Hfr) HB) in Hs.
             rewrite <- (unhide _ Hfe2) in Hs.
@@ -867,7 +840,7 @@ Section BLS12_CycExpFunctional.
             cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
             exists (v - 1)%nat. split; [| unfold Nat.lt; lia].
             unfold cyc_exp_inv_f. split; [reflexivity |]. split; [lia |].
-            exists r3, x0', x1'. split; [exact Hb3 |].
+            exists r3. split; [exact Hb3 |].
             split. { constructor. intros HB. rewrite (unhide _ Hfe3). exact (Hstep HB). }
             split; [ecancel_assumption |].
             subst l5 l4.
@@ -882,7 +855,7 @@ Section BLS12_CycExpFunctional.
             repeat straightline.
             exists (v - 1)%nat. split; [| unfold Nat.lt; lia].
             unfold cyc_exp_inv_f. split; [reflexivity |]. split; [lia |].
-            exists r2, x0', x1'. split; [exact Hb2 |].
+            exists r2. split; [exact Hb2 |].
             split. { constructor. intros HB. exact (Hstep HB). }
             split; [ecancel_assumption |].
             subst l5 l4.
@@ -903,9 +876,6 @@ Section BLS12_CycExpFunctional.
           intros ? ? ? [? [? [o [Hfeo [Hbo Hso]]]]]. subst.
           apply F12conj_eq in Hfeo. apply hide in Hfeo.
           cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-          dealloc_with constr:(FElem_Fp).
-          dealloc_with constr:(FElem_Fp6).
-          dealloc_with constr:(FElem_Fp6).
           dealloc_with constr:(FElem_Fp12).
           cbv [list_map list_map_body WeakestPrecondition.get].
           split; [reflexivity |]. split; [reflexivity |].
@@ -922,16 +892,13 @@ Section BLS12_CycExpFunctional.
           Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_x_neg))
         (HFp12mul : BLS12_CycExp.spec_of_Fp12_mul functions)
         (HFp12conj : BLS12_CycExp.spec_of_Fp12_conjugate functions)
-        (HFp6mul : BLS12_CycExp.spec_of_Fp6_mul functions)
-        (HFp6add : BLS12_CycExp.spec_of_Fp6_add functions)
-        (HFp6mulv : BLS12_CycExp.spec_of_Fp6_mul_by_v functions)
-        (HFpadd : BLS12_CycExp.spec_of_Fp_add functions)
+        (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
         (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions),
       spec_of_cyc_exp_neg_functional "bls12_Fp12_cyc_exp_x_neg" P.bls_x functions.
     Proof.
       intros. exact (cyc_exp_neg_functional_ok "bls12_Fp12_cyc_exp_x_neg" P.bls_x functions
         ltac:(cbv; split; congruence)
-        EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword).
+        EnvContains HFp12mul HFp12conj HGS HFfromword).
     Qed.
 
     Lemma bls12_Fp12_cyc_exp_c_neg_functional_ok :
@@ -940,16 +907,53 @@ Section BLS12_CycExpFunctional.
           Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_c_neg))
         (HFp12mul : BLS12_CycExp.spec_of_Fp12_mul functions)
         (HFp12conj : BLS12_CycExp.spec_of_Fp12_conjugate functions)
-        (HFp6mul : BLS12_CycExp.spec_of_Fp6_mul functions)
-        (HFp6add : BLS12_CycExp.spec_of_Fp6_add functions)
-        (HFp6mulv : BLS12_CycExp.spec_of_Fp6_mul_by_v functions)
-        (HFpadd : BLS12_CycExp.spec_of_Fp_add functions)
+        (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
         (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions),
       spec_of_cyc_exp_neg_functional "bls12_Fp12_cyc_exp_c_neg" P.bls_c functions.
     Proof.
       intros. exact (cyc_exp_neg_functional_ok "bls12_Fp12_cyc_exp_c_neg" P.bls_c functions
         ltac:(cbv; split; congruence)
-        EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword).
+        EnvContains HFp12mul HFp12conj HGS HFfromword).
+    Qed.
+
+    (** The bounds-and-frame specs of [BLS12_CycExp], which follow from the functional
+        specification as corollaries. *)
+    Lemma cyc_exp_neg_bounds_of_functional : forall name e functions,
+      spec_of_cyc_exp_neg_functional name e functions ->
+      BLS12_CycExp.spec_of_cyc_exp_neg name functions.
+    Proof.
+      intros name e functions H pout pbase old_out base_val Rr tr mem Hpre.
+      eapply Semantics.weaken_call; [exact (H pout pbase old_out base_val Rr tr mem Hpre) |].
+      intros tr' mem' rets [Hr [Ht [out [_ [Hb Hs]]]]].
+      split; [exact Hr |]. split; [exact Ht |]. exists out. exact (conj Hb Hs).
+    Qed.
+
+    Lemma bls12_Fp12_cyc_exp_x_neg_ok :
+      forall functions
+        (EnvContains : map.get functions "bls12_Fp12_cyc_exp_x_neg" =
+          Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_x_neg))
+        (HFp12mul : BLS12_CycExp.spec_of_Fp12_mul functions)
+        (HFp12conj : BLS12_CycExp.spec_of_Fp12_conjugate functions)
+        (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
+        (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions),
+      BLS12_CycExp.spec_of_cyc_exp_neg "bls12_Fp12_cyc_exp_x_neg" functions.
+    Proof.
+      intros. eapply cyc_exp_neg_bounds_of_functional.
+      exact (bls12_Fp12_cyc_exp_x_neg_functional_ok functions EnvContains HFp12mul HFp12conj HGS HFfromword).
+    Qed.
+
+    Lemma bls12_Fp12_cyc_exp_c_neg_ok :
+      forall functions
+        (EnvContains : map.get functions "bls12_Fp12_cyc_exp_c_neg" =
+          Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_c_neg))
+        (HFp12mul : BLS12_CycExp.spec_of_Fp12_mul functions)
+        (HFp12conj : BLS12_CycExp.spec_of_Fp12_conjugate functions)
+        (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
+        (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions),
+      BLS12_CycExp.spec_of_cyc_exp_neg "bls12_Fp12_cyc_exp_c_neg" functions.
+    Proof.
+      intros. eapply cyc_exp_neg_bounds_of_functional.
+      exact (bls12_Fp12_cyc_exp_c_neg_functional_ok functions EnvContains HFp12mul HFp12conj HGS HFfromword).
     Qed.
 
 End BLS12_CycExpFunctional.

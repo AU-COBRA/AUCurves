@@ -46,6 +46,9 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_MakeLineFunctional.
 Require Theory.BLS12Pairing.Fp12.
 Require Bedrock.Field.Synthesis.Examples.BLS12_Fp12Feval.
 Require Bedrock.Field.Synthesis.Examples.BLS12_MillerGeneric.
+Require Bedrock.Field.Synthesis.Examples.BLS12_MulByLine.
+Require Theory.BLS12Pairing.SparseLine.
+Require Bedrock.Field.Synthesis.Examples.BLS12_PairingFevalInst.
 Require Import bedrock2.Loops.
 
 Import BinInt String List.ListNotations.
@@ -515,6 +518,72 @@ Section BLS12_MillerStepFunctional.
            AbstractField.un_inv AbstractField.Fsquare] in H.
 
     (* ============================================================ *)
+    (* The sparse multiplication by the line (BLS12_MulByLine.v)    *)
+    (* ============================================================ *)
+
+    Local Notation fp6_off_ms :=
+      (Memory.bytes_per_word 64 * Z.of_nat (@AbstractField.felem_size_in_words _ bls12_Fp6_params' _ _ _ _ bls12_Fp6_rep')).
+    Local Notation fp6_c1_off_ms :=
+      (@CubicFieldExtensions.fp6_c1_offset _ _ _ _ bls12_pf_params bls12_beta bls12_Fp_rep fp2_prefix).
+    Local Notation fp6_c2_off_ms :=
+      (@CubicFieldExtensions.fp6_c2_offset _ _ _ _ bls12_pf_params bls12_beta bls12_Fp_rep fp2_prefix).
+
+    (** [make_line_feval_model] is zero outside the three slots of a line. *)
+    Lemma sparse_part_make_line_model : forall lam xt yt xp yp,
+      SparseLine.sparse_part (p:=PrimeField.M_pos) (make_line_feval_model lam xt yt xp yp)
+      = make_line_feval_model lam xt yt xp yp.
+    Proof. reflexivity. Qed.
+
+    Lemma mul_by_line_call_MS : forall functions,
+      BLS12_MulByLine.spec_of_mul_by_line functions ->
+      forall (a pl : word) (x l : Fp12_felem) R tr m,
+        Fp12_bounded Fp12_tight x /\ Fp12_bounded Fp12_tight l /\
+        (FElem_Fp12 a x ⋆ (FElem_Fp12 pl l ⋆ R)) m ->
+        WeakestPrecondition.call functions "bls12_Fp12_mul_by_line" tr m
+          [a; word.add a fp6_c1_off_ms; word.add a fp6_c2_off_ms;
+           word.add a (word.of_Z fp6_off_ms);
+           word.add (word.add a (word.of_Z fp6_off_ms)) fp6_c1_off_ms;
+           word.add (word.add a (word.of_Z fp6_off_ms)) fp6_c2_off_ms;
+           pl; word.add pl fp6_c1_off_ms;
+           word.add (word.add pl (word.of_Z fp6_off_ms)) fp6_c1_off_ms]
+          (fun tr' m' rets =>
+             rets = [] /\ tr = tr' /\
+        exists y : Fp12_felem,
+               Fp12_feval y = F12mul (Fp12_feval x) (SparseLine.sparse_part (Fp12_feval l)) /\
+        Fp12_bounded Fp12_tight y /\
+        exists l' : Fp12_felem,
+                 Fp12_feval l' = Fp12_feval l /\ Fp12_bounded Fp12_tight l' /\
+        (FElem_Fp12 a y ⋆ (FElem_Fp12 pl l' ⋆ R)) m').
+    Proof.
+      intros functions HM a pl x l R tr m (Hbx & Hbl & Hm).
+      eapply Semantics.weaken_call;
+        [exact (BLS12_MulByLine.mul_by_line_call functions HM a pl x l R tr m Hbx Hbl Hm) |].
+      cbv beta. intros tr' m' rets (Hr & Ht & y & Ey & Hby & l' & El & Hbl' & Hs).
+      split; [exact Hr |]. split; [exact Ht |]. exists y.
+      split.
+      { refine (eq_trans Ey _).
+        symmetry. exact (BLS12_PairingFevalInst.fp12_mul_eq_closed PrimeField.M_pos _ _). }
+      split; [exact Hby |]. exists l'. exact (conj El (conj Hbl' Hs)).
+    Qed.
+
+    (* one call of the sparse multiplication: keeps [vo], its feval fact [hf] (hidden) and the
+       new line buffer [lo] with [hl : feval lo = feval line] (hidden) *)
+    Local Ltac mcall_mbl spec vo hf lo hl :=
+      try miller_straightline;
+      unfold1_cmd_goal; cbv beta match delta [cmd_body];
+      letexists; split; [solve [eval_dexprs_abstract] |];
+      eapply Semantics.weaken_call;
+      [ eapply (mul_by_line_call_MS _ spec); solve_precond
+      | cbv beta; intros ? ? ? [? [? ?]]; subst;
+        cbv [map.putmany_of_list_zip];
+        eexists; split; [exact eq_refl |] ];
+      match goal with
+      | Hrem : exists _, _ /\ _ /\ exists _, _ /\ _ /\ _ |- _ =>
+        destruct Hrem as [vo [hf [?Hb [lo [hl [?Hbl ?Hs]]]]]];
+        apply (@hide _) in hf; apply (@hide _) in hl
+      end.
+
+    (* ============================================================ *)
     (* Doubling fragment                                             *)
     (* ============================================================ *)
 
@@ -538,7 +607,7 @@ Section BLS12_MillerStepFunctional.
         (HFp2sqr : spec_of_Fp2_sqr functions)
         (HFp2inv : spec_of_Fp2_inv functions)
         (HFp2copy : spec_of_Fp2_felem_copy functions)
-        (HFp12mul : spec_of_Fp12_mul functions)
+        (HMBL : BLS12_MulByLine.spec_of_mul_by_line functions)
         (HFp12sqr : spec_of_Fp12_sqr functions)
         (HML : spec_of_make_line_f functions)
         (a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py : word)
@@ -573,11 +642,11 @@ Section BLS12_MillerStepFunctional.
            WeakestPrecondition.cmd functions rest tr m' l post) ->
         WeakestPrecondition.cmd functions (cmd_seq_k miller_doubling_calls rest) tr m l post.
     Proof.
-      intros functions HFp2mul HFp2add HFp2sub HFp2sqr HFp2inv HFp2copy HFp12mul HFp12sqr HML
+      intros functions HFp2mul HFp2add HFp2sub HFp2sqr HFp2inv HFp2copy HMBL HFp12sqr HML
         a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py f tx ty lam tmp1 tmp2 line xp yp R
         rest tr m l post Hbf Hbtx Hbty Hbxp Hbyp Hsep
         Hlf Hltx Hlty Hllam Hltmp1 Hltmp2 Hlline Hlpx Hlpy Hk.
-      cbv [cmd_seq_k miller_doubling_calls].
+      cbv [cmd_seq_k miller_doubling_calls BLS12_Pairing.mul_by_line_call].
       mcallf HFp2sqr v1 E1.
       mcallf HFp2add v2 E2.
       mcallf HFp2add v3 E3.
@@ -586,7 +655,7 @@ Section BLS12_MillerStepFunctional.
       mcallf HFp2mul v6 E6.
       mcallf HML vln E7.
       mcallf HFp12sqr vf1 E8.
-      mcallf HFp12mul vf2 E9.
+      mcall_mbl HMBL vf2 E9 vln' Eln.
       mcallf HFp2sqr v10 E10.
       mcallf HFp2sub v11 E11.
       mcallf HFp2sub v12 E12.
@@ -594,13 +663,16 @@ Section BLS12_MillerStepFunctional.
       mcallf HFp2mul v14 E14.
       mcallf HFp2sub v15 E15.
       mcopy HFp2copy.
-      destruct E7 as [E7]. norm_feval E1. norm_feval E2. norm_feval E3. norm_feval E4. norm_feval E5.
-      norm_feval E6. norm_feval E8. norm_feval E9. norm_feval E10. norm_feval E11.
+      destruct E7 as [E7]. destruct E9 as [E9]. destruct Eln as [Eln].
+      rewrite E7, sparse_part_make_line_model, <- E7 in E9.
+      norm_feval E1. norm_feval E2. norm_feval E3. norm_feval E4. norm_feval E5.
+      norm_feval E6. norm_feval E8. norm_feval E10. norm_feval E11.
       norm_feval E12. norm_feval E13. norm_feval E14. norm_feval E15.
       destruct (dbl_chain _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14 E15)
       as [Hf' [Htx' [Hty' [Hlam' Hline']]]].
       clear E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14 E15.
+      rewrite <- Eln in Hline'.
       eapply Hk; [ exact Hf' | exact Htx' | exact Hty' | exact Hlam' | exact Hline' | solve_miller_bounds | solve_miller_bounds | solve_miller_bounds | ecancel_assumption ].
     Qed.
 
@@ -615,7 +687,7 @@ Section BLS12_MillerStepFunctional.
         (HFp2sqr : spec_of_Fp2_sqr functions)
         (HFp2inv : spec_of_Fp2_inv functions)
         (HFp2copy : spec_of_Fp2_felem_copy functions)
-        (HFp12mul : spec_of_Fp12_mul functions)
+        (HMBL : BLS12_MulByLine.spec_of_mul_by_line functions)
         (HML : spec_of_make_line_f functions)
         (a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py p_qx p_qy : word)
         (f : Fp12_felem) (tx ty lam tmp1 tmp2 : Fp2_felem) (line : Fp12_felem)
@@ -657,18 +729,19 @@ Section BLS12_MillerStepFunctional.
            post tr m' l) ->
         WeakestPrecondition.cmd functions miller_addition_cmd tr m l post.
     Proof.
-      intros functions HFp2mul HFp2sub HFp2sqr HFp2inv HFp2copy HFp12mul HML
+      intros functions HFp2mul HFp2sub HFp2sqr HFp2inv HFp2copy HMBL HML
         a_f a_tx a_ty a_lam a_tmp1 a_tmp2 a_line p_px p_py p_qx p_qy
         f tx ty lam tmp1 tmp2 line xp yp qx qy R tr m l post
         Hbf Hbtx Hbty Hbxp Hbyp Hbqx Hbqy Hsep
         Hlf Hltx Hlty Hllam Hltmp1 Hltmp2 Hlline Hlpx Hlpy Hlqx Hlqy Hk.
-      cbv [miller_addition_cmd miller_addition_calls BLS12_Pairing.cmd_seq_list].
+      cbv [miller_addition_cmd miller_addition_calls BLS12_Pairing.cmd_seq_list
+           BLS12_Pairing.mul_by_line_call].
       mcallf HFp2sub v1 E1.     (* A1: tmp1 = q_y - t_y *)
       mcallf HFp2sub v2 E2.     (* A2: tmp2 = q_x - t_x *)
       mcallf HFp2inv v3 E3.     (* A3: tmp2 = tmp2^-1 *)
       mcallf HFp2mul v4 E4.     (* A4: lambda = tmp1 * tmp2 *)
       mcallf HML vln E5.        (* A5: line = make_line(lambda, t_x, t_y, p_x, p_y) *)
-      mcallf HFp12mul vf1 E6.   (* A6: f = f * line *)
+      mcall_mbl HMBL vf1 E6 vln' Eln.   (* A6: f = f * line (sparse) *)
       mcallf HFp2sqr v7 E7.     (* A7: tmp1 = lambda^2 *)
       mcallf HFp2sub v8 E8.     (* A8: tmp1 = tmp1 - t_x *)
       mcallf HFp2sub v9 E9.     (* A9: tmp2 = tmp1 - q_x *)
@@ -676,14 +749,16 @@ Section BLS12_MillerStepFunctional.
       mcallf HFp2mul v11 E11.   (* A11: tmp1 = lambda * tmp1 *)
       mcallf HFp2sub v12 E12.   (* A12: t_y = tmp1 - t_y *)
       mcopy HFp2copy.           (* A13: t_x = tmp2 *)
-      destruct E5 as [E5].
-      norm_feval E1. norm_feval E2. norm_feval E3. norm_feval E4. norm_feval E6.
+      destruct E5 as [E5]. destruct E6 as [E6]. destruct Eln as [Eln].
+      rewrite E5, sparse_part_make_line_model, <- E5 in E6.
+      norm_feval E1. norm_feval E2. norm_feval E3. norm_feval E4.
       norm_feval E7. norm_feval E8. norm_feval E9. norm_feval E10. norm_feval E11.
       norm_feval E12.
       destruct (add_chain _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
                   E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12)
         as [Hf' [Htx' [Hty' [Hlam' Hline']]]].
       clear E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12.
+      rewrite <- Eln in Hline'.
       eapply Hk; [ exact Hf' | exact Htx' | exact Hty' | exact Hlam' | exact Hline'
                  | solve_miller_bounds | solve_miller_bounds | solve_miller_bounds
                  | ecancel_assumption ].

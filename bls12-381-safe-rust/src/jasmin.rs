@@ -4,15 +4,22 @@
 //! The modules `generated/bls12_tower_regptr.jazz` and
 //! `generated/bls12_group_regptr.jazz` are printed from the bedrock2 functions
 //! by `src/Bedrock/ExtractBLS12TowerJasmin.v` / `ExtractBLS12GroupJasmin.v`
-//! (translation `Core.tr_func_sized 6` + `Core.polish_func`, printer
-//! `src/Bedrock/Jasmin/RegPtrSized.v`) and compiled by `jasminc -auto-spill`
-//! in `build.sh`.  Leaves: the Montgomery multiply and square are CryptOpt's
-//! (`generated/bls12_{mul,square}_cryptopt.asm`) and the inverse is the
-//! safegcd `_bls12_inv` of `src/stubs.rs`, and `from_word` (constants only)
-//! is `_bls12_from_word` of `src/stubs.rs`, all reached through the dispatcher
-//! `__jasmin_syscall_randombytes__` of `generated/jasmin_aliases.s`, as is
-//! `opp` (`_bls12_opp` of `src/stubs.rs`); add, sub, copy and select are the
-//! Jasmin translation of the fiat-crypto bedrock2 bodies.
+//! (translation `Core.tr_func_sized 6` + `AdcChain.polish_func_adc`, printer
+//! `src/Bedrock/Jasmin/RegPtrSized.v` with liveness-chosen `#[spill]` hints,
+//! slices of pointer parameters passed without staging and conditional
+//! moves for the selects) and compiled by `jasminc -auto-spill` in
+//! `build.sh`.  Leaves (default, `BLS12_JASMIN_LEAVES=jasmin`): the
+//! Montgomery multiply and square, add, sub, copy and select are Jasmin,
+//! printed from the fiat-crypto bedrock2 bodies inside the modules (local
+//! functions); the inverse is the safegcd `_bls12_inv` of `src/stubs.rs`
+//! (whose two multiplies are the live-hint Jasmin leaves of
+//! `generated/bls12_leaves_live.jazz`), and `from_word` (constants only) and
+//! `opp` are `_bls12_from_word` / `_bls12_opp` of `src/stubs.rs`, all three
+//! reached through the dispatcher `__jasmin_syscall_randombytes__` of
+//! `generated/jasmin_aliases.s`.  No CryptOpt code is linked.  With
+//! `BLS12_JASMIN_LEAVES=cryptopt` the modules are the `*_ffi.jazz` variants,
+//! whose multiply and square calls also go through the dispatcher, to
+//! CryptOpt's `generated/bls12_{mul,square}_cryptopt.asm`.
 //!
 //! Hand-written: the `extern` declarations and the safe wrappers below
 //! (memory layout only).  The layouts are the `#[repr(C)]` tower structs:
@@ -95,6 +102,10 @@ unsafe extern "C" {
     fn jasmin_bls12_g2_add(out: *mut G2Projective, p: *const G2Projective, q: *const G2Projective) -> *mut G2Projective;
     fn jasmin_bls12_g2_double(out: *mut G2Projective, p: *const G2Projective) -> *mut G2Projective;
     fn jasmin_bls12_g2_scalar_mul(out: *mut G2Projective, k: *const [u64; 4], p: *const G2Projective) -> *mut G2Projective;
+    fn jasmin_bls12_g1_scalar_mul_ct(out: *mut G1Projective, t: *mut G1Projective, k: *const [u64; 4],
+                                     p: *const G1Projective) -> *mut G1Projective;
+    fn jasmin_bls12_g2_scalar_mul_ct(out: *mut G2Projective, t: *mut G2Projective, k: *const [u64; 4],
+                                     p: *const G2Projective) -> *mut G2Projective;
 }
 
 /// R = P + Q (emitted `curve_add`, RCB Algorithm 7), as [`crate::group::g1_add`].
@@ -108,6 +119,19 @@ pub fn g1_double(r: &mut G1Projective, p: &G1Projective) {
 /// R = kP (emitted `g1_scalar_mul`), as [`crate::group::g1_scalar_mul`].
 pub fn g1_scalar_mul(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
     unsafe { jasmin_bls12_g1_scalar_mul(r, k, p); }
+}
+/// R = kP, constant-time ladder (emitted `g1_scalar_mul_ct`; scratch point on the stack),
+/// as [`crate::group::g1_scalar_mul_ct`].  Its Jasmin text passes `jasmin-ct` with the
+/// scalar secret (scripts/check_ct_jasmin.sh); this wrapper copies nothing secret-dependent.
+pub fn g1_scalar_mul_ct(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
+    let mut t = G1Projective::identity();
+    unsafe { jasmin_bls12_g1_scalar_mul_ct(r, &mut t, k, p); }
+}
+/// R = kP on G2, constant-time ladder (emitted `g2_scalar_mul_ct`), as
+/// [`crate::group::g2_scalar_mul_ct`].
+pub fn g2_scalar_mul_ct(r: &mut G2Projective, k: &[u64; 4], p: &G2Projective) {
+    let mut t = G2Projective::identity();
+    unsafe { jasmin_bls12_g2_scalar_mul_ct(r, &mut t, k, p); }
 }
 /// R = P + Q on G2 (emitted `g2_curve_add`), as [`crate::group::g2_add`].
 pub fn g2_add(r: &mut G2Projective, p: &G2Projective, q: &G2Projective) {

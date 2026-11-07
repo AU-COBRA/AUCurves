@@ -9,8 +9,9 @@
       Frobenius / Frobenius-p^2    PairingFieldOps.spec_of_Fp12_frobenius(_p2) (library specs,
                                    proved by PairingFieldOps.Fp12_frobenius(_p2)_ok)
     [bls12_final_exp_functional_closed] then assumes only the environment facts and
-    the specs of the arithmetic leaves (Fp/Fp6/Fp12 field ops, from_word, the library
-    Frobenius specs).
+    the specs of the arithmetic leaves (Fp12 field ops, from_word, the library
+    Frobenius specs) and of the Granger-Scott squaring [bls12_Fp12_cyclotomic_square]
+    ([BLS12_CycSqrGS.spec_of_cyc_sqr_gs], discharged by [BLS12_CycSqrGS.cyc_sqr_gs_ok]).
 *)
 
 From Stdlib Require Import Strings.String.
@@ -48,6 +49,7 @@ Require Import Bedrock.Field.Synthesis.Examples.BLS12_CycExp.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExpHardDSD.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExp.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_CycExpFunctional.
+Require Bedrock.Field.Synthesis.Examples.BLS12_CycSqrGS.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExpHardDSDFunctional.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExpFunctional.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_LoadersFeval.
@@ -220,10 +222,7 @@ Section Frob.
       (HFp12mul : BLS12_FinalExp.spec_of_Fp12_mul functions)
       (HFp12inv : BLS12_FinalExp.spec_of_Fp12_inv functions)
       (HFp12conj : BLS12_FinalExp.spec_of_Fp12_conjugate functions)
-      (HFp6mul : BLS12_CycExp.spec_of_Fp6_mul functions)
-      (HFp6add : BLS12_CycExp.spec_of_Fp6_add functions)
-      (HFp6mulv : BLS12_CycExp.spec_of_Fp6_mul_by_v functions)
-      (HFpadd : BLS12_CycExp.spec_of_Fp_add functions)
+      (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
       (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions)
       (HFfrob : PairingFieldOps.spec_of_Fp12_frobenius bls12_beta bls12_xi_re bls12_xi_im
                   fp12_prefix fp6_prefix fp2_prefix functions)
@@ -233,9 +232,9 @@ Section Frob.
   Proof.
     intros.
     pose proof (BLS12_CycExpFunctional.bls12_Fp12_cyc_exp_x_neg_functional_ok functions E_x
-      HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword) as Hx.
+      HFp12mul HFp12conj HGS HFfromword) as Hx.
     pose proof (BLS12_CycExpFunctional.bls12_Fp12_cyc_exp_c_neg_functional_ok functions E_c
-      HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword) as Hc.
+      HFp12mul HFp12conj HGS HFfromword) as Hc.
     pose proof (BLS12_FinalExpHardDSDFunctional.bls12_final_exp_hard_dsd_functional_ok functions E_hard
       HFp12mul HFp12conj (glue_frobenius functions HFfrob) (glue_frobenius_p2 functions HFfrobp2)
       (glue_cyc_exp_x_neg functions Hx) (glue_cyc_exp_c_neg functions Hc)
@@ -259,10 +258,7 @@ Section Frob.
       (HFp12mul : BLS12_FinalExp.spec_of_Fp12_mul functions)
       (HFp12inv : BLS12_FinalExp.spec_of_Fp12_inv functions)
       (HFp12conj : BLS12_FinalExp.spec_of_Fp12_conjugate functions)
-      (HFp6mul : BLS12_CycExp.spec_of_Fp6_mul functions)
-      (HFp6add : BLS12_CycExp.spec_of_Fp6_add functions)
-      (HFp6mulv : BLS12_CycExp.spec_of_Fp6_mul_by_v functions)
-      (HFpadd : BLS12_CycExp.spec_of_Fp_add functions)
+      (HGS : BLS12_CycSqrGS.spec_of_cyc_sqr_gs functions)
       (HFfromword : BLS12_CycExp.spec_of_Fp_from_word functions)
       (HFfrob : PairingFieldOps.spec_of_Fp12_frobenius bls12_beta bls12_xi_re bls12_xi_im
                   fp12_prefix fp6_prefix fp2_prefix functions)
@@ -272,6 +268,6 @@ Section Frob.
   Proof.
     intros. apply BLS12_FinalExpFunctional.bls12_final_exp_nonzero_of_functional.
     exact (bls12_final_exp_functional_closed functions E_fe E_hard E_x E_c E_g1 E_g2 E_w
-      HFp12mul HFp12inv HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword HFfrob HFfrobp2).
+      HFp12mul HFp12inv HFp12conj HGS HFfromword HFfrob HFfrobp2).
   Qed.
 End Frob.

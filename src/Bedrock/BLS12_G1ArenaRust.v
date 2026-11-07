@@ -27,6 +27,14 @@
       returns a triple projectively equal to k P for an on-curve P; the
       chain is [BLS12_G1_ScalarMul.g1_scalar_mul_ok] (program order) and
       [BLS12_G1_ScalarMul.smul_prog_rcb_correct] / [bits_limbs].
+      It branches on the scalar bits (variable time): for public scalars only.
+    - ["g1_scalar_mul_ct"]: [BLS12_G1_ScalarMulCT.g1_scalar_mul_ct], the
+      constant-time variant (per bit: double, unconditional out-of-place
+      ["curve_add"] into three caller scratch buffers, three ["ct_cswap"]);
+      [BLS12_G1_CT_Closed.g1_scalar_mul_ct_closed] (Qed, closed): same
+      conclusion as ["g1_scalar_mul"].
+    - ["ct_cswap"]: [CtSwap.ct_cswap] at 6 words (fiat-crypto's
+      felem_cswap generalised to n words), [CtSwap.ct_cswap_call] (Qed).
     - ["curve_add"]: [CurveAdd.ladderstep_body] — RCB 2015 Algorithm 7,
       the a = 0 complete homogeneous addition, derived by Rupicola;
       [CurveAdd.ladderstep_correct] (Qed).
@@ -68,6 +76,8 @@ Require Import Bedrock.Group.CurveAdd.PointDoubleA0.
 Require Import Bedrock.Group.CurveAdd.StoreZero.
 Require Import Bedrock.BLS12_MSM.
 Require Import Bedrock.BLS12_G1_ScalarMul.
+Require Import Bedrock.BLS12_G1_ScalarMulCT.
+Require Import Bedrock.Group.CurveAdd.CtSwap.
 Require Import Bedrock.ToSafeRustArena.
 Import ListNotations.
 Local Open Scope Z_scope.
@@ -132,9 +142,18 @@ Section BLS12G1.
   Definition g1_smul : function_t :=
     g1_scalar_mul "msm_curve_add" "msm_curve_double" "store_zero".
 
+  (** Constant-time scalar multiplication: the out-of-place ["curve_add"]
+      into caller scratch, then three ["ct_cswap"] calls per bit. *)
+  Definition g1_smul_ct : function_t :=
+    g1_scalar_mul_ct "curve_add" "msm_curve_double" "store_zero".
+
+  Definition g1_ct_cswap : function_t :=
+    ("ct_cswap", ct_cswap (word:=BasicC64Semantics.word) felem_size_in_words).
+
   Definition bls12_g1_funcs : list function_t :=
     [g1_msm; g1_smul; msm_curve_add; msm_curve_double; g1_curve_add;
-     g1_curve_double_a0; g1_store_zero; g1_three_b; g1_felem_copy].
+     g1_curve_double_a0; g1_store_zero; g1_three_b; g1_felem_copy;
+     g1_smul_ct; g1_ct_cswap].
 End BLS12G1.
 
 Definition bls12_g1_rs_header : list string :=

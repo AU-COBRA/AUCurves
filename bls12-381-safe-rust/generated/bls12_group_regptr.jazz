@@ -6,34 +6,19 @@ fn bls12_three_b(reg ptr u64[6] out) -> reg ptr u64[6] {
   reg u64 __ca__;
   reg u64 __cb__;
   inline int __j;
-  #[spill] reg u64 __wtmp__;
-  stack ptr u64[6] out__s;
-  out__s = out;
+  reg u64 __wtmp__;
   __wtmp__ = 4933130441833534766;
-  out = out__s;
   out[0 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 15904462746612662304;
-  out = out__s;
   out[1 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 8034115857496836953;
-  out = out__s;
   out[2 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 12755092135412849606;
-  out = out__s;
   out[3 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 7007796720291435703;
-  out = out__s;
   out[4 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 252692002104915169;
-  out = out__s;
   out[5 + 0] = __wtmp__;
-  out__s = out;
-  out = out__s;
   return out;
 }
 
@@ -63,6 +48,56 @@ inline fn bls12_felem_copy(reg ptr u64[6] out, reg const ptr u64[6] in) -> reg p
 }
 
 
+fn ct_cswap(reg u64 mask, reg ptr u64[6] a1, reg ptr u64[6] a2) -> reg ptr u64[6], reg ptr u64[6] {
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 nmask;
+  reg u64 __wtmp__;
+  reg u64 _gs_from0;
+  reg u64 _gs_to0;
+  reg u64 v1;
+  reg u64 v2;
+  reg u64 r1a_bp0;
+  reg u64 r1;
+  reg u64 r1_bp0;
+  reg u64 r2a_bp0;
+  reg u64 r2;
+  reg u64 r2_bp0;
+  nmask = 0;
+  nmask = (nmask - mask);
+  mask = nmask;
+  __wtmp__ = 18446744073709551615;
+  mask = (mask ^ __wtmp__);
+  _gs_from0 = 0;
+  _gs_to0 = 6;
+  while ((_gs_from0 <u _gs_to0)) {
+    v1 = a1.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0];
+    v2 = a2.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0];
+    r1a_bp0 = mask;
+    r1a_bp0 = (r1a_bp0 & v1);
+    r1 = r1a_bp0;
+    r1_bp0 = nmask;
+    r1_bp0 = (r1_bp0 & v2);
+    r1 = (r1 | r1_bp0);
+    r2a_bp0 = mask;
+    r2a_bp0 = (r2a_bp0 & v2);
+    r2 = r2a_bp0;
+    r2_bp0 = nmask;
+    r2_bp0 = (r2_bp0 & v1);
+    r2 = (r2 | r2_bp0);
+    a1.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0] = r1;
+    a2.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0] = r2;
+    _gs_from0 = (_gs_from0 + 1);
+  }
+  return a1, a2;
+}
+
+
 fn bls12_Fp2_three_b(reg ptr u64[12] out) -> reg ptr u64[12] {
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
@@ -71,59 +106,82 @@ fn bls12_Fp2_three_b(reg ptr u64[12] out) -> reg ptr u64[12] {
   reg u64 __ca__;
   reg u64 __cb__;
   inline int __j;
-  #[spill] reg u64 __wtmp__;
-  stack ptr u64[12] out__s;
-  out__s = out;
+  reg u64 __wtmp__;
   __wtmp__ = 4933130441833534766;
-  out = out__s;
   out[0 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 15904462746612662304;
-  out = out__s;
   out[1 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 8034115857496836953;
-  out = out__s;
   out[2 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 12755092135412849606;
-  out = out__s;
   out[3 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 7007796720291435703;
-  out = out__s;
   out[4 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 252692002104915169;
-  out = out__s;
   out[5 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 4933130441833534766;
-  out = out__s;
   out[6 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 15904462746612662304;
-  out = out__s;
   out[7 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 8034115857496836953;
-  out = out__s;
   out[8 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 12755092135412849606;
-  out = out__s;
   out[9 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 7007796720291435703;
-  out = out__s;
   out[10 + 0] = __wtmp__;
-  out__s = out;
   __wtmp__ = 252692002104915169;
-  out = out__s;
   out[11 + 0] = __wtmp__;
-  out__s = out;
-  out = out__s;
   return out;
+}
+
+
+fn ct_cswap12(reg u64 mask, reg ptr u64[12] a1, reg ptr u64[12] a2) -> reg ptr u64[12], reg ptr u64[12] {
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 nmask;
+  reg u64 __wtmp__;
+  reg u64 _gs_from0;
+  reg u64 _gs_to0;
+  reg u64 v1;
+  reg u64 v2;
+  reg u64 r1a_bp0;
+  reg u64 r1;
+  reg u64 r1_bp0;
+  reg u64 r2a_bp0;
+  reg u64 r2;
+  reg u64 r2_bp0;
+  nmask = 0;
+  nmask = (nmask - mask);
+  mask = nmask;
+  __wtmp__ = 18446744073709551615;
+  mask = (mask ^ __wtmp__);
+  _gs_from0 = 0;
+  _gs_to0 = 12;
+  while ((_gs_from0 <u _gs_to0)) {
+    v1 = a1.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0];
+    v2 = a2.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0];
+    r1a_bp0 = mask;
+    r1a_bp0 = (r1a_bp0 & v1);
+    r1 = r1a_bp0;
+    r1_bp0 = nmask;
+    r1_bp0 = (r1_bp0 & v2);
+    r1 = (r1 | r1_bp0);
+    r2a_bp0 = mask;
+    r2a_bp0 = (r2a_bp0 & v2);
+    r2 = r2a_bp0;
+    r2_bp0 = nmask;
+    r2_bp0 = (r2_bp0 & v1);
+    r2 = (r2 | r2_bp0);
+    a1.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0] = r1;
+    a2.[u64 (int) (((8 * _gs_from0) + 0)) + 8 * 0] = r2;
+    _gs_from0 = (_gs_from0 + 1);
+  }
+  return a1, a2;
 }
 
 
@@ -175,7 +233,7 @@ fn bls12_one(reg ptr u64[6] out) -> reg ptr u64[6] {
 }
 
 
-inline fn bls12_add(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr u64[6] in1) -> reg ptr u64[6] {
+fn bls12_add(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr u64[6] in1) -> reg ptr u64[6] {
   reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
@@ -243,9 +301,8 @@ inline fn bls12_add(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr
   __cf, x20 = #ADCX(x4, x10, __cf);
   __cf, x22 = #ADCX(x5, x11, __cf);
   x23 = 0;
-  if __cf {
-    x23 = 1;
-  }
+  __wtmp__ = 1;
+  x23 = __cf ? __wtmp__ : x23;
   __wtmp__ = 13402431016077863595;
   x24 = x12;
   _, __bf, _, _, _, x24 = #SUB(x24, __wtmp__);
@@ -265,39 +322,20 @@ inline fn bls12_add(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr
   x34 = x22;
   _, __bf, _, _, _, x34 = #SBB(x34, __wtmp__, __bf);
   x35 = 0;
-  if __bf {
-    x35 = 1;
-  }
-  if ((x35 == 0)) {
-    x38 = x24;
-  } else {
-    x38 = x12;
-  }
-  if ((x35 == 0)) {
-    x41 = x26;
-  } else {
-    x41 = x14;
-  }
-  if ((x35 == 0)) {
-    x44 = x28;
-  } else {
-    x44 = x16;
-  }
-  if ((x35 == 0)) {
-    x47 = x30;
-  } else {
-    x47 = x18;
-  }
-  if ((x35 == 0)) {
-    x50 = x32;
-  } else {
-    x50 = x20;
-  }
-  if ((x35 == 0)) {
-    x53 = x34;
-  } else {
-    x53 = x22;
-  }
+  __wtmp__ = 1;
+  x35 = __bf ? __wtmp__ : x35;
+  x38 = x12;
+  x38 = ((x35 == 0)) ? x24 : x38;
+  x41 = x14;
+  x41 = ((x35 == 0)) ? x26 : x41;
+  x44 = x16;
+  x44 = ((x35 == 0)) ? x28 : x44;
+  x47 = x18;
+  x47 = ((x35 == 0)) ? x30 : x47;
+  x50 = x20;
+  x50 = ((x35 == 0)) ? x32 : x50;
+  x53 = x22;
+  x53 = ((x35 == 0)) ? x34 : x53;
   x54 = x38;
   x55 = x41;
   x56 = x44;
@@ -314,7 +352,7 @@ inline fn bls12_add(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr
 }
 
 
-inline fn bls12_sub(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr u64[6] in1) -> reg ptr u64[6] {
+fn bls12_sub(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr u64[6] in1) -> reg ptr u64[6] {
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
   reg u64 __mlo__;
@@ -393,10 +431,8 @@ inline fn bls12_sub(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr
   x22 = x5;
   _, __bf, _, _, _, x22 = #SBB(x22, __wtmp__, __bf);
   x23 = 0;
-  if __bf {
-    x23 = 0;
-    x23 = (x23 - 1);
-  }
+  __wtmp__ = 18446744073709551615;
+  x23 = __bf ? __wtmp__ : x23;
   __m0__ = x23;
   __wtmp__ = 13402431016077863595;
   __m0__ = (__m0__ & __wtmp__);
@@ -437,6 +473,1051 @@ inline fn bls12_sub(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr
 }
 
 
+fn bls12_mul(reg ptr u64[6] out0, reg const ptr u64[6] in0, reg const ptr u64[6] in1) -> reg ptr u64[6] {
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 x0;
+  reg u64 x1;
+  reg u64 x2;
+  reg u64 x3;
+  reg u64 x4;
+  reg u64 x5;
+  #[spill] reg u64 x6;
+  #[spill] reg u64 x7;
+  #[spill] reg u64 x8;
+  #[spill] reg u64 x9;
+  #[spill] reg u64 x10;
+  #[spill] reg u64 x11;
+  reg u64 x12;
+  #[spill] reg u64 x13;
+  #[spill] reg u64 x14;
+  #[spill] reg u64 x15;
+  #[spill] reg u64 x16;
+  reg u64 x17;
+  reg u64 x19;
+  reg u64 x18;
+  reg u64 x21;
+  reg u64 x20;
+  reg u64 x23;
+  reg u64 x22;
+  reg u64 x25;
+  reg u64 x24;
+  reg u64 x27;
+  reg u64 x26;
+  reg u64 x29;
+  #[spill] reg u64 x28;
+  reg bool __cf_x31;
+  #[spill] reg u64 x30;
+  reg bool __adc_cf_x36;
+  #[spill] reg u64 x34;
+  reg bool __adc_cf_x41;
+  #[spill] reg u64 x39;
+  reg bool __adc_cf_x46;
+  #[spill] reg u64 x44;
+  reg bool __adc_cf_x51;
+  #[spill] reg u64 x49;
+  reg u64 x51;
+  reg bool __adc_m_x51;
+  reg u64 x52;
+  reg u64 x53;
+  reg u64 __wtmp__;
+  reg u64 x55;
+  reg u64 x54;
+  reg u64 x57;
+  reg u64 x56;
+  reg u64 x59;
+  reg u64 x58;
+  reg u64 x61;
+  reg u64 x60;
+  reg u64 x63;
+  reg u64 x62;
+  reg u64 x65;
+  reg u64 x64;
+  reg bool __cf_x67;
+  reg u64 x66;
+  reg bool __adc_cf_x72;
+  reg u64 x70;
+  reg bool __adc_cf_x77;
+  reg u64 x75;
+  reg bool __adc_cf_x82;
+  reg u64 x80;
+  reg bool __adc_cf_x87;
+  reg u64 x85;
+  reg u64 x87;
+  reg bool __adc_m_x87;
+  reg u64 x88;
+  reg bool __cf_x90;
+  reg u64 x89;
+  reg bool __adc_cf_x95;
+  #[spill] reg u64 x93;
+  reg bool __adc_cf_x100;
+  #[spill] reg u64 x98;
+  reg bool __adc_cf_x105;
+  #[spill] reg u64 x103;
+  reg bool __adc_cf_x110;
+  #[spill] reg u64 x108;
+  reg bool __adc_cf_x115;
+  #[spill] reg u64 x113;
+  reg bool __adc_cf_x120;
+  reg u64 x118;
+  reg u64 x122;
+  reg u64 x121;
+  reg u64 x124;
+  reg u64 x123;
+  reg u64 x126;
+  reg u64 x125;
+  reg u64 x128;
+  reg u64 x127;
+  reg u64 x130;
+  reg u64 x129;
+  reg u64 x132;
+  reg u64 x131;
+  reg u64 x120;
+  reg bool __adc_m_x120;
+  reg bool __cf_x134;
+  reg u64 x133;
+  reg bool __adc_cf_x139;
+  reg u64 x137;
+  reg bool __adc_cf_x144;
+  reg u64 x142;
+  reg bool __adc_cf_x149;
+  reg u64 x147;
+  reg bool __adc_cf_x154;
+  reg u64 x152;
+  reg u64 x154;
+  reg bool __adc_m_x154;
+  reg u64 x155;
+  reg bool __cf_x157;
+  reg u64 x156;
+  reg bool __adc_cf_x162;
+  #[spill] reg u64 x160;
+  reg bool __adc_cf_x167;
+  #[spill] reg u64 x165;
+  reg bool __adc_cf_x172;
+  #[spill] reg u64 x170;
+  reg bool __adc_cf_x177;
+  #[spill] reg u64 x175;
+  reg bool __adc_cf_x182;
+  #[spill] reg u64 x180;
+  reg bool __adc_cf_x187;
+  #[spill] reg u64 x185;
+  reg u64 x187;
+  reg bool __adc_m_x187;
+  reg u64 x188;
+  reg u64 x190;
+  reg u64 x189;
+  reg u64 x192;
+  reg u64 x191;
+  reg u64 x194;
+  reg u64 x193;
+  reg u64 x196;
+  reg u64 x195;
+  reg u64 x198;
+  reg u64 x197;
+  reg u64 x200;
+  reg u64 x199;
+  reg bool __cf_x202;
+  reg u64 x201;
+  reg bool __adc_cf_x207;
+  reg u64 x205;
+  reg bool __adc_cf_x212;
+  reg u64 x210;
+  reg bool __adc_cf_x217;
+  reg u64 x215;
+  reg bool __adc_cf_x222;
+  reg u64 x220;
+  reg u64 x222;
+  reg bool __adc_m_x222;
+  reg u64 x223;
+  reg bool __cf_x225;
+  reg u64 x224;
+  reg bool __adc_cf_x230;
+  #[spill] reg u64 x228;
+  reg bool __adc_cf_x235;
+  #[spill] reg u64 x233;
+  reg bool __adc_cf_x240;
+  #[spill] reg u64 x238;
+  reg bool __adc_cf_x245;
+  #[spill] reg u64 x243;
+  reg bool __adc_cf_x250;
+  #[spill] reg u64 x248;
+  reg bool __adc_cf_x255;
+  #[spill] reg u64 x253;
+  reg u64 x255;
+  reg bool __adc_m_x255;
+  reg u64 x256;
+  reg u64 x258;
+  reg u64 x257;
+  reg u64 x260;
+  reg u64 x259;
+  reg u64 x262;
+  reg u64 x261;
+  reg u64 x264;
+  reg u64 x263;
+  reg u64 x266;
+  reg u64 x265;
+  reg u64 x268;
+  reg u64 x267;
+  reg bool __cf_x270;
+  reg u64 x269;
+  reg bool __adc_cf_x275;
+  reg u64 x273;
+  reg bool __adc_cf_x280;
+  reg u64 x278;
+  reg bool __adc_cf_x285;
+  reg u64 x283;
+  reg bool __adc_cf_x290;
+  reg u64 x288;
+  reg u64 x290;
+  reg bool __adc_m_x290;
+  reg u64 x291;
+  reg bool __cf_x293;
+  reg u64 x292;
+  reg bool __adc_cf_x298;
+  #[spill] reg u64 x296;
+  reg bool __adc_cf_x303;
+  #[spill] reg u64 x301;
+  reg bool __adc_cf_x308;
+  #[spill] reg u64 x306;
+  reg bool __adc_cf_x313;
+  #[spill] reg u64 x311;
+  reg bool __adc_cf_x318;
+  #[spill] reg u64 x316;
+  reg bool __adc_cf_x323;
+  #[spill] reg u64 x321;
+  reg u64 x323;
+  reg bool __adc_m_x323;
+  reg u64 x324;
+  reg u64 x326;
+  reg u64 x325;
+  reg u64 x328;
+  reg u64 x327;
+  reg u64 x330;
+  reg u64 x329;
+  reg u64 x332;
+  reg u64 x331;
+  reg u64 x334;
+  reg u64 x333;
+  reg u64 x336;
+  reg u64 x335;
+  reg bool __cf_x338;
+  reg u64 x337;
+  reg bool __adc_cf_x343;
+  reg u64 x341;
+  reg bool __adc_cf_x348;
+  reg u64 x346;
+  reg bool __adc_cf_x353;
+  reg u64 x351;
+  reg bool __adc_cf_x358;
+  reg u64 x356;
+  reg u64 x358;
+  reg bool __adc_m_x358;
+  reg u64 x359;
+  reg bool __cf_x361;
+  reg u64 x360;
+  reg bool __adc_cf_x366;
+  #[spill] reg u64 x364;
+  reg bool __adc_cf_x371;
+  #[spill] reg u64 x369;
+  reg bool __adc_cf_x376;
+  #[spill] reg u64 x374;
+  reg bool __adc_cf_x381;
+  #[spill] reg u64 x379;
+  reg bool __adc_cf_x386;
+  #[spill] reg u64 x384;
+  reg bool __adc_cf_x391;
+  #[spill] reg u64 x389;
+  reg u64 x391;
+  reg bool __adc_m_x391;
+  reg u64 x392;
+  reg u64 x394;
+  reg u64 x393;
+  reg u64 x396;
+  reg u64 x395;
+  reg u64 x398;
+  reg u64 x397;
+  reg u64 x400;
+  reg u64 x399;
+  reg u64 x402;
+  reg u64 x401;
+  reg u64 x404;
+  reg u64 x403;
+  reg bool __cf_x406;
+  reg u64 x405;
+  reg bool __adc_cf_x411;
+  reg u64 x409;
+  reg bool __adc_cf_x416;
+  reg u64 x414;
+  reg bool __adc_cf_x421;
+  reg u64 x419;
+  reg bool __adc_cf_x426;
+  reg u64 x424;
+  reg u64 x426;
+  reg bool __adc_m_x426;
+  reg u64 x427;
+  reg bool __cf_x429;
+  reg u64 x428;
+  reg bool __adc_cf_x434;
+  #[spill] reg u64 x432;
+  reg bool __adc_cf_x439;
+  #[spill] reg u64 x437;
+  reg bool __adc_cf_x444;
+  #[spill] reg u64 x442;
+  reg bool __adc_cf_x449;
+  #[spill] reg u64 x447;
+  reg bool __adc_cf_x454;
+  #[spill] reg u64 x452;
+  reg bool __adc_cf_x459;
+  #[spill] reg u64 x457;
+  reg u64 x459;
+  reg bool __adc_m_x459;
+  reg u64 x460;
+  reg u64 x462;
+  reg u64 x461;
+  reg u64 x464;
+  reg u64 x463;
+  reg u64 x466;
+  reg u64 x465;
+  reg u64 x468;
+  reg u64 x467;
+  reg u64 x470;
+  reg u64 x469;
+  reg u64 x472;
+  reg u64 x471;
+  reg bool __cf_x474;
+  reg u64 x473;
+  reg bool __adc_cf_x479;
+  reg u64 x477;
+  reg bool __adc_cf_x484;
+  reg u64 x482;
+  reg bool __adc_cf_x489;
+  reg u64 x487;
+  reg bool __adc_cf_x494;
+  reg u64 x492;
+  reg u64 x494;
+  reg bool __adc_m_x494;
+  reg u64 x495;
+  reg bool __cf_x497;
+  reg u64 x496;
+  reg bool __adc_cf_x502;
+  #[spill] reg u64 x500;
+  reg bool __adc_cf_x507;
+  #[spill] reg u64 x505;
+  reg bool __adc_cf_x512;
+  #[spill] reg u64 x510;
+  reg bool __adc_cf_x517;
+  #[spill] reg u64 x515;
+  reg bool __adc_cf_x522;
+  #[spill] reg u64 x520;
+  reg bool __adc_cf_x527;
+  #[spill] reg u64 x525;
+  reg u64 x527;
+  reg bool __adc_m_x527;
+  reg u64 x528;
+  reg u64 x530;
+  reg u64 x529;
+  reg u64 x532;
+  reg u64 x531;
+  reg u64 x534;
+  reg u64 x533;
+  reg u64 x536;
+  reg u64 x535;
+  reg u64 x538;
+  reg u64 x537;
+  reg u64 x540;
+  reg u64 x539;
+  reg bool __cf_x542;
+  reg u64 x541;
+  reg bool __adc_cf_x547;
+  reg u64 x545;
+  reg bool __adc_cf_x552;
+  reg u64 x550;
+  reg bool __adc_cf_x557;
+  reg u64 x555;
+  reg bool __adc_cf_x562;
+  reg u64 x560;
+  reg u64 x562;
+  reg bool __adc_m_x562;
+  reg u64 x563;
+  reg bool __cf_x565;
+  reg u64 x564;
+  reg bool __adc_cf_x570;
+  #[spill] reg u64 x568;
+  reg bool __adc_cf_x575;
+  #[spill] reg u64 x573;
+  reg bool __adc_cf_x580;
+  #[spill] reg u64 x578;
+  reg bool __adc_cf_x585;
+  #[spill] reg u64 x583;
+  reg bool __adc_cf_x590;
+  #[spill] reg u64 x588;
+  reg bool __adc_cf_x595;
+  #[spill] reg u64 x593;
+  reg u64 x595;
+  reg bool __adc_m_x595;
+  reg u64 x596;
+  reg u64 x598;
+  reg u64 x597;
+  reg u64 x600;
+  reg u64 x599;
+  reg u64 x602;
+  reg u64 x601;
+  reg u64 x604;
+  reg u64 x603;
+  reg u64 x606;
+  reg u64 x605;
+  reg u64 x608;
+  reg u64 x607;
+  reg bool __cf_x610;
+  reg u64 x609;
+  reg bool __adc_cf_x615;
+  reg u64 x613;
+  reg bool __adc_cf_x620;
+  reg u64 x618;
+  reg bool __adc_cf_x625;
+  reg u64 x623;
+  reg bool __adc_cf_x630;
+  reg u64 x628;
+  reg u64 x630;
+  reg bool __adc_m_x630;
+  reg u64 x631;
+  reg bool __cf_x633;
+  reg u64 x632;
+  reg bool __adc_cf_x638;
+  #[spill] reg u64 x636;
+  reg bool __adc_cf_x643;
+  #[spill] reg u64 x641;
+  reg bool __adc_cf_x648;
+  #[spill] reg u64 x646;
+  reg bool __adc_cf_x653;
+  #[spill] reg u64 x651;
+  reg bool __adc_cf_x658;
+  #[spill] reg u64 x656;
+  reg bool __adc_cf_x663;
+  #[spill] reg u64 x661;
+  reg u64 x663;
+  reg bool __adc_m_x663;
+  reg u64 x664;
+  reg u64 x666;
+  reg u64 x665;
+  reg u64 x668;
+  reg u64 x667;
+  reg u64 x670;
+  reg u64 x669;
+  reg u64 x672;
+  reg u64 x671;
+  reg u64 x674;
+  reg u64 x673;
+  reg u64 x676;
+  reg u64 x675;
+  reg bool __cf_x678;
+  reg u64 x677;
+  reg bool __adc_cf_x683;
+  reg u64 x681;
+  reg bool __adc_cf_x688;
+  reg u64 x686;
+  reg bool __adc_cf_x693;
+  reg u64 x691;
+  reg bool __adc_cf_x698;
+  reg u64 x696;
+  reg u64 x698;
+  reg bool __adc_m_x698;
+  reg u64 x699;
+  reg bool __cf_x701;
+  reg u64 x700;
+  reg bool __adc_cf_x706;
+  #[spill] reg u64 x704;
+  reg bool __adc_cf_x711;
+  #[spill] reg u64 x709;
+  reg bool __adc_cf_x716;
+  #[spill] reg u64 x714;
+  reg bool __adc_cf_x721;
+  #[spill] reg u64 x719;
+  reg bool __adc_cf_x726;
+  #[spill] reg u64 x724;
+  reg bool __adc_cf_x731;
+  #[spill] reg u64 x729;
+  reg u64 x731;
+  reg bool __adc_m_x731;
+  reg u64 x732;
+  reg u64 x734;
+  reg u64 x733;
+  reg u64 x736;
+  reg u64 x735;
+  reg u64 x738;
+  reg u64 x737;
+  reg u64 x740;
+  reg u64 x739;
+  reg u64 x742;
+  reg u64 x741;
+  reg u64 x744;
+  reg u64 x743;
+  reg bool __cf_x746;
+  reg u64 x745;
+  reg bool __adc_cf_x751;
+  reg u64 x749;
+  reg bool __adc_cf_x756;
+  reg u64 x754;
+  reg bool __adc_cf_x761;
+  reg u64 x759;
+  reg bool __adc_cf_x766;
+  reg u64 x764;
+  reg u64 x766;
+  reg bool __adc_m_x766;
+  reg u64 x767;
+  reg bool __cf_x769;
+  reg u64 x768;
+  reg bool __adc_cf_x774;
+  reg u64 x772;
+  reg bool __adc_cf_x779;
+  reg u64 x777;
+  reg bool __adc_cf_x784;
+  reg u64 x782;
+  reg bool __adc_cf_x789;
+  reg u64 x787;
+  reg bool __adc_cf_x794;
+  reg u64 x792;
+  reg bool __adc_cf_x799;
+  reg u64 x797;
+  reg u64 x799;
+  reg bool __adc_m_x799;
+  reg u64 x800;
+  reg bool __adc_cf_x802;
+  reg u64 x801;
+  reg bool __adc_cf_x807;
+  reg u64 x805;
+  reg bool __adc_cf_x812;
+  reg u64 x810;
+  reg bool __adc_cf_x817;
+  reg u64 x815;
+  reg bool __adc_cf_x822;
+  reg u64 x820;
+  reg bool __adc_cf_x827;
+  reg u64 x825;
+  reg u64 x827;
+  reg bool __adc_m_x827;
+  reg bool __adc_cf_x829;
+  reg u64 x828;
+  reg u64 x829;
+  reg bool __adc_m_x829;
+  reg u64 x832;
+  reg u64 x835;
+  reg u64 x838;
+  reg u64 x841;
+  reg u64 x844;
+  reg u64 x847;
+  reg u64 x848;
+  reg u64 x849;
+  reg u64 x850;
+  reg u64 x851;
+  reg u64 x852;
+  reg u64 x853;
+  stack ptr u64[6] out0__s;
+  out0__s = out0;
+  x0 = in0[0 + 0];
+  x1 = in0[1 + 0];
+  x2 = in0[2 + 0];
+  x3 = in0[3 + 0];
+  x4 = in0[4 + 0];
+  x5 = in0[5 + 0];
+  x6 = in1[0 + 0];
+  x7 = in1[1 + 0];
+  x8 = in1[2 + 0];
+  x9 = in1[3 + 0];
+  x10 = in1[4 + 0];
+  x11 = in1[5 + 0];
+  x12 = x1;
+  x13 = x2;
+  x14 = x3;
+  x15 = x4;
+  x16 = x5;
+  x17 = x0;
+  __mulx_tmp__ = x17;
+  (x19, x18) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x17;
+  (x21, x20) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x17;
+  (x23, x22) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x17;
+  (x25, x24) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x17;
+  (x27, x26) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x17;
+  (x29, x28) = #MULX(__mulx_tmp__, x6);
+  _, __cf_x31, _, _, _, x30 = #ADD(x29, x26);
+  __adc_cf_x36, x34 = #ADCX(x27, x24, __cf_x31);
+  __adc_cf_x41, x39 = #ADCX(x25, x22, __adc_cf_x36);
+  __adc_cf_x46, x44 = #ADCX(x23, x20, __adc_cf_x41);
+  __adc_cf_x51, x49 = #ADCX(x21, x18, __adc_cf_x46);
+  x51 = 0;
+  __adc_m_x51, x51 = #ADCX(x51, x51, __adc_cf_x51);
+  x52 = x51;
+  x52 = (x52 + x19);
+  x53 = x28;
+  __wtmp__ = 9940570264628428797;
+  x53 = (x53 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x53;
+  (x55, x54) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x53;
+  (x57, x56) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x53;
+  (x59, x58) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x53;
+  (x61, x60) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x53;
+  (x63, x62) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x53;
+  (x65, x64) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x67, _, _, _, x66 = #ADD(x65, x62);
+  __adc_cf_x72, x70 = #ADCX(x63, x60, __cf_x67);
+  __adc_cf_x77, x75 = #ADCX(x61, x58, __adc_cf_x72);
+  __adc_cf_x82, x80 = #ADCX(x59, x56, __adc_cf_x77);
+  __adc_cf_x87, x85 = #ADCX(x57, x54, __adc_cf_x82);
+  x87 = 0;
+  __adc_m_x87, x87 = #ADCX(x87, x87, __adc_cf_x87);
+  x88 = x87;
+  x88 = (x88 + x55);
+  _, __cf_x90, _, _, _, x89 = #ADD(x28, x64);
+  __adc_cf_x95, x93 = #ADCX(x30, x66, __cf_x90);
+  __adc_cf_x100, x98 = #ADCX(x34, x70, __adc_cf_x95);
+  __adc_cf_x105, x103 = #ADCX(x39, x75, __adc_cf_x100);
+  __adc_cf_x110, x108 = #ADCX(x44, x80, __adc_cf_x105);
+  __adc_cf_x115, x113 = #ADCX(x49, x85, __adc_cf_x110);
+  __adc_cf_x120, x118 = #ADCX(x52, x88, __adc_cf_x115);
+  __mulx_tmp__ = x12;
+  (x122, x121) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x12;
+  (x124, x123) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x12;
+  (x126, x125) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x12;
+  (x128, x127) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x12;
+  (x130, x129) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x12;
+  (x132, x131) = #MULX(__mulx_tmp__, x6);
+  x120 = 0;
+  __adc_m_x120, x120 = #ADCX(x120, x120, __adc_cf_x120);
+  _, __cf_x134, _, _, _, x133 = #ADD(x132, x129);
+  __adc_cf_x139, x137 = #ADCX(x130, x127, __cf_x134);
+  __adc_cf_x144, x142 = #ADCX(x128, x125, __adc_cf_x139);
+  __adc_cf_x149, x147 = #ADCX(x126, x123, __adc_cf_x144);
+  __adc_cf_x154, x152 = #ADCX(x124, x121, __adc_cf_x149);
+  x154 = 0;
+  __adc_m_x154, x154 = #ADCX(x154, x154, __adc_cf_x154);
+  x155 = x154;
+  x155 = (x155 + x122);
+  _, __cf_x157, _, _, _, x156 = #ADD(x93, x131);
+  __adc_cf_x162, x160 = #ADCX(x98, x133, __cf_x157);
+  __adc_cf_x167, x165 = #ADCX(x103, x137, __adc_cf_x162);
+  __adc_cf_x172, x170 = #ADCX(x108, x142, __adc_cf_x167);
+  __adc_cf_x177, x175 = #ADCX(x113, x147, __adc_cf_x172);
+  __adc_cf_x182, x180 = #ADCX(x118, x152, __adc_cf_x177);
+  __adc_cf_x187, x185 = #ADCX(x120, x155, __adc_cf_x182);
+  x187 = 0;
+  __adc_m_x187, x187 = #ADCX(x187, x187, __adc_cf_x187);
+  x188 = x156;
+  __wtmp__ = 9940570264628428797;
+  x188 = (x188 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x188;
+  (x190, x189) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x188;
+  (x192, x191) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x188;
+  (x194, x193) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x188;
+  (x196, x195) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x188;
+  (x198, x197) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x188;
+  (x200, x199) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x202, _, _, _, x201 = #ADD(x200, x197);
+  __adc_cf_x207, x205 = #ADCX(x198, x195, __cf_x202);
+  __adc_cf_x212, x210 = #ADCX(x196, x193, __adc_cf_x207);
+  __adc_cf_x217, x215 = #ADCX(x194, x191, __adc_cf_x212);
+  __adc_cf_x222, x220 = #ADCX(x192, x189, __adc_cf_x217);
+  x222 = 0;
+  __adc_m_x222, x222 = #ADCX(x222, x222, __adc_cf_x222);
+  x223 = x222;
+  x223 = (x223 + x190);
+  _, __cf_x225, _, _, _, x224 = #ADD(x156, x199);
+  __adc_cf_x230, x228 = #ADCX(x160, x201, __cf_x225);
+  __adc_cf_x235, x233 = #ADCX(x165, x205, __adc_cf_x230);
+  __adc_cf_x240, x238 = #ADCX(x170, x210, __adc_cf_x235);
+  __adc_cf_x245, x243 = #ADCX(x175, x215, __adc_cf_x240);
+  __adc_cf_x250, x248 = #ADCX(x180, x220, __adc_cf_x245);
+  __adc_cf_x255, x253 = #ADCX(x185, x223, __adc_cf_x250);
+  x255 = 0;
+  __adc_m_x255, x255 = #ADCX(x255, x255, __adc_cf_x255);
+  x256 = x255;
+  x256 = (x256 + x187);
+  __mulx_tmp__ = x13;
+  (x258, x257) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x13;
+  (x260, x259) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x13;
+  (x262, x261) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x13;
+  (x264, x263) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x13;
+  (x266, x265) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x13;
+  (x268, x267) = #MULX(__mulx_tmp__, x6);
+  _, __cf_x270, _, _, _, x269 = #ADD(x268, x265);
+  __adc_cf_x275, x273 = #ADCX(x266, x263, __cf_x270);
+  __adc_cf_x280, x278 = #ADCX(x264, x261, __adc_cf_x275);
+  __adc_cf_x285, x283 = #ADCX(x262, x259, __adc_cf_x280);
+  __adc_cf_x290, x288 = #ADCX(x260, x257, __adc_cf_x285);
+  x290 = 0;
+  __adc_m_x290, x290 = #ADCX(x290, x290, __adc_cf_x290);
+  x291 = x290;
+  x291 = (x291 + x258);
+  _, __cf_x293, _, _, _, x292 = #ADD(x228, x267);
+  __adc_cf_x298, x296 = #ADCX(x233, x269, __cf_x293);
+  __adc_cf_x303, x301 = #ADCX(x238, x273, __adc_cf_x298);
+  __adc_cf_x308, x306 = #ADCX(x243, x278, __adc_cf_x303);
+  __adc_cf_x313, x311 = #ADCX(x248, x283, __adc_cf_x308);
+  __adc_cf_x318, x316 = #ADCX(x253, x288, __adc_cf_x313);
+  __adc_cf_x323, x321 = #ADCX(x256, x291, __adc_cf_x318);
+  x323 = 0;
+  __adc_m_x323, x323 = #ADCX(x323, x323, __adc_cf_x323);
+  x324 = x292;
+  __wtmp__ = 9940570264628428797;
+  x324 = (x324 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x324;
+  (x326, x325) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x324;
+  (x328, x327) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x324;
+  (x330, x329) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x324;
+  (x332, x331) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x324;
+  (x334, x333) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x324;
+  (x336, x335) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x338, _, _, _, x337 = #ADD(x336, x333);
+  __adc_cf_x343, x341 = #ADCX(x334, x331, __cf_x338);
+  __adc_cf_x348, x346 = #ADCX(x332, x329, __adc_cf_x343);
+  __adc_cf_x353, x351 = #ADCX(x330, x327, __adc_cf_x348);
+  __adc_cf_x358, x356 = #ADCX(x328, x325, __adc_cf_x353);
+  x358 = 0;
+  __adc_m_x358, x358 = #ADCX(x358, x358, __adc_cf_x358);
+  x359 = x358;
+  x359 = (x359 + x326);
+  _, __cf_x361, _, _, _, x360 = #ADD(x292, x335);
+  __adc_cf_x366, x364 = #ADCX(x296, x337, __cf_x361);
+  __adc_cf_x371, x369 = #ADCX(x301, x341, __adc_cf_x366);
+  __adc_cf_x376, x374 = #ADCX(x306, x346, __adc_cf_x371);
+  __adc_cf_x381, x379 = #ADCX(x311, x351, __adc_cf_x376);
+  __adc_cf_x386, x384 = #ADCX(x316, x356, __adc_cf_x381);
+  __adc_cf_x391, x389 = #ADCX(x321, x359, __adc_cf_x386);
+  x391 = 0;
+  __adc_m_x391, x391 = #ADCX(x391, x391, __adc_cf_x391);
+  x392 = x391;
+  x392 = (x392 + x323);
+  __mulx_tmp__ = x14;
+  (x394, x393) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x14;
+  (x396, x395) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x14;
+  (x398, x397) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x14;
+  (x400, x399) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x14;
+  (x402, x401) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x14;
+  (x404, x403) = #MULX(__mulx_tmp__, x6);
+  _, __cf_x406, _, _, _, x405 = #ADD(x404, x401);
+  __adc_cf_x411, x409 = #ADCX(x402, x399, __cf_x406);
+  __adc_cf_x416, x414 = #ADCX(x400, x397, __adc_cf_x411);
+  __adc_cf_x421, x419 = #ADCX(x398, x395, __adc_cf_x416);
+  __adc_cf_x426, x424 = #ADCX(x396, x393, __adc_cf_x421);
+  x426 = 0;
+  __adc_m_x426, x426 = #ADCX(x426, x426, __adc_cf_x426);
+  x427 = x426;
+  x427 = (x427 + x394);
+  _, __cf_x429, _, _, _, x428 = #ADD(x364, x403);
+  __adc_cf_x434, x432 = #ADCX(x369, x405, __cf_x429);
+  __adc_cf_x439, x437 = #ADCX(x374, x409, __adc_cf_x434);
+  __adc_cf_x444, x442 = #ADCX(x379, x414, __adc_cf_x439);
+  __adc_cf_x449, x447 = #ADCX(x384, x419, __adc_cf_x444);
+  __adc_cf_x454, x452 = #ADCX(x389, x424, __adc_cf_x449);
+  __adc_cf_x459, x457 = #ADCX(x392, x427, __adc_cf_x454);
+  x459 = 0;
+  __adc_m_x459, x459 = #ADCX(x459, x459, __adc_cf_x459);
+  x460 = x428;
+  __wtmp__ = 9940570264628428797;
+  x460 = (x460 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x460;
+  (x462, x461) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x460;
+  (x464, x463) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x460;
+  (x466, x465) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x460;
+  (x468, x467) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x460;
+  (x470, x469) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x460;
+  (x472, x471) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x474, _, _, _, x473 = #ADD(x472, x469);
+  __adc_cf_x479, x477 = #ADCX(x470, x467, __cf_x474);
+  __adc_cf_x484, x482 = #ADCX(x468, x465, __adc_cf_x479);
+  __adc_cf_x489, x487 = #ADCX(x466, x463, __adc_cf_x484);
+  __adc_cf_x494, x492 = #ADCX(x464, x461, __adc_cf_x489);
+  x494 = 0;
+  __adc_m_x494, x494 = #ADCX(x494, x494, __adc_cf_x494);
+  x495 = x494;
+  x495 = (x495 + x462);
+  _, __cf_x497, _, _, _, x496 = #ADD(x428, x471);
+  __adc_cf_x502, x500 = #ADCX(x432, x473, __cf_x497);
+  __adc_cf_x507, x505 = #ADCX(x437, x477, __adc_cf_x502);
+  __adc_cf_x512, x510 = #ADCX(x442, x482, __adc_cf_x507);
+  __adc_cf_x517, x515 = #ADCX(x447, x487, __adc_cf_x512);
+  __adc_cf_x522, x520 = #ADCX(x452, x492, __adc_cf_x517);
+  __adc_cf_x527, x525 = #ADCX(x457, x495, __adc_cf_x522);
+  x527 = 0;
+  __adc_m_x527, x527 = #ADCX(x527, x527, __adc_cf_x527);
+  x528 = x527;
+  x528 = (x528 + x459);
+  __mulx_tmp__ = x15;
+  (x530, x529) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x15;
+  (x532, x531) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x15;
+  (x534, x533) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x15;
+  (x536, x535) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x15;
+  (x538, x537) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x15;
+  (x540, x539) = #MULX(__mulx_tmp__, x6);
+  _, __cf_x542, _, _, _, x541 = #ADD(x540, x537);
+  __adc_cf_x547, x545 = #ADCX(x538, x535, __cf_x542);
+  __adc_cf_x552, x550 = #ADCX(x536, x533, __adc_cf_x547);
+  __adc_cf_x557, x555 = #ADCX(x534, x531, __adc_cf_x552);
+  __adc_cf_x562, x560 = #ADCX(x532, x529, __adc_cf_x557);
+  x562 = 0;
+  __adc_m_x562, x562 = #ADCX(x562, x562, __adc_cf_x562);
+  x563 = x562;
+  x563 = (x563 + x530);
+  _, __cf_x565, _, _, _, x564 = #ADD(x500, x539);
+  __adc_cf_x570, x568 = #ADCX(x505, x541, __cf_x565);
+  __adc_cf_x575, x573 = #ADCX(x510, x545, __adc_cf_x570);
+  __adc_cf_x580, x578 = #ADCX(x515, x550, __adc_cf_x575);
+  __adc_cf_x585, x583 = #ADCX(x520, x555, __adc_cf_x580);
+  __adc_cf_x590, x588 = #ADCX(x525, x560, __adc_cf_x585);
+  __adc_cf_x595, x593 = #ADCX(x528, x563, __adc_cf_x590);
+  x595 = 0;
+  __adc_m_x595, x595 = #ADCX(x595, x595, __adc_cf_x595);
+  x596 = x564;
+  __wtmp__ = 9940570264628428797;
+  x596 = (x596 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x596;
+  (x598, x597) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x596;
+  (x600, x599) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x596;
+  (x602, x601) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x596;
+  (x604, x603) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x596;
+  (x606, x605) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x596;
+  (x608, x607) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x610, _, _, _, x609 = #ADD(x608, x605);
+  __adc_cf_x615, x613 = #ADCX(x606, x603, __cf_x610);
+  __adc_cf_x620, x618 = #ADCX(x604, x601, __adc_cf_x615);
+  __adc_cf_x625, x623 = #ADCX(x602, x599, __adc_cf_x620);
+  __adc_cf_x630, x628 = #ADCX(x600, x597, __adc_cf_x625);
+  x630 = 0;
+  __adc_m_x630, x630 = #ADCX(x630, x630, __adc_cf_x630);
+  x631 = x630;
+  x631 = (x631 + x598);
+  _, __cf_x633, _, _, _, x632 = #ADD(x564, x607);
+  __adc_cf_x638, x636 = #ADCX(x568, x609, __cf_x633);
+  __adc_cf_x643, x641 = #ADCX(x573, x613, __adc_cf_x638);
+  __adc_cf_x648, x646 = #ADCX(x578, x618, __adc_cf_x643);
+  __adc_cf_x653, x651 = #ADCX(x583, x623, __adc_cf_x648);
+  __adc_cf_x658, x656 = #ADCX(x588, x628, __adc_cf_x653);
+  __adc_cf_x663, x661 = #ADCX(x593, x631, __adc_cf_x658);
+  x663 = 0;
+  __adc_m_x663, x663 = #ADCX(x663, x663, __adc_cf_x663);
+  x664 = x663;
+  x664 = (x664 + x595);
+  __mulx_tmp__ = x16;
+  (x666, x665) = #MULX(__mulx_tmp__, x11);
+  __mulx_tmp__ = x16;
+  (x668, x667) = #MULX(__mulx_tmp__, x10);
+  __mulx_tmp__ = x16;
+  (x670, x669) = #MULX(__mulx_tmp__, x9);
+  __mulx_tmp__ = x16;
+  (x672, x671) = #MULX(__mulx_tmp__, x8);
+  __mulx_tmp__ = x16;
+  (x674, x673) = #MULX(__mulx_tmp__, x7);
+  __mulx_tmp__ = x16;
+  (x676, x675) = #MULX(__mulx_tmp__, x6);
+  _, __cf_x678, _, _, _, x677 = #ADD(x676, x673);
+  __adc_cf_x683, x681 = #ADCX(x674, x671, __cf_x678);
+  __adc_cf_x688, x686 = #ADCX(x672, x669, __adc_cf_x683);
+  __adc_cf_x693, x691 = #ADCX(x670, x667, __adc_cf_x688);
+  __adc_cf_x698, x696 = #ADCX(x668, x665, __adc_cf_x693);
+  x698 = 0;
+  __adc_m_x698, x698 = #ADCX(x698, x698, __adc_cf_x698);
+  x699 = x698;
+  x699 = (x699 + x666);
+  _, __cf_x701, _, _, _, x700 = #ADD(x636, x675);
+  __adc_cf_x706, x704 = #ADCX(x641, x677, __cf_x701);
+  __adc_cf_x711, x709 = #ADCX(x646, x681, __adc_cf_x706);
+  __adc_cf_x716, x714 = #ADCX(x651, x686, __adc_cf_x711);
+  __adc_cf_x721, x719 = #ADCX(x656, x691, __adc_cf_x716);
+  __adc_cf_x726, x724 = #ADCX(x661, x696, __adc_cf_x721);
+  __adc_cf_x731, x729 = #ADCX(x664, x699, __adc_cf_x726);
+  x731 = 0;
+  __adc_m_x731, x731 = #ADCX(x731, x731, __adc_cf_x731);
+  x732 = x700;
+  __wtmp__ = 9940570264628428797;
+  x732 = (x732 * __wtmp__);
+  __wtmp__ = 1873798617647539866;
+  __mulx_tmp__ = x732;
+  (x734, x733) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 5412103778470702295;
+  __mulx_tmp__ = x732;
+  (x736, x735) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7239337960414712511;
+  __mulx_tmp__ = x732;
+  (x738, x737) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 7435674573564081700;
+  __mulx_tmp__ = x732;
+  (x740, x739) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  __mulx_tmp__ = x732;
+  (x742, x741) = #MULX(__mulx_tmp__, __wtmp__);
+  __wtmp__ = 13402431016077863595;
+  __mulx_tmp__ = x732;
+  (x744, x743) = #MULX(__mulx_tmp__, __wtmp__);
+  _, __cf_x746, _, _, _, x745 = #ADD(x744, x741);
+  __adc_cf_x751, x749 = #ADCX(x742, x739, __cf_x746);
+  __adc_cf_x756, x754 = #ADCX(x740, x737, __adc_cf_x751);
+  __adc_cf_x761, x759 = #ADCX(x738, x735, __adc_cf_x756);
+  __adc_cf_x766, x764 = #ADCX(x736, x733, __adc_cf_x761);
+  x766 = 0;
+  __adc_m_x766, x766 = #ADCX(x766, x766, __adc_cf_x766);
+  x767 = x766;
+  x767 = (x767 + x734);
+  _, __cf_x769, _, _, _, x768 = #ADD(x700, x743);
+  __adc_cf_x774, x772 = #ADCX(x704, x745, __cf_x769);
+  __adc_cf_x779, x777 = #ADCX(x709, x749, __adc_cf_x774);
+  __adc_cf_x784, x782 = #ADCX(x714, x754, __adc_cf_x779);
+  __adc_cf_x789, x787 = #ADCX(x719, x759, __adc_cf_x784);
+  __adc_cf_x794, x792 = #ADCX(x724, x764, __adc_cf_x789);
+  __adc_cf_x799, x797 = #ADCX(x729, x767, __adc_cf_x794);
+  x799 = 0;
+  __adc_m_x799, x799 = #ADCX(x799, x799, __adc_cf_x799);
+  x800 = x799;
+  x800 = (x800 + x731);
+  __wtmp__ = 13402431016077863595;
+  x801 = x772;
+  _, __adc_cf_x802, _, _, _, x801 = #SUB(x801, __wtmp__);
+  __wtmp__ = 2210141511517208575;
+  x805 = x777;
+  _, __adc_cf_x807, _, _, _, x805 = #SBB(x805, __wtmp__, __adc_cf_x802);
+  __wtmp__ = 7435674573564081700;
+  x810 = x782;
+  _, __adc_cf_x812, _, _, _, x810 = #SBB(x810, __wtmp__, __adc_cf_x807);
+  __wtmp__ = 7239337960414712511;
+  x815 = x787;
+  _, __adc_cf_x817, _, _, _, x815 = #SBB(x815, __wtmp__, __adc_cf_x812);
+  __wtmp__ = 5412103778470702295;
+  x820 = x792;
+  _, __adc_cf_x822, _, _, _, x820 = #SBB(x820, __wtmp__, __adc_cf_x817);
+  __wtmp__ = 1873798617647539866;
+  x825 = x797;
+  _, __adc_cf_x827, _, _, _, x825 = #SBB(x825, __wtmp__, __adc_cf_x822);
+  x827 = 0;
+  __adc_m_x827, x827 = #ADCX(x827, x827, __adc_cf_x827);
+  __wtmp__ = x827;
+  x828 = x800;
+  _, __adc_cf_x829, _, _, _, x828 = #SUB(x828, __wtmp__);
+  x829 = 0;
+  __adc_m_x829, x829 = #ADCX(x829, x829, __adc_cf_x829);
+  x832 = x772;
+  x832 = ((x829 == 0)) ? x801 : x832;
+  x835 = x777;
+  x835 = ((x829 == 0)) ? x805 : x835;
+  x838 = x782;
+  x838 = ((x829 == 0)) ? x810 : x838;
+  x841 = x787;
+  x841 = ((x829 == 0)) ? x815 : x841;
+  x844 = x792;
+  x844 = ((x829 == 0)) ? x820 : x844;
+  x847 = x797;
+  x847 = ((x829 == 0)) ? x825 : x847;
+  x848 = x832;
+  x849 = x835;
+  x850 = x838;
+  x851 = x841;
+  x852 = x844;
+  x853 = x847;
+  out0 = out0__s;
+  out0[0 + 0] = x848;
+  out0__s = out0;
+  out0 = out0__s;
+  out0[1 + 0] = x849;
+  out0__s = out0;
+  out0 = out0__s;
+  out0[2 + 0] = x850;
+  out0__s = out0;
+  out0 = out0__s;
+  out0[3 + 0] = x851;
+  out0__s = out0;
+  out0 = out0__s;
+  out0[4 + 0] = x852;
+  out0__s = out0;
+  out0 = out0__s;
+  out0[5 + 0] = x853;
+  out0__s = out0;
+  out0 = out0__s;
+  return out0;
+}
+
+
 fn curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr u64[6] Y1, reg const ptr u64[6] Y2, reg const ptr u64[6] Z1, reg const ptr u64[6] Z2, reg ptr u64[6] Xout, reg ptr u64[6] Yout, reg ptr u64[6] Zout) -> reg ptr u64[6], reg ptr u64[6], reg ptr u64[6] {
   reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
@@ -452,7 +1533,12 @@ fn curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr u64
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
   stack u64[6] __sg6_2;
-  stack u64[18] __ffi_bls12_mul;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
   stack ptr u64[6] X1__s;
   stack ptr u64[6] X2__s;
   stack ptr u64[6] Y1__s;
@@ -475,188 +1561,163 @@ fn curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr u64
   three_b = bls12_three_b(three_b);
   stack u64[6] t0;
   X1 = X1__s;
-  for __j = 0 to 6 { __mv__ = X1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = X1[0 : 6];
   X2 = X2__s;
-  for __j = 0 to 6 { __mv__ = X2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
+  __rq6_2 = X2[0 : 6];
+  t0 = bls12_mul(t0, __rq6_1, __rq6_2);
   stack u64[6] t1;
   Y1 = Y1__s;
-  for __j = 0 to 6 { __mv__ = Y1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Y1[0 : 6];
   Y2 = Y2__s;
-  for __j = 0 to 6 { __mv__ = Y2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t1[0 + __j] = __mv__; }
+  __rq6_2 = Y2[0 : 6];
+  t1 = bls12_mul(t1, __rq6_1, __rq6_2);
   stack u64[6] t2;
   Z1 = Z1__s;
-  for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Z1[0 : 6];
   Z2 = Z2__s;
-  for __j = 0 to 6 { __mv__ = Z2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t2[0 + __j] = __mv__; }
+  __rq6_2 = Z2[0 : 6];
+  t2 = bls12_mul(t2, __rq6_1, __rq6_2);
   stack u64[6] t3;
   X1 = X1__s;
-  for __j = 0 to 6 { __mv__ = X1[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = X1[0 : 6];
   Y1 = Y1__s;
-  for __j = 0 to 6 { __mv__ = Y1[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t3 = bls12_add(t3, __sg6_1, __sg6_2);
+  __rq6_2 = Y1[0 : 6];
+  t3 = bls12_add(t3, __rq6_1, __rq6_2);
   stack u64[6] t4;
   X2 = X2__s;
-  for __j = 0 to 6 { __mv__ = X2[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = X2[0 : 6];
   Y2 = Y2__s;
-  for __j = 0 to 6 { __mv__ = Y2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t4 = bls12_add(t4, __sg6_1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t3[0 + __j] = __mv__; }
-  t4 = bls12_add(t4, t0, t1);
-  for __j = 0 to 6 { __mv__ = t3[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rq6_2 = Y2[0 : 6];
+  t4 = bls12_add(t4, __rq6_1, __rq6_2);
   for __j = 0 to 6 { __mv__ = t3[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, t4);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t3[0 + __j] = __mv__; }
+  t3 = bls12_mul(t3, __sg6_1, t4);
+  t4 = bls12_add(t4, t0, t1);
+  for __j = 0 to 6 { __mv__ = t3[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  t3 = bls12_sub(t3, __sg6_1, t4);
   X1 = X1__s;
-  for __j = 0 to 6 { __mv__ = X1[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = X1[0 : 6];
   Z1 = Z1__s;
-  for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t4 = bls12_add(t4, __sg6_1, __sg6_2);
+  __rq6_2 = Z1[0 : 6];
+  t4 = bls12_add(t4, __rq6_1, __rq6_2);
   stack u64[6] t5;
   X2 = X2__s;
-  for __j = 0 to 6 { __mv__ = X2[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = X2[0 : 6];
   Z2 = Z2__s;
-  for __j = 0 to 6 { __mv__ = Z2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t5 = bls12_add(t5, __sg6_1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t4[0 + __j] = __mv__; }
-  t5 = bls12_add(t5, t0, t2);
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rq6_2 = Z2[0 : 6];
+  t5 = bls12_add(t5, __rq6_1, __rq6_2);
   for __j = 0 to 6 { __mv__ = t4[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, t5);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_mul(t4, __sg6_1, t5);
+  t5 = bls12_add(t5, t0, t2);
+  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  t4 = bls12_sub(t4, __sg6_1, t5);
   Y1 = Y1__s;
-  for __j = 0 to 6 { __mv__ = Y1[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = Y1[0 : 6];
   Z1 = Z1__s;
-  for __j = 0 to 6 { __mv__ = Z1[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t5 = bls12_add(t5, __sg6_1, __sg6_2);
+  __rq6_2 = Z1[0 : 6];
+  t5 = bls12_add(t5, __rq6_1, __rq6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
   Y2 = Y2__s;
-  for __j = 0 to 6 { __mv__ = Y2[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = Y2[0 : 6];
   Z2 = Z2__s;
-  for __j = 0 to 6 { __mv__ = Z2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rq6_2 = Z2[0 : 6];
+  __rp6_0 = bls12_add(__rp6_0, __rq6_1, __rq6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
-  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t5[0 + __j] = __mv__; }
-  Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, t1, t2);
-  Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
-  Xout__s = Xout;
-  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __sg6_0[0 + __j] = __mv__; }
   for __j = 0 to 6 { __mv__ = t5[0 + __j]; __sg6_1[0 + __j] = __mv__; }
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t5[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = three_b[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rq6_2 = Xout[0 : 6];
+  t5 = bls12_mul(t5, __sg6_1, __rq6_2);
+  Xout = Xout__s;
+  __rp6_0 = Xout[0 : 6];
+  __rp6_0 = bls12_add(__rp6_0, t1, t2);
+  Xout = Xout__s;
+  Xout[0 : 6] = __rp6_0;
+  Xout__s = Xout;
+  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  Xout = Xout__s;
+  __rq6_2 = Xout[0 : 6];
+  t5 = bls12_sub(t5, __sg6_1, __rq6_2);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Zout[0 + __j] = __mv__; }
+  __rp6_0 = Zout[0 : 6];
+  __rp6_0 = bls12_mul(__rp6_0, three_b, t2);
+  Zout = Zout__s;
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, t1, __sg6_2);
+  __rq6_2 = Zout[0 : 6];
+  __rp6_0 = bls12_sub(__rp6_0, t1, __rq6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, t1);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, t1);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
+  Yout = Yout__s;
+  __rp6_0 = Yout[0 : 6];
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Xout[0 : 6];
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rq6_2 = Zout[0 : 6];
+  __rp6_0 = bls12_mul(__rp6_0, __rq6_1, __rq6_2);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t1 = bls12_add(t1, __sg6_1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = t1[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  t1 = bls12_add(t1, t0, t0);
   for __j = 0 to 6 { __mv__ = t1[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, t0);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t1[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = three_b[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t4[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
+  t1 = bls12_add(t1, __sg6_1, t0);
+  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  t4 = bls12_mul(t4, three_b, __sg6_2);
+  t0 = bls12_mul(t0, t1, t4);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Yout[0 : 6];
   Yout = Yout__s;
   for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, t0);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, t0);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
-  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t4[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  t0 = bls12_mul(t0, t5, t4);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rp6_0 = Xout[0 : 6];
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Xout[0 + __j] = __mv__; }
+  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_0 = bls12_mul(__rp6_0, t3, __sg6_2);
+  Xout = Xout__s;
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
   Xout = Xout__s;
   for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, t0);
+  __rp6_0 = bls12_sub(__rp6_0, __sg6_1, t0);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
-  for __j = 0 to 6 { __mv__ = t3[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t5[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  t0 = bls12_mul(t0, t3, t1);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Zout[0 + __j] = __mv__; }
+  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_0 = bls12_mul(__rp6_0, t5, __sg6_2);
+  Zout = Zout__s;
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, t0);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, t0);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -680,7 +1741,12 @@ fn curve_double_a0(reg const ptr u64[6] Xin, reg const ptr u64[6] Yin, reg const
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
   stack u64[6] __sg6_2;
-  stack u64[18] __ffi_bls12_mul;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
   stack ptr u64[6] Xin__s;
   stack ptr u64[6] Yin__s;
   stack ptr u64[6] Zin__s;
@@ -697,126 +1763,115 @@ fn curve_double_a0(reg const ptr u64[6] Xin, reg const ptr u64[6] Yin, reg const
   three_b = bls12_three_b(three_b);
   stack u64[6] t0;
   Yin = Yin__s;
-  for __j = 0 to 6 { __mv__ = Yin[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Yin[0 : 6];
   Yin = Yin__s;
-  for __j = 0 to 6 { __mv__ = Yin[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t0[0 + __j] = __mv__; }
+  __rq6_2 = Yin[0 : 6];
+  t0 = bls12_mul(t0, __rq6_1, __rq6_2);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rp6_0 = Zout[0 : 6];
+  __rp6_0 = bls12_add(__rp6_0, t0, t0);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, __sg6_2);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
   Zout = Zout__s;
   for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, __sg6_2);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   stack u64[6] t1;
   Yin = Yin__s;
-  for __j = 0 to 6 { __mv__ = Yin[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Yin[0 : 6];
   Zin = Zin__s;
-  for __j = 0 to 6 { __mv__ = Zin[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t1[0 + __j] = __mv__; }
+  __rq6_2 = Zin[0 : 6];
+  t1 = bls12_mul(t1, __rq6_1, __rq6_2);
   stack u64[6] t2;
   Zin = Zin__s;
-  for __j = 0 to 6 { __mv__ = Zin[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Zin[0 : 6];
   Zin = Zin__s;
-  for __j = 0 to 6 { __mv__ = Zin[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t2[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = three_b[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t2[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rq6_2 = Zin[0 : 6];
+  t2 = bls12_mul(t2, __rq6_1, __rq6_2);
+  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  t2 = bls12_mul(t2, three_b, __sg6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Xout[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
+  Zout = Zout__s;
+  __rq6_2 = Zout[0 : 6];
+  __rp6_0 = bls12_mul(__rp6_0, t2, __rq6_2);
+  Xout = Xout__s;
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, t0, t2);
+  __rp6_0 = Yout[0 : 6];
+  __rp6_0 = bls12_add(__rp6_0, t0, t2);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
-  for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rp6_0 = Zout[0 : 6];
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Zout[0 + __j] = __mv__; }
+  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_0 = bls12_mul(__rp6_0, t1, __sg6_2);
+  Zout = Zout__s;
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  t1 = bls12_add(t1, t2, t2);
   for __j = 0 to 6 { __mv__ = t2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  t1 = bls12_add(t1, __sg6_1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t2[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, t1, __sg6_2);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t2[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  t2 = bls12_add(t2, t1, __sg6_2);
   for __j = 0 to 6 { __mv__ = t0[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, t2);
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; t0[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  t0 = bls12_sub(t0, __sg6_1, t2);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Yout[0 + __j] = __mv__; }
-  Yout__s = Yout;
-  Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rp6_0 = Yout[0 : 6];
   Yout = Yout__s;
   for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rp6_0 = bls12_mul(__rp6_0, t0, __sg6_2);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
+  Yout__s = Yout;
+  Yout = Yout__s;
+  __rp6_0 = Yout[0 : 6];
+  Xout = Xout__s;
+  __rq6_1 = Xout[0 : 6];
+  Yout = Yout__s;
+  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_0 = bls12_add(__rp6_0, __rq6_1, __sg6_2);
+  Yout = Yout__s;
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
   Xin = Xin__s;
-  for __j = 0 to 6 { __mv__ = Xin[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = Xin[0 : 6];
   Yin = Yin__s;
-  for __j = 0 to 6 { __mv__ = Yin[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; t1[0 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t0[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = t1[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
+  __rq6_2 = Yin[0 : 6];
+  t1 = bls12_mul(t1, __rq6_1, __rq6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; Xout[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
+  __rp6_0 = bls12_mul(__rp6_0, t0, t1);
+  Xout = Xout__s;
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = Xout[0 : 6];
   Xout = Xout__s;
   for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_1[0 + __j] = __mv__; }
   Xout = Xout__s;
   for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rp6_0 = bls12_add(__rp6_0, __sg6_1, __sg6_2);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -836,6 +1891,8 @@ fn store_zero(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz) -> 
   inline int __j;
   reg u64 __la0;
   stack u64[6] __sg6_0;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
   stack ptr u64[6] outx__s;
   stack ptr u64[6] outy__s;
   stack ptr u64[6] outz__s;
@@ -843,13 +1900,22 @@ fn store_zero(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz) -> 
   outy__s = outy;
   outz__s = outz;
   outx = outx__s;
-  outx = bls12_zero(outx);
+  __rp6_0 = outx[0 : 6];
+  __rp6_0 = bls12_zero(__rp6_0);
+  outx = outx__s;
+  outx[0 : 6] = __rp6_0;
   outx__s = outx;
   outy = outy__s;
-  outy = bls12_one(outy);
+  __rp6_0 = outy[0 : 6];
+  __rp6_0 = bls12_one(__rp6_0);
+  outy = outy__s;
+  outy[0 : 6] = __rp6_0;
   outy__s = outy;
   outz = outz__s;
-  outz = bls12_zero(outz);
+  __rp6_0 = outz[0 : 6];
+  __rp6_0 = bls12_zero(__rp6_0);
+  outz = outz__s;
+  outz[0 : 6] = __rp6_0;
   outz__s = outz;
   outx = outx__s;
   outy = outy__s;
@@ -858,7 +1924,7 @@ fn store_zero(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz) -> 
 }
 
 
-fn bls12_Fp2_felem_copy(reg ptr u64[12] out, reg const ptr u64[12] x) -> reg ptr u64[12] {
+inline fn bls12_Fp2_felem_copy(reg ptr u64[12] out, reg const ptr u64[12] x) -> reg ptr u64[12] {
   reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
@@ -871,27 +1937,18 @@ fn bls12_Fp2_felem_copy(reg ptr u64[12] out, reg const ptr u64[12] x) -> reg ptr
   reg u64 __la1;
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
-  stack ptr u64[12] out__s;
-  stack ptr u64[12] x__s;
-  out__s = out;
-  x__s = x;
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  x = x__s;
-  for __j = 0 to 6 { __mv__ = x[0 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, __sg6_1);
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
-  out__s = out;
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
-  x = x__s;
-  for __j = 0 to 6 { __mv__ = x[6 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, __sg6_1);
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
-  out__s = out;
-  out = out__s;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  __rp6_0 = out[0 : 6];
+  __rq6_1 = x[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, __rq6_1);
+  out[0 : 6] = __rp6_0;
+  __rp6_0 = out[6 : 6];
+  __rq6_1 = x[6 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, __rq6_1);
+  out[6 : 6] = __rp6_0;
   return out;
 }
 
@@ -911,7 +1968,12 @@ fn bls12_Fp2_mul(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
   stack u64[6] __sg6_2;
-  stack u64[18] __ffi_bls12_mul;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
   stack ptr u64[12] out__s;
   stack ptr u64[12] inx__s;
   stack ptr u64[12] iny__s;
@@ -922,60 +1984,59 @@ fn bls12_Fp2_mul(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[6] v1;
   stack u64[6] v2;
   inx = inx__s;
-  for __j = 0 to 6 { __mv__ = inx[0 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = inx[0 : 6];
   iny = iny__s;
-  for __j = 0 to 6 { __mv__ = iny[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; v0[0 + __j] = __mv__; }
+  __rq6_2 = iny[0 : 6];
+  v0 = bls12_mul(v0, __rq6_1, __rq6_2);
   inx = inx__s;
-  for __j = 0 to 6 { __mv__ = inx[6 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
+  __rq6_1 = inx[6 : 6];
   iny = iny__s;
-  for __j = 0 to 6 { __mv__ = iny[6 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; v1[0 + __j] = __mv__; }
+  __rq6_2 = iny[6 : 6];
+  v1 = bls12_mul(v1, __rq6_1, __rq6_2);
   inx = inx__s;
-  for __j = 0 to 6 { __mv__ = inx[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = inx[0 : 6];
   inx = inx__s;
-  for __j = 0 to 6 { __mv__ = inx[6 + __j]; __sg6_2[0 + __j] = __mv__; }
-  v2 = bls12_add(v2, __sg6_1, __sg6_2);
+  __rq6_2 = inx[6 : 6];
+  v2 = bls12_add(v2, __rq6_1, __rq6_2);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = out[6 : 6];
   iny = iny__s;
-  for __j = 0 to 6 { __mv__ = iny[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = iny[0 : 6];
   iny = iny__s;
-  for __j = 0 to 6 { __mv__ = iny[6 + __j]; __sg6_2[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, __sg6_1, __sg6_2);
+  __rq6_2 = iny[6 : 6];
+  __rp6_0 = bls12_add(__rp6_0, __rq6_1, __rq6_2);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __ffi_bls12_mul[6 + __j] = __mv__; }
-  for __j = 0 to 6 { __mv__ = v2[0 + __j]; __ffi_bls12_mul[12 + __j] = __mv__; }
-  __ffi_bls12_mul = #randombytes(__ffi_bls12_mul);
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = __ffi_bls12_mul[0 + __j]; out[6 + __j] = __mv__; }
-  out__s = out;
-  out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = out[6 : 6];
   out = out__s;
   for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, v0);
+  __rp6_0 = bls12_mul(__rp6_0, __sg6_1, v2);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = out[6 : 6];
   out = out__s;
   for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_1[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, __sg6_1, v1);
+  __rp6_0 = bls12_sub(__rp6_0, __sg6_1, v0);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, v0, v1);
+  __rp6_0 = out[6 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
+  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rp6_0 = bls12_sub(__rp6_0, __sg6_1, v1);
+  out = out__s;
+  out[6 : 6] = __rp6_0;
+  out__s = out;
+  out = out__s;
+  __rp6_0 = out[0 : 6];
+  __rp6_0 = bls12_sub(__rp6_0, v0, v1);
+  out = out__s;
+  out[0 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
   return out;
@@ -1009,6 +2070,24 @@ fn bls12_g1_add(reg ptr u64[18] out, reg const ptr u64[18] p, reg const ptr u64[
   stack u64[6] __sg6_6;
   stack u64[6] __sg6_7;
   stack u64[6] __sg6_8;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
   stack ptr u64[18] out__s;
   stack ptr u64[18] p__s;
   stack ptr u64[18] q__s;
@@ -1016,32 +2095,32 @@ fn bls12_g1_add(reg ptr u64[18] out, reg const ptr u64[18] p, reg const ptr u64[
   p__s = p;
   q__s = q;
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rq6_0 = p[0 : 6];
   q = q__s;
-  for __j = 0 to 6 { __mv__ = q[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = q[0 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[6 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rq6_2 = p[6 : 6];
   q = q__s;
-  for __j = 0 to 6 { __mv__ = q[6 + __j]; __sg6_3[0 + __j] = __mv__; }
+  __rq6_3 = q[6 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[12 + __j]; __sg6_4[0 + __j] = __mv__; }
+  __rq6_4 = p[12 : 6];
   q = q__s;
-  for __j = 0 to 6 { __mv__ = q[12 + __j]; __sg6_5[0 + __j] = __mv__; }
+  __rq6_5 = q[12 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_6[0 + __j] = __mv__; }
+  __rp6_6 = out[0 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_7[0 + __j] = __mv__; }
+  __rp6_7 = out[6 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[12 + __j]; __sg6_8[0 + __j] = __mv__; }
-  __sg6_6, __sg6_7, __sg6_8 = curve_add(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5, __sg6_6, __sg6_7, __sg6_8);
+  __rp6_8 = out[12 : 6];
+  __rp6_6, __rp6_7, __rp6_8 = curve_add(__rq6_0, __rq6_1, __rq6_2, __rq6_3, __rq6_4, __rq6_5, __rp6_6, __rp6_7, __rp6_8);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_6[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_6;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_7[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_7;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_8[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 6] = __rp6_8;
   out__s = out;
   out = out__s;
   return out;
@@ -1069,31 +2148,43 @@ fn bls12_g1_double(reg ptr u64[18] out, reg const ptr u64[18] p) -> reg ptr u64[
   stack u64[6] __sg6_3;
   stack u64[6] __sg6_4;
   stack u64[6] __sg6_5;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
   stack ptr u64[18] out__s;
   stack ptr u64[18] p__s;
   out__s = out;
   p__s = p;
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rq6_0 = p[0 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[6 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rq6_1 = p[6 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[12 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rq6_2 = p[12 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_3[0 + __j] = __mv__; }
+  __rp6_3 = out[0 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_4[0 + __j] = __mv__; }
+  __rp6_4 = out[6 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[12 + __j]; __sg6_5[0 + __j] = __mv__; }
-  __sg6_3, __sg6_4, __sg6_5 = curve_double_a0(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5);
+  __rp6_5 = out[12 : 6];
+  __rp6_3, __rp6_4, __rp6_5 = curve_double_a0(__rq6_0, __rq6_1, __rq6_2, __rp6_3, __rp6_4, __rp6_5);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_3[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_3;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_4[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_4;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_5[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 6] = __rp6_5;
   out__s = out;
   out = out__s;
   return out;
@@ -1127,6 +2218,24 @@ fn msm_curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr
   stack u64[6] __sg6_6;
   stack u64[6] __sg6_7;
   stack u64[6] __sg6_8;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
   stack ptr u64[6] X1__s;
   stack ptr u64[6] X2__s;
   stack ptr u64[6] Y1__s;
@@ -1149,29 +2258,35 @@ fn msm_curve_add(reg const ptr u64[6] X1, reg const ptr u64[6] X2, reg const ptr
   stack u64[6] ty;
   stack u64[6] tz;
   X1 = X1__s;
+  __rq6_0 = X1[0 : 6];
   X2 = X2__s;
+  __rq6_1 = X2[0 : 6];
   Y1 = Y1__s;
+  __rq6_2 = Y1[0 : 6];
   Y2 = Y2__s;
+  __rq6_3 = Y2[0 : 6];
   Z1 = Z1__s;
+  __rq6_4 = Z1[0 : 6];
   Z2 = Z2__s;
-  tx, ty, tz = curve_add(X1, X2, Y1, Y2, Z1, Z2, tx, ty, tz);
+  __rq6_5 = Z2[0 : 6];
+  tx, ty, tz = curve_add(__rq6_0, __rq6_1, __rq6_2, __rq6_3, __rq6_4, __rq6_5, tx, ty, tz);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, tx);
+  __rp6_0 = Xout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, tx);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, ty);
+  __rp6_0 = Yout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, ty);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, tz);
+  __rp6_0 = Zout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, tz);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -1201,6 +2316,18 @@ fn msm_curve_double(reg const ptr u64[6] Xin, reg const ptr u64[6] Yin, reg cons
   stack u64[6] __sg6_3;
   stack u64[6] __sg6_4;
   stack u64[6] __sg6_5;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
   stack ptr u64[6] Xin__s;
   stack ptr u64[6] Yin__s;
   stack ptr u64[6] Zin__s;
@@ -1217,26 +2344,29 @@ fn msm_curve_double(reg const ptr u64[6] Xin, reg const ptr u64[6] Yin, reg cons
   stack u64[6] ty;
   stack u64[6] tz;
   Xin = Xin__s;
+  __rq6_0 = Xin[0 : 6];
   Yin = Yin__s;
+  __rq6_1 = Yin[0 : 6];
   Zin = Zin__s;
-  tx, ty, tz = curve_double_a0(Xin, Yin, Zin, tx, ty, tz);
+  __rq6_2 = Zin[0 : 6];
+  tx, ty, tz = curve_double_a0(__rq6_0, __rq6_1, __rq6_2, tx, ty, tz);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = Xout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, tx);
+  __rp6_0 = Xout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, tx);
   Xout = Xout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 6] = __rp6_0;
   Xout__s = Xout;
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = Yout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, ty);
+  __rp6_0 = Yout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, ty);
   Yout = Yout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 6] = __rp6_0;
   Yout__s = Yout;
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = Zout[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_felem_copy(__sg6_0, tz);
+  __rp6_0 = Zout[0 : 6];
+  __rp6_0 = bls12_felem_copy(__rp6_0, tz);
   Zout = Zout__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 6] = __rp6_0;
   Zout__s = Zout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -1262,6 +2392,16 @@ fn bls12_Fp2_add(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
   stack u64[6] __sg6_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
   stack ptr u64[12] out__s;
   stack ptr u64[12] inx__s;
   stack ptr u64[12] iny__s;
@@ -1271,20 +2411,22 @@ fn bls12_Fp2_add(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[12] allocx;
   stack u64[12] allocy;
   inx = inx__s;
-  allocx = bls12_Fp2_felem_copy(allocx, inx);
+  __rq12_1 = inx[0 : 12];
+  allocx = bls12_Fp2_felem_copy(allocx, __rq12_1);
   iny = iny__s;
-  allocy = bls12_Fp2_felem_copy(allocy, iny);
+  __rq12_1 = iny[0 : 12];
+  allocy = bls12_Fp2_felem_copy(allocy, __rq12_1);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, allocx[0 : 6], allocy[0 : 6]);
+  __rp6_0 = out[0 : 6];
+  __rp6_0 = bls12_add(__rp6_0, allocx[0 : 6], allocy[0 : 6]);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_add(__sg6_0, allocx[6 : 6], allocy[6 : 6]);
+  __rp6_0 = out[6 : 6];
+  __rp6_0 = bls12_add(__rp6_0, allocx[6 : 6], allocy[6 : 6]);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
   return out;
@@ -1308,6 +2450,16 @@ fn bls12_Fp2_sub(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[6] __sg6_0;
   stack u64[6] __sg6_1;
   stack u64[6] __sg6_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
   stack ptr u64[12] out__s;
   stack ptr u64[12] inx__s;
   stack ptr u64[12] iny__s;
@@ -1317,27 +2469,29 @@ fn bls12_Fp2_sub(reg ptr u64[12] out, reg const ptr u64[12] inx, reg const ptr u
   stack u64[12] allocx;
   stack u64[12] allocy;
   inx = inx__s;
-  allocx = bls12_Fp2_felem_copy(allocx, inx);
+  __rq12_1 = inx[0 : 12];
+  allocx = bls12_Fp2_felem_copy(allocx, __rq12_1);
   iny = iny__s;
-  allocy = bls12_Fp2_felem_copy(allocy, iny);
+  __rq12_1 = iny[0 : 12];
+  allocy = bls12_Fp2_felem_copy(allocy, __rq12_1);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, allocx[0 : 6], allocy[0 : 6]);
+  __rp6_0 = out[0 : 6];
+  __rp6_0 = bls12_sub(__rp6_0, allocx[0 : 6], allocy[0 : 6]);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_0[0 + __j] = __mv__; }
-  __sg6_0 = bls12_sub(__sg6_0, allocx[6 : 6], allocy[6 : 6]);
+  __rp6_0 = out[6 : 6];
+  __rp6_0 = bls12_sub(__rp6_0, allocx[6 : 6], allocy[6 : 6]);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
   return out;
 }
 
 
-fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg const ptr u64[16384] scalars, reg const ptr u64[24576] pointsx, reg const ptr u64[24576] pointsy, reg const ptr u64[24576] pointsz, reg u64 n) -> reg ptr u64[6], reg ptr u64[6], reg ptr u64[6] {
+fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg const ptr u64[16384] scalars, reg const ptr u64[24576] pointsx, reg const ptr u64[24576] pointsy, reg const ptr u64[24576] pointsz, #[spill] reg u64 n) -> reg ptr u64[6], reg ptr u64[6], reg ptr u64[6] {
   reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
@@ -1364,37 +2518,55 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
   stack u64[6] __sg6_6;
   stack u64[6] __sg6_7;
   stack u64[6] __sg6_8;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
   #[spill] reg u64 w;
   #[spill] reg u64 i;
   #[spill] reg u64 bpx;
-  #[spill] reg u64 bpx_bp0;
+  reg u64 bpx_bp0;
   #[spill] reg u64 bpy;
-  #[spill] reg u64 bpy_bp0;
+  reg u64 bpy_bp0;
   #[spill] reg u64 bpz;
-  #[spill] reg u64 bpz_bp0;
-  #[spill] reg u64 bit_offset;
-  #[spill] reg u64 limb;
-  #[spill] reg u64 shift;
-  #[spill] reg u64 maska_bp0;
-  #[spill] reg u64 mask;
-  #[spill] reg u64 scalar_ptr;
-  #[spill] reg u64 scalar_ptr_bp0;
-  #[spill] reg u64 load_off1;
-  #[spill] reg u64 load_addr1;
-  #[spill] reg u64 val;
-  #[spill] reg u64 load_off2a_bp0;
-  #[spill] reg u64 load_off2;
-  #[spill] reg u64 load_addr2;
-  #[spill] reg u64 val_bp0;
-  #[spill] reg u64 val_bp1;
-  #[spill] reg u64 idx;
-  #[spill] reg u64 bucket_index;
+  reg u64 bpz_bp0;
+  reg u64 bit_offset;
+  reg u64 limb;
+  reg u64 shift;
+  reg u64 maska_bp0;
+  reg u64 mask;
+  reg u64 scalar_ptr;
+  reg u64 scalar_ptr_bp0;
+  reg u64 load_off1;
+  reg u64 load_addr1;
+  reg u64 val;
+  reg u64 load_off2a_bp0;
+  reg u64 load_off2;
+  reg u64 load_addr2;
+  reg u64 val_bp0;
+  reg u64 val_bp1;
+  reg u64 idx;
+  reg u64 bucket_index;
   #[spill] reg u64 ppx;
-  #[spill] reg u64 ppx_bp0;
+  reg u64 ppx_bp0;
   #[spill] reg u64 ppy;
-  #[spill] reg u64 ppy_bp0;
+  reg u64 ppy_bp0;
   #[spill] reg u64 ppz;
-  #[spill] reg u64 ppz_bp0;
+  reg u64 ppz_bp0;
   stack ptr u64[6] outx__s;
   stack ptr u64[6] outy__s;
   stack ptr u64[6] outz__s;
@@ -1419,11 +2591,20 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
   stack u64[6] wsy;
   stack u64[6] wsz;
   outx = outx__s;
+  __rp6_0 = outx[0 : 6];
   outy = outy__s;
+  __rp6_1 = outy[0 : 6];
   outz = outz__s;
-  outx, outy, outz = store_zero(outx, outy, outz);
+  __rp6_2 = outz[0 : 6];
+  __rp6_0, __rp6_1, __rp6_2 = store_zero(__rp6_0, __rp6_1, __rp6_2);
+  outx = outx__s;
+  outx[0 : 6] = __rp6_0;
   outx__s = outx;
+  outy = outy__s;
+  outy[0 : 6] = __rp6_1;
   outy__s = outy;
+  outz = outz__s;
+  outz[0 : 6] = __rp6_2;
   outz__s = outz;
   w = 29;
   while (w != 0) {
@@ -1438,20 +2619,20 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
       outz = outz__s;
       for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_2[0 + __j] = __mv__; }
       outx = outx__s;
-      for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_3[0 + __j] = __mv__; }
+      __rp6_3 = outx[0 : 6];
       outy = outy__s;
-      for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_4[0 + __j] = __mv__; }
+      __rp6_4 = outy[0 : 6];
       outz = outz__s;
-      for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_5[0 + __j] = __mv__; }
-      __sg6_3, __sg6_4, __sg6_5 = msm_curve_double(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5);
+      __rp6_5 = outz[0 : 6];
+      __rp6_3, __rp6_4, __rp6_5 = msm_curve_double(__sg6_0, __sg6_1, __sg6_2, __rp6_3, __rp6_4, __rp6_5);
       outx = outx__s;
-      for __j = 0 to 6 { __mv__ = __sg6_3[0 + __j]; outx[0 + __j] = __mv__; }
+      outx[0 : 6] = __rp6_3;
       outx__s = outx;
       outy = outy__s;
-      for __j = 0 to 6 { __mv__ = __sg6_4[0 + __j]; outy[0 + __j] = __mv__; }
+      outy[0 : 6] = __rp6_4;
       outy__s = outy;
       outz = outz__s;
-      for __j = 0 to 6 { __mv__ = __sg6_5[0 + __j]; outz[0 + __j] = __mv__; }
+      outz[0 : 6] = __rp6_5;
       outz__s = outz;
     }
     i = 511;
@@ -1503,7 +2684,8 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
       __shc__ = shift;
       _, _, _, _, _, val = #SHR(val, __shc__);
       __ca__ = 64;
-      __cb__ = (shift + 9);
+      __cb__ = shift;
+      __cb__ = (__cb__ + 9);
       if (__ca__ <u __cb__) {
         if ((limb <u 3)) {
           load_off2a_bp0 = limb;
@@ -1591,23 +2773,11 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
       for __j = 0 to 6 { __mv__ = buckets_y.[u64 (int) (bpy) + 8 * __j]; __sg6_3[0 + __j] = __mv__; }
       for __j = 0 to 6 { __mv__ = runz[0 + __j]; __sg6_4[0 + __j] = __mv__; }
       for __j = 0 to 6 { __mv__ = buckets_z.[u64 (int) (bpz) + 8 * __j]; __sg6_5[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = runx[0 + __j]; __sg6_6[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = runy[0 + __j]; __sg6_7[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = runz[0 + __j]; __sg6_8[0 + __j] = __mv__; }
-      __sg6_6, __sg6_7, __sg6_8 = msm_curve_add(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5, __sg6_6, __sg6_7, __sg6_8);
-      for __j = 0 to 6 { __mv__ = __sg6_6[0 + __j]; runx[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = __sg6_7[0 + __j]; runy[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = __sg6_8[0 + __j]; runz[0 + __j] = __mv__; }
+      runx, runy, runz = msm_curve_add(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5, runx, runy, runz);
       for __j = 0 to 6 { __mv__ = wsx[0 + __j]; __sg6_0[0 + __j] = __mv__; }
       for __j = 0 to 6 { __mv__ = wsy[0 + __j]; __sg6_2[0 + __j] = __mv__; }
       for __j = 0 to 6 { __mv__ = wsz[0 + __j]; __sg6_4[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = wsx[0 + __j]; __sg6_6[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = wsy[0 + __j]; __sg6_7[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = wsz[0 + __j]; __sg6_8[0 + __j] = __mv__; }
-      __sg6_6, __sg6_7, __sg6_8 = msm_curve_add(__sg6_0, runx, __sg6_2, runy, __sg6_4, runz, __sg6_6, __sg6_7, __sg6_8);
-      for __j = 0 to 6 { __mv__ = __sg6_6[0 + __j]; wsx[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = __sg6_7[0 + __j]; wsy[0 + __j] = __mv__; }
-      for __j = 0 to 6 { __mv__ = __sg6_8[0 + __j]; wsz[0 + __j] = __mv__; }
+      wsx, wsy, wsz = msm_curve_add(__sg6_0, runx, __sg6_2, runy, __sg6_4, runz, wsx, wsy, wsz);
     }
     outx = outx__s;
     for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_0[0 + __j] = __mv__; }
@@ -1616,20 +2786,20 @@ fn msm_bls12(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg 
     outz = outz__s;
     for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_4[0 + __j] = __mv__; }
     outx = outx__s;
-    for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_6[0 + __j] = __mv__; }
+    __rp6_6 = outx[0 : 6];
     outy = outy__s;
-    for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_7[0 + __j] = __mv__; }
+    __rp6_7 = outy[0 : 6];
     outz = outz__s;
-    for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_8[0 + __j] = __mv__; }
-    __sg6_6, __sg6_7, __sg6_8 = msm_curve_add(__sg6_0, wsx, __sg6_2, wsy, __sg6_4, wsz, __sg6_6, __sg6_7, __sg6_8);
+    __rp6_8 = outz[0 : 6];
+    __rp6_6, __rp6_7, __rp6_8 = msm_curve_add(__sg6_0, wsx, __sg6_2, wsy, __sg6_4, wsz, __rp6_6, __rp6_7, __rp6_8);
     outx = outx__s;
-    for __j = 0 to 6 { __mv__ = __sg6_6[0 + __j]; outx[0 + __j] = __mv__; }
+    outx[0 : 6] = __rp6_6;
     outx__s = outx;
     outy = outy__s;
-    for __j = 0 to 6 { __mv__ = __sg6_7[0 + __j]; outy[0 + __j] = __mv__; }
+    outy[0 : 6] = __rp6_7;
     outy__s = outy;
     outz = outz__s;
-    for __j = 0 to 6 { __mv__ = __sg6_8[0 + __j]; outz[0 + __j] = __mv__; }
+    outz[0 : 6] = __rp6_8;
     outz__s = outz;
   }
   outx = outx__s;
@@ -1666,13 +2836,31 @@ fn g1_scalar_mul(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, 
   stack u64[6] __sg6_6;
   stack u64[6] __sg6_7;
   stack u64[6] __sg6_8;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
   #[spill] reg u64 i;
-  #[spill] reg u64 a;
-  #[spill] reg u64 a_bp0;
-  #[spill] reg u64 a_bp1;
-  #[spill] reg u64 bita_bp0;
-  #[spill] reg u64 bita_bp1;
-  #[spill] reg u64 bit;
+  reg u64 a;
+  reg u64 a_bp0;
+  reg u64 a_bp1;
+  reg u64 bita_bp0;
+  reg u64 bita_bp1;
+  reg u64 bit;
   stack ptr u64[6] outx__s;
   stack ptr u64[6] outy__s;
   stack ptr u64[6] outz__s;
@@ -1688,11 +2876,20 @@ fn g1_scalar_mul(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, 
   py__s = py;
   pz__s = pz;
   outx = outx__s;
+  __rp6_0 = outx[0 : 6];
   outy = outy__s;
+  __rp6_1 = outy[0 : 6];
   outz = outz__s;
-  outx, outy, outz = store_zero(outx, outy, outz);
+  __rp6_2 = outz[0 : 6];
+  __rp6_0, __rp6_1, __rp6_2 = store_zero(__rp6_0, __rp6_1, __rp6_2);
+  outx = outx__s;
+  outx[0 : 6] = __rp6_0;
   outx__s = outx;
+  outy = outy__s;
+  outy[0 : 6] = __rp6_1;
   outy__s = outy;
+  outz = outz__s;
+  outz[0 : 6] = __rp6_2;
   outz__s = outz;
   i = 256;
   while (i != 0) {
@@ -1704,20 +2901,20 @@ fn g1_scalar_mul(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, 
     outz = outz__s;
     for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_2[0 + __j] = __mv__; }
     outx = outx__s;
-    for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_3[0 + __j] = __mv__; }
+    __rp6_3 = outx[0 : 6];
     outy = outy__s;
-    for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_4[0 + __j] = __mv__; }
+    __rp6_4 = outy[0 : 6];
     outz = outz__s;
-    for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_5[0 + __j] = __mv__; }
-    __sg6_3, __sg6_4, __sg6_5 = msm_curve_double(__sg6_0, __sg6_1, __sg6_2, __sg6_3, __sg6_4, __sg6_5);
+    __rp6_5 = outz[0 : 6];
+    __rp6_3, __rp6_4, __rp6_5 = msm_curve_double(__sg6_0, __sg6_1, __sg6_2, __rp6_3, __rp6_4, __rp6_5);
     outx = outx__s;
-    for __j = 0 to 6 { __mv__ = __sg6_3[0 + __j]; outx[0 + __j] = __mv__; }
+    outx[0 : 6] = __rp6_3;
     outx__s = outx;
     outy = outy__s;
-    for __j = 0 to 6 { __mv__ = __sg6_4[0 + __j]; outy[0 + __j] = __mv__; }
+    outy[0 : 6] = __rp6_4;
     outy__s = outy;
     outz = outz__s;
-    for __j = 0 to 6 { __mv__ = __sg6_5[0 + __j]; outz[0 + __j] = __mv__; }
+    outz[0 : 6] = __rp6_5;
     outz__s = outz;
     a = 0;
     a_bp0 = i;
@@ -1737,27 +2934,30 @@ fn g1_scalar_mul(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, 
       outx = outx__s;
       for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_0[0 + __j] = __mv__; }
       px = px__s;
+      __rq6_1 = px[0 : 6];
       outy = outy__s;
       for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_2[0 + __j] = __mv__; }
       py = py__s;
+      __rq6_3 = py[0 : 6];
       outz = outz__s;
       for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_4[0 + __j] = __mv__; }
       pz = pz__s;
+      __rq6_5 = pz[0 : 6];
       outx = outx__s;
-      for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_6[0 + __j] = __mv__; }
+      __rp6_6 = outx[0 : 6];
       outy = outy__s;
-      for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_7[0 + __j] = __mv__; }
+      __rp6_7 = outy[0 : 6];
       outz = outz__s;
-      for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_8[0 + __j] = __mv__; }
-      __sg6_6, __sg6_7, __sg6_8 = msm_curve_add(__sg6_0, px, __sg6_2, py, __sg6_4, pz, __sg6_6, __sg6_7, __sg6_8);
+      __rp6_8 = outz[0 : 6];
+      __rp6_6, __rp6_7, __rp6_8 = msm_curve_add(__sg6_0, __rq6_1, __sg6_2, __rq6_3, __sg6_4, __rq6_5, __rp6_6, __rp6_7, __rp6_8);
       outx = outx__s;
-      for __j = 0 to 6 { __mv__ = __sg6_6[0 + __j]; outx[0 + __j] = __mv__; }
+      outx[0 : 6] = __rp6_6;
       outx__s = outx;
       outy = outy__s;
-      for __j = 0 to 6 { __mv__ = __sg6_7[0 + __j]; outy[0 + __j] = __mv__; }
+      outy[0 : 6] = __rp6_7;
       outy__s = outy;
       outz = outz__s;
-      for __j = 0 to 6 { __mv__ = __sg6_8[0 + __j]; outz[0 + __j] = __mv__; }
+      outz[0 : 6] = __rp6_8;
       outz__s = outz;
     }
   }
@@ -1765,6 +2965,211 @@ fn g1_scalar_mul(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, 
   outy = outy__s;
   outz = outz__s;
   return outx, outy, outz;
+}
+
+
+fn g1_scalar_mul_ct(reg ptr u64[6] outx, reg ptr u64[6] outy, reg ptr u64[6] outz, reg ptr u64[6] tx, reg ptr u64[6] ty, reg ptr u64[6] tz, reg const ptr u64[4] scalar, reg const ptr u64[6] px, reg const ptr u64[6] py, reg const ptr u64[6] pz) -> reg ptr u64[6], reg ptr u64[6], reg ptr u64[6], reg ptr u64[6], reg ptr u64[6], reg ptr u64[6] {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 __la0;
+  reg u64 __la1;
+  reg u64 __la2;
+  reg u64 __la3;
+  reg u64 __la4;
+  reg u64 __la5;
+  reg u64 __la6;
+  reg u64 __la7;
+  reg u64 __la8;
+  stack u64[6] __sg6_0;
+  stack u64[6] __sg6_1;
+  stack u64[6] __sg6_2;
+  stack u64[6] __sg6_3;
+  stack u64[6] __sg6_4;
+  stack u64[6] __sg6_5;
+  stack u64[6] __sg6_6;
+  stack u64[6] __sg6_7;
+  stack u64[6] __sg6_8;
+  stack u64[1] __sg1_0;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
+  reg ptr u64[1] __rp1_0;
+  reg const ptr u64[1] __rq1_0;
+  #[spill] reg u64 i;
+  reg u64 a;
+  reg u64 a_bp0;
+  reg u64 a_bp1;
+  reg u64 bita_bp0;
+  reg u64 bita_bp1;
+  #[spill] reg u64 bit;
+  stack ptr u64[6] outx__s;
+  stack ptr u64[6] outy__s;
+  stack ptr u64[6] outz__s;
+  stack ptr u64[6] tx__s;
+  stack ptr u64[6] ty__s;
+  stack ptr u64[6] tz__s;
+  stack ptr u64[4] scalar__s;
+  stack ptr u64[6] px__s;
+  stack ptr u64[6] py__s;
+  stack ptr u64[6] pz__s;
+  outx__s = outx;
+  outy__s = outy;
+  outz__s = outz;
+  tx__s = tx;
+  ty__s = ty;
+  tz__s = tz;
+  scalar__s = scalar;
+  px__s = px;
+  py__s = py;
+  pz__s = pz;
+  outx = outx__s;
+  __rp6_0 = outx[0 : 6];
+  outy = outy__s;
+  __rp6_1 = outy[0 : 6];
+  outz = outz__s;
+  __rp6_2 = outz[0 : 6];
+  __rp6_0, __rp6_1, __rp6_2 = store_zero(__rp6_0, __rp6_1, __rp6_2);
+  outx = outx__s;
+  outx[0 : 6] = __rp6_0;
+  outx__s = outx;
+  outy = outy__s;
+  outy[0 : 6] = __rp6_1;
+  outy__s = outy;
+  outz = outz__s;
+  outz[0 : 6] = __rp6_2;
+  outz__s = outz;
+  i = 256;
+  while (i != 0) {
+    i = (i - 1);
+    outx = outx__s;
+    for __j = 0 to 6 { __mv__ = outx[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+    outy = outy__s;
+    for __j = 0 to 6 { __mv__ = outy[0 + __j]; __sg6_1[0 + __j] = __mv__; }
+    outz = outz__s;
+    for __j = 0 to 6 { __mv__ = outz[0 + __j]; __sg6_2[0 + __j] = __mv__; }
+    outx = outx__s;
+    __rp6_3 = outx[0 : 6];
+    outy = outy__s;
+    __rp6_4 = outy[0 : 6];
+    outz = outz__s;
+    __rp6_5 = outz[0 : 6];
+    __rp6_3, __rp6_4, __rp6_5 = msm_curve_double(__sg6_0, __sg6_1, __sg6_2, __rp6_3, __rp6_4, __rp6_5);
+    outx = outx__s;
+    outx[0 : 6] = __rp6_3;
+    outx__s = outx;
+    outy = outy__s;
+    outy[0 : 6] = __rp6_4;
+    outy__s = outy;
+    outz = outz__s;
+    outz[0 : 6] = __rp6_5;
+    outz__s = outz;
+    a = 0;
+    a_bp0 = i;
+    a_bp0 = (a_bp0 >> 6);
+    a_bp1 = a_bp0;
+    a_bp1 = (a_bp1 << 3);
+    a = (a + a_bp1);
+    bita_bp0 = i;
+    bita_bp0 = (bita_bp0 & 63);
+    scalar = scalar__s;
+    bita_bp1 = scalar.[u64 (int) ((a + 0)) + 8 * 0];
+    __shc__ = bita_bp0;
+    _, _, _, _, _, bita_bp1 = #SHR(bita_bp1, __shc__);
+    bit = bita_bp1;
+    bit = (bit & 1);
+    outx = outx__s;
+    __rq6_0 = outx[0 : 6];
+    px = px__s;
+    __rq6_1 = px[0 : 6];
+    outy = outy__s;
+    __rq6_2 = outy[0 : 6];
+    py = py__s;
+    __rq6_3 = py[0 : 6];
+    outz = outz__s;
+    __rq6_4 = outz[0 : 6];
+    pz = pz__s;
+    __rq6_5 = pz[0 : 6];
+    tx = tx__s;
+    __rp6_6 = tx[0 : 6];
+    ty = ty__s;
+    __rp6_7 = ty[0 : 6];
+    tz = tz__s;
+    __rp6_8 = tz[0 : 6];
+    __rp6_6, __rp6_7, __rp6_8 = curve_add(__rq6_0, __rq6_1, __rq6_2, __rq6_3, __rq6_4, __rq6_5, __rp6_6, __rp6_7, __rp6_8);
+    tx = tx__s;
+    tx[0 : 6] = __rp6_6;
+    tx__s = tx;
+    ty = ty__s;
+    ty[0 : 6] = __rp6_7;
+    ty__s = ty;
+    tz = tz__s;
+    tz[0 : 6] = __rp6_8;
+    tz__s = tz;
+    __la0 = bit;
+    outx = outx__s;
+    __rp6_1 = outx[0 : 6];
+    tx = tx__s;
+    __rp6_2 = tx[0 : 6];
+    __rp6_1, __rp6_2 = ct_cswap(__la0, __rp6_1, __rp6_2);
+    outx = outx__s;
+    outx[0 : 6] = __rp6_1;
+    outx__s = outx;
+    tx = tx__s;
+    tx[0 : 6] = __rp6_2;
+    tx__s = tx;
+    __la0 = bit;
+    outy = outy__s;
+    __rp6_1 = outy[0 : 6];
+    ty = ty__s;
+    __rp6_2 = ty[0 : 6];
+    __rp6_1, __rp6_2 = ct_cswap(__la0, __rp6_1, __rp6_2);
+    outy = outy__s;
+    outy[0 : 6] = __rp6_1;
+    outy__s = outy;
+    ty = ty__s;
+    ty[0 : 6] = __rp6_2;
+    ty__s = ty;
+    __la0 = bit;
+    outz = outz__s;
+    __rp6_1 = outz[0 : 6];
+    tz = tz__s;
+    __rp6_2 = tz[0 : 6];
+    __rp6_1, __rp6_2 = ct_cswap(__la0, __rp6_1, __rp6_2);
+    outz = outz__s;
+    outz[0 : 6] = __rp6_1;
+    outz__s = outz;
+    tz = tz__s;
+    tz[0 : 6] = __rp6_2;
+    tz__s = tz;
+  }
+  outx = outx__s;
+  outy = outy__s;
+  outz = outz__s;
+  tx = tx__s;
+  ty = ty__s;
+  tz = tz__s;
+  return outx, outy, outz, tx, ty, tz;
 }
 
 
@@ -1783,6 +3188,12 @@ fn g2_curve_add_ip(reg ptr u64[12] X1, reg const ptr u64[12] X2, reg ptr u64[12]
   stack u64[12] __sg12_0;
   stack u64[12] __sg12_1;
   stack u64[12] __sg12_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
   stack ptr u64[12] X1__s;
   stack ptr u64[12] X2__s;
   stack ptr u64[12] Y1__s;
@@ -1799,143 +3210,163 @@ fn g2_curve_add_ip(reg ptr u64[12] X1, reg const ptr u64[12] X2, reg ptr u64[12]
   three_b = bls12_Fp2_three_b(three_b);
   stack u64[12] t0;
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   X2 = X2__s;
-  t0 = bls12_Fp2_mul(t0, X1, X2);
+  __rq12_2 = X2[0 : 12];
+  t0 = bls12_Fp2_mul(t0, __rq12_1, __rq12_2);
   stack u64[12] t1;
   Y1 = Y1__s;
+  __rq12_1 = Y1[0 : 12];
   Y2 = Y2__s;
-  t1 = bls12_Fp2_mul(t1, Y1, Y2);
+  __rq12_2 = Y2[0 : 12];
+  t1 = bls12_Fp2_mul(t1, __rq12_1, __rq12_2);
   stack u64[12] t2;
   Z1 = Z1__s;
+  __rq12_1 = Z1[0 : 12];
   Z2 = Z2__s;
-  t2 = bls12_Fp2_mul(t2, Z1, Z2);
+  __rq12_2 = Z2[0 : 12];
+  t2 = bls12_Fp2_mul(t2, __rq12_1, __rq12_2);
   stack u64[12] t3;
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Y1 = Y1__s;
-  t3 = bls12_Fp2_add(t3, X1, Y1);
+  __rq12_2 = Y1[0 : 12];
+  t3 = bls12_Fp2_add(t3, __rq12_1, __rq12_2);
   stack u64[12] t4;
   X2 = X2__s;
+  __rq12_1 = X2[0 : 12];
   Y2 = Y2__s;
-  t4 = bls12_Fp2_add(t4, X2, Y2);
-  for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_2 = Y2[0 : 12];
+  t4 = bls12_Fp2_add(t4, __rq12_1, __rq12_2);
   for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, t4);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t3[0 + __j] = __mv__; }
+  t3 = bls12_Fp2_mul(t3, __sg12_1, t4);
   t4 = bls12_Fp2_add(t4, t0, t1);
-  for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t4);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t3[0 + __j] = __mv__; }
+  t3 = bls12_Fp2_sub(t3, __sg12_1, t4);
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Z1 = Z1__s;
-  t4 = bls12_Fp2_add(t4, X1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  t4 = bls12_Fp2_add(t4, __rq12_1, __rq12_2);
   stack u64[12] t5;
   X2 = X2__s;
+  __rq12_1 = X2[0 : 12];
   Z2 = Z2__s;
-  t5 = bls12_Fp2_add(t5, X2, Z2);
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_2 = Z2[0 : 12];
+  t5 = bls12_Fp2_add(t5, __rq12_1, __rq12_2);
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, t5);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_mul(t4, __sg12_1, t5);
   t5 = bls12_Fp2_add(t5, t0, t2);
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t5);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_sub(t4, __sg12_1, t5);
   Y1 = Y1__s;
+  __rq12_1 = Y1[0 : 12];
   Z1 = Z1__s;
-  t5 = bls12_Fp2_add(t5, Y1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  t5 = bls12_Fp2_add(t5, __rq12_1, __rq12_2);
   X1 = X1__s;
+  __rp12_0 = X1[0 : 12];
   Y2 = Y2__s;
+  __rq12_1 = Y2[0 : 12];
   Z2 = Z2__s;
-  X1 = bls12_Fp2_add(X1, Y2, Z2);
+  __rq12_2 = Z2[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __rq12_1, __rq12_2);
+  X1 = X1__s;
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
-  for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   X1 = X1__s;
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, X1);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t5[0 + __j] = __mv__; }
+  __rq12_2 = X1[0 : 12];
+  t5 = bls12_Fp2_mul(t5, __sg12_1, __rq12_2);
   X1 = X1__s;
-  X1 = bls12_Fp2_add(X1, t1, t2);
+  __rp12_0 = X1[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t1, t2);
+  X1 = X1__s;
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
-  for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   X1 = X1__s;
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, X1);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t5[0 + __j] = __mv__; }
+  __rq12_2 = X1[0 : 12];
+  t5 = bls12_Fp2_sub(t5, __sg12_1, __rq12_2);
   Z1 = Z1__s;
-  Z1 = bls12_Fp2_mul(Z1, three_b, t2);
+  __rp12_0 = Z1[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, three_b, t2);
+  Z1 = Z1__s;
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   X1 = X1__s;
+  __rp12_0 = X1[0 : 12];
   Z1 = Z1__s;
-  X1 = bls12_Fp2_sub(X1, t1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, t1, __rq12_2);
+  X1 = X1__s;
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t1);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t1);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   Y1 = Y1__s;
+  __rp12_0 = Y1[0 : 12];
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Z1 = Z1__s;
-  Y1 = bls12_Fp2_mul(Y1, X1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, __rq12_1, __rq12_2);
+  Y1 = Y1__s;
+  Y1[0 : 12] = __rp12_0;
   Y1__s = Y1;
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t1 = bls12_Fp2_add(t1, __sg12_1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = t1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, t0, t0);
   for __j = 0 to 12 { __mv__ = t1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, __sg12_1, t0);
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, three_b, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_mul(t4, three_b, __sg12_2);
   t0 = bls12_Fp2_mul(t0, t1, t4);
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Y1[0 : 12];
   Y1 = Y1__s;
   for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t0);
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Y1[0 + __j] = __mv__; }
+  Y1[0 : 12] = __rp12_0;
   Y1__s = Y1;
   t0 = bls12_Fp2_mul(t0, t5, t4);
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = X1[0 : 12];
   X1 = X1__s;
   for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t3, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t3, __sg12_2);
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; X1[0 + __j] = __mv__; }
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = X1[0 : 12];
   X1 = X1__s;
   for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __sg12_1, t0);
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; X1[0 + __j] = __mv__; }
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   t0 = bls12_Fp2_mul(t0, t3, t1);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t5, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t5, __sg12_2);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t0);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   X1 = X1__s;
   Y1 = Y1__s;
@@ -1959,6 +3390,12 @@ fn g2_curve_double_ip(reg ptr u64[12] X1, reg ptr u64[12] Y1, reg ptr u64[12] Z1
   stack u64[12] __sg12_0;
   stack u64[12] __sg12_1;
   stack u64[12] __sg12_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
   stack ptr u64[12] X1__s;
   stack ptr u64[12] Y1__s;
   stack ptr u64[12] Z1__s;
@@ -1969,108 +3406,116 @@ fn g2_curve_double_ip(reg ptr u64[12] X1, reg ptr u64[12] Y1, reg ptr u64[12] Z1
   three_b = bls12_Fp2_three_b(three_b);
   stack u64[12] t0;
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = Y1[0 : 12];
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t0 = bls12_Fp2_mul(t0, __sg12_1, __sg12_2);
+  __rq12_2 = Y1[0 : 12];
+  t0 = bls12_Fp2_mul(t0, __rq12_1, __rq12_2);
   stack u64[12] t1;
   Y1 = Y1__s;
+  __rq12_1 = Y1[0 : 12];
   Z1 = Z1__s;
-  t1 = bls12_Fp2_mul(t1, Y1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  t1 = bls12_Fp2_mul(t1, __rq12_1, __rq12_2);
   stack u64[12] t2;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = Z1[0 : 12];
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t2 = bls12_Fp2_mul(t2, __sg12_1, __sg12_2);
+  __rq12_2 = Z1[0 : 12];
+  t2 = bls12_Fp2_mul(t2, __rq12_1, __rq12_2);
   stack u64[12] t3;
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Y1 = Y1__s;
-  t3 = bls12_Fp2_mul(t3, X1, Y1);
+  __rq12_2 = Y1[0 : 12];
+  t3 = bls12_Fp2_mul(t3, __rq12_1, __rq12_2);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  Z1 = bls12_Fp2_add(Z1, __sg12_1, __sg12_2);
+  __rp12_0 = Z1[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t0, t0);
+  Z1 = Z1__s;
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, three_b, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t2[0 + __j] = __mv__; }
+  t2 = bls12_Fp2_mul(t2, three_b, __sg12_2);
   X1 = X1__s;
+  __rp12_0 = X1[0 : 12];
   Z1 = Z1__s;
-  X1 = bls12_Fp2_mul(X1, t2, Z1);
+  __rq12_2 = Z1[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t2, __rq12_2);
+  X1 = X1__s;
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   Y1 = Y1__s;
-  Y1 = bls12_Fp2_add(Y1, t0, t2);
+  __rp12_0 = Y1[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t0, t2);
+  Y1 = Y1__s;
+  Y1[0 : 12] = __rp12_0;
   Y1__s = Y1;
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Z1[0 : 12];
   Z1 = Z1__s;
   for __j = 0 to 12 { __mv__ = Z1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t1, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t1, __sg12_2);
   Z1 = Z1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Z1[0 + __j] = __mv__; }
+  Z1[0 : 12] = __rp12_0;
   Z1__s = Z1;
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, t2, t2);
   for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t1 = bls12_Fp2_add(t1, __sg12_1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_0[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, t1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t2[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t2 = bls12_Fp2_add(t2, t1, __sg12_2);
   for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t0[0 + __j] = __mv__; }
+  t0 = bls12_Fp2_sub(t0, __sg12_1, t2);
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
-  Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t0, __sg12_2);
-  Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Y1[0 + __j] = __mv__; }
-  Y1__s = Y1;
-  Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
-  X1 = X1__s;
+  __rp12_0 = Y1[0 : 12];
   Y1 = Y1__s;
   for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, X1, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t0, __sg12_2);
   Y1 = Y1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Y1[0 + __j] = __mv__; }
+  Y1[0 : 12] = __rp12_0;
+  Y1__s = Y1;
+  Y1 = Y1__s;
+  __rp12_0 = Y1[0 : 12];
+  X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
+  Y1 = Y1__s;
+  for __j = 0 to 12 { __mv__ = Y1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __rq12_1, __sg12_2);
+  Y1 = Y1__s;
+  Y1[0 : 12] = __rp12_0;
   Y1__s = Y1;
   X1 = X1__s;
-  X1 = bls12_Fp2_mul(X1, t0, t3);
+  __rp12_0 = X1[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t0, t3);
+  X1 = X1__s;
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = X1[0 : 12];
   X1 = X1__s;
   for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   X1 = X1__s;
   for __j = 0 to 12 { __mv__ = X1[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   X1 = X1__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; X1[0 + __j] = __mv__; }
+  X1[0 : 12] = __rp12_0;
   X1__s = X1;
   X1 = X1__s;
   Y1 = Y1__s;
@@ -2094,6 +3539,12 @@ fn g2_curve_add(reg const ptr u64[12] X1, reg const ptr u64[12] X2, reg const pt
   stack u64[12] __sg12_0;
   stack u64[12] __sg12_1;
   stack u64[12] __sg12_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
   stack ptr u64[12] X1__s;
   stack ptr u64[12] X2__s;
   stack ptr u64[12] Y1__s;
@@ -2116,143 +3567,163 @@ fn g2_curve_add(reg const ptr u64[12] X1, reg const ptr u64[12] X2, reg const pt
   three_b = bls12_Fp2_three_b(three_b);
   stack u64[12] t0;
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   X2 = X2__s;
-  t0 = bls12_Fp2_mul(t0, X1, X2);
+  __rq12_2 = X2[0 : 12];
+  t0 = bls12_Fp2_mul(t0, __rq12_1, __rq12_2);
   stack u64[12] t1;
   Y1 = Y1__s;
+  __rq12_1 = Y1[0 : 12];
   Y2 = Y2__s;
-  t1 = bls12_Fp2_mul(t1, Y1, Y2);
+  __rq12_2 = Y2[0 : 12];
+  t1 = bls12_Fp2_mul(t1, __rq12_1, __rq12_2);
   stack u64[12] t2;
   Z1 = Z1__s;
+  __rq12_1 = Z1[0 : 12];
   Z2 = Z2__s;
-  t2 = bls12_Fp2_mul(t2, Z1, Z2);
+  __rq12_2 = Z2[0 : 12];
+  t2 = bls12_Fp2_mul(t2, __rq12_1, __rq12_2);
   stack u64[12] t3;
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Y1 = Y1__s;
-  t3 = bls12_Fp2_add(t3, X1, Y1);
+  __rq12_2 = Y1[0 : 12];
+  t3 = bls12_Fp2_add(t3, __rq12_1, __rq12_2);
   stack u64[12] t4;
   X2 = X2__s;
+  __rq12_1 = X2[0 : 12];
   Y2 = Y2__s;
-  t4 = bls12_Fp2_add(t4, X2, Y2);
-  for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_2 = Y2[0 : 12];
+  t4 = bls12_Fp2_add(t4, __rq12_1, __rq12_2);
   for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, t4);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t3[0 + __j] = __mv__; }
+  t3 = bls12_Fp2_mul(t3, __sg12_1, t4);
   t4 = bls12_Fp2_add(t4, t0, t1);
-  for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t3[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t4);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t3[0 + __j] = __mv__; }
+  t3 = bls12_Fp2_sub(t3, __sg12_1, t4);
   X1 = X1__s;
+  __rq12_1 = X1[0 : 12];
   Z1 = Z1__s;
-  t4 = bls12_Fp2_add(t4, X1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  t4 = bls12_Fp2_add(t4, __rq12_1, __rq12_2);
   stack u64[12] t5;
   X2 = X2__s;
+  __rq12_1 = X2[0 : 12];
   Z2 = Z2__s;
-  t5 = bls12_Fp2_add(t5, X2, Z2);
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_2 = Z2[0 : 12];
+  t5 = bls12_Fp2_add(t5, __rq12_1, __rq12_2);
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, t5);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_mul(t4, __sg12_1, t5);
   t5 = bls12_Fp2_add(t5, t0, t2);
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t5);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_sub(t4, __sg12_1, t5);
   Y1 = Y1__s;
+  __rq12_1 = Y1[0 : 12];
   Z1 = Z1__s;
-  t5 = bls12_Fp2_add(t5, Y1, Z1);
+  __rq12_2 = Z1[0 : 12];
+  t5 = bls12_Fp2_add(t5, __rq12_1, __rq12_2);
   Xout = Xout__s;
+  __rp12_0 = Xout[0 : 12];
   Y2 = Y2__s;
+  __rq12_1 = Y2[0 : 12];
   Z2 = Z2__s;
-  Xout = bls12_Fp2_add(Xout, Y2, Z2);
+  __rq12_2 = Z2[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __rq12_1, __rq12_2);
+  Xout = Xout__s;
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
-  for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Xout = Xout__s;
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, __sg12_1, Xout);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t5[0 + __j] = __mv__; }
+  __rq12_2 = Xout[0 : 12];
+  t5 = bls12_Fp2_mul(t5, __sg12_1, __rq12_2);
   Xout = Xout__s;
-  Xout = bls12_Fp2_add(Xout, t1, t2);
+  __rp12_0 = Xout[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t1, t2);
+  Xout = Xout__s;
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
-  for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_0[0 + __j] = __mv__; }
   for __j = 0 to 12 { __mv__ = t5[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Xout = Xout__s;
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, Xout);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t5[0 + __j] = __mv__; }
+  __rq12_2 = Xout[0 : 12];
+  t5 = bls12_Fp2_sub(t5, __sg12_1, __rq12_2);
   Zout = Zout__s;
-  Zout = bls12_Fp2_mul(Zout, three_b, t2);
+  __rp12_0 = Zout[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, three_b, t2);
+  Zout = Zout__s;
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Xout = Xout__s;
+  __rp12_0 = Xout[0 : 12];
   Zout = Zout__s;
-  Xout = bls12_Fp2_sub(Xout, t1, Zout);
+  __rq12_2 = Zout[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, t1, __rq12_2);
+  Xout = Xout__s;
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t1);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t1);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Yout = Yout__s;
+  __rp12_0 = Yout[0 : 12];
   Xout = Xout__s;
+  __rq12_1 = Xout[0 : 12];
   Zout = Zout__s;
-  Yout = bls12_Fp2_mul(Yout, Xout, Zout);
+  __rq12_2 = Zout[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, __rq12_1, __rq12_2);
+  Yout = Yout__s;
+  Yout[0 : 12] = __rp12_0;
   Yout__s = Yout;
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t1 = bls12_Fp2_add(t1, __sg12_1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = t1[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, t0, t0);
   for __j = 0 to 12 { __mv__ = t1[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, __sg12_1, t0);
   for __j = 0 to 12 { __mv__ = t4[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, three_b, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t4[0 + __j] = __mv__; }
+  t4 = bls12_Fp2_mul(t4, three_b, __sg12_2);
   t0 = bls12_Fp2_mul(t0, t1, t4);
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Yout[0 : 12];
   Yout = Yout__s;
   for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t0);
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 12] = __rp12_0;
   Yout__s = Yout;
   t0 = bls12_Fp2_mul(t0, t5, t4);
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Xout[0 : 12];
   Xout = Xout__s;
   for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t3, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t3, __sg12_2);
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Xout[0 : 12];
   Xout = Xout__s;
   for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __sg12_1, t0);
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   t0 = bls12_Fp2_mul(t0, t3, t1);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t5, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t5, __sg12_2);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, t0);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, t0);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -2276,6 +3747,12 @@ fn g2_curve_double(reg const ptr u64[12] Xin, reg const ptr u64[12] Yin, reg con
   stack u64[12] __sg12_0;
   stack u64[12] __sg12_1;
   stack u64[12] __sg12_2;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
   stack ptr u64[12] Xin__s;
   stack ptr u64[12] Yin__s;
   stack ptr u64[12] Zin__s;
@@ -2292,107 +3769,115 @@ fn g2_curve_double(reg const ptr u64[12] Xin, reg const ptr u64[12] Yin, reg con
   three_b = bls12_Fp2_three_b(three_b);
   stack u64[12] t0;
   Yin = Yin__s;
-  for __j = 0 to 12 { __mv__ = Yin[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = Yin[0 : 12];
   Yin = Yin__s;
-  for __j = 0 to 12 { __mv__ = Yin[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t0 = bls12_Fp2_mul(t0, __sg12_1, __sg12_2);
+  __rq12_2 = Yin[0 : 12];
+  t0 = bls12_Fp2_mul(t0, __rq12_1, __rq12_2);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  Zout = bls12_Fp2_add(Zout, __sg12_1, __sg12_2);
+  __rp12_0 = Zout[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t0, t0);
+  Zout = Zout__s;
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
   stack u64[12] t1;
   Yin = Yin__s;
+  __rq12_1 = Yin[0 : 12];
   Zin = Zin__s;
-  t1 = bls12_Fp2_mul(t1, Yin, Zin);
+  __rq12_2 = Zin[0 : 12];
+  t1 = bls12_Fp2_mul(t1, __rq12_1, __rq12_2);
   stack u64[12] t2;
   Zin = Zin__s;
-  for __j = 0 to 12 { __mv__ = Zin[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = Zin[0 : 12];
   Zin = Zin__s;
-  for __j = 0 to 12 { __mv__ = Zin[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t2 = bls12_Fp2_mul(t2, __sg12_1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_2 = Zin[0 : 12];
+  t2 = bls12_Fp2_mul(t2, __rq12_1, __rq12_2);
   for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, three_b, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t2[0 + __j] = __mv__; }
+  t2 = bls12_Fp2_mul(t2, three_b, __sg12_2);
   Xout = Xout__s;
+  __rp12_0 = Xout[0 : 12];
   Zout = Zout__s;
-  Xout = bls12_Fp2_mul(Xout, t2, Zout);
+  __rq12_2 = Zout[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t2, __rq12_2);
+  Xout = Xout__s;
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   Yout = Yout__s;
-  Yout = bls12_Fp2_add(Yout, t0, t2);
+  __rp12_0 = Yout[0 : 12];
+  __rp12_0 = bls12_Fp2_add(__rp12_0, t0, t2);
+  Yout = Yout__s;
+  Yout[0 : 12] = __rp12_0;
   Yout__s = Yout;
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Zout[0 : 12];
   Zout = Zout__s;
   for __j = 0 to 12 { __mv__ = Zout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t1, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t1, __sg12_2);
   Zout = Zout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Zout[0 + __j] = __mv__; }
+  Zout[0 : 12] = __rp12_0;
   Zout__s = Zout;
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  t1 = bls12_Fp2_add(t1, t2, t2);
   for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  t1 = bls12_Fp2_add(t1, __sg12_1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_0[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t2[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, t1, __sg12_2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t2[0 + __j] = __mv__; }
-  for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  t2 = bls12_Fp2_add(t2, t1, __sg12_2);
   for __j = 0 to 12 { __mv__ = t0[0 + __j]; __sg12_1[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_sub(__sg12_0, __sg12_1, t2);
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; t0[0 + __j] = __mv__; }
+  t0 = bls12_Fp2_sub(t0, __sg12_1, t2);
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Yout[0 : 12];
   Yout = Yout__s;
   for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_mul(__sg12_0, t0, __sg12_2);
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t0, __sg12_2);
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 12] = __rp12_0;
   Yout__s = Yout;
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Yout[0 : 12];
   Xout = Xout__s;
+  __rq12_1 = Xout[0 : 12];
   Yout = Yout__s;
   for __j = 0 to 12 { __mv__ = Yout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, Xout, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __rq12_1, __sg12_2);
   Yout = Yout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Yout[0 + __j] = __mv__; }
+  Yout[0 : 12] = __rp12_0;
   Yout__s = Yout;
   Xin = Xin__s;
+  __rq12_1 = Xin[0 : 12];
   Yin = Yin__s;
-  t1 = bls12_Fp2_mul(t1, Xin, Yin);
+  __rq12_2 = Yin[0 : 12];
+  t1 = bls12_Fp2_mul(t1, __rq12_1, __rq12_2);
   Xout = Xout__s;
-  Xout = bls12_Fp2_mul(Xout, t0, t1);
+  __rp12_0 = Xout[0 : 12];
+  __rp12_0 = bls12_Fp2_mul(__rp12_0, t0, t1);
+  Xout = Xout__s;
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = Xout[0 : 12];
   Xout = Xout__s;
   for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_1[0 + __j] = __mv__; }
   Xout = Xout__s;
   for __j = 0 to 12 { __mv__ = Xout[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  __sg12_0 = bls12_Fp2_add(__sg12_0, __sg12_1, __sg12_2);
+  __rp12_0 = bls12_Fp2_add(__rp12_0, __sg12_1, __sg12_2);
   Xout = Xout__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; Xout[0 + __j] = __mv__; }
+  Xout[0 : 12] = __rp12_0;
   Xout__s = Xout;
   Xout = Xout__s;
   Yout = Yout__s;
@@ -2424,6 +3909,20 @@ fn bls12_g1_scalar_mul(reg ptr u64[18] out, reg const ptr u64[4] k, reg const pt
   stack u64[6] __sg6_4;
   stack u64[6] __sg6_5;
   stack u64[6] __sg6_6;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[4] __rp4_3;
+  reg const ptr u64[4] __rq4_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[6] __rp6_6;
+  reg const ptr u64[6] __rq6_6;
   stack ptr u64[18] out__s;
   stack ptr u64[4] k__s;
   stack ptr u64[18] p__s;
@@ -2431,34 +3930,35 @@ fn bls12_g1_scalar_mul(reg ptr u64[18] out, reg const ptr u64[4] k, reg const pt
   k__s = k;
   p__s = p;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = out[0 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rp6_1 = out[6 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[12 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_2 = out[12 : 6];
   k = k__s;
+  __rq4_3 = k[0 : 4];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[0 + __j]; __sg6_4[0 + __j] = __mv__; }
+  __rq6_4 = p[0 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[6 + __j]; __sg6_5[0 + __j] = __mv__; }
+  __rq6_5 = p[6 : 6];
   p = p__s;
-  for __j = 0 to 6 { __mv__ = p[12 + __j]; __sg6_6[0 + __j] = __mv__; }
-  __sg6_0, __sg6_1, __sg6_2 = g1_scalar_mul(__sg6_0, __sg6_1, __sg6_2, k, __sg6_4, __sg6_5, __sg6_6);
+  __rq6_6 = p[12 : 6];
+  __rp6_0, __rp6_1, __rp6_2 = g1_scalar_mul(__rp6_0, __rp6_1, __rp6_2, __rq4_3, __rq6_4, __rq6_5, __rq6_6);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_1[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_1;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_2[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 6] = __rp6_2;
   out__s = out;
   out = out__s;
   return out;
 }
 
 
-fn bls12_g1_msm(reg ptr u64[18] out, reg const ptr u64[16384] scalars, reg const ptr u64[24576] px, reg const ptr u64[24576] py, reg const ptr u64[24576] pz, reg u64 n) -> reg ptr u64[18] {
+fn bls12_g1_msm(reg ptr u64[18] out, reg const ptr u64[16384] scalars, reg const ptr u64[24576] px, reg const ptr u64[24576] py, reg const ptr u64[24576] pz, #[spill] reg u64 n) -> reg ptr u64[18] {
   reg u64 __wtmp__;
   reg u64 __mulx_tmp__;
   reg u64 __mv__;
@@ -2483,6 +3983,22 @@ fn bls12_g1_msm(reg ptr u64[18] out, reg const ptr u64[16384] scalars, reg const
   stack u64[24576] __sg24576_5;
   stack u64[24576] __sg24576_6;
   stack u64[6] __sg6_7;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[16384] __rp16384_3;
+  reg const ptr u64[16384] __rq16384_3;
+  reg ptr u64[24576] __rp24576_4;
+  reg const ptr u64[24576] __rq24576_4;
+  reg ptr u64[24576] __rp24576_5;
+  reg const ptr u64[24576] __rq24576_5;
+  reg ptr u64[24576] __rp24576_6;
+  reg const ptr u64[24576] __rq24576_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
   stack ptr u64[18] out__s;
   stack ptr u64[16384] scalars__s;
   stack ptr u64[24576] px__s;
@@ -2494,25 +4010,29 @@ fn bls12_g1_msm(reg ptr u64[18] out, reg const ptr u64[16384] scalars, reg const
   py__s = py;
   pz__s = pz;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[0 + __j]; __sg6_0[0 + __j] = __mv__; }
+  __rp6_0 = out[0 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[6 + __j]; __sg6_1[0 + __j] = __mv__; }
+  __rp6_1 = out[6 : 6];
   out = out__s;
-  for __j = 0 to 6 { __mv__ = out[12 + __j]; __sg6_2[0 + __j] = __mv__; }
+  __rp6_2 = out[12 : 6];
   scalars = scalars__s;
+  __rq16384_3 = scalars[0 : 16384];
   px = px__s;
+  __rq24576_4 = px[0 : 24576];
   py = py__s;
+  __rq24576_5 = py[0 : 24576];
   pz = pz__s;
+  __rq24576_6 = pz[0 : 24576];
   __la7 = n;
-  __sg6_0, __sg6_1, __sg6_2 = msm_bls12(__sg6_0, __sg6_1, __sg6_2, scalars, px, py, pz, __la7);
+  __rp6_0, __rp6_1, __rp6_2 = msm_bls12(__rp6_0, __rp6_1, __rp6_2, __rq16384_3, __rq24576_4, __rq24576_5, __rq24576_6, __la7);
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_0[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 6] = __rp6_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_1[0 + __j]; out[6 + __j] = __mv__; }
+  out[6 : 6] = __rp6_1;
   out__s = out;
   out = out__s;
-  for __j = 0 to 6 { __mv__ = __sg6_2[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 6] = __rp6_2;
   out__s = out;
   out = out__s;
   return out;
@@ -2546,6 +4066,24 @@ fn bls12_g2_add(reg ptr u64[36] out, reg const ptr u64[36] p, reg const ptr u64[
   stack u64[12] __sg12_6;
   stack u64[12] __sg12_7;
   stack u64[12] __sg12_8;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[12] __rp12_3;
+  reg const ptr u64[12] __rq12_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
+  reg ptr u64[12] __rp12_6;
+  reg const ptr u64[12] __rq12_6;
+  reg ptr u64[12] __rp12_7;
+  reg const ptr u64[12] __rq12_7;
+  reg ptr u64[12] __rp12_8;
+  reg const ptr u64[12] __rq12_8;
   stack ptr u64[36] out__s;
   stack ptr u64[36] p__s;
   stack ptr u64[36] q__s;
@@ -2553,32 +4091,32 @@ fn bls12_g2_add(reg ptr u64[36] out, reg const ptr u64[36] p, reg const ptr u64[
   p__s = p;
   q__s = q;
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_0 = p[0 : 12];
   q = q__s;
-  for __j = 0 to 12 { __mv__ = q[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = q[0 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[12 + __j]; __sg12_2[0 + __j] = __mv__; }
+  __rq12_2 = p[12 : 12];
   q = q__s;
-  for __j = 0 to 12 { __mv__ = q[12 + __j]; __sg12_3[0 + __j] = __mv__; }
+  __rq12_3 = q[12 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[24 + __j]; __sg12_4[0 + __j] = __mv__; }
+  __rq12_4 = p[24 : 12];
   q = q__s;
-  for __j = 0 to 12 { __mv__ = q[24 + __j]; __sg12_5[0 + __j] = __mv__; }
+  __rq12_5 = q[24 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[0 + __j]; __sg12_6[0 + __j] = __mv__; }
+  __rp12_6 = out[0 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[12 + __j]; __sg12_7[0 + __j] = __mv__; }
+  __rp12_7 = out[12 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[24 + __j]; __sg12_8[0 + __j] = __mv__; }
-  __sg12_6, __sg12_7, __sg12_8 = g2_curve_add(__sg12_0, __sg12_1, __sg12_2, __sg12_3, __sg12_4, __sg12_5, __sg12_6, __sg12_7, __sg12_8);
+  __rp12_8 = out[24 : 12];
+  __rp12_6, __rp12_7, __rp12_8 = g2_curve_add(__rq12_0, __rq12_1, __rq12_2, __rq12_3, __rq12_4, __rq12_5, __rp12_6, __rp12_7, __rp12_8);
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_6[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 12] = __rp12_6;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_7[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 12] = __rp12_7;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_8[0 + __j]; out[24 + __j] = __mv__; }
+  out[24 : 12] = __rp12_8;
   out__s = out;
   out = out__s;
   return out;
@@ -2606,34 +4144,148 @@ fn bls12_g2_double(reg ptr u64[36] out, reg const ptr u64[36] p) -> reg ptr u64[
   stack u64[12] __sg12_3;
   stack u64[12] __sg12_4;
   stack u64[12] __sg12_5;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[12] __rp12_3;
+  reg const ptr u64[12] __rq12_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
   stack ptr u64[36] out__s;
   stack ptr u64[36] p__s;
   out__s = out;
   p__s = p;
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rq12_0 = p[0 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[12 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = p[12 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[24 + __j]; __sg12_2[0 + __j] = __mv__; }
+  __rq12_2 = p[24 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[0 + __j]; __sg12_3[0 + __j] = __mv__; }
+  __rp12_3 = out[0 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[12 + __j]; __sg12_4[0 + __j] = __mv__; }
+  __rp12_4 = out[12 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[24 + __j]; __sg12_5[0 + __j] = __mv__; }
-  __sg12_3, __sg12_4, __sg12_5 = g2_curve_double(__sg12_0, __sg12_1, __sg12_2, __sg12_3, __sg12_4, __sg12_5);
+  __rp12_5 = out[24 : 12];
+  __rp12_3, __rp12_4, __rp12_5 = g2_curve_double(__rq12_0, __rq12_1, __rq12_2, __rp12_3, __rp12_4, __rp12_5);
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_3[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 12] = __rp12_3;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_4[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 12] = __rp12_4;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_5[0 + __j]; out[24 + __j] = __mv__; }
+  out[24 : 12] = __rp12_5;
   out__s = out;
   out = out__s;
   return out;
+}
+
+
+fn bls12_g1_scalar_mul_ct(reg ptr u64[18] out, reg ptr u64[18] t, reg const ptr u64[4] k, reg const ptr u64[18] p) -> reg ptr u64[18], reg ptr u64[18] {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 __la0;
+  reg u64 __la1;
+  reg u64 __la2;
+  reg u64 __la3;
+  reg u64 __la4;
+  reg u64 __la5;
+  reg u64 __la6;
+  reg u64 __la7;
+  reg u64 __la8;
+  reg u64 __la9;
+  stack u64[6] __sg6_0;
+  stack u64[6] __sg6_1;
+  stack u64[6] __sg6_2;
+  stack u64[6] __sg6_3;
+  stack u64[6] __sg6_4;
+  stack u64[6] __sg6_5;
+  stack u64[4] __sg4_6;
+  stack u64[6] __sg6_7;
+  stack u64[6] __sg6_8;
+  stack u64[6] __sg6_9;
+  reg ptr u64[6] __rp6_0;
+  reg const ptr u64[6] __rq6_0;
+  reg ptr u64[6] __rp6_1;
+  reg const ptr u64[6] __rq6_1;
+  reg ptr u64[6] __rp6_2;
+  reg const ptr u64[6] __rq6_2;
+  reg ptr u64[6] __rp6_3;
+  reg const ptr u64[6] __rq6_3;
+  reg ptr u64[6] __rp6_4;
+  reg const ptr u64[6] __rq6_4;
+  reg ptr u64[6] __rp6_5;
+  reg const ptr u64[6] __rq6_5;
+  reg ptr u64[4] __rp4_6;
+  reg const ptr u64[4] __rq4_6;
+  reg ptr u64[6] __rp6_7;
+  reg const ptr u64[6] __rq6_7;
+  reg ptr u64[6] __rp6_8;
+  reg const ptr u64[6] __rq6_8;
+  reg ptr u64[6] __rp6_9;
+  reg const ptr u64[6] __rq6_9;
+  stack ptr u64[18] out__s;
+  stack ptr u64[18] t__s;
+  stack ptr u64[4] k__s;
+  stack ptr u64[18] p__s;
+  out__s = out;
+  t__s = t;
+  k__s = k;
+  p__s = p;
+  out = out__s;
+  __rp6_0 = out[0 : 6];
+  out = out__s;
+  __rp6_1 = out[6 : 6];
+  out = out__s;
+  __rp6_2 = out[12 : 6];
+  t = t__s;
+  __rp6_3 = t[0 : 6];
+  t = t__s;
+  __rp6_4 = t[6 : 6];
+  t = t__s;
+  __rp6_5 = t[12 : 6];
+  k = k__s;
+  __rq4_6 = k[0 : 4];
+  p = p__s;
+  __rq6_7 = p[0 : 6];
+  p = p__s;
+  __rq6_8 = p[6 : 6];
+  p = p__s;
+  __rq6_9 = p[12 : 6];
+  __rp6_0, __rp6_1, __rp6_2, __rp6_3, __rp6_4, __rp6_5 = g1_scalar_mul_ct(__rp6_0, __rp6_1, __rp6_2, __rp6_3, __rp6_4, __rp6_5, __rq4_6, __rq6_7, __rq6_8, __rq6_9);
+  out = out__s;
+  out[0 : 6] = __rp6_0;
+  out__s = out;
+  out = out__s;
+  out[6 : 6] = __rp6_1;
+  out__s = out;
+  out = out__s;
+  out[12 : 6] = __rp6_2;
+  out__s = out;
+  t = t__s;
+  t[0 : 6] = __rp6_3;
+  t__s = t;
+  t = t__s;
+  t[6 : 6] = __rp6_4;
+  t__s = t;
+  t = t__s;
+  t[12 : 6] = __rp6_5;
+  t__s = t;
+  out = out__s;
+  t = t__s;
+  return out, t;
 }
 
 
@@ -2658,13 +4310,25 @@ fn g2_scalar_mul(reg ptr u64[12] outx, reg ptr u64[12] outy, reg ptr u64[12] out
   stack u64[12] __sg12_3;
   stack u64[12] __sg12_4;
   stack u64[12] __sg12_5;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[12] __rp12_3;
+  reg const ptr u64[12] __rq12_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
   #[spill] reg u64 i;
-  #[spill] reg u64 a;
-  #[spill] reg u64 a_bp0;
-  #[spill] reg u64 a_bp1;
-  #[spill] reg u64 bita_bp0;
-  #[spill] reg u64 bita_bp1;
-  #[spill] reg u64 bit;
+  reg u64 a;
+  reg u64 a_bp0;
+  reg u64 a_bp1;
+  reg u64 bita_bp0;
+  reg u64 bita_bp1;
+  reg u64 bit;
   stack ptr u64[12] outx__s;
   stack ptr u64[12] outy__s;
   stack ptr u64[12] outz__s;
@@ -2680,31 +4344,49 @@ fn g2_scalar_mul(reg ptr u64[12] outx, reg ptr u64[12] outy, reg ptr u64[12] out
   py__s = py;
   pz__s = pz;
   outx = outx__s;
+  __rp12_0 = outx[0 : 12];
   px = px__s;
-  for __j = 0 to 12 { __mv__ = px[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = px[0 : 12];
   px = px__s;
-  for __j = 0 to 12 { __mv__ = px[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  outx = bls12_Fp2_sub(outx, __sg12_1, __sg12_2);
+  __rq12_2 = px[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __rq12_1, __rq12_2);
+  outx = outx__s;
+  outx[0 : 12] = __rp12_0;
   outx__s = outx;
   outz = outz__s;
+  __rp12_0 = outz[0 : 12];
   px = px__s;
-  for __j = 0 to 12 { __mv__ = px[0 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rq12_1 = px[0 : 12];
   px = px__s;
-  for __j = 0 to 12 { __mv__ = px[0 + __j]; __sg12_2[0 + __j] = __mv__; }
-  outz = bls12_Fp2_sub(outz, __sg12_1, __sg12_2);
+  __rq12_2 = px[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __rq12_1, __rq12_2);
+  outz = outz__s;
+  outz[0 : 12] = __rp12_0;
   outz__s = outz;
   outy = outy__s;
-  outy = bls12_Fp2_three_b(outy);
+  __rp12_0 = outy[0 : 12];
+  __rp12_0 = bls12_Fp2_three_b(__rp12_0);
+  outy = outy__s;
+  outy[0 : 12] = __rp12_0;
   outy__s = outy;
   i = 256;
   while (i != 0) {
     i = (i - 1);
     outx = outx__s;
+    __rp12_0 = outx[0 : 12];
     outy = outy__s;
+    __rp12_1 = outy[0 : 12];
     outz = outz__s;
-    outx, outy, outz = g2_curve_double_ip(outx, outy, outz);
+    __rp12_2 = outz[0 : 12];
+    __rp12_0, __rp12_1, __rp12_2 = g2_curve_double_ip(__rp12_0, __rp12_1, __rp12_2);
+    outx = outx__s;
+    outx[0 : 12] = __rp12_0;
     outx__s = outx;
+    outy = outy__s;
+    outy[0 : 12] = __rp12_1;
     outy__s = outy;
+    outz = outz__s;
+    outz[0 : 12] = __rp12_2;
     outz__s = outz;
     a = 0;
     a_bp0 = i;
@@ -2722,14 +4404,26 @@ fn g2_scalar_mul(reg ptr u64[12] outx, reg ptr u64[12] outy, reg ptr u64[12] out
     bit = (bit & 1);
     if (bit != 0) {
       outx = outx__s;
+      __rp12_0 = outx[0 : 12];
       px = px__s;
+      __rq12_1 = px[0 : 12];
       outy = outy__s;
+      __rp12_2 = outy[0 : 12];
       py = py__s;
+      __rq12_3 = py[0 : 12];
       outz = outz__s;
+      __rp12_4 = outz[0 : 12];
       pz = pz__s;
-      outx, outy, outz = g2_curve_add_ip(outx, px, outy, py, outz, pz);
+      __rq12_5 = pz[0 : 12];
+      __rp12_0, __rp12_2, __rp12_4 = g2_curve_add_ip(__rp12_0, __rq12_1, __rp12_2, __rq12_3, __rp12_4, __rq12_5);
+      outx = outx__s;
+      outx[0 : 12] = __rp12_0;
       outx__s = outx;
+      outy = outy__s;
+      outy[0 : 12] = __rp12_2;
       outy__s = outy;
+      outz = outz__s;
+      outz[0 : 12] = __rp12_4;
       outz__s = outz;
     }
   }
@@ -2737,6 +4431,215 @@ fn g2_scalar_mul(reg ptr u64[12] outx, reg ptr u64[12] outy, reg ptr u64[12] out
   outy = outy__s;
   outz = outz__s;
   return outx, outy, outz;
+}
+
+
+fn g2_scalar_mul_ct(reg ptr u64[12] outx, reg ptr u64[12] outy, reg ptr u64[12] outz, reg ptr u64[12] tx, reg ptr u64[12] ty, reg ptr u64[12] tz, reg const ptr u64[4] scalar, reg const ptr u64[12] px, reg const ptr u64[12] py, reg const ptr u64[12] pz) -> reg ptr u64[12], reg ptr u64[12], reg ptr u64[12], reg ptr u64[12], reg ptr u64[12], reg ptr u64[12] {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 __la0;
+  reg u64 __la1;
+  reg u64 __la2;
+  reg u64 __la3;
+  reg u64 __la4;
+  reg u64 __la5;
+  reg u64 __la6;
+  reg u64 __la7;
+  reg u64 __la8;
+  stack u64[12] __sg12_0;
+  stack u64[12] __sg12_1;
+  stack u64[12] __sg12_2;
+  stack u64[12] __sg12_3;
+  stack u64[12] __sg12_4;
+  stack u64[12] __sg12_5;
+  stack u64[12] __sg12_6;
+  stack u64[12] __sg12_7;
+  stack u64[12] __sg12_8;
+  stack u64[1] __sg1_0;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[12] __rp12_3;
+  reg const ptr u64[12] __rq12_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
+  reg ptr u64[12] __rp12_6;
+  reg const ptr u64[12] __rq12_6;
+  reg ptr u64[12] __rp12_7;
+  reg const ptr u64[12] __rq12_7;
+  reg ptr u64[12] __rp12_8;
+  reg const ptr u64[12] __rq12_8;
+  reg ptr u64[1] __rp1_0;
+  reg const ptr u64[1] __rq1_0;
+  #[spill] reg u64 i;
+  reg u64 a;
+  reg u64 a_bp0;
+  reg u64 a_bp1;
+  reg u64 bita_bp0;
+  reg u64 bita_bp1;
+  #[spill] reg u64 bit;
+  stack ptr u64[12] outx__s;
+  stack ptr u64[12] outy__s;
+  stack ptr u64[12] outz__s;
+  stack ptr u64[12] tx__s;
+  stack ptr u64[12] ty__s;
+  stack ptr u64[12] tz__s;
+  stack ptr u64[4] scalar__s;
+  stack ptr u64[12] px__s;
+  stack ptr u64[12] py__s;
+  stack ptr u64[12] pz__s;
+  outx__s = outx;
+  outy__s = outy;
+  outz__s = outz;
+  tx__s = tx;
+  ty__s = ty;
+  tz__s = tz;
+  scalar__s = scalar;
+  px__s = px;
+  py__s = py;
+  pz__s = pz;
+  outx = outx__s;
+  __rp12_0 = outx[0 : 12];
+  px = px__s;
+  __rq12_1 = px[0 : 12];
+  px = px__s;
+  __rq12_2 = px[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __rq12_1, __rq12_2);
+  outx = outx__s;
+  outx[0 : 12] = __rp12_0;
+  outx__s = outx;
+  outz = outz__s;
+  __rp12_0 = outz[0 : 12];
+  px = px__s;
+  __rq12_1 = px[0 : 12];
+  px = px__s;
+  __rq12_2 = px[0 : 12];
+  __rp12_0 = bls12_Fp2_sub(__rp12_0, __rq12_1, __rq12_2);
+  outz = outz__s;
+  outz[0 : 12] = __rp12_0;
+  outz__s = outz;
+  outy = outy__s;
+  __rp12_0 = outy[0 : 12];
+  __rp12_0 = bls12_Fp2_three_b(__rp12_0);
+  outy = outy__s;
+  outy[0 : 12] = __rp12_0;
+  outy__s = outy;
+  i = 256;
+  while (i != 0) {
+    i = (i - 1);
+    outx = outx__s;
+    __rp12_0 = outx[0 : 12];
+    outy = outy__s;
+    __rp12_1 = outy[0 : 12];
+    outz = outz__s;
+    __rp12_2 = outz[0 : 12];
+    __rp12_0, __rp12_1, __rp12_2 = g2_curve_double_ip(__rp12_0, __rp12_1, __rp12_2);
+    outx = outx__s;
+    outx[0 : 12] = __rp12_0;
+    outx__s = outx;
+    outy = outy__s;
+    outy[0 : 12] = __rp12_1;
+    outy__s = outy;
+    outz = outz__s;
+    outz[0 : 12] = __rp12_2;
+    outz__s = outz;
+    a = 0;
+    a_bp0 = i;
+    a_bp0 = (a_bp0 >> 6);
+    a_bp1 = a_bp0;
+    a_bp1 = (a_bp1 << 3);
+    a = (a + a_bp1);
+    bita_bp0 = i;
+    bita_bp0 = (bita_bp0 & 63);
+    scalar = scalar__s;
+    bita_bp1 = scalar.[u64 (int) ((a + 0)) + 8 * 0];
+    __shc__ = bita_bp0;
+    _, _, _, _, _, bita_bp1 = #SHR(bita_bp1, __shc__);
+    bit = bita_bp1;
+    bit = (bit & 1);
+    outx = outx__s;
+    __rq12_0 = outx[0 : 12];
+    px = px__s;
+    __rq12_1 = px[0 : 12];
+    outy = outy__s;
+    __rq12_2 = outy[0 : 12];
+    py = py__s;
+    __rq12_3 = py[0 : 12];
+    outz = outz__s;
+    __rq12_4 = outz[0 : 12];
+    pz = pz__s;
+    __rq12_5 = pz[0 : 12];
+    tx = tx__s;
+    __rp12_6 = tx[0 : 12];
+    ty = ty__s;
+    __rp12_7 = ty[0 : 12];
+    tz = tz__s;
+    __rp12_8 = tz[0 : 12];
+    __rp12_6, __rp12_7, __rp12_8 = g2_curve_add(__rq12_0, __rq12_1, __rq12_2, __rq12_3, __rq12_4, __rq12_5, __rp12_6, __rp12_7, __rp12_8);
+    tx = tx__s;
+    tx[0 : 12] = __rp12_6;
+    tx__s = tx;
+    ty = ty__s;
+    ty[0 : 12] = __rp12_7;
+    ty__s = ty;
+    tz = tz__s;
+    tz[0 : 12] = __rp12_8;
+    tz__s = tz;
+    __la0 = bit;
+    outx = outx__s;
+    __rp12_1 = outx[0 : 12];
+    tx = tx__s;
+    __rp12_2 = tx[0 : 12];
+    __rp12_1, __rp12_2 = ct_cswap12(__la0, __rp12_1, __rp12_2);
+    outx = outx__s;
+    outx[0 : 12] = __rp12_1;
+    outx__s = outx;
+    tx = tx__s;
+    tx[0 : 12] = __rp12_2;
+    tx__s = tx;
+    __la0 = bit;
+    outy = outy__s;
+    __rp12_1 = outy[0 : 12];
+    ty = ty__s;
+    __rp12_2 = ty[0 : 12];
+    __rp12_1, __rp12_2 = ct_cswap12(__la0, __rp12_1, __rp12_2);
+    outy = outy__s;
+    outy[0 : 12] = __rp12_1;
+    outy__s = outy;
+    ty = ty__s;
+    ty[0 : 12] = __rp12_2;
+    ty__s = ty;
+    __la0 = bit;
+    outz = outz__s;
+    __rp12_1 = outz[0 : 12];
+    tz = tz__s;
+    __rp12_2 = tz[0 : 12];
+    __rp12_1, __rp12_2 = ct_cswap12(__la0, __rp12_1, __rp12_2);
+    outz = outz__s;
+    outz[0 : 12] = __rp12_1;
+    outz__s = outz;
+    tz = tz__s;
+    tz[0 : 12] = __rp12_2;
+    tz__s = tz;
+  }
+  outx = outx__s;
+  outy = outy__s;
+  outz = outz__s;
+  tx = tx__s;
+  ty = ty__s;
+  tz = tz__s;
+  return outx, outy, outz, tx, ty, tz;
 }
 
 
@@ -2763,6 +4666,20 @@ fn bls12_g2_scalar_mul(reg ptr u64[36] out, reg const ptr u64[4] k, reg const pt
   stack u64[12] __sg12_4;
   stack u64[12] __sg12_5;
   stack u64[12] __sg12_6;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[4] __rp4_3;
+  reg const ptr u64[4] __rq4_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
+  reg ptr u64[12] __rp12_6;
+  reg const ptr u64[12] __rq12_6;
   stack ptr u64[36] out__s;
   stack ptr u64[4] k__s;
   stack ptr u64[36] p__s;
@@ -2770,30 +4687,133 @@ fn bls12_g2_scalar_mul(reg ptr u64[36] out, reg const ptr u64[4] k, reg const pt
   k__s = k;
   p__s = p;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[0 + __j]; __sg12_0[0 + __j] = __mv__; }
+  __rp12_0 = out[0 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[12 + __j]; __sg12_1[0 + __j] = __mv__; }
+  __rp12_1 = out[12 : 12];
   out = out__s;
-  for __j = 0 to 12 { __mv__ = out[24 + __j]; __sg12_2[0 + __j] = __mv__; }
+  __rp12_2 = out[24 : 12];
   k = k__s;
+  __rq4_3 = k[0 : 4];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[0 + __j]; __sg12_4[0 + __j] = __mv__; }
+  __rq12_4 = p[0 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[12 + __j]; __sg12_5[0 + __j] = __mv__; }
+  __rq12_5 = p[12 : 12];
   p = p__s;
-  for __j = 0 to 12 { __mv__ = p[24 + __j]; __sg12_6[0 + __j] = __mv__; }
-  __sg12_0, __sg12_1, __sg12_2 = g2_scalar_mul(__sg12_0, __sg12_1, __sg12_2, k, __sg12_4, __sg12_5, __sg12_6);
+  __rq12_6 = p[24 : 12];
+  __rp12_0, __rp12_1, __rp12_2 = g2_scalar_mul(__rp12_0, __rp12_1, __rp12_2, __rq4_3, __rq12_4, __rq12_5, __rq12_6);
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_0[0 + __j]; out[0 + __j] = __mv__; }
+  out[0 : 12] = __rp12_0;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_1[0 + __j]; out[12 + __j] = __mv__; }
+  out[12 : 12] = __rp12_1;
   out__s = out;
   out = out__s;
-  for __j = 0 to 12 { __mv__ = __sg12_2[0 + __j]; out[24 + __j] = __mv__; }
+  out[24 : 12] = __rp12_2;
   out__s = out;
   out = out__s;
   return out;
+}
+
+
+fn bls12_g2_scalar_mul_ct(reg ptr u64[36] out, reg ptr u64[36] t, reg const ptr u64[4] k, reg const ptr u64[36] p) -> reg ptr u64[36], reg ptr u64[36] {
+  reg u64 __wtmp__;
+  reg u64 __mulx_tmp__;
+  reg u64 __mv__;
+  reg u64 __mlo__;
+  reg u64 __shc__;
+  reg u64 __ca__;
+  reg u64 __cb__;
+  inline int __j;
+  reg u64 __la0;
+  reg u64 __la1;
+  reg u64 __la2;
+  reg u64 __la3;
+  reg u64 __la4;
+  reg u64 __la5;
+  reg u64 __la6;
+  reg u64 __la7;
+  reg u64 __la8;
+  reg u64 __la9;
+  stack u64[12] __sg12_0;
+  stack u64[12] __sg12_1;
+  stack u64[12] __sg12_2;
+  stack u64[12] __sg12_3;
+  stack u64[12] __sg12_4;
+  stack u64[12] __sg12_5;
+  stack u64[4] __sg4_6;
+  stack u64[12] __sg12_7;
+  stack u64[12] __sg12_8;
+  stack u64[12] __sg12_9;
+  reg ptr u64[12] __rp12_0;
+  reg const ptr u64[12] __rq12_0;
+  reg ptr u64[12] __rp12_1;
+  reg const ptr u64[12] __rq12_1;
+  reg ptr u64[12] __rp12_2;
+  reg const ptr u64[12] __rq12_2;
+  reg ptr u64[12] __rp12_3;
+  reg const ptr u64[12] __rq12_3;
+  reg ptr u64[12] __rp12_4;
+  reg const ptr u64[12] __rq12_4;
+  reg ptr u64[12] __rp12_5;
+  reg const ptr u64[12] __rq12_5;
+  reg ptr u64[4] __rp4_6;
+  reg const ptr u64[4] __rq4_6;
+  reg ptr u64[12] __rp12_7;
+  reg const ptr u64[12] __rq12_7;
+  reg ptr u64[12] __rp12_8;
+  reg const ptr u64[12] __rq12_8;
+  reg ptr u64[12] __rp12_9;
+  reg const ptr u64[12] __rq12_9;
+  stack ptr u64[36] out__s;
+  stack ptr u64[36] t__s;
+  stack ptr u64[4] k__s;
+  stack ptr u64[36] p__s;
+  out__s = out;
+  t__s = t;
+  k__s = k;
+  p__s = p;
+  out = out__s;
+  __rp12_0 = out[0 : 12];
+  out = out__s;
+  __rp12_1 = out[12 : 12];
+  out = out__s;
+  __rp12_2 = out[24 : 12];
+  t = t__s;
+  __rp12_3 = t[0 : 12];
+  t = t__s;
+  __rp12_4 = t[12 : 12];
+  t = t__s;
+  __rp12_5 = t[24 : 12];
+  k = k__s;
+  __rq4_6 = k[0 : 4];
+  p = p__s;
+  __rq12_7 = p[0 : 12];
+  p = p__s;
+  __rq12_8 = p[12 : 12];
+  p = p__s;
+  __rq12_9 = p[24 : 12];
+  __rp12_0, __rp12_1, __rp12_2, __rp12_3, __rp12_4, __rp12_5 = g2_scalar_mul_ct(__rp12_0, __rp12_1, __rp12_2, __rp12_3, __rp12_4, __rp12_5, __rq4_6, __rq12_7, __rq12_8, __rq12_9);
+  out = out__s;
+  out[0 : 12] = __rp12_0;
+  out__s = out;
+  out = out__s;
+  out[12 : 12] = __rp12_1;
+  out__s = out;
+  out = out__s;
+  out[24 : 12] = __rp12_2;
+  out__s = out;
+  t = t__s;
+  t[0 : 12] = __rp12_3;
+  t__s = t;
+  t = t__s;
+  t[12 : 12] = __rp12_4;
+  t__s = t;
+  t = t__s;
+  t[24 : 12] = __rp12_5;
+  t__s = t;
+  out = out__s;
+  t = t__s;
+  return out, t;
 }
 
 
@@ -2836,4 +4856,16 @@ export fn jasmin_bls12_g2_double(reg ptr u64[36] out, reg const ptr u64[36] p) -
 export fn jasmin_bls12_g2_scalar_mul(reg ptr u64[36] out, reg const ptr u64[4] k, reg const ptr u64[36] p) -> reg ptr u64[36] {
   out = bls12_g2_scalar_mul(out, k, p);
   return out;
+}
+
+
+export fn jasmin_bls12_g1_scalar_mul_ct(reg ptr u64[18] out, reg ptr u64[18] t, reg const ptr u64[4] k, reg const ptr u64[18] p) -> reg ptr u64[18], reg ptr u64[18] {
+  out, t = bls12_g1_scalar_mul_ct(out, t, k, p);
+  return out, t;
+}
+
+
+export fn jasmin_bls12_g2_scalar_mul_ct(reg ptr u64[36] out, reg ptr u64[36] t, reg const ptr u64[4] k, reg const ptr u64[36] p) -> reg ptr u64[36], reg ptr u64[36] {
+  out, t = bls12_g2_scalar_mul_ct(out, t, k, p);
+  return out, t;
 }

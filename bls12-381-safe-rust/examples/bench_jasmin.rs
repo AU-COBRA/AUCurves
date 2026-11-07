@@ -5,7 +5,11 @@
 //!
 //!   cargo run --release --features jasmin --example bench_jasmin -- OP PATH [REPS]
 //!
-//! OP: pairing | g1_smul | g1_msm4096 | g2_smul ; PATH: safe | jasmin | blst.
+//! OP: pairing | miller | finalexp (alias final_exp) | g1_smul | g1_msm4096 | g2_smul |
+//!     g1_smul_ct | g2_smul_ct (constant-time ladders; paths safe and jasmin only) ;
+//! PATH: safe | jasmin | blst | ark (arkworks 0.5, default features: no asm, no parallel).
+//! ark's k*P is `P * Fr(k)` (its scalar multiplication over the scalar field, k reduced mod r),
+//! its MSM `VariableBaseMSM::msm` (single-threaded without the `parallel` feature).
 //! One measurement per process, so that the operations run one at a time.
 //! Each repetition times a batch of calls (at least ~0.3 s, at least one call)
 //! and reports the time per call; the output is the median and the minimum
@@ -39,6 +43,20 @@ fn le_bytes(k: &[u64; 4]) -> [u8; 32] {
     b
 }
 
+
+mod ark {
+    pub use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective};
+    pub use ark_ec::pairing::Pairing;
+    pub use ark_ec::{CurveGroup, VariableBaseMSM};
+    pub use ark_ff::PrimeField;
+    pub use ark_std::UniformRand;
+    pub fn fr(k: &[u64; 4]) -> Fr { Fr::from_le_bytes_mod_order(&super::le_bytes(k)) }
+    pub fn rng() -> ark_std::rand::rngs::StdRng {
+        use ark_std::rand::SeedableRng;
+        ark_std::rand::rngs::StdRng::seed_from_u64(0x5eed)
+    }
+}
+
 fn g1_blst(k: &[u64; 4]) -> blst_p1_affine {
     let mut p = blst_p1::default();
     let mut a = blst_p1_affine::default();
@@ -70,8 +88,18 @@ fn measure<F: FnMut()>(reps: usize, mut f: F) -> (f64, f64, usize) {
     let t = Instant::now();
     f();
     let one = t.elapsed().as_secs_f64();
-    let batch = ((0.3 / one.max(1e-9)) as usize).max(1);
+    let mut batch = ((0.3 / one.max(1e-9)) as usize).max(1);
     for _ in 0..batch { f(); } // warm-up batch
+    // re-calibrate on the warm code (the first call is usually the slowest): grow the batch
+    // until one batch takes at least 0.33 s, so that every timed batch takes about 0.3 s or
+    // more; the output reports the shortest timed batch (batch_s_min)
+    loop {
+        let t = Instant::now();
+        for _ in 0..batch { f(); }
+        let s = t.elapsed().as_secs_f64();
+        if s >= 0.33 { break; }
+        batch = (((batch as f64) * 0.36 / s.max(1e-9)).ceil() as usize).max(batch + 1);
+    }
     let mut v = Vec::with_capacity(reps);
     for _ in 0..reps {
         let t = Instant::now();
@@ -115,6 +143,60 @@ fn main() {
                         black_box(&r);
                     })
                 }
+                "ark" => {
+                    use ark::*;
+                    let mut r = rng();
+                    let ap = G1Projective::rand(&mut r).into_affine();
+                    let aq = G2Projective::rand(&mut r).into_affine();
+                    measure(reps, || { let _ = black_box(Bls12_381::pairing(black_box(ap), black_box(aq))); })
+                }
+                _ => panic!("unknown path {path}"),
+            }
+        }
+        ("miller", _) | ("finalexp", _) | ("final_exp", _) => {
+            let p = g1_blst(&rng.scalar());
+            let q = g2_blst(&rng.scalar());
+            let (px, py) = (Fp(p.x.l), Fp(p.y.l));
+            let (qx, qy) = (fp2_of(&q.x), fp2_of(&q.y));
+            let mut f = Fp12::zero();
+            bls12_381::miller_loop(&mut f, &px, &py, &qx, &qy);
+            let mut out = Fp12::zero();
+            let ml = op == "miller";
+            match path {
+                "safe" if ml => measure(reps, || {
+                    bls12_381::miller_loop(&mut out, black_box(&px), black_box(&py), black_box(&qx), black_box(&qy));
+                    black_box(&out);
+                }),
+                "safe" => measure(reps, || { bls12_381::final_exp(&mut out, black_box(&f)); black_box(&out); }),
+                #[cfg(feature = "jasmin")]
+                "jasmin" if ml => measure(reps, || {
+                    bls12_381::jasmin::miller_loop(&mut out, black_box(&px), black_box(&py), black_box(&qx), black_box(&qy));
+                    black_box(&out);
+                }),
+                #[cfg(feature = "jasmin")]
+                "jasmin" => measure(reps, || { bls12_381::jasmin::final_exp(&mut out, black_box(&f)); black_box(&out); }),
+                "blst" => {
+                    let mut bf = blst_fp12::default();
+                    let mut r = blst_fp12::default();
+                    unsafe { blst_miller_loop(&mut bf, &q, &p) };
+                    if ml {
+                        measure(reps, || unsafe { blst_miller_loop(&mut bf, black_box(&q), black_box(&p)); black_box(&bf); })
+                    } else {
+                        measure(reps, || unsafe { blst_final_exp(&mut r, black_box(&bf)); black_box(&r); })
+                    }
+                }
+                "ark" => {
+                    use ark::*;
+                    let mut r = rng();
+                    let ap = G1Projective::rand(&mut r).into_affine();
+                    let aq = G2Projective::rand(&mut r).into_affine();
+                    let mlo = Bls12_381::multi_miller_loop([ap], [aq]);
+                    if ml {
+                        measure(reps, || { let _ = black_box(Bls12_381::multi_miller_loop([black_box(ap)], [black_box(aq)])); })
+                    } else {
+                        measure(reps, || { let _ = black_box(Bls12_381::final_exponentiation(black_box(mlo))); })
+                    }
+                }
                 _ => panic!("unknown path {path}"),
             }
         }
@@ -139,6 +221,41 @@ fn main() {
                         black_box(&o);
                     })
                 }
+                "ark" => {
+                    use ark::*;
+                    let mut r = rng();
+                    let ap = G1Projective::rand(&mut r);
+                    let kf = fr(&k);
+                    measure(reps, || { let _ = black_box(black_box(ap) * black_box(kf)); })
+                }
+                _ => panic!("unknown path {path}"),
+            }
+        }
+        ("g1_smul_ct", _) => {
+            let a = g1_blst(&rng.scalar());
+            let k = rng.scalar();
+            let p = g1_ours(&a);
+            let mut r = G1Projective::identity();
+            match path {
+                "safe" => measure(reps, || { g1_scalar_mul_ct(&mut r, black_box(&k), black_box(&p)); black_box(&r); }),
+                #[cfg(feature = "jasmin")]
+                "jasmin" => measure(reps, || {
+                    bls12_381::jasmin::g1_scalar_mul_ct(&mut r, black_box(&k), black_box(&p)); black_box(&r);
+                }),
+                _ => panic!("unknown path {path}"),
+            }
+        }
+        ("g2_smul_ct", _) => {
+            let a = g2_blst(&rng.scalar());
+            let k = rng.scalar();
+            let p = g2_ours(&a);
+            let mut r = G2Projective::identity();
+            match path {
+                "safe" => measure(reps, || { g2_scalar_mul_ct(&mut r, black_box(&k), black_box(&p)); black_box(&r); }),
+                #[cfg(feature = "jasmin")]
+                "jasmin" => measure(reps, || {
+                    bls12_381::jasmin::g2_scalar_mul_ct(&mut r, black_box(&k), black_box(&p)); black_box(&r);
+                }),
                 _ => panic!("unknown path {path}"),
             }
         }
@@ -162,6 +279,13 @@ fn main() {
                         blst_p2_mult(&mut o, black_box(&pp), black_box(kb.as_ptr()), 256);
                         black_box(&o);
                     })
+                }
+                "ark" => {
+                    use ark::*;
+                    let mut r = rng();
+                    let ap = G2Projective::rand(&mut r);
+                    let kf = fr(&k);
+                    measure(reps, || { let _ = black_box(black_box(ap) * black_box(kf)); })
                 }
                 _ => panic!("unknown path {path}"),
             }
@@ -204,10 +328,22 @@ fn main() {
                         black_box(&o);
                     })
                 }
+                "ark" => {
+                    use ark::*;
+                    let mut r = rng();
+                    let g = G1Projective::rand(&mut r);
+                    let mut bases = Vec::with_capacity(n);
+                    let mut acc = g;
+                    for _ in 0..n { bases.push(acc); acc += g; }
+                    let bases = G1Projective::normalize_batch(&bases);
+                    let ks: Vec<Fr> = scalars.iter().map(fr).collect();
+                    measure(reps, || { let _ = black_box(G1Projective::msm(black_box(&bases), black_box(&ks)).unwrap()); })
+                }
                 _ => panic!("unknown path {path}"),
             }
         }
         _ => panic!("unknown op {op}"),
     };
-    println!("{op}\t{path}\tmedian_us={:.1}\tmin_us={:.1}\treps={reps}\tbatch={batch}", med * 1e6, min * 1e6);
+    println!("{op}\t{path}\tmedian_us={:.1}\tmin_us={:.1}\treps={reps}\tbatch={batch}\tbatch_s_min={:.3}",
+             med * 1e6, min * 1e6, min * batch as f64);
 }

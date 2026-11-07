@@ -8,11 +8,11 @@
     extraction.
 
     - [get_of_list_find]: [map.get (map.of_list l) k] is the first binding of [k] in [l].
-    - [bls12_pairing_env_facts]: the 14 environment facts of
+    - [bls12_pairing_env_facts]: the 16 environment facts of
       [BLS12_PairingFunctionalClosed.bls12_pairing_functional_closed] hold for every [extra],
       by computation on the names of [bls12_pairing_funcs].
     - [bls12_pairing_functional_of_arith_leaves]: the functional specification of
-      [bls12_pairing] for this environment, assuming only the 23 arithmetic leaf specs
+      [bls12_pairing] for this environment, assuming only the 19 arithmetic leaf specs
       ([bls12_pairing_arith_leaves]).
     - [bls12_pairing_funcs_missing]: the extraction's list has no binding for the Fp2-level
       callees (mul, add, sub, square, inv, opp, felem_copy) nor for the base-field opp, inv and
@@ -134,21 +134,26 @@ Section EnvFacts.
   Lemma env_load_w_frob_c1 :
     map.get functions "bls12_load_w_frob_c1" = Some (snd bls12_load_w_frob_c1).
   Proof. revert extra; env_fact. Qed.
+  Lemma env_cyc_sqr_gs :
+    map.get functions "bls12_Fp12_cyclotomic_square" = Some (snd bls12_Fp12_cyclotomic_square).
+  Proof. revert extra; env_fact. Qed.
+  Lemma env_mul_by_line :
+    map.get functions "bls12_Fp12_mul_by_line" = Some (snd bls12_Fp12_mul_by_line).
+  Proof. revert extra; env_fact. Qed.
 End EnvFacts.
 
 (** ** The arithmetic leaves *)
 
-(** The 23 leaf specs of [bls12_pairing_functional_closed] (Miller loop, then final
+(** The 19 leaf specs of [bls12_pairing_functional_closed] (Miller loop, then final
     exponentiation). *)
 Definition bls12_pairing_arith_leaves (functions : env) : Prop :=
   MS.spec_of_Fp2_mul functions /\ MS.spec_of_Fp2_add functions /\ MS.spec_of_Fp2_sub functions /\
   MS.spec_of_Fp2_sqr functions /\ MS.spec_of_Fp2_inv functions /\ MS.spec_of_Fp2_opp functions /\
   MS.spec_of_Fp2_felem_copy functions /\
-  MS.spec_of_Fp12_mul functions /\ MS.spec_of_Fp12_sqr functions /\ MS.spec_of_Fp12_felem_copy functions /\
+  MS.spec_of_Fp12_sqr functions /\ MS.spec_of_Fp12_felem_copy functions /\
   MS.spec_of_Fp_mul functions /\ MS.spec_of_Fp_felem_copy functions /\ MS.spec_of_Fp_from_word functions /\
   FE.spec_of_Fp12_mul functions /\ FE.spec_of_Fp12_inv functions /\ FE.spec_of_Fp12_conjugate functions /\
-  CE.spec_of_Fp6_mul functions /\ CE.spec_of_Fp6_add functions /\ CE.spec_of_Fp6_mul_by_v functions /\
-  CE.spec_of_Fp_add functions /\ CE.spec_of_Fp_from_word functions /\
+  spec_of_Fp2_mul_xi_381 functions /\ CE.spec_of_Fp_from_word functions /\
   spec_of_Fp12_frobenius_381 functions /\ spec_of_Fp12_frobenius_p2_381 functions.
 
 Theorem bls12_pairing_env_leaves : forall extra,
@@ -156,8 +161,7 @@ Theorem bls12_pairing_env_leaves : forall extra,
   bls12_pairing_leaves (map.of_list (bls12_pairing_funcs ++ extra)).
 Proof.
   intros extra H.
-  destruct H as (H15 & H16 & H17 & H18 & H19 & H20 & H21 & H22 & H23 & H24 & H25 & H26 & H27
-                 & H28 & H29 & H30 & H31 & H32 & H33 & H34 & H35 & H36 & H37).
+  destruct H as (H17 & H18 & H19 & H20 & H21 & H22 & H23 & H24 & H25 & H26 & H27 & H28 & H29 & H30 & H31 & H32 & H33 & H34 & H35).
   (* The conjunction in the order of [bls12_pairing_leaves], built explicitly: [exact] of an
      environment fact against a leaf spec would unfold the spec. *)
   refine (conj (env_pairing extra) _).
@@ -174,8 +178,8 @@ Proof.
   refine (conj (env_load_gamma1 extra) _).
   refine (conj (env_load_gamma2 extra) _).
   refine (conj (env_load_w_frob_c1 extra) _).
-  refine (conj H15 _).
-  refine (conj H16 _).
+  refine (conj (env_cyc_sqr_gs extra) _).
+  refine (conj (env_mul_by_line extra) _).
   refine (conj H17 _).
   refine (conj H18 _).
   refine (conj H19 _).
@@ -194,9 +198,7 @@ Proof.
   refine (conj H32 _).
   refine (conj H33 _).
   refine (conj H34 _).
-  refine (conj H35 _).
-  refine (conj H36 _).
-  exact H37.
+  exact H35.
 Qed.
 
 Theorem bls12_pairing_functional_of_arith_leaves : forall extra,

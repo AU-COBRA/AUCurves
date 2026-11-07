@@ -50,9 +50,24 @@
 //! * [`handwritten`] keeps the previous unverified Jacobian G1 and G2 code,
 //!   for benchmarks and as a test oracle.
 //!
+//! * Constant-time scalar multiplication [`g1_scalar_mul_ct`] /
+//!   [`g2_scalar_mul_ct`] call the emitted bedrock2 `g1_scalar_mul_ct` /
+//!   `g2_scalar_mul_ct`: per bit, double; add P into scratch unconditionally
+//!   (complete formulas); `ct_cswap` (mask arithmetic, fixed-length loop)
+//!   selects the result.  `BLS12_G1_CT_Closed.g1_scalar_mul_ct_closed` and
+//!   `BLS12_G2_ScalarMulCT.g2_scalar_mul_ct_closed` (Qed, closed) prove the
+//!   same result as the variable-time versions.  The emitted code has no
+//!   branch and no memory address that depends on the scalar (a property of
+//!   the program text, not a theorem; nothing is claimed about the field
+//!   leaves or about what rustc/LLVM make of it).  Use these for secret
+//!   scalars: [`sk_to_pk`] and [`sign_hashed`] do.
+//!
 //! Everything is checked against `blst` in `tests/group_vs_blst.rs` (G2 in
-//! more depth in `tests/g2_vs_blst.rs`).
-//! Scalar multiplication branches on the scalar and is not constant time.
+//! more depth in `tests/g2_vs_blst.rs`, the constant-time variants in
+//! `tests/ct_vs_blst.rs`).
+//! [`g1_scalar_mul`], [`g2_scalar_mul`], the `*_loop` variants and the MSM
+//! branch on the scalar and are NOT constant time: public scalars only
+//! (verification, MSM).
 
 use crate::{fp2_add, fp2_mul, fp2_sub, fp_add, fp_mul, fp_square, fp_sub, Fp, Fp2};
 use crate::bedrock_rt::{Mem, FE, FE2};
@@ -220,6 +235,36 @@ pub fn g1_scalar_mul(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
     *r = get_g1(&m, out);
 }
 
+/// R = kP for a 256-bit little-endian scalar k in constant time (no branch
+/// and no memory address depending on k in the emitted code), with the
+/// emitted bedrock2 `g1_scalar_mul_ct`: per bit, double; t := out + P
+/// (always); `ct_cswap(bit, out, t)` on each coordinate.
+///
+/// Verification status: `BLS12_G1_CT_Closed.g1_scalar_mul_ct_closed` (Qed,
+/// closed): same conclusion and premises as [`g1_scalar_mul`].  About 1.4x the
+/// cost of the variable-time version (an addition on every bit).
+pub fn g1_scalar_mul_ct(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
+    let mut m = Mem::with_capacity(1024);
+    let out = put_g1(&mut m, &G1Projective::identity());
+    let t = put_g1(&mut m, &G1Projective::identity());
+    let sc = m.alloc(32);
+    for (j, w) in k.iter().enumerate() {
+        m.store64(sc + 8 * j as u64, *w);
+    }
+    let pa = put_g1(&mut m, p);
+    emitted::g1_scalar_mul_ct(&mut m, out, out + FE, out + 2 * FE, t, t + FE, t + 2 * FE,
+                              sc, pa, pa + FE, pa + 2 * FE);
+    *r = get_g1(&m, out);
+}
+
+/// BLS public key from a secret scalar (little-endian limbs): sk · G1,
+/// with the constant-time [`g1_scalar_mul_ct`].
+pub fn sk_to_pk(sk: &[u64; 4]) -> G1Projective {
+    let mut r = G1Projective::identity();
+    g1_scalar_mul_ct(&mut r, sk, &G1Projective::from_affine(&g1_generator()));
+    r
+}
+
 /// R = kP with a hand-written double-and-add loop (least significant bit
 /// first) over the emitted `curve_add` / `curve_double_a0`.  The loop is not
 /// verified; kept for the benchmark and as a test oracle for
@@ -384,6 +429,34 @@ pub fn g2_scalar_mul(r: &mut G2Projective, k: &[u64; 4], p: &G2Projective) {
     let pa = put_g2(&mut m, p);
     emitted2::g2_scalar_mul(&mut m, out, out + FE2, out + 2 * FE2, sc, pa, pa + FE2, pa + 2 * FE2);
     *r = get_g2(&m, out);
+}
+
+/// R = kP on G2 in constant time (no branch and no memory address depending
+/// on k in the emitted code), with the emitted bedrock2 `g2_scalar_mul_ct`.
+///
+/// Verification status: `BLS12_G2_ScalarMulCT.g2_scalar_mul_ct_closed` (Qed,
+/// closed): same conclusion and premises as [`g2_scalar_mul`].
+pub fn g2_scalar_mul_ct(r: &mut G2Projective, k: &[u64; 4], p: &G2Projective) {
+    let mut m = Mem::with_capacity(4096);
+    let out = put_g2(&mut m, &G2Projective::identity());
+    let t = put_g2(&mut m, &G2Projective::identity());
+    let sc = m.alloc(32);
+    for (j, w) in k.iter().enumerate() {
+        m.store64(sc + 8 * j as u64, *w);
+    }
+    let pa = put_g2(&mut m, p);
+    emitted2::g2_scalar_mul_ct(&mut m, out, out + FE2, out + 2 * FE2, t, t + FE2, t + 2 * FE2,
+                               sc, pa, pa + FE2, pa + 2 * FE2);
+    *r = get_g2(&m, out);
+}
+
+/// BLS signature (minimal-pubkey-size variant) on an already hashed message
+/// point H(m) in G2: sk · H(m), with the constant-time [`g2_scalar_mul_ct`].
+/// Hash-to-curve is not provided by this crate.
+pub fn sign_hashed(sk: &[u64; 4], hm: &G2Projective) -> G2Projective {
+    let mut r = G2Projective::identity();
+    g2_scalar_mul_ct(&mut r, sk, hm);
+    r
 }
 
 /// The Jacobian formulas are the same over Fp and Fp2; `jacobian_law!`

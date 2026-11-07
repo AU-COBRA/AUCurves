@@ -9,12 +9,13 @@
 
     The specs are bounds-and-frame specs, as for bls12_Fp12_pow_x
     (BLS12_PowX.v): the output is bounded and the base and the frame are
-    preserved.  One proof, [cyc_exp_neg_ok], covers every exponent e.
+    preserved.
 
     Lemmas:
       fp12_set_one_wp   the 12 from_word calls of fp12_set_one
-      cyc_sqr_wp        one cyclotomic squaring in place
-      cyc_exp_neg_ok    the function for any literal e
+      cyc_sqr_wp        one squaring by the earlier formula (cyc_sqr_body), in place
+    The squaring of the loop is now a call to bls12_Fp12_cyclotomic_square
+    (Granger-Scott); the proofs of the two functions are in BLS12_CycExpFunctional.v.
 *)
 
 From Stdlib Require Import Strings.String.
@@ -727,23 +728,6 @@ Section BLS12_CycExp.
             Fp12_bounded Fp12_loose out /\
             (FElem_Fp12 pout out ⋆ (FElem_Fp12 pbase base_val ⋆ Rr)) mem' }.
 
-    Definition cyc_exp_inv
-      (a_r a_t0 a_t1 a_one pbase pout : word) (one_v : Fp_felem) (base_val old_out : Fp12_felem)
-      (Rr : mem -> Prop) (tr : Semantics.trace)
-      (v : nat) (t : Semantics.trace) (m : mem) (l : locals) : Prop :=
-      t = tr /\ (v <= 64)%nat /\
-      exists (r : Fp12_felem) (x0 x1 : Fp6_felem),
-        Fp12_bounded Fp12_tight r /\
-        (FElem_Fp12 a_r r ⋆ (FElem_Fp6 a_t0 x0 ⋆ (FElem_Fp6 a_t1 x1 ⋆ (FElem_Fp a_one one_v ⋆
-          (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))))) m /\
-        map.get l "i" = Some (word.of_Z (Z.of_nat v)) /\
-        map.get l "result" = Some a_r /\
-        map.get l "cyc_t0" = Some a_t0 /\
-        map.get l "cyc_t1" = Some a_t1 /\
-        map.get l "cyc_one" = Some a_one /\
-        map.get l "base" = Some pbase /\
-        map.get l "out" = Some pout.
-
     Local Instance bls12_Fp6_rep_ok' :
       @AbstractField.FieldRepresentation_ok _ bls12_Fp6_params' _ _ _ _ bls12_Fp6_rep' :=
       @CubicFieldExtensionsSpecs.Fp6_field_representation_ok _ _ _ _ bls12_pf_params bls12_Fp_rep
@@ -769,194 +753,9 @@ Section BLS12_CycExp.
         split; [split; [eassumption | eassumption]|]
       end.
 
-    Lemma cyc_exp_neg_ok :
-      forall (name : string) (e : Z) functions
-        (EnvContains : map.get functions name = Some (snd (BLS12_Pairing.cyc_exp_neg_fn name e)))
-        (HFp12mul : spec_of_Fp12_mul functions)
-        (HFp12conj : spec_of_Fp12_conjugate functions)
-        (HFp6mul : spec_of_Fp6_mul functions)
-        (HFp6add : spec_of_Fp6_add functions)
-        (HFp6mulv : spec_of_Fp6_mul_by_v functions)
-        (HFpadd : spec_of_Fp_add functions)
-        (HFfromword : spec_of_Fp_from_word functions),
-      spec_of_cyc_exp_neg name functions.
-    Proof.
-      intros name e functions EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword.
-      unfold spec_of_cyc_exp_neg.
-      intros pout pbase old_out base_val Rr tr mem0 [Hbbase Hsep].
-      eapply start_func; [exact EnvContains | clear EnvContains].
-      cbv [WeakestPrecondition.func].
-      unfold BLS12_Pairing.cyc_exp_neg_fn. simpl snd. simpl fst. cbv match beta.
-      eexists. split. { exact eq_refl. }
-
-      (* 4 stackallocs: result (Fp12), cyc_t0, cyc_t1 (Fp6), cyc_one (Fp) *)
-      straightline. split. { apply Z_mod_mult. }
-      intros a_r mS_r mC_r HaS_r HmS_r.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp12_params' _ _ _ _
-        bls12_Fp12_rep' wordok mapok a_r mS_r) HaS_r) as [ri Hri].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_t0 mS_t0 mC_t0 HaS_t0 HmS_t0.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp6_params' _ _ _ _
-        bls12_Fp6_rep' wordok mapok a_t0 mS_t0) HaS_t0) as [t0i Ht0i].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_t1 mS_t1 mC_t1 HaS_t1 HmS_t1.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ bls12_Fp6_params' _ _ _ _
-        bls12_Fp6_rep' wordok mapok a_t1 mS_t1) HaS_t1) as [t1i Ht1i].
-      straightline. split. { apply Z_mod_mult. }
-      intros a_one mS_one mC_one HaS_one HmS_one.
-      pose proof (proj1 (@AbstractField.FElem_from_bytes _ _ _ _ _ _
-        bls12_Fp_rep wordok mapok a_one mS_one) HaS_one) as [onei Honei].
-
-      pose proof (proj1 (map.split_comm mC_r mem0 mS_r) HmS_r) as HmS_r'.
-      assert (Hl1 : (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr))) mC_r).
-      { exists mS_r, mem0. exact (conj HmS_r' (conj Hri Hsep)). }
-      pose proof (proj1 (map.split_comm mC_t0 mC_r mS_t0) HmS_t0) as HmS_t0'.
-      assert (Hl2 : (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))) mC_t0).
-      { exists mS_t0, mC_r. exact (conj HmS_t0' (conj Ht0i Hl1)). }
-      pose proof (proj1 (map.split_comm mC_t1 mC_t0 mS_t1) HmS_t1) as HmS_t1'.
-      assert (Hl3 : (FElem_Fp6 a_t1 t1i ⋆ (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr))))) mC_t1).
-      { exists mS_t1, mC_t0. exact (conj HmS_t1' (conj Ht1i Hl2)). }
-      pose proof (proj1 (map.split_comm mC_one mC_t1 mS_one) HmS_one) as HmS_one'.
-      assert (Hl4 : (FElem_Fp a_one onei ⋆ (FElem_Fp6 a_t1 t1i ⋆ (FElem_Fp6 a_t0 t0i ⋆ (FElem_Fp12 a_r ri ⋆ (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)))))) mC_one).
-      { exists mS_one, mC_t1. exact (conj HmS_one' (conj Honei Hl3)). }
-      clear Hsep Hl1 Hl2 Hl3 Hri Ht0i Ht1i Honei HaS_r HaS_t0 HaS_t1 HaS_one HmS_r HmS_t0 HmS_t1 HmS_one
-            HmS_r' HmS_t0' HmS_t1' HmS_one'.
-
-      unfold BLS12_Pairing.cyc_exp_neg_body, BLS12_Pairing.cmd_seq_list.
-
-      (* from_word(cyc_one, 1) *)
-      repeat straightline.
-      eapply Semantics.weaken_call.
-      1: { eapply (HFfromword _ _ onei). ecancel_assumption. }
-      intros ? ? ? [? [? [one_v [_ [Hb_one Hsep_one]]]]]. subst.
-      cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-
-      (* fp12_set_one "result" *)
-      unfold1_cmd_goal; cbv beta match delta [cmd_body].
-      eapply (fp12_set_one_wp functions HFfromword a_r ri).
-      { subst l2 l1 l0 l; solve_gets. }
-      { ecancel_assumption. }
-      intros m1 one12 Hb12 Hs12.
-
-      (* i = 64 *)
-      repeat straightline.
-      eapply Loops.while_localsmap
-        with (v0 := 64%nat) (lt := Nat.lt)
-             (invariant := cyc_exp_inv a_r a_t0 a_t1 a_one pbase pout one_v base_val old_out Rr t').
-      { exact lt_wf. }
-      { unfold cyc_exp_inv. split; [reflexivity |]. split; [lia |].
-        exists one12, t0i, t1i. split; [exact Hb12 |].
-        split; [ecancel_assumption |].
-        subst l3 l2 l1 l0 l i. repeat split; solve_gets. }
-      { intros v t_v m_v l_v Hinv.
-        destruct Hinv as [Ht [Hv_le [r_v [x0_v [x1_v [Hbr [Hsep_v [Hgi [Hgr [Hgt0 [Hgt1 [Hgone [Hgb Hgo]]]]]]]]]]]]].
-        subst t_v.
-        exists (word.of_Z (Z.of_nat v)). cbv [Markers.split].
-        split. { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body WeakestPrecondition.get]. eexists. split; [exact Hgi | reflexivity]. }
-        split.
-        { intro Hne.
-          unfold BLS12_Pairing.cyc_exp_loop, BLS12_Pairing.cmd_seq_list.
-          eexists. split.
-          { unfold DEXPR. repeat (first [ solve [eval_dexprs_fast] | straightline ]). }
-          cbv beta delta [dlet.dlet].
-          intro l4.
-          unfold1_cmd_goal; cbv beta match delta [cmd_body].
-          eapply (cyc_sqr_wp functions HFp6mul HFp6add HFp6mulv HFpadd a_r a_t0 a_t1 a_one r_v x0_v x1_v one_v).
-          1-4: subst l4; solve_gets.
-          { exact Hbr. }
-          { exact Hb_one. }
-          { ecancel_assumption. }
-          intros m2 r2 x0' x1' Hb2 Hs2.
-          assert (Hv_pos : (0 < v)%nat) by
-            (destruct v; [exfalso; apply Hne; vm_compute; reflexivity | lia]).
-          eexists. split.
-          { unfold DEXPR. subst l4. repeat (first [ solve [eval_dexprs_fast] | straightline ]). }
-          cbv beta delta [dlet.dlet].
-          intro l5.
-          unfold1_cmd_goal; cbv beta match delta [cmd_body].
-          eexists. split.
-          { cbv [WeakestPrecondition.expr WeakestPrecondition.expr_body WeakestPrecondition.get].
-            eexists. split. { subst l5. rewrite map.get_put_same. reflexivity. } reflexivity. }
-          split.
-          { intro Hbit.
-            unfold1_cmd_goal; cbv beta match delta [cmd_body].
-            eexists; split; [subst l5 l4; eval_dexprs_fast |].
-            eapply Semantics.weaken_call.
-            1: { eapply HFp12mul.
-                 split; [exact Hb2 |].
-                 split; [exact Hbbase |].
-                 split; [eexists; ecancel_assumption_with_copy |].
-                 split; [eexists; ecancel_assumption_with_copy |].
-                 ecancel_assumption_with_copy. }
-            intros ? ? ? [? [? [r3 [_ [Hb3 Hs3]]]]]. subst.
-            cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-            exists (v - 1)%nat. split; [| unfold Nat.lt; lia].
-            unfold cyc_exp_inv. split; [reflexivity |]. split; [lia |].
-            exists r3, x0', x1'. split; [exact Hb3 |]. split; [ecancel_assumption |].
-            subst l5 l4.
-            split. { rewrite map.get_put_diff by congruence. rewrite map.get_put_same. f_equal. cbv [Semantics.interp_binop]. rewrite Nat2Z.inj_sub by lia. ZnWords. }
-            repeat split; solve_gets. }
-          { intro Hbit0.
-            repeat straightline.
-            exists (v - 1)%nat. split; [| unfold Nat.lt; lia].
-            unfold cyc_exp_inv. split; [reflexivity |]. split; [lia |].
-            exists r2, x0', x1'. split; [exact Hb2 |]. split; [ecancel_assumption |].
-            subst l5 l4.
-            split. { rewrite map.get_put_diff by congruence. rewrite map.get_put_same. f_equal. cbv [Semantics.interp_binop]. rewrite Nat2Z.inj_sub by lia. ZnWords. }
-            repeat split; solve_gets. } }
-        { intro Heq.
-          unfold1_cmd_goal; cbv beta match delta [cmd_body].
-          eexists; split; [eval_dexprs_fast |].
-          eapply Semantics.weaken_call.
-          1: { eapply HFp12conj.
-               split; [exact Hbr |].
-               split; [eexists; ecancel_assumption_with_copy |].
-               ecancel_assumption_with_copy. }
-          intros ? ? ? [? [? [o [_ [Hbo Hso]]]]]. subst.
-          cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
-          dealloc_with constr:(FElem_Fp).
-          dealloc_with constr:(FElem_Fp6).
-          dealloc_with constr:(FElem_Fp6).
-          dealloc_with constr:(FElem_Fp12).
-          cbv [list_map list_map_body WeakestPrecondition.get].
-          split; [reflexivity |]. split; [reflexivity |].
-          exists o. split; [exact Hbo |].
-          ecancel_assumption. } }
-    Qed.
-
-    Lemma bls12_Fp12_cyc_exp_x_neg_ok :
-      forall functions
-        (EnvContains : map.get functions "bls12_Fp12_cyc_exp_x_neg" =
-          Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_x_neg))
-        (HFp12mul : spec_of_Fp12_mul functions)
-        (HFp12conj : spec_of_Fp12_conjugate functions)
-        (HFp6mul : spec_of_Fp6_mul functions)
-        (HFp6add : spec_of_Fp6_add functions)
-        (HFp6mulv : spec_of_Fp6_mul_by_v functions)
-        (HFpadd : spec_of_Fp_add functions)
-        (HFfromword : spec_of_Fp_from_word functions),
-      spec_of_cyc_exp_neg "bls12_Fp12_cyc_exp_x_neg" functions.
-    Proof.
-      intros. exact (cyc_exp_neg_ok "bls12_Fp12_cyc_exp_x_neg" 0xd201000000010000 functions
-        EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword).
-    Qed.
-
-    Lemma bls12_Fp12_cyc_exp_c_neg_ok :
-      forall functions
-        (EnvContains : map.get functions "bls12_Fp12_cyc_exp_c_neg" =
-          Some (snd BLS12_Pairing.bls12_Fp12_cyc_exp_c_neg))
-        (HFp12mul : spec_of_Fp12_mul functions)
-        (HFp12conj : spec_of_Fp12_conjugate functions)
-        (HFp6mul : spec_of_Fp6_mul functions)
-        (HFp6add : spec_of_Fp6_add functions)
-        (HFp6mulv : spec_of_Fp6_mul_by_v functions)
-        (HFpadd : spec_of_Fp_add functions)
-        (HFfromword : spec_of_Fp_from_word functions),
-      spec_of_cyc_exp_neg "bls12_Fp12_cyc_exp_c_neg" functions.
-    Proof.
-      intros. exact (cyc_exp_neg_ok "bls12_Fp12_cyc_exp_c_neg" 0x460055555555aaab functions
-        EnvContains HFp12mul HFp12conj HFp6mul HFp6add HFp6mulv HFpadd HFfromword).
-    Qed.
-
+    (* The proofs of the two functions (bounds and frame, [spec_of_cyc_exp_neg]) are
+       corollaries of the functional ones since the squaring became the call to
+       bls12_Fp12_cyclotomic_square: BLS12_CycExpFunctional.bls12_Fp12_cyc_exp_x_neg_ok /
+       bls12_Fp12_cyc_exp_c_neg_ok. *)
 
 End BLS12_CycExp.

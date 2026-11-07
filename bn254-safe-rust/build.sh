@@ -48,11 +48,16 @@ JASMINC="${JASMINC:-jasminc}"
 #   BN254_LEAVES=live    (default) — bn254_leaves_live.jazz, emitted by
 #                                    src/Bedrock/Jasmin/ExtractBN254LeavesLive.v:
 #                                    AdcChain.polish_func_adc (fiat's addcarryx
-#                                    windows as #ADCX chains, adc_cmd_correct)
-#                                    and SpillLiveness.pp_module_live (#[spill]
-#                                    only where the liveness pressure model needs
-#                                    it; pp_module_live_erases: the hints erase to
-#                                    pp_module_nospill).
+#                                    windows as #ADCX chains, adc_cmd_correct),
+#                                    CtSelect.ct_func (the remaining branches as
+#                                    #ADCX / #SBB and masks, ct_cmd_correct) and
+#                                    SpillLiveness.pp_module_live_b
+#                                    bn254_leaf_ct_budget (#[spill] only where
+#                                    the liveness pressure model needs it;
+#                                    pp_module_live_erases: the hints erase to
+#                                    pp_module_nospill);
+#                                    scripts/emit_bn254_leaves_live.sh,
+#                                    scripts/check_ct_leaves.sh (jasmin-ct).
 case "${BN254_LEAVES:-live}" in
   nospill) LEAVES_SRC="$GEN/bn254_leaves_nospill.jazz" ;;
   spill)   LEAVES_SRC="$GEN/bn254_leaves.jazz" ;;

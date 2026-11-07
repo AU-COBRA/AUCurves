@@ -64,11 +64,18 @@ fn sub_p_if_ge(r: [u64; 7]) -> [u64; 6] {
     let (d5, b6a) = r[5].overflowing_sub(P[5]);
     let (d5, b6b) = d5.overflowing_sub((b5a as u64) + (b5b as u64));
     let final_borrow = (b6a as u64) + (b6b as u64);
-    if r[6] >= final_borrow {
-        [d0, d1, d2, d3, d4, d5]
-    } else {
-        [r[0], r[1], r[2], r[3], r[4], r[5]]
+    // Keep the difference iff r[6] >= final_borrow, selected with a mask
+    // (no data-dependent branch).
+    let (_, lt) = r[6].overflowing_sub(final_borrow);
+    // all ones iff r[6] < final_borrow; black_box keeps LLVM from turning the
+    // masked select back into a branch (it did, measured in the asm).
+    let keep_r = core::hint::black_box(0u64.wrapping_sub(lt as u64));
+    let d = [d0, d1, d2, d3, d4, d5];
+    let mut o = [0u64; 6];
+    for i in 0..6 {
+        o[i] = (r[i] & keep_r) | (d[i] & !keep_r);
     }
+    o
 }
 
 #[no_mangle]
@@ -103,17 +110,16 @@ pub unsafe extern "C" fn _bls12_sub(out: *mut u64, x: *const u64, y: *const u64)
         r[i] = d;
         borrow = (ba as u64) + (bb as u64);
     }
-    if borrow != 0 {
-        // Add p back.
-        let (a0, c1) = r[0].overflowing_add(P[0]);
-        r[0] = a0;
-        let mut c = c1 as u64;
-        for i in 1..6 {
-            let (s, ca) = r[i].overflowing_add(P[i]);
-            let (s, cb) = s.overflowing_add(c);
-            r[i] = s;
-            c = (ca as u64) + (cb as u64);
-        }
+    // Add p back iff borrow, as r + (p & mask) (no data-dependent branch).
+    let mask = core::hint::black_box(0u64.wrapping_sub(borrow));
+    let (a0, c1) = r[0].overflowing_add(P[0] & mask);
+    r[0] = a0;
+    let mut c = c1 as u64;
+    for i in 1..6 {
+        let (s, ca) = r[i].overflowing_add(P[i] & mask);
+        let (s, cb) = s.overflowing_add(c);
+        r[i] = s;
+        c = (ca as u64) + (cb as u64);
     }
     write6(out, r);
 }

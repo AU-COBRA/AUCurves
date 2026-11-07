@@ -57,7 +57,10 @@
 
 Require Import bedrock2.Syntax.
 From Stdlib Require Import String List ZArith Bool.
+From Stdlib Require Import FMapPositive MSetPositive.
 Require Import Bedrock.Jasmin.Core.
+Require Bedrock.Jasmin.SpillLiveness.
+Module SL := Bedrock.Jasmin.SpillLiveness.
 Import ListNotations.
 Local Open Scope list_scope.
 Local Open Scope Z_scope.
@@ -83,7 +86,101 @@ Record rp_config := {
     (** also export every printed function with at most 6 parameters, as
         ["jasmin_" ++ name], so that jasminc compiles each of them; otherwise
         only the functions reachable from [rpc_exports] are printed *)
+  rpc_hints : bool;
+    (** [#[spill]] hints (and [stack ptr] slots) chosen by liveness
+        ([hint_choice]) instead of on every word local and pointer
+        parameter of a called function *)
+  rpc_budget : nat;
+    (** with [rpc_hints]: the register budget of [hint_choice] (the pressure
+        model's limit between calls, and for a call-free leaf the whole
+        choice) *)
+  rpc_cmov : bool;
+    (** print a conditional that assigns one variable from a variable or a
+        literal in both branches (or in the then-branch only) as a conditional
+        move, [x = b; x = c ? a : x], instead of branches *)
+  rpc_direct : bool;
+    (** pass static slices of pointer parameters (and of stack arrays) that
+        no other argument of the call overlaps without staging them: a
+        read-only one as the slice, a written one through a [reg ptr]
+        temporary *)
 }.
+
+(** ** Spill hints from liveness ([rpc_hints])
+
+    [SpillLiveness] chooses the hints of a straight-line leaf: backward
+    liveness, the register-pressure model of [-auto-spill], and a greedy
+    choice within a budget.  A module function also makes calls.  A call to a
+    local function or the [#randombytes] system call may clobber every
+    register (the callee is allocated with the caller, and the system call
+    kills all caller-saved registers), so every candidate live after a call
+    must be spilled: [live_calls] computes, over the structured body (loops
+    iterated to a fixed point within [fuel]), the variables live after some
+    call, and [hint_choice] starts [SpillLiveness.choose] from that forced
+    set.  A function without calls gets exactly [SpillLiveness.spill_choice].
+    As there, nothing here needs a proof: a hint is a register-allocation
+    annotation ([Core.pp_locals_decls_spill_form]), jasminc's [-auto-spill]
+    lowers it through the verified [lowering_spill] pass, and a choice that
+    spills too little fails register allocation instead of changing the
+    program. *)
+Definition sunion (a b : list string) : list string :=
+  List.fold_left (fun acc x => if string_in x acc then acc else List.app acc [x]) b a.
+
+Fixpoint live_calls (fuel : nat) (c : jasmin_cmd) (out : list string)
+    : list string * list string :=
+  match c with
+  | JCseq a b =>
+      let '(lb, fb) := live_calls fuel b out in
+      let '(la, fa) := live_calls fuel a lb in (la, List.app fa fb)
+  | JCdecl _ _ b => live_calls fuel b out
+  | JCcall _ args =>
+      (* the printer reads the arguments' variables again after the call
+         (copying staged outputs back), so they count as live after it *)
+      let av := List.flat_map SL.expr_vars args in (sunion out av, sunion out av)
+  | JCif e a b =>
+      let '(la, fa) := live_calls fuel a out in
+      let '(lb, fb) := live_calls fuel b out in
+      (sunion (SL.expr_vars e) (sunion la lb), List.app fa fb)
+  | JCwhile e body =>
+      let fix iter (k : nat) (l : list string) : list string * list string :=
+        let '(lb, fb) := live_calls fuel body l in
+        let l' := sunion l lb in
+        match k with
+        | O => (l', fb)
+        | S k' => if Nat.eqb (List.length l') (List.length l) then (l', fb) else iter k' l'
+        end in
+      iter fuel (sunion out (SL.expr_vars e))
+  | _ =>
+      (sunion (List.filter (fun x => negb (string_in x (SL.cmd_defs c))) out) (SL.cmd_uses c), nil)
+  end.
+
+Definition forced_spills (f : jasmin_func) : list string :=
+  snd (live_calls 8 (jf_body f) nil).
+
+Definition hint_choice (budget : nat) (f : jasmin_func) : list string :=
+  let cand := SL.candidates f in
+  let forced := List.filter (fun x => string_in x (forced_spills f)) cand in
+  let cset := List.fold_right (fun x s => PositiveSet.add (SL.enc x) s) PositiveSet.empty cand in
+  let is := List.map (fun i => (SL.ids cset (SL.i_defs i), SL.ids cset (SL.i_uses i)))
+                     (SL.linearize (jf_body f)) in
+  let '(ps, _) := SL.points is in
+  let pids := SL.ids cset (List.map fst (List.filter SL.reg_param (jf_params f))) in
+  let m0 := List.fold_left (fun m x => PositiveMap.add x
+              {| SL.st_first := 0; SL.st_last := 0; SL.st_count := 0 |} m) pids
+              (PositiveMap.empty _) in
+  let m := SL.stats_of 1 ps m0 in
+  let fe := List.map SL.enc forced in
+  let ps0 := List.fold_left (fun ps x => List.map (SL.spill_at x) ps) fe (List.map SL.init_pt ps) in
+  let '(chosen, _) := SL.choose (List.length cand) budget m ps0 fe in
+  List.filter (fun x => SL.pmem (SL.enc x) chosen) cand.
+
+Lemma hint_choice_candidates : forall budget f x,
+  In x (hint_choice budget f) -> In x (SL.candidates f).
+Proof.
+  unfold hint_choice; intros budget f x H.
+  destruct (SL.points _) as [ps l].
+  destruct (SL.choose _ _ _ _ _) as [chosen k].
+  apply filter_In in H. exact (proj1 H).
+Qed.
 
 Section Printer.
   Variable cfg : rp_config.
@@ -248,12 +345,18 @@ Section Printer.
   Record actx := { ax_arrs : list string; ax_pv : list (string * string); ax_spill : list string;
                    ax_widths : list (string * Z); ax_params : list string }.
 
-  Definition actx_of (ws : list Z) (f : jasmin_func) : actx :=
+  (** [hs]: with [rpc_hints], the hint choice of [f]; only the pointer
+      parameters in it get a [stack ptr] slot. *)
+  Definition actx_of (hs : option (list string)) (ws : list Z) (f : jasmin_func) : actx :=
     let ps := List.map snd (List.filter (fun ip => negb (is_scalar_param (jf_name f) (fst ip)))
                 (List.combine (List.seq 0 (List.length (jf_params f))) (List.map fst (jf_params f)))) in
     let arrs := List.app ps (List.map fst (collect_array_widths (jf_body f))) in
     {| ax_arrs := arrs; ax_pv := pv_iter 8 arrs (sets_of (jf_body f)) nil;
-       ax_spill := if string_in (jf_name f) (rpc_inline cfg) then nil else ps;
+       ax_spill := if string_in (jf_name f) (rpc_inline cfg) then nil else
+                   match hs with
+                   | Some h => List.filter (fun p => string_in p h) ps
+                   | None => ps
+                   end;
        ax_widths := List.app (List.combine (List.map fst (jf_params f)) ws)
                              (collect_array_widths (jf_body f));
        ax_params := ps |}.
@@ -295,7 +398,7 @@ Section Printer.
   Definition infer_written (we : wenv) (f : jasmin_func) : list nat :=
     List.map fst (List.filter (fun ip => let '(i, (p, _)) := ip in
                      andb (negb (is_scalar_param (jf_name f) i))
-                       (writes we (actx_of nil f) p (jf_body f)))
+                       (writes we (actx_of None nil f) p (jf_body f)))
       (List.combine (List.seq 0 (List.length (jf_params f))) (jf_params f))).
 
   Fixpoint written_iter (depth : nat) (fs : list jasmin_func) (we : wenv) : wenv :=
@@ -404,23 +507,73 @@ Section Printer.
            other pointer argument is staged. *)
         let uses r := List.length (List.filter (fun a' =>
                         match root_of ax a' with Some r' => String.eqb r r' | None => false end) args) in
+        let written i := nat_in i (wlookup we f) in
+        let whole_at i r k :=
+          andb (Z.eqb k 0)
+            (match awidth_lookup (ax_widths ax) r with
+             | Some w => Z.eqb w (nthw cw i) | None => false end) in
+        (* [rpc_direct]: another, written argument of the same root overlapping
+           this one (a dynamic offset counts as overlapping).  jasminc requires the
+           writable arguments of a call to be disjoint from all others; so a
+           written argument is passed as it is unless another written one overlaps
+           it, and a read argument that overlaps a written one is staged: its copy
+           is taken before the call, so the callee reads the value at the call,
+           as with full staging. *)
+        let clash i a :=
+          match addr ax a with
+          | Some (r, JElit k) =>
+              List.existsb (fun jb =>
+                let '(j, b) := jb in
+                andb (negb (Nat.eqb i j))
+                  (andb (negb (scalar_arg j b))
+                    (match addr ax b with
+                     | Some (r', JElit k') =>
+                         andb (String.eqb r r')
+                           (andb (written j)
+                             (andb (Z.ltb (Z.div k 8) (Z.div k' 8 + nthw cw j))
+                                   (Z.ltb (Z.div k' 8) (Z.div k 8 + nthw cw i))))
+                     | Some (r', _) => andb (String.eqb r r') (written j)
+                     | None => false
+                     end))) idx
+          | _ => true
+          end in
         let direct i a :=
           andb (negb (scalar_arg i a))
             (match addr ax a with
              | Some (r, JElit k) =>
+                 if rpc_direct cfg then negb (clash i a) else
                  andb (Nat.eqb (uses r) 1)
                    (* a slice of a stack array (addressed from the stack pointer),
                       or a whole pointer parameter of the callee's width (into a
                       called function only): a slice of a pointer parameter would
                       keep the parameter in a register across the call *)
                    (orb (negb (string_in r (ax_params ax)))
-                        (andb (negb (string_in f (rpc_inline cfg)))
-                          (andb (Z.eqb k 0)
-                            (match awidth_lookup (ax_widths ax) r with
-                             | Some w => Z.eqb w (nthw cw i) | None => false end))))
+                        (andb (negb (string_in f (rpc_inline cfg))) (whole_at i r k)))
              | _ => false
              end) in
+        (* a written slice (or the whole) of a pointer parameter, passed through [__rp<w>_<i>]:
+           [__rp = r[k : w]; __rp = f(.., __rp, ..); r = r__s; r[k : w] = __rp].
+           The parameter itself need not survive the call (it is reloaded from
+           its slot); the last assignment writes the callee's result into the
+           slice, and is a no-op in the compiled code, where [__rp] points into
+           [r]. *)
+        (* With [rpc_direct] every pointer-parameter argument goes through a
+           temporary of its own: jasminc coalesces an argument variable with the
+           callee's parameter, so one variable passed at two positions (or at
+           different positions of different calls) cannot be allocated.  A read-only
+           one through [__rq<w>_<i> = r[k : w]]. *)
+        let param_root a :=
+          match addr ax a with
+          | Some (r, JElit _) => string_in r (ax_params ax)
+          | _ => false
+          end in
+        let via_temp i a := andb (rpc_direct cfg) (andb (direct i a) (andb (written i) (param_root a))) in
+        let via_rq i a := andb (rpc_direct cfg) (andb (direct i a) (andb (negb (written i)) (param_root a))) in
+        let rp i := "__rp" ++ pp_int (nthw cw i) ++ "_" ++ pp_int (Z.of_nat i) in
+        let rq i := "__rq" ++ pp_int (nthw cw i) ++ "_" ++ pp_int (Z.of_nat i) in
         let name i a :=
+          if via_temp i a then rp i else
+          if via_rq i a then rq i else
           if direct i a then
             match addr ax a with
             | Some (r, JElit k) =>
@@ -432,11 +585,20 @@ Section Printer.
             | _ => ""
             end
           else sg (nthw cw i) i in
+        let slice_of i a :=
+          match addr ax a with
+          | Some (r, JElit k) => r ++ "[" ++ pp_int (Z.div k 8) ++ " : " ++ pp_int (nthw cw i) ++ "]"
+          | _ => ""
+          end in
         let setup :=
           String.concat ""
             (List.map (fun ia =>
                let '(i, a) := ia in
                if scalar_arg i a then indent ++ la i ++ " = " ++ pp_expr a ++ ";" ++ LF
+               else if via_temp i a then
+                 reload ax indent (root_of ax a) ++ indent ++ rp i ++ " = " ++ slice_of i a ++ ";" ++ LF
+               else if via_rq i a then
+                 reload ax indent (root_of ax a) ++ indent ++ rq i ++ " = " ++ slice_of i a ++ ";" ++ LF
                else if direct i a then reload ax indent (root_of ax a)
                else match addr ax a with
                     | Some src => pp_copy_ax ax indent (whole (sg (nthw cw i) i)) src (nthw cw i)
@@ -454,7 +616,10 @@ Section Printer.
           String.concat ""
             (List.map (fun ia =>
                let '(i, a) := ia in
-               if direct i a then save ax indent (root_of ax a) else
+               if via_temp i a then
+                 reload ax indent (root_of ax a) ++ indent ++ slice_of i a ++ " = " ++ rp i ++ ";" ++ LF ++
+                 save ax indent (root_of ax a)
+               else if direct i a then save ax indent (root_of ax a) else
                match addr ax a with
                | Some dst => pp_copy_ax ax indent dst (whole (sg (nthw cw i) i)) (nthw cw i)
                | None => ""
@@ -531,13 +696,26 @@ Section Printer.
            literal is computed into [__ca__] / [__cb__] first: x86 compares a
            register with a register or an immediate *)
         let atoms a b := match a, b with JEvar _, JEvar _ | JEvar _, JElit _ => true | _, _ => false end in
+        (* [t = y op b] with [y] a variable is printed [t = y; t = (t op b)] when
+           [rpc_hints] is on: x86 adds in place, and jasminc does not copy [y]
+           into [t] by itself (under #20 every word local was [#[spill]], and
+           -auto-spill's reload of [y] made that copy) *)
+        let pp_scratch t a :=
+          match a with
+          | JEadd (JEvar y) b =>
+              if rpc_hints cfg
+              then indent ++ t ++ " = " ++ y ++ ";" ++ LF ++
+                   indent ++ t ++ " = (" ++ t ++ " + " ++ pp_expr_ax ax b ++ ");" ++ LF
+              else indent ++ t ++ " = " ++ pp_expr_ax ax a ++ ";" ++ LF
+          | _ => indent ++ t ++ " = " ++ pp_expr_ax ax a ++ ";" ++ LF
+          end in
         let setup :=
           match e with
           | JEltu a b | JEeq a b =>
               if atoms a b then "" else
               reload_all ax indent (List.app (load_roots ax a) (load_roots ax b)) ++
-              indent ++ "__ca__ = " ++ pp_expr_ax ax a ++ ";" ++ LF ++
-              indent ++ "__cb__ = " ++ pp_expr_ax ax b ++ ";" ++ LF
+              pp_scratch "__ca__" a ++
+              pp_scratch "__cb__" b
           | _ => ""
           end in
         let cond_str :=
@@ -552,11 +730,72 @@ Section Printer.
           | JCskip => ""
           | _ => indent ++ "} else {" ++ LF ++ pp_cmd_sized env we ax bools ("  " ++ indent) cf
           end in
-        setup ++ indent ++ "if " ++ cond_str ++ " {" ++ LF ++
-          pp_cmd_sized env we ax bools ("  " ++ indent) ct ++
-        else_part ++ indent ++ "}" ++ LF
+        (* [rpc_cmov]: [if c { x = a } else { x = b }] is [x = b; x = c ? a : x]
+           and [if c { x = a }] is [x = c ? a : x], when [a] and [b] are a word
+           variable or a literal, [x] is a word variable (not a bool, not a
+           pointer variable), and neither [c] nor [a] reads [x] (so the first
+           assignment does not change them).  x86 conditional moves take a
+           register source: a literal [a] goes through [__wtmp__] first. *)
+        let word_atom a :=
+          match a with
+          | JEvar y => negb (string_in y bools)
+          | JElit _ => true
+          | _ => false
+          end in
+        let reads_x x a := match a with JEvar y => String.eqb x y | _ => false end in
+        let cmov_ok x a :=
+          andb (rpc_cmov cfg)
+            (andb (word_atom a)
+              (andb (negb (reads_x x a))
+                (andb (negb (string_in x (SL.expr_vars e)))
+                  (andb (negb (string_in x bools))
+                    (negb (List.existsb (fun p => String.eqb (fst p) x) (ax_pv ax))))))) in
+        let src a := match a with JElit _ => indent ++ "__wtmp__ = " ++ pp_expr a ++ ";" ++ LF | _ => "" end in
+        let src_ref a := match a with JElit _ => "__wtmp__" | _ => pp_expr a end in
+        let cmov x a := indent ++ x ++ " = " ++ cond_str ++ " ? " ++ src_ref a ++ " : " ++ x ++ ";" ++ LF in
+        match ct, cf with
+        | JCset x a, JCset x' b =>
+            if andb (String.eqb x x') (andb (cmov_ok x a) (word_atom b))
+            then setup ++ indent ++ x ++ " = " ++ pp_expr b ++ ";" ++ LF ++ src a ++ cmov x a
+            else setup ++ indent ++ "if " ++ cond_str ++ " {" ++ LF ++
+                   pp_cmd_sized env we ax bools ("  " ++ indent) ct ++
+                 else_part ++ indent ++ "}" ++ LF
+        (* the borrow mask of fiat's subtraction, [if c { x = k; x = x - m }]:
+           the branch leaves the constant [k - m] (mod 2^64) in [x] *)
+        | JCseq (JCset x (JElit k)) (JCset x' (JEsub (JEvar x'') (JElit m))), JCskip =>
+            let a := JElit ((k - m) mod 2 ^ 64) in
+            if andb (String.eqb x x') (andb (String.eqb x x'') (cmov_ok x a))
+            then setup ++ src a ++ cmov x a
+            else setup ++ indent ++ "if " ++ cond_str ++ " {" ++ LF ++
+                   pp_cmd_sized env we ax bools ("  " ++ indent) ct ++
+                 else_part ++ indent ++ "}" ++ LF
+        | JCset x a, JCskip =>
+            if cmov_ok x a
+            then setup ++ src a ++ cmov x a
+            else setup ++ indent ++ "if " ++ cond_str ++ " {" ++ LF ++
+                   pp_cmd_sized env we ax bools ("  " ++ indent) ct ++
+                 else_part ++ indent ++ "}" ++ LF
+        | _, _ =>
+            setup ++ indent ++ "if " ++ cond_str ++ " {" ++ LF ++
+              pp_cmd_sized env we ax bools ("  " ++ indent) ct ++
+            else_part ++ indent ++ "}" ++ LF
+        end
     | JCwhile e body =>
-        indent ++ "while (" ++ pp_expr e ++ " != 0) {" ++ LF ++
+        (* as for [JCif]: a comparison of two registers / a register and a
+           literal is a Jasmin [bool] and is the loop condition as it stands
+           ([while ((a <u b) != 0)] does not type: [bool] against [int]);
+           bedrock2's [while e] loops while [e <> 0], and [ltu] / [eq] are 0 or
+           1.  ([ct_cswap]'s word loop of the constant-time ladders is the
+           first loop with such a condition; every other condition prints as
+           before.) *)
+        let atoms a b := match a, b with JEvar _, JEvar _ | JEvar _, JElit _ => true | _, _ => false end in
+        let wcond :=
+          match e with
+          | JEltu a b | JEeq a b =>
+              if atoms a b then "(" ++ pp_expr e ++ ")" else "(" ++ pp_expr e ++ " != 0)"
+          | _ => "(" ++ pp_expr e ++ " != 0)"
+          end in
+        indent ++ "while " ++ wcond ++ " {" ++ LF ++
           pp_cmd_sized env we ax bools ("  " ++ indent) body ++
         indent ++ "}" ++ LF
     | JCdecl x ty body =>
@@ -617,21 +856,32 @@ Section Printer.
     "  inline int __j;" ++ LF ++
     String.concat "" (List.map (fun i => "  reg u64 " ++ la i ++ ";" ++ LF) (List.seq 0 max_arity)) ++
     String.concat "" (List.map (fun '(w, i) => "  stack u64[" ++ pp_int w ++ "] " ++ sg w i ++ ";" ++ LF) sgs) ++
+    (if rpc_direct cfg then
+       String.concat "" (List.map (fun '(w, i) =>
+         "  reg ptr u64[" ++ pp_int w ++ "] __rp" ++ pp_int w ++ "_" ++ pp_int (Z.of_nat i) ++ ";" ++ LF ++
+         "  reg const ptr u64[" ++ pp_int w ++ "] __rq" ++ pp_int w ++ "_" ++ pp_int (Z.of_nat i) ++ ";" ++ LF) sgs)
+     else "") ++
     String.concat "" (List.map (fun f =>
       match ffi_len f with
       | Some len => "  stack u64[" ++ pp_int len ++ "] " ++ ffi_buf f ++ ";" ++ LF
       | None => ""
       end) ffis).
 
+  (** The locals declared without [#[spill]]: with [rpc_hints] those not in
+      the choice [hs], otherwise none (every word local of a called function
+      is hinted, the convention of #20). *)
+  Definition hint_nospill (hs locals : list string) : list string :=
+    if rpc_hints cfg then List.filter (fun x => negb (string_in x hs)) locals else nil.
+
   Definition pp_fn_keyword (name : string) : string :=
     if string_in name (rpc_inline cfg) then "inline fn " else "fn ".
 
-  Definition pp_params (we : wenv) (name : string) (ws : list Z)
+  Definition pp_params (we : wenv) (hs : list string) (name : string) (ws : list Z)
       (ps : list (string * jasmin_type)) : string :=
     String.concat ", "
       (List.map (fun ip =>
         let '(i, (p, _)) := ip in
-        if is_scalar_param name i then "reg u64 " ++ p
+        if is_scalar_param name i then (if string_in p hs then "#[spill] " else "") ++ "reg u64 " ++ p
         else (if nat_in i (wlookup we name) then "reg ptr u64[" else "reg const ptr u64[")
                ++ pp_int (nthw ws i) ++ "] " ++ p)
         (List.combine (List.seq 0 (List.length ps)) ps)).
@@ -653,7 +903,10 @@ Section Printer.
     let locals := function_locals f in
     let ws := widths_of env (jf_name f) in
     let os := outs_of we f in
-    pp_fn_keyword (jf_name f) ++ jf_name f ++ "(" ++ pp_params we (jf_name f) ws (jf_params f) ++ ")"
+    let hs := if rpc_hints cfg then hint_choice (rpc_budget cfg) f else nil in
+    pp_fn_keyword (jf_name f) ++ jf_name f ++ "(" ++
+      pp_params we (if string_in (jf_name f) (rpc_inline cfg) then nil else hs)
+        (jf_name f) ws (jf_params f) ++ ")"
       ++ pp_ret_ty we ws f ++ " {" ++ LF ++
     (if string_in "__wtmp__" locals then "" else "  reg u64 __wtmp__;" ++ LF) ++
     (if string_in "__mulx_tmp__" locals then "" else "  reg u64 __mulx_tmp__;" ++ LF) ++
@@ -662,12 +915,14 @@ Section Printer.
        [#[spill]] hint, so that [jasminc -auto-spill] may keep them on the stack
        across calls: at a call only the six callee-saved registers survive.
        The hint does not change the meaning of the program
-       ([Core.pp_locals_decls_spill_form] / [pp_locals_decls_nospill_drops_spill]).
-       An inlined leaf keeps plain registers. *)
+       ([Core.pp_locals_decls_spill_form] / [pp_locals_decls_nospill_drops_spill],
+       [pp_locals_decls_line] for any choice).  With [rpc_hints] only the
+       locals of [hint_choice] carry it.  An inlined leaf keeps plain
+       registers. *)
     (if string_in (jf_name f) (rpc_inline cfg)
      then pp_locals_decls_nospill "  " bools locals
-     else pp_locals_decls "  " bools nil locals) ++
-    let ax := actx_of ws f in
+     else pp_locals_decls "  " bools (hint_nospill hs locals) locals) ++
+    let ax := actx_of (if rpc_hints cfg then Some hs else None) ws f in
     String.concat "" (List.map (fun ip =>
       let '(i, (p, _)) := ip in
       if string_in p (ax_spill ax) then
@@ -689,7 +944,7 @@ Section Printer.
         let ws := widths_of env fname in
         let names := List.map fst (jf_params f) in
         let os := outs_of we f in
-        "export fn " ++ sym ++ "(" ++ pp_params we fname ws (jf_params f) ++ ")"
+        "export fn " ++ sym ++ "(" ++ pp_params we nil fname ws (jf_params f) ++ ")"
           ++ pp_ret_ty we ws f ++ " {" ++ LF ++
         "  " ++ (match os with nil => "" | _ => String.concat ", " (List.map snd os) ++ " = " end)
           ++ fname ++ "(" ++ String.concat ", " names ++ ");" ++ LF ++
@@ -816,4 +1071,53 @@ Lemma pp_fn_keyword_cases : forall cfg name,
 Proof.
   intros cfg name. unfold pp_fn_keyword.
   destruct (string_in name (rpc_inline cfg)); [left | right]; reflexivity.
+Qed.
+
+(** ** The hints are the only difference in the declarations
+
+    With [rpc_hints] the local declarations are [pp_locals_decls] with the
+    no-spill set [hint_nospill]; without, with the empty set (#20).  For any
+    set, the declarations are the concatenation of one line per local, and
+    each line is the hint-free line of [Core.pp_locals_decls_nospill] or that
+    line with [#[spill] ] inserted: the two denote the same Jasmin local
+    ([Core.pp_locals_decls_spill_form], [Core.pp_locals_decls_nospill_drops_spill]).
+    A scalar parameter is printed with the hint only when it is in the choice,
+    and never in an export wrapper ([pp_params_no_hints]).  The choice itself
+    is a set of candidates of [SpillLiveness] ([hint_choice_candidates]):
+    register parameters and non-boolean, non-scratch locals. *)
+Lemma pp_locals_decls_lines : forall indent bools ns xs,
+  pp_locals_decls indent bools ns xs =
+    String.concat "" (List.map (fun x => pp_locals_decls indent bools ns [x]) xs).
+Proof.
+  intros indent bools ns xs. reflexivity.
+Qed.
+
+Lemma pp_locals_decls_nospill_lines : forall indent bools xs,
+  pp_locals_decls_nospill indent bools xs =
+    String.concat "" (List.map (fun x => pp_locals_decls_nospill indent bools [x]) xs).
+Proof.
+  intros indent bools xs. reflexivity.
+Qed.
+
+Lemma pp_locals_decls_line : forall indent bools ns x,
+  pp_locals_decls indent bools ns [x] = pp_locals_decls_nospill indent bools [x] \/
+  (pp_locals_decls_nospill indent bools [x] = indent ++ "reg u64 " ++ x ++ ";" ++ LF /\
+   pp_locals_decls indent bools ns [x] = indent ++ "#[spill] reg u64 " ++ x ++ ";" ++ LF).
+Proof.
+  intros indent bools ns x. unfold pp_locals_decls, pp_locals_decls_nospill; cbn.
+  destruct (string_in x bools); [left; reflexivity|].
+  destruct (string_in x ns); [left; reflexivity | right; split; reflexivity].
+Qed.
+
+Lemma pp_params_no_hints : forall cfg we name ws ps,
+  pp_params cfg we nil name ws ps =
+    String.concat ", "
+      (List.map (fun ip =>
+        let '(i, (p, _)) := ip in
+        if is_scalar_param cfg name i then "reg u64 " ++ p
+        else (if nat_in i (wlookup cfg we name) then "reg ptr u64[" else "reg const ptr u64[")
+               ++ pp_int (nthw cfg ws i) ++ "] " ++ p)
+        (List.combine (List.seq 0 (List.length ps)) ps)).
+Proof.
+  intros. reflexivity.
 Qed.

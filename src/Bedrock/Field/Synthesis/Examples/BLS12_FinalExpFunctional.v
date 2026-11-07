@@ -54,6 +54,7 @@ Require Import Theory.BLS12Pairing.Frob381.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FrobConstants.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExpModel381.
 Require Import Theory.BLS12Pairing.Fp12Field381.
+Require Theory.BLS12Pairing.CyclotomicGS.
 Require Theory.BLS12Pairing.Pairing.
 Require Bedrock.Field.Synthesis.Examples.BLS12_PairingFevalInst.
 Module P := Theory.BLS12Pairing.Pairing.
@@ -172,7 +173,7 @@ Section BLS12_FinalExpFunctional.
               (FElem_Fp12 pout old_out ⋆ Rr))))) mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
-            (cyclotomic (Fp12_feval f_val) ->
+            (CyclotomicGS.gs (Fp12_feval f_val) ->
              Fp12_feval out = P.final_exp_hard_dsd PrimeField.M_pos gamma1_381 gamma2_381
                (Fp2_feval g1p2) (Fp2_feval g2p2) c1_381 (Fp2_feval wp2) (Fp12_feval f_val)) /\
             Fp12_bounded Fp12_loose out /\
@@ -376,7 +377,7 @@ Section BLS12_FinalExpFunctional.
         rewrite frob_gamma1_p2_381 in Hg1. rewrite frob_gamma2_p2_381 in Hg2.
         rewrite frob_coeff_fp12_p2_c1_381 in Hw.
         rewrite Hg1, Hg2, Hw in E4. rewrite Hg1, Hg2, Hw in E6.
-        pose proof (easy_cyc_381 _ _ _ _ _ _ Hinv E1 E2 E3 E4 E5) as C5.
+        pose proof (CyclotomicGS.easy_gs_381 _ _ _ _ _ _ Hinv E1 E2 E3 E4 E5) as C5.
         specialize (E6 C5).
         pose proof (easy_chain _ _ _ _ _ _ _ _ _ _ E1 E2 E3 E4 E5 E6) as Hdsd.
         split; [exact Hdsd |].

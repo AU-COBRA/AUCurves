@@ -43,6 +43,8 @@ Require Import Bedrock.Field.FieldExtensions.DodecicFieldExtensions.
 Require Import Bedrock.Field.FieldExtensions.PairingFieldOps.
 Require Import Bedrock.Field.FieldExtensions.WPTactics.
 Require Import Crypto.Algebra.Ring.
+Require Bedrock.Field.FieldExtensions.CycSqrAF.
+Require Bedrock.Field.FieldExtensions.MulByLineAF.
 
 Import BinInt String List.ListNotations.
 Import Syntax.
@@ -662,13 +664,28 @@ Section BLS12_Pairing.
        The exponentiations are the functions bls12_Fp12_cyc_exp_c_neg and
        bls12_Fp12_cyc_exp_x_neg below, which use cyclotomic squaring. *)
 
+    (* Granger-Scott cyclotomic squaring (PKC 2010, as blst's cyclotomic_sqr_fp12),
+       in place on six Fp2 pointers c0.c0, c0.c1, c0.c2, c1.c0, c1.c1, c1.c2:
+       nine Fp2 squarings, derived by Rupicola (CycSqrAF.af_cyc_sqr_correct)
+       over the Fp2 representation, multiplication by xi = bls12_Fp2_mul_xi. *)
+    Definition bls12_Fp12_cyclotomic_square : function_t :=
+      ("bls12_Fp12_cyclotomic_square",
+       @CycSqrAF.af_cyc_sqr_body _ _ _ _ _ _ Fp2 bls12_Fp2_params bls12_Fp2_rep fp2_mul_xi_name).
+
     (* One step of left-to-right square-and-multiply by the 64-bit literal e,
-       with the cyclotomic squaring cyc_sqr_body: valid only on the cyclotomic
-       subgroup.  Requires cyc_t0, cyc_t1 (Fp6) and cyc_one (Fp, holding 1). *)
+       with the Granger-Scott cyclotomic squaring bls12_Fp12_cyclotomic_square
+       (below) in place on the six Fp2 coefficients of result: valid only on
+       the subgroup of order p^4 - p^2 + 1 (CyclotomicGS.gs). *)
     Local Definition cyc_exp_loop (e : Z) : Syntax.cmd.cmd :=
       cmd_seq_list [
         cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
-        cyc_sqr_body "result" "result";
+        cmd.call [] "bls12_Fp12_cyclotomic_square"
+          [expr.var "result";
+           expr_fp6_c1 (expr.var "result");
+           expr_fp6_c2 (expr.var "result");
+           expr_fp12_c1 (expr.var "result");
+           expr_fp6_c1 (expr_fp12_c1 (expr.var "result"));
+           expr_fp6_c2 (expr_fp12_c1 (expr.var "result"))];
         cmd.set "bit" (expr.op bopname.and
           (expr.op bopname.sru (expr.literal e) (expr.var "i"))
           (expr.literal 1));
@@ -683,7 +700,6 @@ Section BLS12_Pairing.
        assumption on the top bit of e is made. *)
     Local Definition cyc_exp_neg_body (e : Z) : Syntax.cmd.cmd :=
       cmd_seq_list [
-        cmd.call [] from_word_name [expr.var "cyc_one"; expr.literal 1];
         fp12_set_one "result";
         cmd.set "i" (expr.literal 64);
         cmd.while (expr.var "i") (cyc_exp_loop e);
@@ -695,9 +711,6 @@ Section BLS12_Pairing.
        (["out"; "base"], []:list String.string,
         bedrock_func_body:(
           stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as result;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t0;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp6)) as cyc_t1;
-          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as cyc_one;
           coq:(cyc_exp_neg_body e)
         ))).
 
@@ -791,6 +804,25 @@ Section BLS12_Pairing.
     (* BLS parameter |x| = 0xd201000000010000 *)
     Let bls_x : Z := 0xd201000000010000.
 
+    (* f = f * line for a line value of make_line (nonzero slots c0.c0, c0.c1, c1.c1):
+       13 Fp2 multiplications instead of 18, in place on the six Fp2 slots of f,
+       derived by Rupicola (MulByLineAF.af_mul_by_line_correct). *)
+    Definition bls12_Fp12_mul_by_line : function_t :=
+      ("bls12_Fp12_mul_by_line",
+       @MulByLineAF.af_mul_by_line_body _ _ _ _ _ _ Fp2 bls12_Fp2_params bls12_Fp2_rep fp2_mul_xi_name).
+
+    Local Definition mul_by_line_call : Syntax.cmd.cmd :=
+      cmd.call [] "bls12_Fp12_mul_by_line"
+        [expr.var "f";
+         expr_fp6_c1 (expr.var "f");
+         expr_fp6_c2 (expr.var "f");
+         expr_fp12_c1 (expr.var "f");
+         expr_fp6_c1 (expr_fp12_c1 (expr.var "f"));
+         expr_fp6_c2 (expr_fp12_c1 (expr.var "f"));
+         expr.var "line";
+         expr_fp6_c1 (expr.var "line");
+         expr_fp6_c1 (expr_fp12_c1 (expr.var "line"))].
+
     (* One iteration of the Miller loop:
        - Decrement i
        - Doubling step: compute tangent, line evaluation, update f and T
@@ -820,11 +852,10 @@ Section BLS12_Pairing.
            expr.var "t_x"; expr.var "t_y";
            expr.var "p_x"; expr.var "p_y"];
 
-        (* f = f^2 * line_d *)
+        (* f = f^2 * line_d (sparse: the three nonzero slots of line) *)
         cmd.call [] fp12_sqr_name
           [expr.var "f"; expr.var "f"];
-        cmd.call [] fp12_mul_name
-          [expr.var "f"; expr.var "f"; expr.var "line"];
+        mul_by_line_call;
 
         (* T = 2T: new_x = lambda^2 - 2*t_x *)
         cmd.call [] fp2_sqr_name
@@ -863,9 +894,8 @@ Section BLS12_Pairing.
               [expr.var "line"; expr.var "lambda";
                expr.var "t_x"; expr.var "t_y";
                expr.var "p_x"; expr.var "p_y"];
-            (* f = f * line_a *)
-            cmd.call [] fp12_mul_name
-              [expr.var "f"; expr.var "f"; expr.var "line"];
+            (* f = f * line_a (sparse) *)
+            mul_by_line_call;
             (* T = T + Q: new_x = lambda^2 - t_x - q_x *)
             cmd.call [] fp2_sqr_name
               [expr.var "tmp1"; expr.var "lambda"];
@@ -1464,6 +1494,8 @@ Section BLS12_Pairing.
         bls12_load_w_frob_c1;
         bls12_load_w_frob_p3_c1;
         bls12_Fp12_pow_x;
+        bls12_Fp12_cyclotomic_square;
+        bls12_Fp12_mul_by_line;
         bls12_Fp12_cyc_exp_c_neg;
         bls12_Fp12_cyc_exp_x_neg;
         bls12_final_exp_hard_dsd;

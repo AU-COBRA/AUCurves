@@ -6,6 +6,11 @@
 //   BLS12_LEAVES=rust skips this and keeps the Rust stubs (to measure them).
 // - feature "jasmin": build.sh also compiles the Jasmin tower and group
 //   modules with jasminc ($JASMINC, default `jasminc`); failure is an error.
+//   The leaves mul/square are then the Jasmin leaves of
+//   generated/bls12_leaves_live.jazz on both paths (no CryptOpt linked),
+//   or CryptOpt's with BLS12_JASMIN_LEAVES=cryptopt.  (cfg feature
+//   "cryptopt" below means: mul/square come from the assembled leaves, so
+//   the Rust stubs are not compiled.)
 
 use std::env;
 use std::path::PathBuf;
@@ -24,11 +29,14 @@ fn main() {
 
     for f in ["build.sh", "generated/bls12_mul_cryptopt.asm", "generated/bls12_square_cryptopt.asm",
               "generated/jasmin_aliases.s", "generated/bls12_tower_regptr.jazz",
-              "generated/bls12_group_regptr.jazz"] {
+              "generated/bls12_group_regptr.jazz", "generated/bls12_leaves_live.jazz",
+              "generated/bls12_tower_regptr_ffi.jazz", "generated/bls12_group_regptr_ffi.jazz"] {
         println!("cargo:rerun-if-changed={}", f);
     }
     println!("cargo:rerun-if-env-changed=BLS12_LEAVES");
     println!("cargo:rerun-if-env-changed=JASMINC");
+    // feature `jasmin`: BLS12_JASMIN_LEAVES=jasmin (default) | cryptopt, see build.sh
+    println!("cargo:rerun-if-env-changed=BLS12_JASMIN_LEAVES");
 
     if rust_leaves {
         assert!(!jasmin, "feature `jasmin` needs the CryptOpt leaves; unset BLS12_LEAVES");

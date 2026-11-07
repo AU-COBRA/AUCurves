@@ -354,6 +354,11 @@ Definition param_table : list (string * list string) := [
   ("bls12_load_gamma2", ["Fp2"]); ("bls12_load_w_frob_c1", ["Fp2"]);
   ("bls12_load_w_frob_p3_c1", ["Fp2"]);
   ("bls12_Fp12_pow_x", ["Fp12";"Fp12"]);
+  (* Granger-Scott squaring, in place on the six Fp2 coefficients *)
+  ("bls12_Fp12_cyclotomic_square", ["Fp2";"Fp2";"Fp2";"Fp2";"Fp2";"Fp2"]);
+  (* sparse multiplication by a line, in place on the six Fp2 coefficients of f;
+     the last three are the slots c0.c0, c0.c1, c1.c1 of the line (read only) *)
+  ("bls12_Fp12_mul_by_line", ["Fp2";"Fp2";"Fp2";"Fp2";"Fp2";"Fp2";"Fp2";"Fp2";"Fp2"]);
   ("bls12_Fp12_cyc_exp_c_neg", ["Fp12";"Fp12"]);
   ("bls12_Fp12_cyc_exp_x_neg", ["Fp12";"Fp12"]);
   ("bls12_final_exp_hard_dsd", ["Fp12";"Fp12";"Fp2";"Fp2";"Fp2"]);
@@ -681,7 +686,10 @@ Definition mut_arity_table : list (string * nat) := [
   ("bw6_761_g2_double_step", 6%nat);
   (* g2_add_step / g2_line_compute: mutate x,y,z,r0,r1,r2 (6 leading); ax,ay are inputs. *)
   ("bw6_761_g2_add_step", 6%nat);
-  ("bw6_761_g2_line_compute", 6%nat)
+  ("bw6_761_g2_line_compute", 6%nat);
+  (* bls12_Fp12_cyclotomic_square: squares in place, all six Fp2 params mutable. *)
+  ("bls12_Fp12_cyclotomic_square", 6%nat);
+  ("bls12_Fp12_mul_by_line", 6%nat)
 ].
 
 Definition lookup_mut_arity (f : string) : nat :=

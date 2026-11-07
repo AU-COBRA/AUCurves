@@ -90,6 +90,9 @@ Lemma env_square : map.get functions "bls12_square" = Some (snd bls12_square).
 Proof. env_main. Qed.
 Lemma env_felem_copy : map.get functions "bls12_felem_copy" = Some bls12_felem_copy.
 Proof. env_main. Qed.
+Lemma env_Fp2_mul_xi :
+  map.get functions "bls12_Fp2_mul_xi" = Some (snd BLS12_Pairing.bls12_Fp2_mul_xi).
+Proof. env_main. Qed.
 
 Lemma env_from_word : map.get functions "bls12_from_word" = Some (snd bls12_from_word).
 Proof. env_extra. Qed.
@@ -169,11 +172,8 @@ Proof.
   pose proof (bls12_Fp_add_leaf_MS functions env_add) as Hadd1.
   assert (Hadd2 : MS.spec_of_Fp2_add functions) by (eapply bls12_Fp2_add_spec; envs).
   assert (Hsub2 : MS.spec_of_Fp2_sub functions) by (eapply bls12_Fp2_sub_spec; envs).
-  pose proof (bls12_Fp12_mul_leaf_MS bls12_extra_funcs Hcp2 Hadd2 Hsub2 Hmul2
-                Hcp1 Hsub1 Hadd1) as H22.
   pose proof (bls12_Fp12_mul_leaf_FE bls12_extra_funcs Hcp2 Hadd2 Hsub2 Hmul2
                 Hcp1 Hsub1 Hadd1) as H28.
-  refine (conj H22 _).
   refine (conj H23 _).
   refine (conj (bls12_Fp12_felem_copy_leaf bls12_extra_funcs Hcp2) _).
   refine (conj (bls12_Fp_mul_leaf functions env_mul) _).
@@ -184,10 +184,7 @@ Proof.
   refine (conj _ _).
   { eapply bls12_Fp12_conjugate_leaf; [exact Hcp2 |].
     eapply bls12_Fp2_opp_spec; envs. }
-  refine (conj (bls12_Fp6_mul_leaf bls12_extra_funcs Hcp2 Hadd2 Hcp1 Hmul2 Hsub2 Hsub1 Hadd1) _).
-  refine (conj (bls12_Fp6_add_leaf bls12_extra_funcs Hcp2 Hadd2) _).
-  refine (conj (bls12_Fp6_mul_by_v_leaf bls12_extra_funcs Hcp2 Hcp1 Hsub1 Hadd1) _).
-  refine (conj (bls12_Fp_add_leaf functions env_add) _).
+  refine (conj (bls12_Fp2_mul_xi_flat functions env_Fp2_mul_xi Hcp1 Hsub1 Hadd1) _).
   refine (conj (bls12_Fp_from_word_leaf_CE functions env_from_word env_to_mont) _).
   refine (conj (bls12_Fp12_frobenius_leaf bls12_extra_funcs Hcp2 Hcp1 Hop1 Hmul2) _).
   exact (bls12_Fp12_frobenius_p2_leaf bls12_extra_funcs Hcp2 Hmul2).

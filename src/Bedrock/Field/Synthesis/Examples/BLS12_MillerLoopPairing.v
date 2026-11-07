@@ -44,6 +44,7 @@ Require Theory.BLS12Pairing.Fp12.
 Require Bedrock.Field.Synthesis.Examples.BLS12_Fp12Feval.
 Require Bedrock.Field.Synthesis.Examples.BLS12_PairingFeval.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_MillerStepFunctional.
+Require Bedrock.Field.Synthesis.Examples.BLS12_MulByLine.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_MillerLoopFunctional.
 Require Bedrock.Field.Synthesis.Examples.BLS12_Fp6Feval.
 Require Bedrock.Field.Synthesis.Examples.BLS12_PairingFevalInst.
@@ -220,7 +221,7 @@ Section BLS12_MillerLoopPairing.
         (HFp2inv : spec_of_Fp2_inv functions)
         (HFp2opp : spec_of_Fp2_opp functions)
         (HFp2copy : spec_of_Fp2_felem_copy functions)
-        (HFp12mul : spec_of_Fp12_mul functions)
+        (HMBL : BLS12_MulByLine.spec_of_mul_by_line functions)
         (HFp12sqr : spec_of_Fp12_sqr functions)
         (HFp12copy : spec_of_Fp12_felem_copy functions)
         (HFpmul : spec_of_Fp_mul functions)
@@ -263,10 +264,10 @@ Section BLS12_MillerLoopPairing.
                   (FElem_Fp2 p_qy q_y ⋆ Rr))))) mem').
     Proof.
       intros functions EnvContains HFp2mul HFp2add HFp2sub HFp2sqr HFp2inv HFp2opp HFp2copy
-        HFp12mul HFp12sqr HFp12copy HFpmul HFpcopy HFfromword HMakeLine HFp2mulfpEnv
+        HMBL HFp12sqr HFp12copy HFpmul HFpcopy HFfromword HMakeLine HFp2mulfpEnv
         pout p_px p_py p_qx p_qy old_out p_x p_y q_x q_y Rr tr mem0 P Q HP HQ Hpx Hpy Hqx Hqy Hpre.
       pose proof (bls12_miller_loop_functional_ok functions EnvContains HFp2mul HFp2add HFp2sub
-                    HFp2sqr HFp2inv HFp2opp HFp2copy HFp12mul HFp12sqr HFp12copy HFpmul HFpcopy
+                    HFp2sqr HFp2inv HFp2opp HFp2copy HMBL HFp12sqr HFp12copy HFpmul HFpcopy
                     HFfromword HMakeLine HFp2mulfpEnv) as Hspec.
       cbv [spec_of_bls12_miller_loop_functional] in Hspec.
       eapply Semantics.weaken_call.

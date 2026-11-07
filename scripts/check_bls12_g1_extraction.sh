@@ -18,3 +18,6 @@ else
   diff "$TMPRS" "$COMMITTED" | head -40
   exit 1
 fi
+# The constant-time functions: no branch, loops on counters only.
+bash scripts/check_ct_emitted.sh "$COMMITTED" g1_scalar_mul_ct ct_cswap \
+  curve_add msm_curve_double curve_double_a0 store_zero bls12_three_b bls12_felem_copy

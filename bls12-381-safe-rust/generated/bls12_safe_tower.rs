@@ -626,12 +626,172 @@ pub fn bls12_Fp12_pow_x(mut out: &mut Fp12, base: &Fp12) {
 }
 
 #[inline]
+pub fn bls12_Fp12_cyclotomic_square(mut x0: &mut Fp2, mut x1: &mut Fp2, mut x2: &mut Fp2, mut x3: &mut Fp2, mut x4: &mut Fp2, mut x5: &mut Fp2) {
+    let mut t0: Fp2 = Fp2::zero();
+    bls12_Fp2_square(&mut t0, &x0);
+    let mut t1: Fp2 = Fp2::zero();
+    bls12_Fp2_square(&mut t1, &x4);
+    let mut t2: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut t2, &x0, &x4);
+    let __ac0 = t2.clone();
+    bls12_Fp2_square(&mut t2, &__ac0);
+    let __ac1 = t2.clone();
+    bls12_Fp2_sub(&mut t2, &__ac1, &t0);
+    let __ac2 = t2.clone();
+    bls12_Fp2_sub(&mut t2, &__ac2, &t1);
+    let __ac3 = t1.clone();
+    bls12_Fp2_mul_xi(&mut t1, &__ac3);
+    let __ac4 = t0.clone();
+    bls12_Fp2_add(&mut t0, &__ac4, &t1);
+    let mut t3: Fp2 = Fp2::zero();
+    bls12_Fp2_square(&mut t3, &x3);
+    let mut t4: Fp2 = Fp2::zero();
+    bls12_Fp2_square(&mut t4, &x2);
+    let mut t5: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut t5, &x3, &x2);
+    let __ac5 = t5.clone();
+    bls12_Fp2_square(&mut t5, &__ac5);
+    let __ac6 = t5.clone();
+    bls12_Fp2_sub(&mut t5, &__ac6, &t3);
+    let __ac7 = t5.clone();
+    bls12_Fp2_sub(&mut t5, &__ac7, &t4);
+    let __ac8 = t4.clone();
+    bls12_Fp2_mul_xi(&mut t4, &__ac8);
+    let __ac9 = t3.clone();
+    bls12_Fp2_add(&mut t3, &__ac9, &t4);
+    bls12_Fp2_square(&mut t1, &x1);
+    bls12_Fp2_square(&mut t4, &x5);
+    let mut t6: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut t6, &x1, &x5);
+    let __ac10 = t6.clone();
+    bls12_Fp2_square(&mut t6, &__ac10);
+    let __ac11 = t6.clone();
+    bls12_Fp2_sub(&mut t6, &__ac11, &t1);
+    let __ac12 = t6.clone();
+    bls12_Fp2_sub(&mut t6, &__ac12, &t4);
+    let __ac13 = t4.clone();
+    bls12_Fp2_mul_xi(&mut t4, &__ac13);
+    let __ac14 = t1.clone();
+    bls12_Fp2_add(&mut t1, &__ac14, &t4);
+    let __ac15 = x0.clone();
+    bls12_Fp2_sub(&mut x0, &t0, &__ac15);
+    let __ac16 = x0.clone();
+    bls12_Fp2_add(&mut x0, &__ac16, &__ac16);
+    let __ac17 = x0.clone();
+    bls12_Fp2_add(&mut x0, &__ac17, &t0);
+    let __ac18 = x4.clone();
+    bls12_Fp2_add(&mut x4, &t2, &__ac18);
+    let __ac19 = x4.clone();
+    bls12_Fp2_add(&mut x4, &__ac19, &__ac19);
+    let __ac20 = x4.clone();
+    bls12_Fp2_add(&mut x4, &__ac20, &t2);
+    let __ac21 = x1.clone();
+    bls12_Fp2_sub(&mut x1, &t3, &__ac21);
+    let __ac22 = x1.clone();
+    bls12_Fp2_add(&mut x1, &__ac22, &__ac22);
+    let __ac23 = x1.clone();
+    bls12_Fp2_add(&mut x1, &__ac23, &t3);
+    let __ac24 = x5.clone();
+    bls12_Fp2_add(&mut x5, &t5, &__ac24);
+    let __ac25 = x5.clone();
+    bls12_Fp2_add(&mut x5, &__ac25, &__ac25);
+    let __ac26 = x5.clone();
+    bls12_Fp2_add(&mut x5, &__ac26, &t5);
+    let __ac27 = t6.clone();
+    bls12_Fp2_mul_xi(&mut t6, &__ac27);
+    let __ac28 = x3.clone();
+    bls12_Fp2_add(&mut x3, &t6, &__ac28);
+    let __ac29 = x3.clone();
+    bls12_Fp2_add(&mut x3, &__ac29, &__ac29);
+    let __ac30 = x3.clone();
+    bls12_Fp2_add(&mut x3, &__ac30, &t6);
+    let __ac31 = x2.clone();
+    bls12_Fp2_sub(&mut x2, &t1, &__ac31);
+    let __ac32 = x2.clone();
+    bls12_Fp2_add(&mut x2, &__ac32, &__ac32);
+    let __ac33 = x2.clone();
+    bls12_Fp2_add(&mut x2, &__ac33, &t1);
+}
+
+#[inline]
+pub fn bls12_Fp12_mul_by_line(mut x0: &mut Fp2, mut x1: &mut Fp2, mut x2: &mut Fp2, mut x3: &mut Fp2, mut x4: &mut Fp2, mut x5: &mut Fp2, b0: &Fp2, b1: &Fp2, b4: &Fp2) {
+    let mut s0: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut s0, &x0, &b0);
+    let mut s1: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut s1, &x1, &b1);
+    let mut t: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut t, &x0, &x1);
+    let mut u: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut u, &b0, &b1);
+    let __ac0 = t.clone();
+    bls12_Fp2_mul(&mut t, &__ac0, &u);
+    let __ac1 = t.clone();
+    bls12_Fp2_sub(&mut t, &__ac1, &s0);
+    let __ac2 = t.clone();
+    bls12_Fp2_sub(&mut t, &__ac2, &s1);
+    let mut w: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut w, &x2, &b1);
+    let __ac3 = w.clone();
+    bls12_Fp2_mul_xi(&mut w, &__ac3);
+    let __ac4 = s0.clone();
+    bls12_Fp2_add(&mut s0, &__ac4, &w);
+    bls12_Fp2_mul(&mut w, &x2, &b0);
+    let __ac5 = s1.clone();
+    bls12_Fp2_add(&mut s1, &__ac5, &w);
+    let mut r0: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut r0, &x5, &b4);
+    let __ac6 = r0.clone();
+    bls12_Fp2_mul_xi(&mut r0, &__ac6);
+    let mut r1: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut r1, &x3, &b4);
+    let mut r2: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut r2, &x4, &b4);
+    let __ac7 = x3.clone();
+    bls12_Fp2_add(&mut x3, &x0, &__ac7);
+    let __ac8 = x4.clone();
+    bls12_Fp2_add(&mut x4, &x1, &__ac8);
+    let __ac9 = x5.clone();
+    bls12_Fp2_add(&mut x5, &x2, &__ac9);
+    bls12_Fp2_add(&mut u, &b1, &b4);
+    bls12_Fp2_mul(&mut w, &x3, &b0);
+    let mut q: Fp2 = Fp2::zero();
+    bls12_Fp2_mul(&mut q, &x4, &u);
+    let mut z: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut z, &x3, &x4);
+    let mut e: Fp2 = Fp2::zero();
+    bls12_Fp2_add(&mut e, &b0, &u);
+    let __ac10 = z.clone();
+    bls12_Fp2_mul(&mut z, &__ac10, &e);
+    let __ac11 = z.clone();
+    bls12_Fp2_sub(&mut z, &__ac11, &w);
+    let __ac12 = z.clone();
+    bls12_Fp2_sub(&mut z, &__ac12, &q);
+    bls12_Fp2_mul(&mut e, &x5, &u);
+    let __ac13 = e.clone();
+    bls12_Fp2_mul_xi(&mut e, &__ac13);
+    let __ac14 = w.clone();
+    bls12_Fp2_add(&mut w, &__ac14, &e);
+    bls12_Fp2_mul(&mut e, &x5, &b0);
+    let __ac15 = q.clone();
+    bls12_Fp2_add(&mut q, &__ac15, &e);
+    bls12_Fp2_sub(&mut x3, &w, &s0);
+    let __ac16 = x3.clone();
+    bls12_Fp2_sub(&mut x3, &__ac16, &r0);
+    bls12_Fp2_sub(&mut x4, &z, &t);
+    let __ac17 = x4.clone();
+    bls12_Fp2_sub(&mut x4, &__ac17, &r1);
+    bls12_Fp2_sub(&mut x5, &q, &s1);
+    let __ac18 = x5.clone();
+    bls12_Fp2_sub(&mut x5, &__ac18, &r2);
+    bls12_Fp2_mul_xi(&mut e, &r2);
+    bls12_Fp2_add(&mut x0, &s0, &e);
+    bls12_Fp2_add(&mut x1, &t, &r0);
+    bls12_Fp2_add(&mut x2, &s1, &r1);
+}
+
+#[inline]
 pub fn bls12_Fp12_cyc_exp_c_neg(mut out: &mut Fp12, base: &Fp12) {
     let mut result: Fp12 = Fp12::zero();
-    let mut cyc_t0: Fp6 = Fp6::zero();
-    let mut cyc_t1: Fp6 = Fp6::zero();
-    let mut cyc_one: Fp = Fp::zero();
-    bls12_from_word(&mut cyc_one, 1u64);
     bls12_from_word(&mut result.c0.c0.c0, 1u64);
     bls12_from_word(&mut result.c0.c0.c1, 0u64);
     bls12_from_word(&mut result.c0.c1.c0, 0u64);
@@ -648,19 +808,13 @@ pub fn bls12_Fp12_cyc_exp_c_neg(mut out: &mut Fp12, base: &Fp12) {
     i = 64u64;
     while i != 0 {
         i = i.wrapping_sub(1u64);
-        bls12_Fp6_mul(&mut cyc_t0, &result.c1, &result.c1);
-        bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
-        let __ac0 = cyc_t0.clone();
-        bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac0);
-        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
-        let __ac1 = result.c0.c0.c0.clone();
-        bls12_add(&mut result.c0.c0.c0, &__ac1, &cyc_one);
-        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
+        let __ac0 = result.c0.c0.clone();
+        bls12_Fp12_cyclotomic_square(&mut result.c0.c0, &mut result.c0.c1, &mut result.c0.c2, &mut result.c1.c0, &mut result.c1.c1, &mut result.c1.c2);
         let mut bit: u64;
         bit = ((5044125407647214251u64 >> (i & 63)) & 1u64);
         if bit != 0 {
-            let __ac2 = result.clone();
-            bls12_Fp12_mul_nocopy(&mut result, &__ac2, &base);
+            let __ac1 = result.clone();
+            bls12_Fp12_mul_nocopy(&mut result, &__ac1, &base);
         } else {
         }
     }
@@ -670,10 +824,6 @@ pub fn bls12_Fp12_cyc_exp_c_neg(mut out: &mut Fp12, base: &Fp12) {
 #[inline]
 pub fn bls12_Fp12_cyc_exp_x_neg(mut out: &mut Fp12, base: &Fp12) {
     let mut result: Fp12 = Fp12::zero();
-    let mut cyc_t0: Fp6 = Fp6::zero();
-    let mut cyc_t1: Fp6 = Fp6::zero();
-    let mut cyc_one: Fp = Fp::zero();
-    bls12_from_word(&mut cyc_one, 1u64);
     bls12_from_word(&mut result.c0.c0.c0, 1u64);
     bls12_from_word(&mut result.c0.c0.c1, 0u64);
     bls12_from_word(&mut result.c0.c1.c0, 0u64);
@@ -690,19 +840,13 @@ pub fn bls12_Fp12_cyc_exp_x_neg(mut out: &mut Fp12, base: &Fp12) {
     i = 64u64;
     while i != 0 {
         i = i.wrapping_sub(1u64);
-        bls12_Fp6_mul(&mut cyc_t0, &result.c1, &result.c1);
-        bls12_Fp6_mul(&mut cyc_t1, &result.c0, &result.c1);
-        let __ac0 = cyc_t0.clone();
-        bls12_Fp6_mul_by_v(&mut cyc_t0, &__ac0);
-        bls12_Fp6_add_nocopy(&mut result.c0, &cyc_t0, &cyc_t0);
-        let __ac1 = result.c0.c0.c0.clone();
-        bls12_add(&mut result.c0.c0.c0, &__ac1, &cyc_one);
-        bls12_Fp6_add_nocopy(&mut result.c1, &cyc_t1, &cyc_t1);
+        let __ac0 = result.c0.c0.clone();
+        bls12_Fp12_cyclotomic_square(&mut result.c0.c0, &mut result.c0.c1, &mut result.c0.c2, &mut result.c1.c0, &mut result.c1.c1, &mut result.c1.c2);
         let mut bit: u64;
         bit = ((15132376222941642752u64 >> (i & 63)) & 1u64);
         if bit != 0 {
-            let __ac2 = result.clone();
-            bls12_Fp12_mul_nocopy(&mut result, &__ac2, &base);
+            let __ac1 = result.clone();
+            bls12_Fp12_mul_nocopy(&mut result, &__ac1, &base);
         } else {
         }
     }
@@ -780,8 +924,8 @@ pub fn bls12_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
         bls12_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
         let __ac3 = f.clone();
         bls12_Fp12_square(&mut f, &__ac3);
-        let __ac4 = f.clone();
-        bls12_Fp12_mul_nocopy(&mut f, &__ac4, &line);
+        let __ac4 = f.c0.c0.clone();
+        bls12_Fp12_mul_by_line(&mut f.c0.c0, &mut f.c0.c1, &mut f.c0.c2, &mut f.c1.c0, &mut f.c1.c1, &mut f.c1.c2, &line.c0.c0, &line.c0.c1, &line.c1.c1);
         bls12_Fp2_square(&mut tmp1, &lambda);
         let __ac5 = tmp1.clone();
         bls12_Fp2_sub(&mut tmp1, &__ac5, &t_x);
@@ -801,8 +945,8 @@ pub fn bls12_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
             bls12_Fp2_inv(&mut tmp2, &__ac8);
             bls12_Fp2_mul(&mut lambda, &tmp1, &tmp2);
             bls12_make_line(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
-            let __ac9 = f.clone();
-            bls12_Fp12_mul_nocopy(&mut f, &__ac9, &line);
+            let __ac9 = f.c0.c0.clone();
+            bls12_Fp12_mul_by_line(&mut f.c0.c0, &mut f.c0.c1, &mut f.c0.c2, &mut f.c1.c0, &mut f.c1.c1, &mut f.c1.c2, &line.c0.c0, &line.c0.c1, &line.c1.c1);
             bls12_Fp2_square(&mut tmp1, &lambda);
             let __ac10 = tmp1.clone();
             bls12_Fp2_sub(&mut tmp1, &__ac10, &t_x);

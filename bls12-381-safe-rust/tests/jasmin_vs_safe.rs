@@ -5,7 +5,8 @@
 //! once as Jasmin) over the same CryptOpt multiply / square and safegcd
 //! inverse, so the outputs are compared limb for limb, projective
 //! coordinates included: 1000 pseudo-random inputs per operation (pairing,
-//! G1 and G2 scalar multiplication, G1 MSM with n = 64), and the same for
+//! G1 and G2 scalar multiplication, the constant-time G1 and G2 scalar
+//! multiplications (edge scalars first), G1 MSM with n = 64), and the same for
 //! the field and group functions they are built from.
 
 #![cfg(feature = "jasmin")]
@@ -170,6 +171,41 @@ fn g2_add_double_scalar_mul_1000() {
         let k = rng.scalar();
         g2_scalar_mul(&mut a, &k, &p); jasmin::g2_scalar_mul(&mut b, &k, &p);
         assert!(g2_eq(&a, &b), "g2 scalar mul {i}");
+    }
+}
+
+/// Edge scalars of the constant-time ladders: 0, 1, 2, r - 1, r, r + 1, 2^255, 2^256 - 1.
+fn edge_scalars() -> Vec<[u64; 4]> {
+    let r = [0xffffffff00000001u64, 0x53bda402fffe5bfe, 0x3339d80809a1d805, 0x73eda753299d7d48];
+    let (mut rm1, mut rp1) = (r, r);
+    rm1[0] -= 1;
+    rp1[0] += 1;
+    vec![[0; 4], [1, 0, 0, 0], [2, 0, 0, 0], rm1, r, rp1, [0, 0, 0, 1 << 63], [u64::MAX; 4]]
+}
+
+#[test]
+fn g1_scalar_mul_ct_1000() {
+    let mut rng = Rng(9);
+    let edges = edge_scalars();
+    for i in 0..N {
+        let p = g1_point(&mut rng);
+        let k = if i < edges.len() { edges[i] } else { rng.scalar() };
+        let (mut a, mut b) = (G1Projective::identity(), G1Projective::identity());
+        g1_scalar_mul_ct(&mut a, &k, &p); jasmin::g1_scalar_mul_ct(&mut b, &k, &p);
+        assert!(g1_eq(&a, &b), "g1 scalar mul ct {i}");
+    }
+}
+
+#[test]
+fn g2_scalar_mul_ct_1000() {
+    let mut rng = Rng(10);
+    let edges = edge_scalars();
+    for i in 0..N {
+        let p = g2_point(&mut rng);
+        let k = if i < edges.len() { edges[i] } else { rng.scalar() };
+        let (mut a, mut b) = (G2Projective::identity(), G2Projective::identity());
+        g2_scalar_mul_ct(&mut a, &k, &p); jasmin::g2_scalar_mul_ct(&mut b, &k, &p);
+        assert!(g2_eq(&a, &b), "g2 scalar mul ct {i}");
     }
 }
 

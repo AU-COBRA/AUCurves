@@ -6,10 +6,12 @@
     (feval out = Pairing.fp12_frobenius(_p2) of the fevals, the conjunct of
     PairingFieldOps.spec_of_Fp12_frobenius(_p2)), the loaders (feval = the constants
     of BLS12_FrobConstants.v, as proved in BLS12_LoadersFeval.v) and the cyclotomic
-    exponentiations (BLS12_CycExpFunctional.v).
+    exponentiations (BLS12_CycExpFunctional.v), whose Granger-Scott squaring needs the
+    subgroup of order p^4 - p^2 + 1 ([CyclotomicGS.gs], closed under the steps of the
+    chain: [CyclotomicGS.gs_step_*]).
 
       bls12_final_exp_hard_dsd_functional_ok : post (besides bounds and frame)
-        cyclotomic (feval f) ->
+        CyclotomicGS.gs (feval f) ->
         feval out = Pairing.final_exp_hard_dsd p gamma1_381 gamma2_381
                       (feval g1p2) (feval g2p2) c1_381 (feval wp2) (feval f)
 *)
@@ -52,6 +54,7 @@ Require Import Theory.BLS12Pairing.Fp12Ring.
 Require Import Theory.BLS12Pairing.Cyclotomic.
 Require Import Theory.BLS12Pairing.Frob381.
 Require Import Theory.BLS12Pairing.CycExpModel.
+Require Theory.BLS12Pairing.CyclotomicGS.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FrobConstants.
 Require Import Bedrock.Field.Synthesis.Examples.BLS12_FinalExpModel381.
 Require Theory.BLS12Pairing.Pairing.
@@ -188,7 +191,7 @@ Section BLS12_FinalExpHardDSDFunctional.
           (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)) mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
-            (cyclotomic (Fp12_feval base_val) ->
+            (CyclotomicGS.gs (Fp12_feval base_val) ->
              Fp12_feval out = P.fp12_pow_bls_x_signed PrimeField.M_pos (Fp12_feval base_val)) /\
             Fp12_bounded Fp12_loose out /\
             (FElem_Fp12 pout out ⋆ (FElem_Fp12 pbase base_val ⋆ Rr)) mem' }.
@@ -201,7 +204,7 @@ Section BLS12_FinalExpHardDSDFunctional.
           (FElem_Fp12 pbase base_val ⋆ (FElem_Fp12 pout old_out ⋆ Rr)) mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
-            (cyclotomic (Fp12_feval base_val) ->
+            (CyclotomicGS.gs (Fp12_feval base_val) ->
              Fp12_feval out = P.fp12_pow_bls_c_signed PrimeField.M_pos (Fp12_feval base_val)) /\
             Fp12_bounded Fp12_loose out /\
             (FElem_Fp12 pout out ⋆ (FElem_Fp12 pbase base_val ⋆ Rr)) mem' }.
@@ -241,7 +244,7 @@ Section BLS12_FinalExpHardDSDFunctional.
               (FElem_Fp12 pout old_out ⋆ Rr))))) mem;
         ensures tr' mem' :=
           tr = tr' /\ exists out,
-            (cyclotomic (Fp12_feval f_val) ->
+            (CyclotomicGS.gs (Fp12_feval f_val) ->
              Fp12_feval out = P.final_exp_hard_dsd PrimeField.M_pos gamma1_381 gamma2_381
                (Fp2_feval g1p2) (Fp2_feval g2p2) c1_381 (Fp2_feval wp2) (Fp12_feval f_val)) /\
             Fp12_bounded Fp12_loose out /\
@@ -528,13 +531,13 @@ Section BLS12_FinalExpHardDSDFunctional.
       { intros Hcyc.
         apply unhide in E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13, E14.
         specialize (E1 Hcyc).
-        pose proof (cyc_step_cs _ _ Hcyc E1) as C1.
+        pose proof (CyclotomicGS.gs_step_cs _ _ Hcyc E1) as C1.
         specialize (E2 C1).
-        pose proof (cyc_step_a4 _ _ _ _ C1 E2 E3 E4) as C4.
+        pose proof (CyclotomicGS.gs_step_a4 _ _ _ _ C1 E2 E3 E4) as C4.
         specialize (E5 C4).
-        pose proof (cyc_step_a7 _ _ _ _ C4 E5 E6 E7) as C7.
+        pose proof (CyclotomicGS.gs_step_a7 _ _ _ _ C4 E5 E6 E7) as C7.
         specialize (E8 C7).
-        pose proof (cyc_step_xs _ _ C7 E8) as C8.
+        pose proof (CyclotomicGS.gs_step_xs _ _ C7 E8) as C8.
         specialize (E9 C8).
         exact (hard_chain _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
           E1 E2 E3 E4 E5 E6 E7 E8 E9 E10 E11 E12 E13 E14). }

@@ -58,8 +58,14 @@ pub fn fp12_square(out: &mut Fp12, x: &Fp12) { tower::bn254_Fp12_square(out, x) 
 pub fn fp12_mul(out: &mut Fp12, x: &Fp12, y: &Fp12) { tower::bn254_Fp12_mul(out, x, y) }
 pub fn fp12_inv(out: &mut Fp12, x: &Fp12) { tower::bn254_Fp12_inv(out, x) }
 
+/// The BN254 optimal-ate pairing: [pairing_optimal].
+///
+/// [tower::bn254_pairing_dsd] is the Miller loop over 6u+2 alone, without the
+/// correction lines through pi(Q) and -pi^2(Q).  That value lies in G_T and passes
+/// e(P,Q) e(-P,Q) = 1, but it is not bilinear: e(2 G1, G2) != e(G1, G2)^2
+/// (examples/pairing_test.rs, tests/bilinear_reference.rs).
 pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
-    tower::bn254_pairing_dsd(out, p_x, p_y, q_x, q_y)
+    tower::bn254_pairing_dsd_optimal(out, p_x, p_y, q_x, q_y)
 }
 
 pub fn miller_loop(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {

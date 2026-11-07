@@ -259,7 +259,7 @@ fn add_step(
 }
 
 /// Hand-coded projective Miller loop.  Drop-in replacement for
-/// [bn254_miller_loop] that uses projective coordinates for the
+/// [bn254_miller_loop_optimal] (the 6u+2 loop and the two correction lines) that uses projective coordinates for the
 /// running point [T], eliminating the per-step Fp2 inversion in
 /// the doubling branch (~70 inversions saved).  The addition
 /// branch (~10 inversions, small fraction) still uses affine,
@@ -293,12 +293,80 @@ pub fn miller_loop_projective_hand(
         }
     }
 
+    // Optimal-ate correction lines, as in tower::bn254_miller_loop_optimal: without them the
+    // pairing is not bilinear.  T is Jacobian: (X/Z^2, Y/Z^3) is the affine point.
+    let mut inv_z = Fp2::zero();
+    let mut inv_z2 = Fp2::zero();
+    let mut inv_z3 = Fp2::zero();
+    let mut ax = Fp2::zero();
+    let mut ay = Fp2::zero();
+    bn254_Fp2_inv(&mut inv_z, &t_z);
+    fp2_square(&mut inv_z2, &inv_z);
+    fp2_mul(&mut inv_z3, &inv_z2, &inv_z);
+    fp2_mul(&mut ax, &t_x, &inv_z2);
+    fp2_mul(&mut ay, &t_y, &inv_z3);
+    optimal_corrections(&mut f, &ax, &ay, p_x, p_y, q_x, q_y);
+
     bn254_Fp12_felem_copy(out, &f);
+}
+
+/// The two optimal-ate lines after the 6u+2 loop, with T = (t_x, t_y) affine: the line through
+/// T and Q1 = pi(Q) = (conj(Qx) g1, conj(Qy) gy), T += Q1, then the line through T and
+/// -Q2 = -pi^2(Q) = (Qx g1p2, Qy) (g1p2 = xi^((p^2-1)/3) is real, and xi^((p^2-1)/2) = -1 makes
+/// (Qx g1p2, Qy) already the negative of pi^2(Q)).  Same calls as the tail of
+/// tower::bn254_miller_loop_optimal.
+fn optimal_corrections(
+    f: &mut Fp12, t_x0: &Fp2, t_y0: &Fp2, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2,
+) {
+    let (mut t_x, mut t_y) = (*t_x0, *t_y0);
+    let mut g1 = Fp2::zero();
+    let mut gy = Fp2::zero();
+    let mut g1p2 = Fp2::zero();
+    bn254_load_gamma1(&mut g1);
+    bn254_load_q1_y_const(&mut gy);
+    bn254_load_gamma1_p2(&mut g1p2);
+    let mut tmp1 = Fp2::zero();
+    let mut tmp2 = Fp2::zero();
+    let mut lambda = Fp2::zero();
+    let mut q1_x = Fp2::zero();
+    let mut q1_y = Fp2::zero();
+    let mut line = Fp12::zero();
+    bn254_Fp2_conjugate(&mut tmp1, q_x);
+    fp2_mul(&mut q1_x, &tmp1, &g1);
+    bn254_Fp2_conjugate(&mut tmp1, q_y);
+    fp2_mul(&mut q1_y, &tmp1, &gy);
+    fp2_sub(&mut tmp1, &q1_y, &t_y);
+    fp2_sub(&mut tmp2, &q1_x, &t_x);
+    let c = tmp2;
+    bn254_Fp2_inv(&mut tmp2, &c);
+    fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, p_x, p_y);
+    let c = *f;
+    fp12_mul(f, &c, &line);
+    fp2_square(&mut tmp1, &lambda);
+    let c = tmp1;
+    fp2_sub(&mut tmp1, &c, &t_x);
+    fp2_sub(&mut tmp2, &tmp1, &q1_x);
+    fp2_sub(&mut tmp1, &t_x, &tmp2);
+    let c = tmp1;
+    fp2_mul(&mut tmp1, &lambda, &c);
+    let c = t_y;
+    fp2_sub(&mut t_y, &tmp1, &c);
+    t_x = tmp2;
+    bn254_Fp2_mul_fp(&mut q1_x, q_x, &g1p2.c0);
+    fp2_sub(&mut tmp1, q_y, &t_y);
+    fp2_sub(&mut tmp2, &q1_x, &t_x);
+    let c = tmp2;
+    bn254_Fp2_inv(&mut tmp2, &c);
+    fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn254_make_line_corrected(&mut line, &lambda, &t_x, &t_y, p_x, p_y);
+    let c = *f;
+    fp12_mul(f, &c, &line);
 }
 
 /// Hand-coded projective pairing: [miller_loop_projective_hand]
 /// composed with the verified final exponentiation.
-/// Equals [crate::pairing] post-final-exp.
+/// Equals [crate::pairing] (= [crate::pairing_optimal]) post-final-exp.
 pub fn pairing_projective_hand(
     out: &mut Fp12,
     p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2,

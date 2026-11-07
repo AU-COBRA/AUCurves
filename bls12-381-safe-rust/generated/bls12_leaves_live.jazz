@@ -21,6 +21,7 @@ export fn bls12_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x20;
   reg u64 x22;
   reg u64 x23;
+  reg bool __ct_c;
   reg bool __bf;
   reg u64 x24;
   reg u64 x26;
@@ -29,6 +30,9 @@ export fn bls12_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x32;
   reg u64 x34;
   reg u64 x35;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg u64 __ct_m;
   reg u64 x38;
   reg u64 x41;
   reg u64 x44;
@@ -60,9 +64,7 @@ export fn bls12_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   __cf, x20 = #ADCX(x4, x10, __cf);
   __cf, x22 = #ADCX(x5, x11, __cf);
   x23 = 0;
-  if __cf {
-    x23 = 1;
-  }
+  __ct_c, x23 = #ADCX(x23, x23, __cf);
   __wtmp__ = 13402431016077863595;
   x24 = x12;
   _, __bf, _, _, _, x24 = #SUB(x24, __wtmp__);
@@ -82,39 +84,43 @@ export fn bls12_add(reg u64 out0, reg u64 in0, reg u64 in1) {
   x34 = x22;
   _, __bf, _, _, _, x34 = #SBB(x34, __wtmp__, __bf);
   x35 = 0;
-  if __bf {
-    x35 = 1;
-  }
-  if ((x35 == 0)) {
-    x38 = x24;
-  } else {
-    x38 = x12;
-  }
-  if ((x35 == 0)) {
-    x41 = x26;
-  } else {
-    x41 = x14;
-  }
-  if ((x35 == 0)) {
-    x44 = x28;
-  } else {
-    x44 = x16;
-  }
-  if ((x35 == 0)) {
-    x47 = x30;
-  } else {
-    x47 = x18;
-  }
-  if ((x35 == 0)) {
-    x50 = x32;
-  } else {
-    x50 = x20;
-  }
-  if ((x35 == 0)) {
-    x53 = x34;
-  } else {
-    x53 = x22;
-  }
+  __ct_c, x35 = #ADCX(x35, x35, __bf);
+  __wtmp__ = 1;
+  __ct_t = x35;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x24;
+  __ct_t = (__ct_t ^ x12);
+  __ct_t = (__ct_t & __ct_m);
+  x38 = x12;
+  x38 = (x38 ^ __ct_t);
+  __ct_t = x26;
+  __ct_t = (__ct_t ^ x14);
+  __ct_t = (__ct_t & __ct_m);
+  x41 = x14;
+  x41 = (x41 ^ __ct_t);
+  __ct_t = x28;
+  __ct_t = (__ct_t ^ x16);
+  __ct_t = (__ct_t & __ct_m);
+  x44 = x16;
+  x44 = (x44 ^ __ct_t);
+  __ct_t = x30;
+  __ct_t = (__ct_t ^ x18);
+  __ct_t = (__ct_t & __ct_m);
+  x47 = x18;
+  x47 = (x47 ^ __ct_t);
+  __ct_t = x32;
+  __ct_t = (__ct_t ^ x20);
+  __ct_t = (__ct_t & __ct_m);
+  x50 = x20;
+  x50 = (x50 ^ __ct_t);
+  __ct_t = x34;
+  __ct_t = (__ct_t ^ x22);
+  __ct_t = (__ct_t & __ct_m);
+  x53 = x22;
+  x53 = (x53 ^ __ct_t);
   x54 = x38;
   x55 = x41;
   x56 = x44;
@@ -152,6 +158,7 @@ export fn bls12_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x20;
   reg u64 x22;
   reg u64 x23;
+  reg bool __ct_c;
   reg u64 __m0__;
   reg u64 __wtmp__;
   reg u64 __m1__;
@@ -203,10 +210,9 @@ export fn bls12_sub(reg u64 out0, reg u64 in0, reg u64 in1) {
   x22 = x5;
   _, __bf, _, _, _, x22 = #SBB(x22, __wtmp__, __bf);
   x23 = 0;
-  if __bf {
-    x23 = 0;
-    x23 = (x23 - 1);
-  }
+  __wtmp__ = x23;
+  x23 = x23;
+  _, __ct_c, _, _, _, x23 = #SBB(x23, __wtmp__, __bf);
   __m0__ = x23;
   __wtmp__ = 13402431016077863595;
   __m0__ = (__m0__ & __wtmp__);
@@ -772,6 +778,10 @@ export fn bls12_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   reg u64 x828;
   reg u64 x829;
   reg bool __adc_m_x829;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x832;
   reg u64 x835;
   reg u64 x838;
@@ -1242,36 +1252,42 @@ export fn bls12_mul(#[spill] reg u64 out0, reg u64 in0, reg u64 in1) {
   _, __adc_cf_x829, _, _, _, x828 = #SUB(x828, __wtmp__);
   x829 = 0;
   __adc_m_x829, x829 = #ADCX(x829, x829, __adc_cf_x829);
-  if ((x829 == 0)) {
-    x832 = x801;
-  } else {
-    x832 = x772;
-  }
-  if ((x829 == 0)) {
-    x835 = x805;
-  } else {
-    x835 = x777;
-  }
-  if ((x829 == 0)) {
-    x838 = x810;
-  } else {
-    x838 = x782;
-  }
-  if ((x829 == 0)) {
-    x841 = x815;
-  } else {
-    x841 = x787;
-  }
-  if ((x829 == 0)) {
-    x844 = x820;
-  } else {
-    x844 = x792;
-  }
-  if ((x829 == 0)) {
-    x847 = x825;
-  } else {
-    x847 = x797;
-  }
+  __wtmp__ = 1;
+  __ct_t = x829;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x801;
+  __ct_t = (__ct_t ^ x772);
+  __ct_t = (__ct_t & __ct_m);
+  x832 = x772;
+  x832 = (x832 ^ __ct_t);
+  __ct_t = x805;
+  __ct_t = (__ct_t ^ x777);
+  __ct_t = (__ct_t & __ct_m);
+  x835 = x777;
+  x835 = (x835 ^ __ct_t);
+  __ct_t = x810;
+  __ct_t = (__ct_t ^ x782);
+  __ct_t = (__ct_t & __ct_m);
+  x838 = x782;
+  x838 = (x838 ^ __ct_t);
+  __ct_t = x815;
+  __ct_t = (__ct_t ^ x787);
+  __ct_t = (__ct_t & __ct_m);
+  x841 = x787;
+  x841 = (x841 ^ __ct_t);
+  __ct_t = x820;
+  __ct_t = (__ct_t ^ x792);
+  __ct_t = (__ct_t & __ct_m);
+  x844 = x792;
+  x844 = (x844 ^ __ct_t);
+  __ct_t = x825;
+  __ct_t = (__ct_t ^ x797);
+  __ct_t = (__ct_t & __ct_m);
+  x847 = x797;
+  x847 = (x847 ^ __ct_t);
   x848 = x832;
   x849 = x835;
   x850 = x838;
@@ -1807,6 +1823,10 @@ export fn bls12_square(#[spill] reg u64 out0, reg u64 in0) {
   reg u64 x822;
   reg u64 x823;
   reg bool __adc_m_x823;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x826;
   reg u64 x829;
   reg u64 x832;
@@ -2271,36 +2291,42 @@ export fn bls12_square(#[spill] reg u64 out0, reg u64 in0) {
   _, __adc_cf_x823, _, _, _, x822 = #SUB(x822, __wtmp__);
   x823 = 0;
   __adc_m_x823, x823 = #ADCX(x823, x823, __adc_cf_x823);
-  if ((x823 == 0)) {
-    x826 = x795;
-  } else {
-    x826 = x766;
-  }
-  if ((x823 == 0)) {
-    x829 = x799;
-  } else {
-    x829 = x771;
-  }
-  if ((x823 == 0)) {
-    x832 = x804;
-  } else {
-    x832 = x776;
-  }
-  if ((x823 == 0)) {
-    x835 = x809;
-  } else {
-    x835 = x781;
-  }
-  if ((x823 == 0)) {
-    x838 = x814;
-  } else {
-    x838 = x786;
-  }
-  if ((x823 == 0)) {
-    x841 = x819;
-  } else {
-    x841 = x791;
-  }
+  __wtmp__ = 1;
+  __ct_t = x823;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x795;
+  __ct_t = (__ct_t ^ x766);
+  __ct_t = (__ct_t & __ct_m);
+  x826 = x766;
+  x826 = (x826 ^ __ct_t);
+  __ct_t = x799;
+  __ct_t = (__ct_t ^ x771);
+  __ct_t = (__ct_t & __ct_m);
+  x829 = x771;
+  x829 = (x829 ^ __ct_t);
+  __ct_t = x804;
+  __ct_t = (__ct_t ^ x776);
+  __ct_t = (__ct_t & __ct_m);
+  x832 = x776;
+  x832 = (x832 ^ __ct_t);
+  __ct_t = x809;
+  __ct_t = (__ct_t ^ x781);
+  __ct_t = (__ct_t & __ct_m);
+  x835 = x781;
+  x835 = (x835 ^ __ct_t);
+  __ct_t = x814;
+  __ct_t = (__ct_t ^ x786);
+  __ct_t = (__ct_t & __ct_m);
+  x838 = x786;
+  x838 = (x838 ^ __ct_t);
+  __ct_t = x819;
+  __ct_t = (__ct_t ^ x791);
+  __ct_t = (__ct_t & __ct_m);
+  x841 = x791;
+  x841 = (x841 ^ __ct_t);
   x842 = x826;
   x843 = x829;
   x844 = x832;
@@ -2331,6 +2357,10 @@ export fn bls12_select_znz(reg u64 out0, reg u64 in0, reg u64 in1, reg u64 in2) 
   reg u64 x9;
   reg u64 x10;
   reg u64 x11;
+  reg bool __ct_f;
+  reg u64 __ct_t;
+  reg bool __ct_c;
+  reg u64 __ct_m;
   reg u64 x14;
   reg u64 x17;
   reg u64 x20;
@@ -2355,36 +2385,42 @@ export fn bls12_select_znz(reg u64 out0, reg u64 in0, reg u64 in1, reg u64 in2) 
   x9 = [(in2 + 24) + 0];
   x10 = [(in2 + 32) + 0];
   x11 = [(in2 + 40) + 0];
-  if ((in0 == 0)) {
-    x14 = x0;
-  } else {
-    x14 = x6;
-  }
-  if ((in0 == 0)) {
-    x17 = x1;
-  } else {
-    x17 = x7;
-  }
-  if ((in0 == 0)) {
-    x20 = x2;
-  } else {
-    x20 = x8;
-  }
-  if ((in0 == 0)) {
-    x23 = x3;
-  } else {
-    x23 = x9;
-  }
-  if ((in0 == 0)) {
-    x26 = x4;
-  } else {
-    x26 = x10;
-  }
-  if ((in0 == 0)) {
-    x29 = x5;
-  } else {
-    x29 = x11;
-  }
+  __wtmp__ = 1;
+  __ct_t = in0;
+  _, __ct_f, _, _, _, __ct_t = #SUB(__ct_t, __wtmp__);
+  __wtmp__ = __ct_t;
+  __ct_m = __ct_t;
+  _, __ct_c, _, _, _, __ct_m = #SBB(__ct_m, __wtmp__, __ct_f);
+  __ct_t = x0;
+  __ct_t = (__ct_t ^ x6);
+  __ct_t = (__ct_t & __ct_m);
+  x14 = x6;
+  x14 = (x14 ^ __ct_t);
+  __ct_t = x1;
+  __ct_t = (__ct_t ^ x7);
+  __ct_t = (__ct_t & __ct_m);
+  x17 = x7;
+  x17 = (x17 ^ __ct_t);
+  __ct_t = x2;
+  __ct_t = (__ct_t ^ x8);
+  __ct_t = (__ct_t & __ct_m);
+  x20 = x8;
+  x20 = (x20 ^ __ct_t);
+  __ct_t = x3;
+  __ct_t = (__ct_t ^ x9);
+  __ct_t = (__ct_t & __ct_m);
+  x23 = x9;
+  x23 = (x23 ^ __ct_t);
+  __ct_t = x4;
+  __ct_t = (__ct_t ^ x10);
+  __ct_t = (__ct_t & __ct_m);
+  x26 = x10;
+  x26 = (x26 ^ __ct_t);
+  __ct_t = x5;
+  __ct_t = (__ct_t ^ x11);
+  __ct_t = (__ct_t & __ct_m);
+  x29 = x11;
+  x29 = (x29 ^ __ct_t);
   x30 = x14;
   x31 = x17;
   x32 = x20;

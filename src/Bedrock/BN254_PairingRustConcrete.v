@@ -37,6 +37,21 @@ Require Import Bedrock.Field.PairingTheory.Affine.
 Require Import Bedrock.Field.PairingTheory.PairingSpec.
 Require Import Bedrock.Field.PairingTheory.CurveParams.
 Require Import Bedrock.Field.PairingTheory.Curves.BN254_params.
+Require Import Bedrock.Field.PairingTheory.BN254OptimalAte.
+
+(** Frobenius constants.  The emitted [bn254_pairing_dsd_optimal]
+    (BN254_Pairing.v) stores three constants with the loaders [bn254_load_gamma1_p2],
+    [bn254_load_gamma2_p2] and [bn254_load_w_frob_p2_c1]: xi^((p^2-1)/3), xi^(2(p^2-1)/3) and
+    xi^((p^2-1)/6) (decoded from their Montgomery limbs).  They are the Frobenius-p^2 constants
+    that [bn254_final_exp_dsd] reads.  The Miller loop takes no constant argument and loads its
+    own: xi^((p-1)/3), xi^((p-1)/2) and xi^((p^2-1)/3), the constants of [FrobConstants]
+    ([BN254OptimalAte.bn254_gamma1], [bn254_gamma_y], [bn254_gamma1_p2]).
+    So the sections below have two triples of constants: [gamma1 gamma_y gamma1_p2], the values
+    the three loaders store (named after the slots), and [c1 cy c1p2], the Frobenius constants of
+    the Miller loop's corrections, at which [mid_ml], [miller_callee_post] and [pairing_post] state
+    the spec.  The statements before this change are the instances c = gamma; the emitted code is
+    the instance c = [BN254OptimalAte]'s constants, [bn254_pairing_end_to_end_closed], with the
+    closed pairing [bn254_optimal_ate] at the exit. *)
 
 (** NB: we do NOT [Require Import MillerLoopWP] because that
     transitively imports [FevalBridge], which currently has an
@@ -237,6 +252,14 @@ Definition bn254_loader_body
     bn254_bitwidth bn254_nlimbs bn254_modp bn254_mprime v], taking
     ~10s total for all 6 Fp components.
 
+    Decoded from Montgomery form: the limbs
+    above decode to [BN254OptimalAte.bn254_gamma1], [bn254_gamma_y] = xi^((p-1)/2) =
+    (2821565182194536844548159561693502659359617185244120367078079554186484126554,
+     3505843767911556378687030309984248845540243509899259641013678093033130930403) and
+    [bn254_gamma1_p2] = xi^((p^2-1)/3) = (21888...556616, 0), the [FrobConstants] values.  The
+    decimal γ_y above is not a power of xi, and the decimal γ_{1,p²} (…556617) is xi^((p^2-1)/6).
+    The emitted loaders of these slots store other constants (see the note after the imports).
+
     ** Closing [Hgamma*_fp2_eval] — status and blocker **
 
     Replacing these 24 [Parameter]s with [Definition := Z.to_nat <v>]
@@ -427,8 +450,11 @@ Section ConcretePredicates.
   Context (g1_loc g2_loc w_loc : located) (* TFp2 *)
           (ml_loc : located).             (* TFp12 *)
 
-  (** Frobenius constants set by the loaders (mathematical values). *)
+  (** The constants set by the three loaders (mathematical values; in the emitted code the
+      final exponentiation's Frobenius-p^2 constants, see the note after the imports). *)
   Context (gamma1 gamma_y gamma1_p2 : Fp2_Z).
+  (** The Frobenius constants of the Miller loop's two corrections. *)
+  Context (c1 cy c1p2 : Fp2_Z).
 
   (** Bounds / validity predicates on the input locations. *)
   Definition Fp_at (loc : located) (rs : rust_state) : Prop :=
@@ -471,7 +497,8 @@ Section ConcretePredicates.
                 bn254_fp2_eval v = gamma1_p2.
 
   (** [mid_ml]: after miller_loop_optimal, [ml_loc] holds the
-      miller-with-corrections value at this pair of points. *)
+      miller-with-corrections value at this pair of points, with the
+      correction constants [c1 cy c1p2]. *)
   Definition mid_ml : spec_t :=
     fun rs =>
       mid_w rs /\
@@ -483,13 +510,13 @@ Section ConcretePredicates.
         extract_at q_y_loc TFp2 rs = Some qy /\
         bn254_fp12_eval ml_val =
           bn254_miller_loop_with_corrections
-            gamma1 gamma_y gamma1_p2
+            c1 cy c1p2
             (bn254_fp_eval px) (bn254_fp_eval py)
             (bn254_fp2_eval qx) (bn254_fp2_eval qy).
 
   (** [pairing_post]: after final_exp, [out_loc] holds the full
-      optimal-ate pairing value.  Matches the G2 strong spec
-      postcondition (see BN254_PairingCorrect.v:387-390). *)
+      optimal-ate pairing value at the correction constants [c1 cy c1p2].
+      Matches the G2 strong spec postcondition (BN254_PairingCorrect.v). *)
   Definition pairing_post : spec_t :=
     fun rs =>
       exists out px py qx qy,
@@ -499,7 +526,7 @@ Section ConcretePredicates.
         extract_at q_x_loc TFp2 rs = Some qx /\
         extract_at q_y_loc TFp2 rs = Some qy /\
         bn254_fp12_eval out =
-          bn254_optimal_ate_spec gamma1 gamma_y gamma1_p2
+          bn254_optimal_ate_spec c1 cy c1p2
             (bn254_fp_eval px) (bn254_fp_eval py)
             (bn254_fp2_eval qx) (bn254_fp2_eval qy).
 
@@ -571,6 +598,7 @@ Definition loc_Fp2_c1 (x : var) : located :=
 Section CalleePredicates.
 
   Context (gamma1 gamma_y gamma1_p2 : Fp2_Z).
+  Context (c1 cy c1p2 : Fp2_Z).
 
   (** Loaders: require [out] to already hold an [Fp2] value (from
       the caller's stackalloc).  Post asserts [out] holds the
@@ -620,7 +648,7 @@ Section CalleePredicates.
         extract_at (loc_Fp12 tmp_var) TFp12 rs = Some tmp /\
         bn254_fp12_eval tmp =
           bn254_miller_loop_with_corrections
-            gamma1 gamma_y gamma1_p2 px_v py_v qx_v qy_v.
+            c1 cy c1p2 px_v py_v qx_v qy_v.
 
   (** Final exponentiation: reads [f g1 g2 w]; writes [out].
       Parameterised on the input [f_v] value; the [g1 g2 w] slots are
@@ -830,9 +858,10 @@ Section PairingBodyRefines.
   Context (out_loc : located) (p_x_loc p_y_loc : located)
           (q_x_loc q_y_loc : located).
 
-  (** The Frobenius constants (mathematical values, supplied by the
-      G2 chain). *)
+  (** The constants stored by the three loaders (mathematical values). *)
   Context (gamma1 gamma_y gamma1_p2 : Fp2_Z).
+  (** The Frobenius constants of the Miller loop's corrections (see the note after the imports). *)
+  Context (c1 cy c1p2 : Fp2_Z).
 
   (** Type constraints on the user's locations. *)
   Hypothesis Hout_Fp12 : loc_dst out_loc = TFp12.
@@ -899,7 +928,7 @@ Section PairingBodyRefines.
                                     q_x_loc q_y_loc).
   Notation post     := (pairing_post out_loc p_x_loc p_y_loc
                                      q_x_loc q_y_loc
-                                     gamma1 gamma_y gamma1_p2).
+                                     c1 cy c1p2).
   Notation mid1     := (mid_g1 out_loc p_x_loc p_y_loc
                                q_x_loc q_y_loc g1_loc gamma1).
   Notation mid2     := (mid_g2 out_loc p_x_loc p_y_loc
@@ -911,7 +940,7 @@ Section PairingBodyRefines.
   Notation mid4     := (mid_ml out_loc p_x_loc p_y_loc
                                q_x_loc q_y_loc g1_loc g2_loc w_loc
                                tmp_loc
-                               gamma1 gamma_y gamma1_p2).
+                               gamma1 gamma_y gamma1_p2 c1 cy c1p2).
 
   (** The 5 per-callee body-refines hypotheses (to be discharged
       in Steps 3 and 4).  Each says the safe-Rust body refines its
@@ -1020,7 +1049,7 @@ Section PairingBodyRefines.
                    bn254_leaf_spec_concrete bn254_call_env
                    (miller_callee_pre px_v py_v qx_v qy_v)
                    bn254_miller_body
-                   (miller_callee_post gamma1 gamma_y gamma1_p2
+                   (miller_callee_post c1 cy c1p2
                                        px_v py_v qx_v qy_v).
   Proof.
     intros; unfold rust_refines, bn254_miller_body.
@@ -1818,7 +1847,7 @@ Section PairingBodyRefines.
                          "bn254_miller_loop_optimal"
                          bn254_miller_params bn254_miller_body
                          (miller_callee_pre px_v py_v qx_v qy_v)
-                         (miller_callee_post gamma1 gamma_y gamma1_p2
+                         (miller_callee_post c1 cy c1p2
                                              px_v py_v qx_v qy_v)
                          tmp_loc
                          [tmp_loc; p_x_loc; p_y_loc; q_x_loc; q_y_loc]
@@ -2079,16 +2108,17 @@ Section PairingBodyRefines.
   (*   without pulling in the full [CurveParams] unfolding.           *)
   (* ================================================================ *)
 
+  (* Stated for any three constants, not only the loaded slots. *)
   Lemma bn254_optimal_ate_decomposes :
-    forall px py qx qy,
-      bn254_optimal_ate_spec gamma1 gamma_y gamma1_p2 px py qx qy =
+    forall (g1 gy g1p2 : Fp2_Z) px py qx qy,
+      bn254_optimal_ate_spec g1 gy g1p2 px py qx qy =
       PairingSpec.final_exp bn254_zmod_ops
         (zfp12_conj bn254_p_val)
         (zfp12_inv bn254_p_val bn254_xi_val)
         (zfp12_frob_p2 bn254_p_val bn254_xi_val)
         (zfp12_pow bn254_p_val bn254_xi_val)
         (prime_p bn254_params) (scalar_r bn254_params)
-        (bn254_miller_loop_with_corrections gamma1 gamma_y gamma1_p2
+        (bn254_miller_loop_with_corrections g1 gy g1p2
                                             px py qx qy).
   Proof.
     intros.
@@ -2401,7 +2431,7 @@ Section PairingBodyRefines.
         extract_at q_x_loc TFp2 rs2 = Some qx /\
         extract_at q_y_loc TFp2 rs2 = Some qy /\
         bn254_fp12_eval out =
-          bn254_optimal_ate_spec gamma1 gamma_y gamma1_p2
+          bn254_optimal_ate_spec c1 cy c1p2
             (bn254_fp_eval px) (bn254_fp_eval py)
             (bn254_fp2_eval qx) (bn254_fp2_eval qy).
   Proof.
@@ -2496,7 +2526,7 @@ Proof. repeat split; discriminate. Qed.
     abstract Frobenius constants (gamma values) and the 4 remaining
     semantic hypotheses that depend on gamma-specific data. *)
 Theorem bn254_pairing_rust_correct_concrete :
-  forall (gamma1 gamma_y gamma1_p2 : Fp2_Z),
+  forall (gamma1 gamma_y gamma1_p2 : Fp2_Z) (c1 cy c1p2 : Fp2_Z),
   bn254_fp2_eval
     (VFp2 (VFp [bn254_gamma1_l00; bn254_gamma1_l01; bn254_gamma1_l02; bn254_gamma1_l03])
           (VFp [bn254_gamma1_l10; bn254_gamma1_l11; bn254_gamma1_l12; bn254_gamma1_l13])) = gamma1 ->
@@ -2520,13 +2550,13 @@ Theorem bn254_pairing_rust_correct_concrete :
                              bn254_q_x_loc bn254_q_y_loc)
                (pairing_post bn254_out_loc bn254_p_x_loc bn254_p_y_loc
                              bn254_q_x_loc bn254_q_y_loc
-                             gamma1 gamma_y gamma1_p2).
+                             c1 cy c1p2).
 Proof.
-  intros gamma1 gamma_y gamma1_p2 Hg1 Hgy Hgw Hlen4.
+  intros gamma1 gamma_y gamma1_p2 c1 cy c1p2 Hg1 Hgy Hgw Hlen4.
   apply (bn254_pairing_rust_correct
            bn254_out_loc bn254_p_x_loc bn254_p_y_loc
            bn254_q_x_loc bn254_q_y_loc
-           gamma1 gamma_y gamma1_p2);
+           gamma1 gamma_y gamma1_p2 c1 cy c1p2);
     first [ exact bn254_Hout_Fp12
           | exact bn254_Hpx_Fp
           | exact bn254_Hpy_Fp
@@ -2544,6 +2574,66 @@ Proof.
           | exact bn254_Hqy_shape
           | exact bn254_Hdistinct_out_users
           | exact Hg1 | exact Hgy | exact Hgw | exact Hlen4 ].
+Qed.
+
+(** At [BN254OptimalAte]'s constants, the pairing of [pairing_post] is the closed BN254 pairing. *)
+Lemma bn254_pairing_closed (Px Py : Z) (Qx Qy : Fp2_Z) :
+  bn254_optimal_ate_spec bn254_gamma1 bn254_gamma_y bn254_gamma1_p2 Px Py Qx Qy =
+  bn254_optimal_ate Px Py Qx Qy.
+Proof.
+  unfold bn254_optimal_ate_spec, bn254_optimal_ate.
+  assert (Hxi : bn254_xi_val = (xi_re bn254_params, xi_im bn254_params)) by reflexivity.
+  assert (Hp : bn254_p_val = prime_p bn254_params) by reflexivity.
+  rewrite Hxi, Hp. reflexivity.
+Qed.
+
+(** [bn254_pairing_rust_correct_concrete] at the emitted code's correction constants
+    ([FrobConstants], c = [bn254_gamma1 bn254_gamma_y bn254_gamma1_p2]), as a statement about
+    executions, with the closed pairing [bn254_optimal_ate] at the exit; the loaded constants
+    occur only in the hypotheses about the loader limbs. *)
+Theorem bn254_pairing_end_to_end_closed :
+  forall (gamma1 gamma_y gamma1_p2 : Fp2_Z),
+  bn254_fp2_eval
+    (VFp2 (VFp [bn254_gamma1_l00; bn254_gamma1_l01; bn254_gamma1_l02; bn254_gamma1_l03])
+          (VFp [bn254_gamma1_l10; bn254_gamma1_l11; bn254_gamma1_l12; bn254_gamma1_l13])) = gamma1 ->
+  bn254_fp2_eval
+    (VFp2 (VFp [bn254_gamma_y_l00; bn254_gamma_y_l01; bn254_gamma_y_l02; bn254_gamma_y_l03])
+          (VFp [bn254_gamma_y_l10; bn254_gamma_y_l11; bn254_gamma_y_l12; bn254_gamma_y_l13])) = gamma_y ->
+  bn254_fp2_eval
+    (VFp2 (VFp [bn254_gamma1_p2_l00; bn254_gamma1_p2_l01; bn254_gamma1_p2_l02; bn254_gamma1_p2_l03])
+          (VFp [bn254_gamma1_p2_l10; bn254_gamma1_p2_l11; bn254_gamma1_p2_l12; bn254_gamma1_p2_l13])) = gamma1_p2 ->
+  (forall rs,
+     (exists v, extract_at (loc_Fp2 out_var) TFp2 rs = Some v) ->
+     exists lc0 lc1,
+       length lc0 = 4%nat /\ length lc1 = 4%nat /\
+       extract_at (loc_Fp2 out_var) TFp2 rs =
+         Some (VFp2 (VFp lc0) (VFp lc1))) ->
+  forall rs1 rs2,
+    pairing_pre bn254_out_loc bn254_p_x_loc bn254_p_y_loc bn254_q_x_loc bn254_q_y_loc rs1 ->
+    rust_exec_fenv bn254_N bn254_u64_max bn254_pairing_fenv
+                   bn254_leaf_spec_concrete bn254_call_env
+                   (pairing_body bn254_out_loc bn254_p_x_loc bn254_p_y_loc
+                                 bn254_q_x_loc bn254_q_y_loc) rs1 rs2 ->
+    exists out px py qx qy,
+      extract_at bn254_out_loc TFp12 rs2 = Some out /\
+      extract_at bn254_p_x_loc TFp rs2 = Some px /\
+      extract_at bn254_p_y_loc TFp rs2 = Some py /\
+      extract_at bn254_q_x_loc TFp2 rs2 = Some qx /\
+      extract_at bn254_q_y_loc TFp2 rs2 = Some qy /\
+      bn254_fp12_eval out =
+        bn254_optimal_ate (bn254_fp_eval px) (bn254_fp_eval py)
+                          (bn254_fp2_eval qx) (bn254_fp2_eval qy).
+Proof.
+  intros gamma1 gamma_y gamma1_p2 Hg1 Hgy Hgw Hlen4 rs1 rs2 Hpre Hexec.
+  pose proof (bn254_pairing_rust_correct_concrete gamma1 gamma_y gamma1_p2
+                bn254_gamma1 bn254_gamma_y bn254_gamma1_p2 Hg1 Hgy Hgw Hlen4
+                rs1 rs2 Hpre Hexec) as Hpost.
+  unfold pairing_post in Hpost.
+  destruct Hpost as (out & px & py & qx & qy & H1 & H2 & H3 & H4 & H5 & Hv).
+  exists out, px, py, qx, qy.
+  split; [exact H1|]. split; [exact H2|]. split; [exact H3|].
+  split; [exact H4|]. split; [exact H5|].
+  rewrite Hv. apply bn254_pairing_closed.
 Qed.
 
 (* ================================================================ *)

@@ -129,10 +129,13 @@ Definition bls12_tower_jazz_regptr_pr20 : string :=
     20: 106, 21: 103-104, 22: register allocation fails. *)
 Definition bls12_leaf_budget : nat := 21.
 
-(** The separately compiled leaves ([generated/bls12_leaves_live.jazz], the
-    safe-Rust path's and the dispatcher's multiply and square) are printed
-    with this budget too ([scripts/EmitBLS12LeavesLive.v]); their hints erase to
-    the hint-free module as for the default budget. *)
+(** The [polish_func_adc] leaves at this budget: their hints erase to the
+    hint-free module as for the default budget.  (The separately compiled
+    leaves, [generated/bls12_leaves_live.jazz], the safe-Rust path's and the
+    dispatcher's multiply and square, are the branch-free
+    [ExtractBLS12LeavesLive.bls12_leaves_jasmin_ct] printed at
+    [ExtractBLS12LeavesLive.bls12_leaf_ct_budget] by
+    [scripts/EmitBLS12LeavesLive.v]; [bls12_leaves_ct_erases] there.) *)
 Lemma bls12_leaves_live_budget_erases :
   String.concat (LF ++ LF)
     (List.map (fun f => SpillLiveness.render (SpillLiveness.erase

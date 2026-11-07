@@ -76,6 +76,7 @@ Require Import Bedrock.Field.PairingTheory.CurveParams.
 Require Import Bedrock.Field.PairingTheory.Curves.BN254_params.
 Require Import Bedrock.Field.PairingTheory.MillerLoopWP.
 Require Import Bedrock.Field.PairingTheory.FevalBridge.
+Require Import Bedrock.Field.PairingTheory.BN254OptimalAte.
 
 Import BinInt String List.ListNotations.
 
@@ -357,11 +358,22 @@ Section BN254_PairingCorrect.
   (* ================================================================ *)
 
   (** The strong spec postcondition: [bn254_fp12_to_Z out] equals
-      the math-level [bn254_optimal_ate_spec].  The three Frobenius
-      constants (gamma1, gamma_y, gamma1_p2) are Section variables
-      set by the caller (supplied by the strong loader hypotheses). *)
+      the math-level [bn254_optimal_ate_spec].
+
+      Two triples of constants.  [gamma1 gamma_y gamma1_p2] are the values
+      that the three loaders store (named after their slots; supplied by the strong loader
+      hypotheses).  In the emitted [bn254_pairing_dsd_optimal] these are xi^((p^2-1)/3),
+      xi^(2(p^2-1)/3) and xi^((p^2-1)/6) (Montgomery limbs of [bn254_load_gamma1_p2],
+      [bn254_load_gamma2_p2], [bn254_load_w_frob_p2_c1], decoded), the Frobenius-p^2 constants
+      read by [bn254_final_exp_dsd].  [c1 cy c1p2] are the Frobenius constants of the Miller
+      loop's two corrections, at which [strong_miller_spec] and the postcondition are stated;
+      the emitted Miller loop loads its own, the [FrobConstants] values xi^((p-1)/3),
+      xi^((p-1)/2), xi^((p^2-1)/3) ([BN254OptimalAte.bn254_gamma1] etc.).  The statement before
+      this change is the instance c = gamma, whose hypotheses the emitted code cannot meet;
+      [bn254_pairing_dsd_optimal_correct_frob] is the instance c = [FrobConstants]. *)
 
   Context (gamma1 gamma_y gamma1_p2 : Fp2_Z).
+  Context (c1 cy c1p2 : Fp2_Z).
 
   Instance spec_of_bn254_pairing_dsd_optimal_strong
     : spec_of "bn254_pairing_dsd_optimal" :=
@@ -385,7 +397,7 @@ Section BN254_PairingCorrect.
         exists out,
           Fp12_bounded Fp12_loose out /\
           bn254_fp12_to_Z out =
-            bn254_optimal_ate_spec gamma1 gamma_y gamma1_p2
+            bn254_optimal_ate_spec c1 cy c1p2
               (bn254_fp_to_Z p_x) (bn254_fp_to_Z p_y)
               (bn254_fp2_to_Z q_x) (bn254_fp2_to_Z q_y) /\
           (FElem_Fp12 pout out ⋆
@@ -416,7 +428,7 @@ Section BN254_PairingCorrect.
       (HLoadW  : strong_loader_spec functions
                    "bn254_load_w_frob_p2_c1" gamma1_p2)
       (HMillerLoop : strong_miller_spec functions
-                       gamma1 gamma_y gamma1_p2)
+                       c1 cy c1p2)
       (HFinalExp   : strong_final_exp_spec functions),
     spec_of_bn254_pairing_dsd_optimal_strong functions.
   Proof.
@@ -586,6 +598,15 @@ Section BN254_PairingCorrect.
   Qed.
 
 End BN254_PairingCorrect.
+
+(** The instance at the emitted code's Miller-loop constants ([FrobConstants]; c of the section
+    above), with the post in terms of the closed pairing [BN254OptimalAte.bn254_optimal_ate]
+    (= [bn254_optimal_ate_spec] at these constants, [BN254OptimalAteBridge.bn254_optimal_ate_is_spec]
+    after [bn254_gamma1_eq] etc.).  The loaded constants stay arbitrary. *)
+Definition bn254_pairing_dsd_optimal_correct_frob
+    (gamma1 gamma_y gamma1_p2 : Fp2_Z) :=
+  bn254_pairing_dsd_optimal_correct gamma1 gamma_y gamma1_p2
+    bn254_gamma1 bn254_gamma_y bn254_gamma1_p2.
 
 (* ================================================================ *)
 (* §6. Discharge roadmap                                             *)

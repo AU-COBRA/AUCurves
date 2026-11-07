@@ -40,8 +40,11 @@ Definition bn254_params : CurveParams := {|
 
   optimal_ate_extras :=
     [ {| pi_power := 1; negate := false |}    (* +pi(Q) *)
-    ; {| pi_power := 2; negate := true  |}    (* -pi^2(Q) *)
+    ; {| pi_power := 2; negate := false |}    (* -pi^2(Q), see below *)
     ];
+    (* [frobenius2_Q] returns (Qx * xi^((p^2-1)/3), Qy), which is already -pi^2(Q)
+       because xi^((p^2-1)/2) = -1; so no further negation (the optimal-ate line
+       goes through -pi^2(Q)). *)
 |}.
 
 Lemma bn254_params_wf : CurveParams_wf bn254_params.

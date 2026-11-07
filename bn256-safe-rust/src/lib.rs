@@ -16,6 +16,9 @@ mod tower {
 
 mod stubs;
 
+/// Optimal-ate Miller loop and pairing (hand-written over the tower): see optimal.rs.
+pub mod optimal;
+
 /// Byte-ABI shims (`*mut u8` / `*const u8` over the leaf byte slots)
 /// for the Rocq-emitted bodies, over the crate's own leaves.
 pub mod extracted_leaves;
@@ -41,7 +44,14 @@ pub fn fp2_sub(out: &mut Fp2, x: &Fp2, y: &Fp2) { tower::bn256_Fp2_sub(out, x, y
 pub fn fp2_mul(out: &mut Fp2, x: &Fp2, y: &Fp2) { tower::bn256_Fp2_mul(out, x, y) }
 pub fn fp2_square(out: &mut Fp2, x: &Fp2) { tower::bn256_Fp2_square(out, x) }
 
+/// The BN256 optimal-ate pairing ([optimal::pairing_optimal]).  The emitted
+/// tower::bn256_pairing_dsd is not bilinear (wrong line layout, no correction lines).
 pub fn pairing(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    optimal::pairing_optimal(out, p_x, p_y, q_x, q_y)
+}
+
+/// tower::bn256_pairing_dsd as emitted (not bilinear); kept for comparison.
+pub fn pairing_dsd_uncorrected(out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     tower::bn256_pairing_dsd(out, p_x, p_y, q_x, q_y)
 }
 

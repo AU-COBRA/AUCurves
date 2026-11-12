@@ -1,0 +1,16 @@
+; jast294c: jasminc-like driver (no safety checker, no linter) linking the
+; 294b46e jasmin library (jasmin.jasmin, whose CIL was extracted from the
+; Rocq 9.2 switch's .vo).  jast_test_prog.ml/.mli is the only module
+; extracted from $JAST_TOOLS/rocqtest/jast_test_prog.v; it refers to the
+; library's CIL modules (wrapped in Jasmin, hence -open Jasmin).
+(executable
+ (name jast294c)
+ (public_name jast294c)
+ (package jast294c)
+ (modules jast294c
+   ; extracted from $JAST_TOOLS/jast/rocq (BLS12Leaves.bls12_leaves_prog), see $JAST_TOOLS/jast/leaves.md
+   BLS12Leaves BLS12Leaves2 Carry SpillChoice BLS12LeafBodies Byte Comp Fun0 Syntax0 Trans)
+ (flags (:standard -open Jasmin -w -9))
+ ; zarith links -lgmp; the system has only libgmp.so.10 (no dev symlink)
+ (link_flags (-ccopt -L%{env:JAST_TOOLS_LIB=/usr/local/lib}))
+ (libraries jasmin.jasmin batteries.unthreaded zarith unix))

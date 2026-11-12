@@ -1,0 +1,10 @@
+(library
+ (name extraction_plugin_patched)
+ (public_name rocq-extraction-patched.plugin)
+ (flags (:standard -rectypes -w -a))
+ (libraries rocq-runtime.vernac))
+
+(rule
+ (targets g_extraction.ml)
+ (deps (:mlg g_extraction.mlg))
+ (action (run rocq pp-mlg %{deps})))

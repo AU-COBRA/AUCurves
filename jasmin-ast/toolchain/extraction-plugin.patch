@@ -1,0 +1,38 @@
+Rocq 9.2.0 extraction plugin: fix the kernel assertion
+  Anomaly "File "kernel/environ.ml", line 874, characters 11-17: Assertion failed."
+(Environ.shallow_add_module <- Modops.add_module <- Modops.add_structure
+ <- Extract_env.env_for_mtb_with_def) raised when extracting a module type
+"... with Definition ..." whose signature contains a module that is already
+in the environment (Jasmin's tagged.v: Declare Module Mt : MAP with
+Definition K.t := t_eqType, used as a functor result signature).
+The fix of extract_env.ml is the one of Rocq master (upstream
+plugins/extraction/extract_env.ml line 225): use the overwriting
+Environ.Internal.overwrite_structure, as every other environment update of
+this file already does.  The g_extraction.mlg hunk only renames the plugin
+so that it can be built and loaded as the separate findlib package
+rocq-extraction-patched.plugin (Declare ML Module
+"rocq-extraction-patched.plugin") next to the untouched original.
+Apply to a Rocq V9.2.0 source tree with: patch -p1 < extraction-plugin.patch
+
+--- a/plugins/extraction/extract_env.ml
++++ b/plugins/extraction/extract_env.ml
+@@ -222,7 +222,7 @@
+   let l = List.hd idl in
+   let spot = function (l',SFBconst _) -> Id.equal l l' | _ -> false in
+   let before = fst (List.split_when spot struc) in
+-  Modops.add_structure mp before reso env
++  Environ.Internal.overwrite_structure mp before reso env
+ 
+ let make_cst resolver mp l =
+   Mod_subst.constant_of_delta_kn resolver (KerName.make mp l)
+--- a/plugins/extraction/g_extraction.mlg
++++ b/plugins/extraction/g_extraction.mlg
+@@ -14,7 +14,7 @@
+ 
+ }
+ 
+-DECLARE PLUGIN "rocq-runtime.plugins.extraction"
++DECLARE PLUGIN "rocq-extraction-patched.plugin"
+ 
+ {
+ 

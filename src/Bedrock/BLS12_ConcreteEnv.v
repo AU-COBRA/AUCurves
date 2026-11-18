@@ -6,16 +6,19 @@
     - [BLS12_G1ArenaRust.bls12_g1_funcs]: ["msm_bls12"], ["g1_scalar_mul"] and their callees
       (the list printed into [bls12-381-safe-rust/src/g1_msm_extracted.rs]);
     - [BLS12_G2ArenaRust.bls12_g2_funcs]: ["g2_scalar_mul"], the in-place and out-of-place
-      addition and doubling over Fp2 and ["bls12_Fp2_three_b"] ([src/g2_extracted.rs]);
+      addition and doubling over Fp2 and ["bls12_Fp2_three_b"] ([src/g2_extracted.rs]), and the
+      constant-time ladder ["g2_scalar_mul_ct"] with its swap renamed ["ct_cswap12"]
+      ([ExtractBLS12GroupJasmin.bls12_g2_funcs_jasmin], as in the Jasmin group module; the G1
+      list has ["g1_scalar_mul_ct"] and its swap ["ct_cswap"]);
     - [ExtractBLS12GroupJasmin.bls12_zero], [bls12_one]: [bls12_from_word(out, 0 / 1)], the
       constant stores of the Jasmin group module;
     - [BLS12_Fp12Pow.bls12_Fp12_pow] (printed by no emitter).
-    Apart from [bls12_Fp12_pow] and the seven entry points of the Jasmin group module (which
+    Apart from [bls12_Fp12_pow] and the nine entry points of the Jasmin group module (which
     only pass coordinate pointers on), these are the functions of
     [ExtractBLS12GroupJasmin.bls12_group_funcs], with the same bodies.
 
     Names.  [bls12_concrete_funcs_bound]: every function of the list (65 of the pairing
-    environment, 18 of the group part) is bound in [bls12_concrete_env] to its own body.  The one name that occurs twice is
+    environment, 22 of the group part) is bound in [bls12_concrete_env] to its own body.  The one name that occurs twice is
     ["bls12_felem_copy"] (in [bls12_pairing_funcs] and in [bls12_g1_funcs]), with the same body
     [bls12_felem_copy.bls12_felem_copy] ([bls12_concrete_names_dup]).
 
@@ -88,8 +91,12 @@ Local Notation function_t := (String.string * Syntax.func)%type.
 
 (** ** The environment *)
 
+(** The G2 list as in the Jasmin group module, [GJ.bls12_g2_funcs_jasmin]: its swap
+    ["ct_cswap"] (12 words) renamed ["ct_cswap12"] in its definition and in
+    [g2_scalar_mul_ct], so that it is not shadowed by the G1 swap ["ct_cswap"] (6 words) of
+    [bls12_g1_funcs] (#25 added both). *)
 Definition bls12_group_extra : list function_t :=
-  Bedrock.BLS12_G1ArenaRust.bls12_g1_funcs ++ Bedrock.BLS12_G2ArenaRust.bls12_g2_funcs
+  Bedrock.BLS12_G1ArenaRust.bls12_g1_funcs ++ GJ.bls12_g2_funcs_jasmin
   ++ [GJ.bls12_zero; GJ.bls12_one; GP.bls12_Fp12_pow].
 
 Definition bls12_concrete_extra : list function_t := bls12_extra_funcs ++ bls12_group_extra.
@@ -108,11 +115,12 @@ Proof.
 Qed.
 
 (** The group part is the Jasmin group module's list without its entry points, with [bls12_zero],
-    [bls12_one] where the module has them, and [bls12_Fp12_pow] added. *)
+    [bls12_one] where the module has them, and [bls12_Fp12_pow] added; the module renames the G2
+    swap ["ct_cswap"] to ["ct_cswap12"] ([GJ.bls12_g2_funcs_jasmin], #25). *)
 Lemma bls12_group_funcs_jasmin :
   GJ.bls12_group_funcs
   = GJ.bls12_group_entries ++ Bedrock.BLS12_G1ArenaRust.bls12_g1_funcs
-    ++ Bedrock.BLS12_G2ArenaRust.bls12_g2_funcs ++ [GJ.bls12_zero; GJ.bls12_one]
+    ++ GJ.bls12_g2_funcs_jasmin ++ [GJ.bls12_zero; GJ.bls12_one]
     ++ Bedrock.ExtractBLS12TowerJasmin.bls12_tower_funcs.
 Proof. reflexivity. Qed.
 
@@ -247,8 +255,9 @@ Lemma bls12_group_extra_names :
   List.map fst bls12_group_extra =
   [ "msm_bls12"; "g1_scalar_mul"; "msm_curve_add"; "msm_curve_double"; "curve_add";
     "curve_double_a0"; "store_zero"; "bls12_three_b"; "bls12_felem_copy";
+    "g1_scalar_mul_ct"; "ct_cswap";
     "g2_scalar_mul"; "g2_curve_add_ip"; "g2_curve_double_ip"; "g2_curve_add";
-    "g2_curve_double"; "bls12_Fp2_three_b";
+    "g2_curve_double"; "bls12_Fp2_three_b"; "g2_scalar_mul_ct"; "ct_cswap12";
     "bls12_zero"; "bls12_one"; "bls12_Fp12_pow" ].
 Proof. reflexivity. Qed.
 
@@ -261,9 +270,9 @@ Qed.
 Lemma bls12_group_names_fresh :
   Forall (fun k => first_binding (bls12_pairing_funcs ++ bls12_extra_funcs) k = None)
     [ "msm_bls12"; "g1_scalar_mul"; "msm_curve_add"; "msm_curve_double"; "curve_add";
-      "curve_double_a0"; "store_zero"; "bls12_three_b";
+      "curve_double_a0"; "store_zero"; "bls12_three_b"; "g1_scalar_mul_ct"; "ct_cswap";
       "g2_scalar_mul"; "g2_curve_add_ip"; "g2_curve_double_ip"; "g2_curve_add";
-      "g2_curve_double"; "bls12_Fp2_three_b";
+      "g2_curve_double"; "bls12_Fp2_three_b"; "g2_scalar_mul_ct"; "ct_cswap12";
       "bls12_zero"; "bls12_one"; "bls12_Fp12_pow" ].
 Proof. repeat constructor; exact eq_refl. Qed.
 
@@ -277,7 +286,7 @@ Lemma bls12_group_extra_bound :
   Forall (fun f : function_t => map.get env (fst f) = Some (snd f)) bls12_group_extra.
 Proof.
   cbv [bls12_group_extra Bedrock.BLS12_G1ArenaRust.bls12_g1_funcs
-       Bedrock.BLS12_G2ArenaRust.bls12_g2_funcs app].
+       GJ.bls12_g2_funcs_jasmin Bedrock.BLS12_G2ArenaRust.bls12_g2_funcs List.map app].
   repeat constructor; cbv [env bls12_concrete_env]; rewrite get_of_list_find; exact eq_refl.
 Qed.
 

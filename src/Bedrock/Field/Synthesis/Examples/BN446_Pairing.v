@@ -5,11 +5,21 @@
     Ate pairing: Miller loop, final exponentiation, and top-level pairing.
 
     BN446 differences from BN254:
-    - beta = -1 (same), xi = (2, 3) (not (9, 1))
+    - beta = -1 (same), xi = (1, 9) = 1 + 9u (not (9, 1)); see Curves/BN446_params.v
     - Fp = 7 words (not 4), 446-bit prime
     - u = 0x4000000000000000001000000001 (111 bits, positive)
     - |6u+2| = 0x18000000000000000006000000008 (113 bits, 2 words)
     - b = 257, 3b = 771
+    - D-twist E' : y^2 = x^3 + 257/xi
+
+    The optimal-ate pairing is [bn446_pairing_dsd_optimal]: the Miller loop
+    [bn446_miller_loop_optimal] uses the D-twist sparse line
+    [bn446_make_line_corrected] and ends with the two Frobenius correction
+    lines through pi(Q) and -pi^2(Q), as BN254_Pairing.v's
+    [bn254_miller_loop_optimal].  The older [bn446_make_line] /
+    [bn446_miller_loop] / [bn446_pairing_dsd] (wrong line layout, no
+    corrections, not bilinear) are kept unchanged for their WP proofs in
+    BN446_PairingHelpers.v, BN446_MillerLoop.v and BN446_PairingTop.v.
 
     WP proofs are in companion files (PairingHelpers, MillerLoop, etc.).
 *)
@@ -112,9 +122,11 @@ Section BN446_Pairing.
     (* beta = -1 for BN446 (Fp2 = Fp[u]/(u^2 + 1)) *)
     Let bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
 
-    (* xi = (2, 3) for BN446 (cubic non-residue in Fp2 for Fp6 tower) *)
-    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+    (* xi = (1, 9) for BN446: neither a square nor a cube in Fp2 (Fp6 = Fp2[v]/(v^3 - xi),
+       Fp12 = Fp6[w]/(w^2 - v)), and the D-twist y^2 = x^3 + 257/xi has a point of order r
+       (PairingTheory/BN446ParamsCheck.v, BN446FrobCheck.v). *)
+    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
     Lemma bn446_beta_nz : bn446_beta <> @F.zero PrimeField.M_pos.
     Proof.
@@ -244,39 +256,42 @@ Section BN446_Pairing.
     Let fp2_mul_xi_name : string := (fp2_prefix ++ "mul_xi")%string.
 
     (* ============================================================== *)
-    (* Fp2_mul_xi: multiply Fp2 element by xi = (2, 3)                *)
-    (*   (a0 + a1*u) * (2 + 3u) = (2*a0 - 3*a1) + (3*a0 + 2*a1)*u   *)
-    (*   Multiply-by-2: x -> x+x                                      *)
-    (*   Multiply-by-3: x -> 2x -> 2x+x                               *)
+    (* Fp2_mul_xi: multiply Fp2 element by xi = (1, 9)                *)
+    (*   (a0 + a1*u) * (1 + 9u) = (a0 - 9*a1) + (9*a0 + a1)*u         *)
+    (*   Multiply-by-9: x -> 2x -> 4x -> 8x -> 8x+x  (4 adds)         *)
+    (*   Alias-safe (out = x): out.re is written after the last read  *)
+    (*   of x.re, and out.im reads only x.im and tmp_a9.              *)
     (* ============================================================== *)
 
     Definition bn446_Fp2_mul_xi : function_t :=
       (fp2_mul_xi_name,
        (["out"; "x"], []:list String.string, bedrock_func_body:(
-         stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as tmp_a3;
-         stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as tmp_b3;
-         (* tmp_a3 = 3*a: 2a -> 2a+a *)
+         stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as tmp_a9;
+         stackalloc (AbstractField.felem_size_in_bytes (F:=Fp)) as tmp_b9;
+         (* tmp_a9 = 9*a: 2a -> 4a -> 8a -> 8a+a *)
          coq:(cmd.call [] fp_add_name
-           [expr.var "tmp_a3"; expr.var "x"; expr.var "x"]);
+           [expr.var "tmp_a9"; expr.var "x"; expr.var "x"]);
          coq:(cmd.call [] fp_add_name
-           [expr.var "tmp_a3"; expr.var "tmp_a3"; expr.var "x"]);
-         (* tmp_b3 = 3*b: 2b -> 2b+b *)
+           [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "tmp_a9"]);
          coq:(cmd.call [] fp_add_name
-           [expr.var "tmp_b3"; expr_fp_snd (expr.var "x"); expr_fp_snd (expr.var "x")]);
+           [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "tmp_a9"]);
          coq:(cmd.call [] fp_add_name
-           [expr.var "tmp_b3"; expr.var "tmp_b3"; expr_fp_snd (expr.var "x")]);
-         (* out.re = 2a - 3b: first compute 2a *)
+           [expr.var "tmp_a9"; expr.var "tmp_a9"; expr.var "x"]);
+         (* tmp_b9 = 9*b *)
          coq:(cmd.call [] fp_add_name
-           [expr.var "out"; expr.var "x"; expr.var "x"]);
-         (* out.re = 2a - 3b *)
+           [expr.var "tmp_b9"; expr_fp_snd (expr.var "x"); expr_fp_snd (expr.var "x")]);
+         coq:(cmd.call [] fp_add_name
+           [expr.var "tmp_b9"; expr.var "tmp_b9"; expr.var "tmp_b9"]);
+         coq:(cmd.call [] fp_add_name
+           [expr.var "tmp_b9"; expr.var "tmp_b9"; expr.var "tmp_b9"]);
+         coq:(cmd.call [] fp_add_name
+           [expr.var "tmp_b9"; expr.var "tmp_b9"; expr_fp_snd (expr.var "x")]);
+         (* out.re = a - 9b *)
          coq:(cmd.call [] fp_sub_name
-           [expr.var "out"; expr.var "out"; expr.var "tmp_b3"]);
-         (* out.im = 3a + 2b: first compute 2b *)
+           [expr.var "out"; expr.var "x"; expr.var "tmp_b9"]);
+         (* out.im = 9a + b *)
          coq:(cmd.call [] fp_add_name
-           [expr_fp_snd (expr.var "out"); expr_fp_snd (expr.var "x"); expr_fp_snd (expr.var "x")]);
-         (* out.im = 3a + 2b *)
-         coq:(cmd.call [] fp_add_name
-           [expr_fp_snd (expr.var "out"); expr.var "tmp_a3"; expr_fp_snd (expr.var "out")])
+           [expr_fp_snd (expr.var "out"); expr.var "tmp_a9"; expr_fp_snd (expr.var "x")])
        ))).
 
     Lemma bn446_Fp2_mul_xi_name_eq : fst bn446_Fp2_mul_xi = fp2_mul_xi_name.
@@ -361,6 +376,66 @@ Section BN446_Pairing.
          ])
        ))).
     (* ============================================================== *)
+    (* make_line_corrected: BN446 sparse line as Fp12 (D-twist layout) *)
+    (*                                                                  *)
+    (* BN446 uses the sextic D-twist E': y^2 = x^3 + 257/xi.  In the    *)
+    (* Fp12 basis (1, v, v^2, w, vw, v^2w) = (w^0, w^2, w^4, w, w^3, w^5)*)
+    (* the line through T with slope lam, evaluated at P, is            *)
+    (*   y_p + (-lam*x_p) w + (lam*x_t - y_t) w^3,                      *)
+    (* i.e. out.c0.c0 = (y_p, 0), out.c1.c0 = -(lam x_p),               *)
+    (* out.c1.c1 = lam x_t - y_t, all other slots 0.  This is           *)
+    (* ZModTower.dtwist_make_line, the line of the Gallina spec         *)
+    (* (bn446_zmod_ops).  [bn446_make_line] above writes                *)
+    (* (lam x_t - y_t) + (-lam x_p) v + y_p vw, which is not a line of  *)
+    (* this twist; it is kept, with its WP proof, for bn446_miller_loop. *)
+    (* Same body as BN254_Pairing.v's bn254_make_line_corrected.        *)
+    (* ============================================================== *)
+
+    Definition bn446_make_line_corrected : function_t :=
+      ("bn446_make_line_corrected",
+       (["out"; "lam"; "x_t"; "y_t"; "x_p"; "y_p"],
+        []:list String.string, bedrock_func_body:(
+         stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2)) as tmp;
+         coq:(cmd_seq_list [
+           (* === c0.c0 = (y_p, 0)  -- w^0 === *)
+           cmd.call [] fp_copy_name
+             [expr_fp6_c0 (expr_fp12_c0 (expr.var "out")); expr.var "y_p"];
+           cmd.call [] from_word_name
+             [expr_fp_snd (expr_fp6_c0 (expr_fp12_c0 (expr.var "out")));
+              expr.literal 0];
+           (* === c0.c1 = (0, 0)  -- w^2 === *)
+           cmd.call [] from_word_name
+             [expr_fp6_c1 (expr_fp12_c0 (expr.var "out")); expr.literal 0];
+           cmd.call [] from_word_name
+             [expr_fp_snd (expr_fp6_c1 (expr_fp12_c0 (expr.var "out")));
+              expr.literal 0];
+           (* === c0.c2 = (0, 0)  -- w^4 === *)
+           cmd.call [] from_word_name
+             [expr_fp6_c2 (expr_fp12_c0 (expr.var "out")); expr.literal 0];
+           cmd.call [] from_word_name
+             [expr_fp_snd (expr_fp6_c2 (expr_fp12_c0 (expr.var "out")));
+              expr.literal 0];
+           (* === c1.c0 = -(lam * x_p)  -- w^1 === *)
+           cmd.call [] fp2_mul_fp_name
+             [expr.var "tmp"; expr.var "lam"; expr.var "x_p"];
+           cmd.call [] fp2_opp_name
+             [expr_fp6_c0 (expr_fp12_c1 (expr.var "out")); expr.var "tmp"];
+           (* === c1.c1 = lam*x_t - y_t  -- w^3 === *)
+           cmd.call [] fp2_mul_name
+             [expr_fp6_c1 (expr_fp12_c1 (expr.var "out"));
+              expr.var "lam"; expr.var "x_t"];
+           cmd.call [] fp2_sub_name
+             [expr_fp6_c1 (expr_fp12_c1 (expr.var "out"));
+              expr_fp6_c1 (expr_fp12_c1 (expr.var "out")); expr.var "y_t"];
+           (* === c1.c2 = (0, 0)  -- w^5 === *)
+           cmd.call [] from_word_name
+             [expr_fp6_c2 (expr_fp12_c1 (expr.var "out")); expr.literal 0];
+           cmd.call [] from_word_name
+             [expr_fp_snd (expr_fp6_c2 (expr_fp12_c1 (expr.var "out")));
+              expr.literal 0]
+         ])
+       ))).
+    (* ============================================================== *)
     (* Frobenius constant loaders for BN446                            *)
     (* ============================================================== *)
 
@@ -435,25 +510,25 @@ Section BN446_Pairing.
       ("bn446_load_gamma1_p2",
        (["out"], []:list String.string,
         store_fp2_real_only "out"
-          0x5557523555553909 0x1589955556E87955 0x110000022DBC0000
-          0x0000086A000000B2 0x0019D28000005A84 0x027C000000B8B000
-          0x1C00000156000000)).
+          0xAAA946CAAAAACA2F 0xED346AAAA92266AA 0x26FFFFFE2A63FFFF
+          0xFFFFF855FFFFFF52 0xFFE6997FFFFFB65B 0xFEA3FFFFFF5DCFFF
+          0x03FFFFFEA9FFFFFF)).
     (* gamma2_p2 = xi^{2(p^2-1)/3} for BN446 in Montgomery form *)
     Definition bn446_load_gamma2_p2 : function_t :=
       ("bn446_load_gamma2_p2",
        (["out"], []:list String.string,
         store_fp2_real_only "out"
-          0xAAA946CAAAAACA2F 0xED346AAAA92266AA 0x26FFFFFE2A63FFFF
-          0xFFFFF855FFFFFF52 0xFFE6997FFFFFB65B 0xFEA3FFFFFF5DCFFF
-          0x03FFFFFEA9FFFFFF)).
+          0x5557523555553909 0x1589955556E87955 0x110000022DBC0000
+          0x0000086A000000B2 0x0019D28000005A84 0x027C000000B8B000
+          0x1C00000156000000)).
     (* w_frob_p2_c1 = xi^{(p^2-1)/6} for BN446 in Montgomery form *)
     Definition bn446_load_w_frob_p2_c1 : function_t :=
       ("bn446_load_w_frob_p2_c1",
        (["out"], []:list String.string,
         store_fp2_real_only "out"
-          0x5556CC5555553638 0x1323555556DEF555 0x60000001E0A00000
-          0x000007C2000000AE 0x0019740000004BC0 0x0180000000A50000
-          0x2000000156000000)).
+          0xAAA8C0EAAAAAC75E 0xEACE2AAAA918E2AA 0x75FFFFFDDD47FFFF
+          0xFFFFF7ADFFFFFF4E 0xFFE63AFFFFFFA797 0xFDA7FFFFFF4A1FFF
+          0x07FFFFFEA9FFFFFF)).
     (* ============================================================== *)
     (* Helper: set an Fp12 element to the multiplicative identity      *)
     (* ============================================================== *)
@@ -592,6 +667,99 @@ Section BN446_Pairing.
           cmd.skip
       ].
 
+    (* Corrected Miller iteration: identical to [miller_loop_iteration]
+       except that the two line evaluations call [bn446_make_line_corrected].
+       Used by [bn446_miller_loop_optimal] below. *)
+    Local Definition miller_loop_iteration_corrected : Syntax.cmd.cmd :=
+      cmd_seq_list [
+        cmd.set "i" (expr.op bopname.sub (expr.var "i") (expr.literal 1));
+
+        (* Extract bit i from two-word u6p2:
+           word = u6p2[(i >> 6) << 3], bit = (word >> (i & 63)) & 1 *)
+        cmd.set "word" (expr.load access_size.word
+          (expr.op bopname.add (expr.var "u6p2")
+            (expr.op bopname.slu
+              (expr.op bopname.sru (expr.var "i") (expr.literal 6))
+              (expr.literal 3))));
+        cmd.set "bit" (expr.op bopname.and
+          (expr.op bopname.sru (expr.var "word")
+            (expr.op bopname.and (expr.var "i") (expr.literal 63)))
+          (expr.literal 1));
+
+        (* === Doubling step === *)
+        cmd.call [] fp2_sqr_name
+          [expr.var "tmp1"; expr.var "t_x"];
+        cmd.call [] fp2_add_name
+          [expr.var "lambda"; expr.var "tmp1"; expr.var "tmp1"];
+        cmd.call [] fp2_add_name
+          [expr.var "lambda"; expr.var "lambda"; expr.var "tmp1"];
+        cmd.call [] fp2_add_name
+          [expr.var "tmp1"; expr.var "t_y"; expr.var "t_y"];
+        cmd.call [] fp2_inv_name
+          [expr.var "tmp1"; expr.var "tmp1"];
+        cmd.call [] fp2_mul_name
+          [expr.var "lambda"; expr.var "lambda"; expr.var "tmp1"];
+
+        cmd.call [] "bn446_make_line_corrected"
+          [expr.var "line"; expr.var "lambda";
+           expr.var "t_x"; expr.var "t_y";
+           expr.var "p_x"; expr.var "p_y"];
+
+        cmd.call [] fp12_sqr_name
+          [expr.var "f"; expr.var "f"];
+        cmd.call [] fp12_mul_name
+          [expr.var "f"; expr.var "f"; expr.var "line"];
+
+        cmd.call [] fp2_sqr_name
+          [expr.var "tmp1"; expr.var "lambda"];
+        cmd.call [] fp2_sub_name
+          [expr.var "tmp1"; expr.var "tmp1"; expr.var "t_x"];
+        cmd.call [] fp2_sub_name
+          [expr.var "tmp2"; expr.var "tmp1"; expr.var "t_x"];
+        cmd.call [] fp2_sub_name
+          [expr.var "tmp1"; expr.var "t_x"; expr.var "tmp2"];
+        cmd.call [] fp2_mul_name
+          [expr.var "tmp1"; expr.var "lambda"; expr.var "tmp1"];
+        cmd.call [] fp2_sub_name
+          [expr.var "t_y"; expr.var "tmp1"; expr.var "t_y"];
+        cmd.call [] fp2_copy_name
+          [expr.var "t_x"; expr.var "tmp2"];
+
+        (* === Conditional addition step === *)
+        cmd.cond (expr.var "bit")
+          (cmd_seq_list [
+            cmd.call [] fp2_sub_name
+              [expr.var "tmp1"; expr.var "q_y"; expr.var "t_y"];
+            cmd.call [] fp2_sub_name
+              [expr.var "tmp2"; expr.var "q_x"; expr.var "t_x"];
+            cmd.call [] fp2_inv_name
+              [expr.var "tmp2"; expr.var "tmp2"];
+            cmd.call [] fp2_mul_name
+              [expr.var "lambda"; expr.var "tmp1"; expr.var "tmp2"];
+            cmd.call [] "bn446_make_line_corrected"
+              [expr.var "line"; expr.var "lambda";
+               expr.var "t_x"; expr.var "t_y";
+               expr.var "p_x"; expr.var "p_y"];
+            cmd.call [] fp12_mul_name
+              [expr.var "f"; expr.var "f"; expr.var "line"];
+            cmd.call [] fp2_sqr_name
+              [expr.var "tmp1"; expr.var "lambda"];
+            cmd.call [] fp2_sub_name
+              [expr.var "tmp1"; expr.var "tmp1"; expr.var "t_x"];
+            cmd.call [] fp2_sub_name
+              [expr.var "tmp2"; expr.var "tmp1"; expr.var "q_x"];
+            cmd.call [] fp2_sub_name
+              [expr.var "tmp1"; expr.var "t_x"; expr.var "tmp2"];
+            cmd.call [] fp2_mul_name
+              [expr.var "tmp1"; expr.var "lambda"; expr.var "tmp1"];
+            cmd.call [] fp2_sub_name
+              [expr.var "t_y"; expr.var "tmp1"; expr.var "t_y"];
+            cmd.call [] fp2_copy_name
+              [expr.var "t_x"; expr.var "tmp2"]
+          ])
+          cmd.skip
+      ].
+
     (* Full Miller loop: init + while loop + copy to output.
        Processes bits 111 down to 0 of |6u+2| (bit 112 = MSB initializes T = Q).
        BN446 has positive u, so NO conjugation after the loop. *)
@@ -674,34 +842,48 @@ Section BN446_Pairing.
       ("bn446_load_gamma1",
        (["out"], []:list String.string,
         store_fp2_full "out"
-          0xA9707F06A2911FE5 0x6CD56EF01CE2A9D1 0x83DAF2BFFA06227C
-          0xB167E5173810465F 0xEC6829AD1B03A057 0x3D6454F6835050D2
-          0x17E66D2B8D788C0C
-          0xF9756B04ABA2140A 0x9C8C9F7FE9506204 0x9BBCE8488D957CD9
-          0x8C11B426417EE934 0x3CE3F9CC7B05A7FC 0x8831B0F3BB2056EB
-          0x1CB419F8806EE62E)).
+          0x130F067A5B034C8C 0xB5F72CD40D296C56 0x2F984093C44F9285
+          0x3033252A4A04F8DC 0x748F6D0A09371944 0x6C600C0F7A588D05
+          0x195319F251A4B209
+          0x093497F3AB410B23 0x846BBDA6C65D14EF 0x70A818D84F6DC6C9
+          0x896AF0D1313903D1 0x28B3FD6131E29DED 0x33A80BD42B0FF2DB
+          0x1D089B7A773DCE17)).
     (* gamma2 = xi^{2(p-1)/3} for BN446 in Montgomery form (full Fp2) *)
     Definition bn446_load_gamma2 : function_t :=
       ("bn446_load_gamma2",
        (["out"], []:list String.string,
         store_fp2_full "out"
-          0x45E78B4FE63EE181 0xC4B27D3AF0DF7AE3 0xEE74A57CA979AB51
-          0x7C90D7115B12CFA9 0xF9EF862CFF8602AD 0x0DA75398389DC684
-          0x01454DB433D5A0C2
-          0xC14D0635840B43D9 0xDAF080662FD4E161 0x6A0B5079634CD7FB
-          0x85F6C9E09A3EBF87 0xEDA90A144A7C855A 0x4F66FFAE21471A09
-          0x0F6E4C6307FA68AE)).
+          0x03BFD8E9F657C7C1 0xD1B2007299E015ED 0x66E1EDB333F452D7
+          0x1F29FC5B04CEA7D1 0xDD080B866BE24717 0x9F86F63310BFBE40
+          0x0DF07F06892CA535
+          0xACECC09B3A45E11E 0x2AD0BCEB3BA09E13 0xD879CECB4E98633B
+          0xCBE3C5EE3A4DC56F 0xF3CC12149C07D88E 0x85EF00A51E52F06F
+          0x19D41F8EE2C196D1)).
     (* w_frob_c1 = xi^{(p-1)/6} for BN446 in Montgomery form (full Fp2) *)
     Definition bn446_load_w_frob_c1 : function_t :=
       ("bn446_load_w_frob_c1",
        (["out"], []:list String.string,
         store_fp2_full "out"
-          0x4F42FB173240CACF 0x41A6624C14E770DB 0x4CE482DDAEF1E09C
-          0xACFB794D0EA9EB70 0x8E6475845F69F02F 0xD188D14E6F71BE65
-          0x0CA5E41A2878689A
-          0x0B8C0C1CBA0162A2 0x039CE6E5C8948976 0xD48AB015DA2F897B
-          0xFD77AA8DDC863E6C 0x25EAA23E38AC4FA8 0x3BBF3C8AC583EA9D
-          0x1A2B7CB0A28128C2)).
+          0x2A07FE15CBD3B798 0x01225DB01DB5A838 0x9994312142903A3D
+          0x2BFC47EE50AF84EE 0x5023EEB37F74D04B 0xDA8DABD847F6A920
+          0x0A18FEE90B4A4762
+          0x31F8B1977554D2A4 0xC8C8F5131A405EB5 0x1919B9FCD2E3DB2E
+          0x610830B9AD9891E6 0x8DAF70EE964EFF37 0xBA1308A4535F56B6
+          0x1F9196DA43055B76)).
+    (* q1_y_const = xi^{(p-1)/2} for BN446 in Montgomery form (full Fp2).
+       Used by the optimal-ate Frobenius correction for Q1 = pi(Q):
+         Q1.y = conj(q.y) * xi^{(p-1)/2}
+       (Q1.x uses gamma1 = xi^{(p-1)/3}).  = FrobConstants.gamma_y_val. *)
+    Definition bn446_load_q1_y_const : function_t :=
+      ("bn446_load_q1_y_const",
+       (["out"], []:list String.string,
+        store_fp2_full "out"
+          0x1B9A8C176F4F9149 0x2BE2F595B319EF56 0xAD7C18C7ADD00FFA
+          0x526DC47E7108CA75 0x675EE5CB05F4550D 0x70490B9E04F21723
+          0x00DCB7CA19A14D2A
+          0x3BF4BE7B7E25491F 0x21659B4985ADD9B4 0x14D4E64F15C2AC71
+          0x0928A41361E48846 0x99B538FA1D1B265D 0x7E49014A725469AE
+          0x08188632E6674176)).
     (* ============================================================== *)
     (* Final exponentiation hard part (DSD decomposition)             *)
     (* ============================================================== *)
@@ -906,6 +1088,143 @@ Section BN446_Pairing.
           coq:(pairing_dsd_body)
         ))).
     (* ============================================================== *)
+    (* Miller loop with Frobenius corrections (optimal ate)            *)
+    (*                                                                  *)
+    (* After the 112-bit |6u+2| loop, two line evaluations:            *)
+    (*   - at Q1  =  pi_p(Q)   = (conj(q_x) gamma1, conj(q_y) q1_y)     *)
+    (*   - at nQ2 = -pi_p^2(Q) = (q_x gamma1_p2, q_y)                   *)
+    (* (xi^((p^2-1)/2) = -1, so -pi^2(Q) keeps q_y).  These are the    *)
+    (* corrections of PairingSpec.apply_corrections at the BN446        *)
+    (* optimal_ate_extras [{pi 1; negate false}; {pi 2; negate false}].*)
+    (* Same body as BN254_Pairing.v's frob_corrections_body.            *)
+    (* ============================================================== *)
+
+    Local Definition frob_corrections_body : Syntax.cmd.cmd :=
+      cmd_seq_list [
+        (* Load Frobenius constants *)
+        cmd.call [] "bn446_load_gamma1"     [expr.var "const_g1"];
+        cmd.call [] "bn446_load_q1_y_const" [expr.var "const_g_y"];
+        cmd.call [] "bn446_load_gamma1_p2"  [expr.var "const_g1p2"];
+
+        (* === Step 1: Q1 = (conj(q_x) * gamma1, conj(q_y) * q1_y_const) === *)
+        cmd.call [] "bn446_Fp2_conjugate" [expr.var "tmp1"; expr.var "q_x"];
+        cmd.call [] fp2_mul_name
+          [expr.var "q1_x"; expr.var "tmp1"; expr.var "const_g1"];
+        cmd.call [] "bn446_Fp2_conjugate" [expr.var "tmp1"; expr.var "q_y"];
+        cmd.call [] fp2_mul_name
+          [expr.var "q1_y"; expr.var "tmp1"; expr.var "const_g_y"];
+
+        (* Slope lambda = (Q1.y - t_y) / (Q1.x - t_x) *)
+        cmd.call [] fp2_sub_name [expr.var "tmp1"; expr.var "q1_y"; expr.var "t_y"];
+        cmd.call [] fp2_sub_name [expr.var "tmp2"; expr.var "q1_x"; expr.var "t_x"];
+        cmd.call [] fp2_inv_name [expr.var "tmp2"; expr.var "tmp2"];
+        cmd.call [] fp2_mul_name
+          [expr.var "lambda"; expr.var "tmp1"; expr.var "tmp2"];
+
+        (* Line at P, multiply f *)
+        cmd.call [] "bn446_make_line_corrected"
+          [expr.var "line"; expr.var "lambda";
+           expr.var "t_x"; expr.var "t_y"; expr.var "p_x"; expr.var "p_y"];
+        cmd.call [] fp12_mul_name
+          [expr.var "f"; expr.var "f"; expr.var "line"];
+
+        (* T = T + Q1: new_x = lambda^2 - t_x - q1_x *)
+        cmd.call [] fp2_sqr_name [expr.var "tmp1"; expr.var "lambda"];
+        cmd.call [] fp2_sub_name [expr.var "tmp1"; expr.var "tmp1"; expr.var "t_x"];
+        cmd.call [] fp2_sub_name [expr.var "tmp2"; expr.var "tmp1"; expr.var "q1_x"];
+        (* new_y = lambda*(t_x - new_x) - t_y *)
+        cmd.call [] fp2_sub_name [expr.var "tmp1"; expr.var "t_x"; expr.var "tmp2"];
+        cmd.call [] fp2_mul_name
+          [expr.var "tmp1"; expr.var "lambda"; expr.var "tmp1"];
+        cmd.call [] fp2_sub_name [expr.var "t_y"; expr.var "tmp1"; expr.var "t_y"];
+        cmd.call [] fp2_copy_name [expr.var "t_x"; expr.var "tmp2"];
+
+        (* === Step 2: nQ2 = (q_x * gamma1_p2.c0, q_y) = -pi^2(Q) === *)
+        cmd.call [] fp2_mul_fp_name
+          [expr.var "q1_x"; expr.var "q_x"; expr.var "const_g1p2"];
+          (* const_g1p2 is an Fp2 with c1 = 0; fp2_mul_fp reads its first
+             7 limbs, i.e. its real part, as the Fp scalar *)
+
+        (* Slope lambda = (q_y - t_y) / (nq2_x - t_x) *)
+        cmd.call [] fp2_sub_name [expr.var "tmp1"; expr.var "q_y"; expr.var "t_y"];
+        cmd.call [] fp2_sub_name [expr.var "tmp2"; expr.var "q1_x"; expr.var "t_x"];
+        cmd.call [] fp2_inv_name [expr.var "tmp2"; expr.var "tmp2"];
+        cmd.call [] fp2_mul_name
+          [expr.var "lambda"; expr.var "tmp1"; expr.var "tmp2"];
+
+        (* Line at P, multiply f *)
+        cmd.call [] "bn446_make_line_corrected"
+          [expr.var "line"; expr.var "lambda";
+           expr.var "t_x"; expr.var "t_y"; expr.var "p_x"; expr.var "p_y"];
+        cmd.call [] fp12_mul_name
+          [expr.var "f"; expr.var "f"; expr.var "line"]
+        (* No final T update: this was the last line *)
+      ].
+
+    Local Definition miller_loop_optimal_full_body : Syntax.cmd.cmd :=
+      cmd_seq_list [
+        fp12_set_one "f";
+        cmd.call [] fp2_copy_name [expr.var "t_x"; expr.var "q_x"];
+        cmd.call [] fp2_copy_name [expr.var "t_y"; expr.var "q_y"];
+        store_6u2_limbs;
+        cmd.set "i" (expr.literal 112);
+        cmd.while (expr.var "i") miller_loop_iteration_corrected;
+        (* Frobenius corrections (optimal ate); no conjugation: u > 0 *)
+        frob_corrections_body;
+        cmd.call [] fp12_copy_name [expr.var "out"; expr.var "f"]
+      ].
+
+    Definition bn446_miller_loop_optimal : function_t :=
+      ("bn446_miller_loop_optimal",
+       (["out"; "p_x"; "p_y"; "q_x"; "q_y"], []:list String.string,
+        bedrock_func_body:(
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as f;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as t_x;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as t_y;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as lambda;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as tmp1;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as tmp2;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as line;
+          stackalloc 16 as u6p2;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as q1_x;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as q1_y;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as const_g1;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as const_g_y;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as const_g1p2;
+          coq:(miller_loop_optimal_full_body)
+        ))).
+
+    (* ============================================================== *)
+    (* Top-level optimal-ate pairing (uses bn446_miller_loop_optimal)   *)
+    (* ============================================================== *)
+
+    Local Definition pairing_dsd_optimal_body : Syntax.cmd.cmd :=
+      cmd_seq_list [
+        cmd.call [] "bn446_load_gamma1_p2" [expr.var "gamma1_p2"];
+        cmd.call [] "bn446_load_gamma2_p2" [expr.var "gamma2_p2"];
+        cmd.call [] "bn446_load_w_frob_p2_c1" [expr.var "w_frob_p2_c1"];
+        (* Miller loop WITH Frobenius corrections *)
+        cmd.call [] "bn446_miller_loop_optimal"
+          [expr.var "tmp"; expr.var "p_x"; expr.var "p_y";
+           expr.var "q_x"; expr.var "q_y"];
+        cmd.call [] "bn446_final_exp_dsd"
+          [expr.var "out"; expr.var "tmp";
+           expr.var "gamma1_p2"; expr.var "gamma2_p2";
+           expr.var "w_frob_p2_c1"]
+      ].
+
+    Definition bn446_pairing_dsd_optimal : function_t :=
+      ("bn446_pairing_dsd_optimal",
+       (["out"; "p_x"; "p_y"; "q_x"; "q_y"], []:list String.string,
+        bedrock_func_body:(
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp12)) as tmp;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as gamma1_p2;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as gamma2_p2;
+          stackalloc (AbstractField.felem_size_in_bytes (F:=Fp2))  as w_frob_p2_c1;
+          coq:(pairing_dsd_optimal_body)
+        ))).
+
+    (* ============================================================== *)
     (* Collected function lists                                        *)
     (* ============================================================== *)
 
@@ -915,16 +1234,20 @@ Section BN446_Pairing.
       bn446_pairing_ops ++
       [ bn446_Fp2_mul_fp;
         bn446_make_line;
+        bn446_make_line_corrected;        (* D-twist sparse line *)
         bn446_load_gamma1_p2;
         bn446_load_gamma2_p2;
         bn446_load_w_frob_p2_c1;
         bn446_load_gamma1;
         bn446_load_gamma2;
         bn446_load_w_frob_c1;
+        bn446_load_q1_y_const;            (* Frobenius correction Q1.y *)
         bn446_Fp12_pow_u;
         bn446_final_exp_hard_dsd;
         bn446_final_exp_dsd;
         bn446_miller_loop;
-        bn446_pairing_dsd ].
+        bn446_miller_loop_optimal;        (* corrected line + Frobenius corrections *)
+        bn446_pairing_dsd;
+        bn446_pairing_dsd_optimal ].      (* the optimal-ate pairing *)
 
 End BN446_Pairing.

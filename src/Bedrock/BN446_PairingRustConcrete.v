@@ -57,7 +57,7 @@ Definition bn446_u64_max : nat := Nat.pow 2 64.
     (which pulls in a heavy bedrock2 instance stack).  Step 2's
     bridge proofs connect the two via reflexivity / unfolding. *)
 Local Definition bn446_p_val : Z := prime_p bn446_params.
-Local Definition bn446_xi_val : Fp2_Z := (2%Z, 3%Z).  (** BN446: xi = 2 + 3u *)
+Local Definition bn446_xi_val : Fp2_Z := (xi_re bn446_params, xi_im bn446_params).  (** BN446: xi = 1 + 9u *)
 
 Definition bn446_miller_loop_with_corrections
            (gamma1 gamma_y gamma1_p2 : Fp2_Z)

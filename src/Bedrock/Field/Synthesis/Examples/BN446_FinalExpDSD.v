@@ -95,8 +95,8 @@ Section BN446_FinalExpDSD.
     Let fp12_prefix := "bn446_Fp12_".
 
     Let bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
-    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
     (* === Extension field instances from factory === *)
     Instance bn446_Fp2_params' : AbstractField.FieldParameters Fp2 :=

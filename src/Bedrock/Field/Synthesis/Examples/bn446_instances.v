@@ -1,7 +1,7 @@
 (** * BN446 field tower instances (Fp2 -> Fp6 -> Fp12).
 
     Provides FieldParameters, FieldRepresentation, and spec_of instances
-    for BN446 with beta=-1, xi=(2,3).
+    for BN446 with beta=-1, xi=(1,9) (Curves/BN446_params.v).
 
     p = 3 mod 4, so -1 is a QNR (simpler than BLS12-377 beta=-5).
 *)
@@ -44,8 +44,8 @@ Section BN446.
   (* ================================================================ *)
 
   Definition bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
-  Definition bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-  Definition bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+  Definition bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+  Definition bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
   Lemma bn446_beta_nz : bn446_beta <> @F.zero PrimeField.M_pos.
   Proof.

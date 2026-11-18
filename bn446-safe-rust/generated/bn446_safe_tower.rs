@@ -14,6 +14,7 @@ impl Fp6 { #[inline] pub const fn zero() -> Self { Fp6 { c0: Fp2::zero(), c1: Fp
 pub struct Fp12 { pub c0: Fp6, pub c1: Fp6 }
 impl Fp12 { #[inline] pub const fn zero() -> Self { Fp12 { c0: Fp6::zero(), c1: Fp6::zero() } } }
 
+
 unsafe extern "C" {
     fn _bn446_add(o: *mut u64, x: *const u64, y: *const u64);
     fn _bn446_sub(o: *mut u64, x: *const u64, y: *const u64);
@@ -106,20 +107,24 @@ pub fn bn446_Fp2_opp(mut out: &mut Fp2, x: &Fp2) {
 
 #[inline]
 pub fn bn446_Fp2_mul_xi(mut out: &mut Fp2, x: &Fp2) {
-    let mut tmp_a3: Fp = Fp::zero();
-    let mut tmp_b3: Fp = Fp::zero();
-    bn446_add(&mut tmp_a3, &x.c0, &x.c0);
-    let __ac0 = tmp_a3.clone();
-    bn446_add(&mut tmp_a3, &__ac0, &x.c0);
-    bn446_add(&mut tmp_b3, &x.c1, &x.c1);
-    let __ac1 = tmp_b3.clone();
-    bn446_add(&mut tmp_b3, &__ac1, &x.c1);
-    bn446_add(&mut out.c0, &x.c0, &x.c0);
-    let __ac2 = out.c0.clone();
-    bn446_sub(&mut out.c0, &__ac2, &tmp_b3);
-    bn446_add(&mut out.c1, &x.c1, &x.c1);
-    let __ac3 = out.c1.clone();
-    bn446_add(&mut out.c1, &tmp_a3, &__ac3);
+    let mut tmp_a9: Fp = Fp::zero();
+    let mut tmp_b9: Fp = Fp::zero();
+    bn446_add(&mut tmp_a9, &x.c0, &x.c0);
+    let __ac0 = tmp_a9.clone();
+    bn446_add(&mut tmp_a9, &__ac0, &__ac0);
+    let __ac1 = tmp_a9.clone();
+    bn446_add(&mut tmp_a9, &__ac1, &__ac1);
+    let __ac2 = tmp_a9.clone();
+    bn446_add(&mut tmp_a9, &__ac2, &x.c0);
+    bn446_add(&mut tmp_b9, &x.c1, &x.c1);
+    let __ac3 = tmp_b9.clone();
+    bn446_add(&mut tmp_b9, &__ac3, &__ac3);
+    let __ac4 = tmp_b9.clone();
+    bn446_add(&mut tmp_b9, &__ac4, &__ac4);
+    let __ac5 = tmp_b9.clone();
+    bn446_add(&mut tmp_b9, &__ac5, &x.c1);
+    bn446_sub(&mut out.c0, &x.c0, &tmp_b9);
+    bn446_add(&mut out.c1, &tmp_a9, &x.c1);
 }
 
 #[inline]
@@ -517,25 +522,25 @@ pub fn bn446_make_line(mut out: &mut Fp12, lam: &Fp2, x_t: &Fp2, y_t: &Fp2, x_p:
 }
 
 #[inline]
-pub fn bn446_load_gamma1_p2(mut out: &mut Fp2) {
-    out.c0.0[0] = 6149474205216094473u64;
-    out.c0.0[1] = 1551935740368681301u64;
-    out.c0.0[2] = 1224979108002004992u64;
-    out.c0.0[3] = 9251359555762u64;
-    out.c0.0[4] = 7268321615436420u64;
-    out.c0.0[5] = 179018085200080896u64;
-    out.c0.0[6] = 2017612638799790080u64;
-    out.c1.0[0] = 0u64;
-    out.c1.0[1] = 0u64;
-    out.c1.0[2] = 0u64;
-    out.c1.0[3] = 0u64;
-    out.c1.0[4] = 0u64;
-    out.c1.0[5] = 0u64;
-    out.c1.0[6] = 0u64;
+pub fn bn446_make_line_corrected(mut out: &mut Fp12, lam: &Fp2, x_t: &Fp2, y_t: &Fp2, x_p: &Fp, y_p: &Fp) {
+    let mut tmp: Fp2 = Fp2::zero();
+    bn446_felem_copy(&mut out.c0.c0.c0, &y_p);
+    bn446_from_word(&mut out.c0.c0.c1, 0u64);
+    bn446_from_word(&mut out.c0.c1.c0, 0u64);
+    bn446_from_word(&mut out.c0.c1.c1, 0u64);
+    bn446_from_word(&mut out.c0.c2.c0, 0u64);
+    bn446_from_word(&mut out.c0.c2.c1, 0u64);
+    bn446_Fp2_mul_fp(&mut tmp, &lam, &x_p);
+    bn446_Fp2_opp(&mut out.c1.c0, &tmp);
+    bn446_Fp2_mul(&mut out.c1.c1, &lam, &x_t);
+    let __ac0 = out.c1.c1.clone();
+    bn446_Fp2_sub(&mut out.c1.c1, &__ac0, &y_t);
+    bn446_from_word(&mut out.c1.c2.c0, 0u64);
+    bn446_from_word(&mut out.c1.c2.c1, 0u64);
 }
 
 #[inline]
-pub fn bn446_load_gamma2_p2(mut out: &mut Fp2) {
+pub fn bn446_load_gamma1_p2(mut out: &mut Fp2) {
     out.c0.0[0] = 12297438093772507695u64;
     out.c0.0[1] = 17092403766992463530u64;
     out.c0.0[2] = 2810246159600451583u64;
@@ -553,14 +558,32 @@ pub fn bn446_load_gamma2_p2(mut out: &mut Fp2) {
 }
 
 #[inline]
+pub fn bn446_load_gamma2_p2(mut out: &mut Fp2) {
+    out.c0.0[0] = 6149474205216094473u64;
+    out.c0.0[1] = 1551935740368681301u64;
+    out.c0.0[2] = 1224979108002004992u64;
+    out.c0.0[3] = 9251359555762u64;
+    out.c0.0[4] = 7268321615436420u64;
+    out.c0.0[5] = 179018085200080896u64;
+    out.c0.0[6] = 2017612638799790080u64;
+    out.c1.0[0] = 0u64;
+    out.c1.0[1] = 0u64;
+    out.c1.0[2] = 0u64;
+    out.c1.0[3] = 0u64;
+    out.c1.0[4] = 0u64;
+    out.c1.0[5] = 0u64;
+    out.c1.0[6] = 0u64;
+}
+
+#[inline]
 pub fn bn446_load_w_frob_p2_c1(mut out: &mut Fp2) {
-    out.c0.0[0] = 6149327008096925240u64;
-    out.c0.0[1] = 1379039735923537237u64;
-    out.c0.0[2] = 6917529035704631296u64;
-    out.c0.0[3] = 8529805050030u64;
-    out.c0.0[4] = 7164417766607808u64;
-    out.c0.0[5] = 108086391067705344u64;
-    out.c0.0[6] = 2305843014951501824u64;
+    out.c0.0[0] = 12297290896653338462u64;
+    out.c0.0[1] = 16919507762547319466u64;
+    out.c0.0[2] = 8502796087303077887u64;
+    out.c0.0[3] = 18446734925429210958u64;
+    out.c0.0[4] = 18439490595501090711u64;
+    out.c0.0[5] = 18277859087671238655u64;
+    out.c0.0[6] = 576460746565615615u64;
     out.c1.0[0] = 0u64;
     out.c1.0[1] = 0u64;
     out.c1.0[2] = 0u64;
@@ -572,56 +595,74 @@ pub fn bn446_load_w_frob_p2_c1(mut out: &mut Fp2) {
 
 #[inline]
 pub fn bn446_load_gamma1(mut out: &mut Fp2) {
-    out.c0.0[0] = 12209398256275365861u64;
-    out.c0.0[1] = 7842296303691409873u64;
-    out.c0.0[2] = 9501173270238863996u64;
-    out.c0.0[3] = 12783437955202041439u64;
-    out.c0.0[4] = 17034911413988204631u64;
-    out.c0.0[5] = 4423754151726436562u64;
-    out.c0.0[6] = 1722183941340302348u64;
-    out.c1.0[0] = 17975391155522769930u64;
-    out.c1.0[1] = 11280566538380272132u64;
-    out.c1.0[2] = 11222099769811107033u64;
-    out.c1.0[3] = 10093046316314585396u64;
-    out.c1.0[4] = 4387625118621607932u64;
-    out.c1.0[5] = 9813819623880021739u64;
-    out.c1.0[6] = 2068306683967235630u64;
+    out.c0.0[0] = 1373323533954010252u64;
+    out.c0.0[1] = 13111998129377995862u64;
+    out.c0.0[2] = 3429562119640552069u64;
+    out.c0.0[3] = 3473160601193478364u64;
+    out.c0.0[4] = 8399051719940970820u64;
+    out.c0.0[5] = 7809255014477106437u64;
+    out.c0.0[6] = 1824830802557710857u64;
+    out.c1.0[0] = 663322117936319267u64;
+    out.c1.0[1] = 9541928759504737519u64;
+    out.c1.0[2] = 8117765645659915977u64;
+    out.c1.0[3] = 9901991511992107985u64;
+    out.c1.0[4] = 2932966376238915053u64;
+    out.c1.0[5] = 3722238097905152731u64;
+    out.c1.0[6] = 2092092977202449943u64;
 }
 
 #[inline]
 pub fn bn446_load_gamma2(mut out: &mut Fp2) {
-    out.c0.0[0] = 5037147883518747009u64;
-    out.c0.0[1] = 14173528669391125219u64;
-    out.c0.0[2] = 17182540433163135825u64;
-    out.c0.0[3] = 8975910526891773865u64;
-    out.c0.0[4] = 18009760962701558445u64;
-    out.c0.0[5] = 983846956853741188u64;
-    out.c0.0[6] = 91564803790053570u64;
-    out.c1.0[0] = 13928796049445176281u64;
-    out.c1.0[1] = 15776250671056347489u64;
-    out.c1.0[2] = 7641289675051423739u64;
-    out.c1.0[3] = 9653124817812897671u64;
-    out.c1.0[4] = 17125230140318319962u64;
-    out.c1.0[5] = 5721541499968494089u64;
-    out.c1.0[6] = 1111910146226415790u64;
+    out.c0.0[0] = 270173002037446593u64;
+    out.c0.0[1] = 15110140191989306861u64;
+    out.c0.0[2] = 7413467815555125975u64;
+    out.c0.0[3] = 2245603357073778641u64;
+    out.c0.0[4] = 15926992754159273751u64;
+    out.c0.0[5] = 11495145798094536256u64;
+    out.c0.0[6] = 1004442382951556405u64;
+    out.c1.0[0] = 12460546041957441822u64;
+    out.c1.0[1] = 3085173463252508179u64;
+    out.c1.0[2] = 15598726156966716219u64;
+    out.c1.0[3] = 14691804036383753583u64;
+    out.c1.0[4] = 17567436126191868046u64;
+    out.c1.0[5] = 9650933235656618095u64;
+    out.c1.0[6] = 1861147244561012433u64;
 }
 
 #[inline]
 pub fn bn446_load_w_frob_c1(mut out: &mut Fp2) {
-    out.c0.0[0] = 5711403354505136847u64;
-    out.c0.0[1] = 4730576537507033307u64;
-    out.c0.0[2] = 5540697330207023260u64;
-    out.c0.0[3] = 12464689765543439216u64;
-    out.c0.0[4] = 10260455062453743663u64;
-    out.c0.0[5] = 15098547885566967397u64;
-    out.c0.0[6] = 911385300611655834u64;
-    out.c1.0[0] = 832053348675969698u64;
-    out.c1.0[1] = 260336753067723126u64;
-    out.c1.0[2] = 15315247090728143227u64;
-    out.c1.0[3] = 18264254340091231852u64;
-    out.c1.0[4] = 2732174512076115880u64;
-    out.c1.0[5] = 4305226335506393757u64;
-    out.c1.0[6] = 1885737967067146434u64;
+    out.c0.0[0] = 3028668643997366168u64;
+    out.c0.0[1] = 81730754240161848u64;
+    out.c0.0[2] = 11066524203276581437u64;
+    out.c0.0[3] = 3169487326643455214u64;
+    out.c0.0[4] = 5774721601924026443u64;
+    out.c0.0[5] = 15748432417393125664u64;
+    out.c0.0[6] = 727611616690587490u64;
+    out.c1.0[0] = 3600823166149382820u64;
+    out.c1.0[1] = 14468083265321328309u64;
+    out.c1.0[2] = 1808681220887010094u64;
+    out.c1.0[3] = 6991891995532235238u64;
+    out.c1.0[4] = 10209503050298490679u64;
+    out.c1.0[5] = 13408070017478514358u64;
+    out.c1.0[6] = 2274765150970272630u64;
+}
+
+#[inline]
+pub fn bn446_load_q1_y_const(mut out: &mut Fp2) {
+    out.c0.0[0] = 1989056217717117257u64;
+    out.c0.0[1] = 3162359911671263062u64;
+    out.c0.0[2] = 12500893911567306746u64;
+    out.c0.0[3] = 5939619530912877173u64;
+    out.c0.0[4] = 7448643493858399501u64;
+    out.c0.0[5] = 8091010978863519523u64;
+    out.c0.0[6] = 62126573517622570u64;
+    out.c1.0[0] = 4320287380161775903u64;
+    out.c1.0[1] = 2406500315977079220u64;
+    out.c1.0[2] = 1501077803163102321u64;
+    out.c1.0[3] = 659957748563478598u64;
+    out.c1.0[4] = 11075821505468900957u64;
+    out.c1.0[5] = 9099805941336140206u64;
+    out.c1.0[6] = 583363704916492662u64;
 }
 
 #[inline]
@@ -809,6 +850,128 @@ pub fn bn446_miller_loop(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
 }
 
 #[inline]
+pub fn bn446_miller_loop_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    let mut f: Fp12 = Fp12::zero();
+    let mut t_x: Fp2 = Fp2::zero();
+    let mut t_y: Fp2 = Fp2::zero();
+    let mut lambda: Fp2 = Fp2::zero();
+    let mut tmp1: Fp2 = Fp2::zero();
+    let mut tmp2: Fp2 = Fp2::zero();
+    let mut line: Fp12 = Fp12::zero();
+    let mut u6p2: Fp = Fp::zero();
+    let mut q1_x: Fp2 = Fp2::zero();
+    let mut q1_y: Fp2 = Fp2::zero();
+    let mut const_g1: Fp2 = Fp2::zero();
+    let mut const_g_y: Fp2 = Fp2::zero();
+    let mut const_g1p2: Fp2 = Fp2::zero();
+    bn446_from_word(&mut f.c0.c0.c0, 1u64);
+    bn446_from_word(&mut f.c0.c0.c1, 0u64);
+    bn446_from_word(&mut f.c0.c1.c0, 0u64);
+    bn446_from_word(&mut f.c0.c1.c1, 0u64);
+    bn446_from_word(&mut f.c0.c2.c0, 0u64);
+    bn446_from_word(&mut f.c0.c2.c1, 0u64);
+    bn446_from_word(&mut f.c1.c0.c0, 0u64);
+    bn446_from_word(&mut f.c1.c0.c1, 0u64);
+    bn446_from_word(&mut f.c1.c1.c0, 0u64);
+    bn446_from_word(&mut f.c1.c1.c1, 0u64);
+    bn446_from_word(&mut f.c1.c2.c0, 0u64);
+    bn446_from_word(&mut f.c1.c2.c1, 0u64);
+    bn446_Fp2_felem_copy(&mut t_x, &q_x);
+    bn446_Fp2_felem_copy(&mut t_y, &q_y);
+    u6p2.0[0] = 412316860424u64;
+    u6p2.0[1] = 422212465065984u64;
+    let mut i: u64;
+    i = 112u64;
+    while i != 0 {
+        i = i.wrapping_sub(1u64);
+        let mut word: u64;
+        word = unsafe { *((u6p2.0.as_ptr() as *const u8).wrapping_add(((i >> (6u64 & 63)) << (3u64 & 63)) as usize) as *const u64) };
+        let mut bit: u64;
+        bit = ((word >> ((i & 63u64) & 63)) & 1u64);
+        bn446_Fp2_square(&mut tmp1, &t_x);
+        bn446_Fp2_add(&mut lambda, &tmp1, &tmp1);
+        let __ac0 = lambda.clone();
+        bn446_Fp2_add(&mut lambda, &__ac0, &tmp1);
+        bn446_Fp2_add(&mut tmp1, &t_y, &t_y);
+        let __ac1 = tmp1.clone();
+        bn446_Fp2_inv(&mut tmp1, &__ac1);
+        let __ac2 = lambda.clone();
+        bn446_Fp2_mul(&mut lambda, &__ac2, &tmp1);
+        bn446_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+        let __ac3 = f.clone();
+        bn446_Fp12_square(&mut f, &__ac3);
+        let __ac4 = f.clone();
+        bn446_Fp12_mul_nocopy(&mut f, &__ac4, &line);
+        bn446_Fp2_square(&mut tmp1, &lambda);
+        let __ac5 = tmp1.clone();
+        bn446_Fp2_sub(&mut tmp1, &__ac5, &t_x);
+        bn446_Fp2_sub(&mut tmp2, &tmp1, &t_x);
+        bn446_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+        let __ac6 = tmp1.clone();
+        bn446_Fp2_mul(&mut tmp1, &lambda, &__ac6);
+        let __ac7 = t_y.clone();
+        bn446_Fp2_sub(&mut t_y, &tmp1, &__ac7);
+        bn446_Fp2_felem_copy(&mut t_x, &tmp2);
+        if bit != 0 {
+            bn446_Fp2_sub(&mut tmp1, &q_y, &t_y);
+            bn446_Fp2_sub(&mut tmp2, &q_x, &t_x);
+            let __ac8 = tmp2.clone();
+            bn446_Fp2_inv(&mut tmp2, &__ac8);
+            bn446_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+            bn446_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+            let __ac9 = f.clone();
+            bn446_Fp12_mul_nocopy(&mut f, &__ac9, &line);
+            bn446_Fp2_square(&mut tmp1, &lambda);
+            let __ac10 = tmp1.clone();
+            bn446_Fp2_sub(&mut tmp1, &__ac10, &t_x);
+            bn446_Fp2_sub(&mut tmp2, &tmp1, &q_x);
+            bn446_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+            let __ac11 = tmp1.clone();
+            bn446_Fp2_mul(&mut tmp1, &lambda, &__ac11);
+            let __ac12 = t_y.clone();
+            bn446_Fp2_sub(&mut t_y, &tmp1, &__ac12);
+            bn446_Fp2_felem_copy(&mut t_x, &tmp2);
+        } else {
+        }
+    }
+    bn446_load_gamma1(&mut const_g1, );
+    bn446_load_q1_y_const(&mut const_g_y, );
+    bn446_load_gamma1_p2(&mut const_g1p2, );
+    bn446_Fp2_conjugate(&mut tmp1, &q_x);
+    bn446_Fp2_mul(&mut q1_x, &tmp1, &const_g1);
+    bn446_Fp2_conjugate(&mut tmp1, &q_y);
+    bn446_Fp2_mul(&mut q1_y, &tmp1, &const_g_y);
+    bn446_Fp2_sub(&mut tmp1, &q1_y, &t_y);
+    bn446_Fp2_sub(&mut tmp2, &q1_x, &t_x);
+    let __ac13 = tmp2.clone();
+    bn446_Fp2_inv(&mut tmp2, &__ac13);
+    bn446_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn446_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+    let __ac14 = f.clone();
+    bn446_Fp12_mul_nocopy(&mut f, &__ac14, &line);
+    bn446_Fp2_square(&mut tmp1, &lambda);
+    let __ac15 = tmp1.clone();
+    bn446_Fp2_sub(&mut tmp1, &__ac15, &t_x);
+    bn446_Fp2_sub(&mut tmp2, &tmp1, &q1_x);
+    bn446_Fp2_sub(&mut tmp1, &t_x, &tmp2);
+    let __ac16 = tmp1.clone();
+    bn446_Fp2_mul(&mut tmp1, &lambda, &__ac16);
+    let __ac17 = t_y.clone();
+    bn446_Fp2_sub(&mut t_y, &tmp1, &__ac17);
+    bn446_Fp2_felem_copy(&mut t_x, &tmp2);
+    bn446_Fp2_mul_fp(&mut q1_x, &q_x, &const_g1p2.c0);
+    bn446_Fp2_sub(&mut tmp1, &q_y, &t_y);
+    bn446_Fp2_sub(&mut tmp2, &q1_x, &t_x);
+    let __ac18 = tmp2.clone();
+    bn446_Fp2_inv(&mut tmp2, &__ac18);
+    bn446_Fp2_mul(&mut lambda, &tmp1, &tmp2);
+    bn446_make_line_corrected(&mut line, &lambda, &t_x, &t_y, &p_x, &p_y);
+    let __ac19 = f.clone();
+    bn446_Fp12_mul_nocopy(&mut f, &__ac19, &line);
+    bn446_Fp12_felem_copy(&mut out, &f);
+}
+
+#[inline]
 pub fn bn446_pairing_dsd(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
     let mut tmp: Fp12 = Fp12::zero();
     let mut gamma1_p2: Fp2 = Fp2::zero();
@@ -818,6 +981,19 @@ pub fn bn446_pairing_dsd(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y:
     bn446_load_gamma2_p2(&mut gamma2_p2, );
     bn446_load_w_frob_p2_c1(&mut w_frob_p2_c1, );
     bn446_miller_loop(&mut tmp, &p_x, &p_y, &q_x, &q_y);
+    bn446_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
+}
+
+#[inline]
+pub fn bn446_pairing_dsd_optimal(mut out: &mut Fp12, p_x: &Fp, p_y: &Fp, q_x: &Fp2, q_y: &Fp2) {
+    let mut tmp: Fp12 = Fp12::zero();
+    let mut gamma1_p2: Fp2 = Fp2::zero();
+    let mut gamma2_p2: Fp2 = Fp2::zero();
+    let mut w_frob_p2_c1: Fp2 = Fp2::zero();
+    bn446_load_gamma1_p2(&mut gamma1_p2, );
+    bn446_load_gamma2_p2(&mut gamma2_p2, );
+    bn446_load_w_frob_p2_c1(&mut w_frob_p2_c1, );
+    bn446_miller_loop_optimal(&mut tmp, &p_x, &p_y, &q_x, &q_y);
     bn446_final_exp_dsd(&mut out, &tmp, &gamma1_p2, &gamma2_p2, &w_frob_p2_c1);
 }
 

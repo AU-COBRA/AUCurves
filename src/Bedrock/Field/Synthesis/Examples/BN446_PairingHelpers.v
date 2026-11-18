@@ -110,8 +110,8 @@ Section BN446_PairingHelpers.
     Let bn446_beta : F PrimeField.M_pos := F.of_Z PrimeField.M_pos (-1).
 
     (* xi = (9, 1) for BN446 (cubic non-residue in Fp2 for Fp6 tower) *)
-    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 2.
-    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 3.
+    Let bn446_xi_re : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 1.
+    Let bn446_xi_im : F PrimeField.M_pos := F.of_Z PrimeField.M_pos 9.
 
     (* ============================================================ *)
     (* Field extension instances                                     *)

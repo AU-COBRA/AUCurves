@@ -40,13 +40,23 @@ Section T.
       for Jasmin's [psem.sem]. *)
   Context (gd : glob_decls).
 
-  Definition run_i (s : estate) (i : instr) : exec estate :=
+  (** [Cif] runs the branch selected by its condition; the other instructions are not run. *)
+  Fixpoint run_i (s : estate) (i : instr) {struct i} : exec estate :=
     match i with
     | MkI _ (Cassgn x _ ty e) =>
         Let v := sem_pexpr true gd s e in
         Let v' := truncate_val (eval_atype ty) v in
         write_lval true gd x v' s
     | MkI _ (Copn xs _ o es) => sem_sopn gd o s xs es
+    | MkI _ (Cif e c1 c2) =>
+        Let v := sem_pexpr true gd s e in
+        Let b := to_bool v in
+        let run_c := fix run_c (s : estate) (c : seq instr) {struct c} : exec estate :=
+          match c with
+          | [::] => ok s
+          | i :: c' => Let s' := run_i s i in run_c s' c'
+          end in
+        if b then run_c s c1 else run_c s c2
     | _ => Error ErrType
     end.
 
@@ -56,6 +66,12 @@ Section T.
     | i :: c' => Let s' := run_i s i in run s' c'
     end.
 
+  Lemma run_i_if s ii e c1 c2 :
+    run_i s (MkI ii (Cif e c1 c2)) =
+      Let v := sem_pexpr true gd s e in Let b := to_bool v in
+      if b then run s c1 else run s c2.
+  Proof. reflexivity. Qed.
+
   Lemma run_cat s c1 c2 :
     run s (c1 ++ c2) = Let s' := run s c1 in run s' c2.
   Proof. elim: c1 s => [|i c1 ih] s //=; case: run_i => //= s'; exact: ih. Qed.
@@ -63,15 +79,42 @@ Section T.
   Context {dc : DirectCall} {pT : progT} {scP : semCallParams} (P : prog) (ev : extra_val_t).
   Hypothesis P_gd : p_globs P = gd.
 
-  Lemma run_sem s c s' : run s c = ok s' -> sem P ev s c s'.
+  Let Pr (ir : instr_r) := forall ii s s', run_i s (MkI ii ir) = ok s' -> sem_i P ev s ir s'.
+  Let Pi (i : instr) := forall s s', run_i s i = ok s' -> sem_I P ev s i s'.
+  Let Pc (c : cmd) := forall s s', run s c = ok s' -> sem P ev s c s'.
+
+  Lemma run_sem_all :
+    (forall i s s', run_i s i = ok s' -> sem_I P ev s i s') /\
+    (forall c s s', run s c = ok s' -> sem P ev s c s').
   Proof.
-    elim: c s => [|[ii [x tg ty e|xs tg o es| | | | | |]] c ih] s //=.
-    + by move=> [<-]; constructor.
-    + t_xrbindP => s1 v he v' ht hw /ih hc.
-      apply: Eseq hc; constructor; econstructor; rewrite ?P_gd; eauto.
-    + t_xrbindP => s1 ho /ih hc.
-      apply: Eseq hc; constructor; constructor; by rewrite P_gd.
+    have hmk : forall ir ii, Pr ir -> Pi (MkI ii ir).
+    { by move=> ir ii h s s' /h hs; constructor. }
+    have hnil : Pc [::] by move=> s s' [<-]; constructor.
+    have hcons : forall i c, Pi i -> Pc c -> Pc (i :: c).
+    { move=> i c hi hc s s' /=; t_xrbindP => s1 /hi h1 /hc h2; exact: Eseq h1 h2. }
+    have hasgn : forall x tg ty e, Pr (Cassgn x tg ty e).
+    { move=> x tg ty e ii s s' /=; t_xrbindP => v he v' ht hw.
+      by econstructor; rewrite ?P_gd; eauto. }
+    have hopn : forall xs t o es, Pr (Copn xs t o es).
+    { by move=> xs t o es ii s s' /= ho; constructor; rewrite P_gd. }
+    have hif : forall e c1 c2, Pc c1 -> Pc c2 -> Pr (Cif e c1 c2).
+    { move=> e c1 c2 h1 h2 ii s s'; rewrite run_i_if; t_xrbindP => v he b hb.
+      have hv := to_boolI hb; subst v.
+      case: b he hb => he _ hr.
+      - by apply: Eif_true; [rewrite P_gd | exact: h1].
+      - by apply: Eif_false; [rewrite P_gd | exact: h2]. }
+    have hsys : forall xs o es, Pr (Csyscall xs o es) by [].
+    have hass : forall a, Pr (Cassert a) by [].
+    have hfor : forall v dir lo hi c, Pc c -> Pr (Cfor v (dir, lo, hi) c) by [].
+    have hwhile : forall a c e info c', Pc c -> Pc c' -> Pr (Cwhile a c e info c') by [].
+    have hcall : forall xs f es, Pr (Ccall xs f es) by [].
+    split.
+    - exact: (instr_Rect hmk hnil hcons hasgn hopn hsys hass hif hfor hwhile hcall).
+    - exact: (cmd_rect hmk hnil hcons hasgn hopn hsys hass hif hfor hwhile hcall).
   Qed.
+
+  Lemma run_sem s c s' : run s c = ok s' -> sem P ev s c s'.
+  Proof. exact: (proj2 run_sem_all). Qed.
 
   (** ** One instruction *)
   Local Notation get vm x := (Vm.get vm x).
@@ -177,6 +220,48 @@ Section T.
     rewrite /= !gvar_eval (get_var_word ha) (get_var_word hb) (get_var_word ho) (get_var_word ht) /=.
     rewrite /sem_sop2 /=; tw; rewrite !truncate_word64 /=.
     case: c => /=; tw; by case: ifP.
+  Qed.
+
+  (** ** Conditionals: [Cif] on [r != 0] *)
+  Definition ne0 (r : string) : pexpr := Papp2 (Oneq (Op_w U64)) (pv r) (cst 0).
+  Definition cif (r : string) (c1 c2 : jcmd) : instr := I (Cif (ne0 r) c1 c2).
+
+  Lemma ne0_eval s r (w : u64) :
+    get (evm s) (vv r) = Vword w -> sem_pexpr true gd s (ne0 r) = ok (Vbool (w != 0%R)).
+  Proof.
+    move=> h; rewrite /ne0 /= gvar_eval (get_var_word h) /= /sem_sop1 /= wrepr_mod /sem_sop2 /=.
+    by tw; rewrite wrepr0.
+  Qed.
+
+  Lemma run_cif s r c1 c2 (w : u64) :
+    get (evm s) (vv r) = Vword w ->
+    run_i s (cif r c1 c2) = if w != 0%R then run s c1 else run s c2.
+  Proof. by move=> h; rewrite /cif /I run_i_if (ne0_eval _ _ _ h). Qed.
+
+  (** ** Shifts by a literal amount [0 <= k < 64] *)
+  Inductive shop := ShR | ShL.
+  Definition shop_sop2 (o : shop) : sop2 :=
+    match o with ShR => Olsr U64 | ShL => Olsl (Op_w U64) end.
+  Definition shop_sem (o : shop) (a : u64) (k : Z) : u64 :=
+    match o with ShR => wshr a k | ShL => wshl a k end.
+
+  Lemma wunsigned_u8_of k : 0 <= k < 64 ->
+    wunsigned (zero_extend U8 (wrepr U64 k)) = k.
+  Proof.
+    move=> hk; rewrite zero_extend_wrepr // wunsigned_repr_small //.
+    by rewrite (_ : wbase U8 = 256); [lia | reflexivity].
+  Qed.
+
+  Lemma run_asg_shift s o t k (wt : u64) : 0 <= k < 64 ->
+    get (evm s) (vv t) = Vword wt ->
+    run_i s (asg t (Papp2 (shop_sop2 o) (pv t) (cst k))) =
+      ok (with_vm s (evm s).[vv t <- Vword (shop_sem o wt k)]).
+  Proof.
+    move=> hk ht; apply: run_asg.
+    rewrite /= gvar_eval (get_var_word ht) /= /sem_sop1 /= wrepr_mod /sem_sop2 /=.
+    case: o => /=; rewrite truncate_word_u /= truncate_word_le //=.
+    - by rewrite /sem_shr /sem_shift wunsigned_u8_of.
+    - by rewrite /sem_shl /sem_shift wunsigned_u8_of.
   Qed.
 
   Definition mulx (lo hi a b : string) : instr :=

@@ -255,7 +255,7 @@ Lemma bls12_group_extra_names :
   List.map fst bls12_group_extra =
   [ "msm_bls12"; "g1_scalar_mul"; "msm_curve_add"; "msm_curve_double"; "curve_add";
     "curve_double_a0"; "store_zero"; "bls12_three_b"; "bls12_felem_copy";
-    "g1_scalar_mul_ct"; "ct_cswap";
+    "g1_scalar_mul_ct"; "ct_cswap"; "bls12_glv_shamir"; "shift_scalar"; "glv_cmov";
     "g2_scalar_mul"; "g2_curve_add_ip"; "g2_curve_double_ip"; "g2_curve_add";
     "g2_curve_double"; "bls12_Fp2_three_b"; "g2_scalar_mul_ct"; "ct_cswap12";
     "bls12_zero"; "bls12_one"; "bls12_Fp12_pow" ].

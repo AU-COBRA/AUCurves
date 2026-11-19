@@ -275,6 +275,8 @@ End ShamirMult.
       k2 = k_reduced / lambda      // high ~128 bits
 
       // Step 3: Precompute phi(P) = (omega * P_x, P_y, P_z)
+      // omega_const = BLS12_Endomorphism.bls12_omega_glv (= bls12_omega^2 mod p);
+      // with bls12_omega itself phi is [lambda^2], not [lambda].
       field_mul(phi_x, omega_const, P_x)
       copy(phi_y, P_y)
       copy(phi_z, P_z)

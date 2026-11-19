@@ -62,6 +62,14 @@
 //!   leaves or about what rustc/LLVM make of it).  Use these for secret
 //!   scalars: [`sk_to_pk`] and [`sign_hashed`] do.
 //!
+//! * GLV scalar multiplication [`g1_scalar_mul_glv`] calls the emitted bedrock2
+//!   `bls12_glv_shamir` after the hand-written split k mod r = k1 + lambda k2
+//!   ([`glv_split`]).  `BLS12_GLV_Closed.g1_glv_closed` (Qed, closed) proves the
+//!   loop returns k1 P + k2 phi(P) for on-curve P; `BLS12_GLV_ClosedGen.
+//!   g1_glv_closed_gen` (Qed, closed) gives k P for every P = [m] G, G the
+//!   standard generator.  Variable time, and slower than [`g1_scalar_mul`]
+//!   (bench_glv), so k P stays on [`g1_scalar_mul`].
+//!
 //! Everything is checked against `blst` in `tests/group_vs_blst.rs` (G2 in
 //! more depth in `tests/g2_vs_blst.rs`, the constant-time variants in
 //! `tests/ct_vs_blst.rs`).
@@ -255,6 +263,100 @@ pub fn g1_scalar_mul_ct(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
     emitted::g1_scalar_mul_ct(&mut m, out, out + FE, out + 2 * FE, t, t + FE, t + 2 * FE,
                               sc, pa, pa + FE, pa + 2 * FE);
     *r = get_g1(&m, out);
+}
+
+/// The GLV eigenvalue lambda = u^2 - 1 (u the BLS parameter); r = lambda^2 + lambda + 1.
+pub const GLV_LAMBDA: u128 = 0xac45a4010001a40200000000ffffffff;
+
+/// omega = beta^2 mod p (Montgomery form), beta = `BLS12_Endomorphism.bls12_omega`:
+/// the cube root of unity for which phi(x, y) = (omega x, y) is [lambda] on G1.
+/// (With beta itself, phi is [lambda^2]: checked in `tests/glv_vs_blst.rs`.)
+pub const GLV_OMEGA: Fp = Fp([
+    0xcd03c9e48671f071, 0x5dab22461fcda5d2, 0x587042afd3851b95,
+    0x8eb60ebe01bacb9e, 0x03f97d6e83d050d2, 0x18f0206554638741,
+]);
+
+const GLV_R: [u64; 4] = [
+    0xffffffff00000001, 0x53bda402fffe5bfe, 0x3339d80809a1d805, 0x73eda753299d7d48,
+];
+
+fn ge4(a: &[u64; 4], b: &[u64; 4]) -> bool {
+    for i in (0..4).rev() {
+        if a[i] != b[i] { return a[i] > b[i]; }
+    }
+    true
+}
+
+fn sub4(a: &mut [u64; 4], b: &[u64; 4]) {
+    let mut borrow = 0u64;
+    for i in 0..4 {
+        let (d1, b1) = a[i].overflowing_sub(b[i]);
+        let (d2, b2) = d1.overflowing_sub(borrow);
+        a[i] = d2;
+        borrow = (b1 | b2) as u64;
+    }
+}
+
+/// (k mod r) = k1 + lambda k2 with k1 = (k mod r) mod lambda, k2 = (k mod r) / lambda
+/// (both < 2^128).  Hand-written, variable time, not verified; the emitted
+/// loop's theorem is stated for any k1, k2 (see [`g1_scalar_mul_glv`]).
+pub fn glv_split(k: &[u64; 4]) -> (u128, u128) {
+    let mut kr = *k;
+    while ge4(&kr, &GLV_R) { sub4(&mut kr, &GLV_R); }
+    let (mut rem, mut q) = (0u128, [0u64; 4]);
+    for i in (0..256).rev() {
+        let bit = ((kr[i / 64] >> (i % 64)) & 1) as u128;
+        let carry = rem >> 127;
+        rem = (rem << 1) | bit;
+        if carry == 1 || rem >= GLV_LAMBDA {
+            rem = rem.wrapping_sub(GLV_LAMBDA);
+            q[i / 64] |= 1u64 << (i % 64);
+        }
+    }
+    debug_assert!(q[2] == 0 && q[3] == 0);
+    (rem, (q[0] as u128) | ((q[1] as u128) << 64))
+}
+
+/// R = k1 P + k2 phi(P), phi(P) = (omega X, Y, Z), with the emitted bedrock2
+/// `bls12_glv_shamir` (129 iterations, least significant bit first: per bit two
+/// additions of P or O and two doublings).  Variable time (the conditional move
+/// `glv_cmov` branches on the bits): public scalars only.
+///
+/// Verification status: `BLS12_GLV_Closed.g1_glv_closed` (Qed, closed): for P
+/// and Phi on the curve with reduced coordinates the output is projectively
+/// equal to k1 P + k2 Phi; `g1_glv_closed_eigen`: if moreover Phi = (omega X, Y, Z)
+/// with omega^3 = 1 and Phi = [lambda] P, it is (k1 + lambda k2) P, and k P for
+/// every k = k1 + lambda k2 mod r when r P = O.  Premises: the field-leaf
+/// contracts, as for [`g1_scalar_mul`].  `BLS12_GLV_ClosedGen.g1_glv_closed_gen`
+/// (Qed, closed) removes the eigen and order premises for every on-curve P that
+/// is a multiple [m] G of the standard generator: the output is k P for every
+/// k = k1 + lambda k2 mod r.  NOT proved: that every P with r P = O is such a
+/// multiple (it needs the group order of E(F_p)); outside the prime-order
+/// subgroup the result is k1 P + k2 phi(P), not k P; and the hand-written
+/// [`glv_split`].
+pub fn g1_scalar_mul_glv_split(r: &mut G1Projective, k1: u128, k2: u128, p: &G1Projective) {
+    let mut m = Mem::with_capacity(2048);
+    let out = put_g1(&mut m, &G1Projective::identity());
+    let pa = put_g1(&mut m, p);
+    let mut phi = *p;
+    fp_mul(&mut phi.x, &GLV_OMEGA, &p.x);
+    let ph = put_g1(&mut m, &phi);
+    let s1 = m.alloc(16);
+    m.store64(s1, k1 as u64);
+    m.store64(s1 + 8, (k1 >> 64) as u64);
+    let s2 = m.alloc(16);
+    m.store64(s2, k2 as u64);
+    m.store64(s2 + 8, (k2 >> 64) as u64);
+    emitted::bls12_glv_shamir(&mut m, out, out + FE, out + 2 * FE, pa, pa + FE, pa + 2 * FE,
+                              ph, ph + FE, ph + 2 * FE, s1, s2);
+    *r = get_g1(&m, out);
+}
+
+/// R = kP for P in G1 (the order-r subgroup) and a 256-bit little-endian k, by
+/// GLV: [`glv_split`] then [`g1_scalar_mul_glv_split`].  Variable time.
+pub fn g1_scalar_mul_glv(r: &mut G1Projective, k: &[u64; 4], p: &G1Projective) {
+    let (k1, k2) = glv_split(k);
+    g1_scalar_mul_glv_split(r, k1, k2, p);
 }
 
 /// BLS public key from a secret scalar (little-endian limbs): sk · G1,

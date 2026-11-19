@@ -205,9 +205,12 @@ Section BN254_MillerLoop.
     Instance spec_of_Fp_from_word : spec_of PrimeField.from_word :=
       PrimeField.spec_of_from_word (field_representation:=bn254_Fp_rep).
 
-    (* spec_of for bn254_make_line -- needed by straightline_call *)
-    Instance spec_of_bn254_make_line : spec_of "bn254_make_line" :=
-      fnspec! "bn254_make_line" (pout plam pxt pyt pxp pyp : word)
+    (* spec_of for bn254_make_line_corrected, the line function that
+       bn254_miller_loop calls (BN254_Pairing.v) -- needed by straightline_call.
+       Same pre/postcondition as spec_of_bn254_make_line_corrected in
+       BN254_MillerLoopOptimal.v. *)
+    Instance spec_of_bn254_make_line_corrected : spec_of "bn254_make_line_corrected" :=
+      fnspec! "bn254_make_line_corrected" (pout plam pxt pyt pxp pyp : word)
         / (old_out : Fp12_felem) (lam xt yt : Fp2_felem)
           (xp yp : Fp_felem) Rr,
       { requires tr mem :=
@@ -481,6 +484,26 @@ Section BN254_MillerLoop.
       word.of_Z (Z.of_nat (n - 1)).
     Proof. intros. rewrite <- word.ring_morph_sub. f_equal. zify. lia. Qed.
 
+    (* bedrock2 0.0.9's [straightline] is a [match goal] whose last cases
+       ([flatten_seps_in H; cbn [seps] in H]) are tried when no other case applies, e.g. on a
+       [WeakestPrecondition.call] goal or a [while]/[cond]/[interact] command, which its [cmd]
+       case refuses; on the context of this proof they do not finish.  The proof expects
+       [repeat straightline] to stop at those goals (it continues with
+       [Semantics.weaken_call] or [Loops.while_localsmap]), so stop there explicitly. *)
+    Local Ltac straightline_nocall :=
+      lazymatch goal with
+      | |- WeakestPrecondition.call _ _ _ _ _ _ => fail
+      | |- WeakestPrecondition.cmd _ ?c _ _ _ _ =>
+        let c := eval hnf in c in
+        lazymatch c with
+        | cmd.while _ _ => fail
+        | cmd.cond _ _ _ => fail
+        | cmd.interact _ _ _ => fail
+        | _ => straightline
+        end
+      | |- _ => straightline
+      end.
+
     Lemma bn254_miller_loop_ok :
       forall functions
         (EnvContains : map.get functions "bn254_miller_loop" =
@@ -498,11 +521,11 @@ Section BN254_MillerLoop.
         (HFpmul : spec_of_Fp_mul functions)
         (HFpcopy : spec_of_Fp_felem_copy functions)
         (HFfromword : spec_of_Fp_from_word functions)
-        (HMakeLine : map.get functions "bn254_make_line" =
-          Some (snd bn254_make_line))
+        (HMakeLine : map.get functions "bn254_make_line_corrected" =
+          Some (snd bn254_make_line_corrected))
         (HFp2mulfpEnv : map.get functions "bn254_Fp2_mul_fp" =
           Some (snd bn254_Fp2_mul_fp))
-        (HMakeLineOk : spec_of_bn254_make_line functions),
+        (HMakeLineOk : spec_of_bn254_make_line_corrected functions),
       spec_of_bn254_miller_loop functions.
     Proof.
       intros.
@@ -518,37 +541,37 @@ Section BN254_MillerLoop.
       eexists. split. { exact eq_refl. }
 
       (* === Process 8 stackallocs === *)
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 1: f (Fp12-sized) *)
       split. { apply Z_mod_mult. }
       intros a_f mStack_f mComb_f HanyF HsplitF.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 2: t_x (Fp2-sized) *)
       split. { apply Z_mod_mult. }
       intros a_tx mStack_tx mComb_tx HanyTx HsplitTx.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 3: t_y (Fp2-sized) *)
       split. { apply Z_mod_mult. }
       intros a_ty mStack_ty mComb_ty HanyTy HsplitTy.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 4: lambda (Fp2-sized) *)
       split. { apply Z_mod_mult. }
       intros a_lam mStack_lam mComb_lam HanyLam HsplitLam.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 5: tmp1 (Fp2-sized) *)
       split. { apply Z_mod_mult. }
       intros a_tmp1 mStack_tmp1 mComb_tmp1 HanyTmp1 HsplitTmp1.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 6: tmp2 (Fp2-sized) *)
       split. { apply Z_mod_mult. }
       intros a_tmp2 mStack_tmp2 mComb_tmp2 HanyTmp2 HsplitTmp2.
-      repeat straightline.
+      repeat straightline_nocall.
 
       (* Stackalloc 7: line (Fp12-sized) *)
       split. { apply Z_mod_mult. }
@@ -843,7 +866,7 @@ Section BN254_MillerLoop.
       { pose proof Hsep_expanded as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair1.
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (fst_felem (c0_felem (d0_felem f_val'))) _ tr).
@@ -853,7 +876,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Call 2: from_word(a_f.d0.c0 snd, 0) --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c0_felem (d0_felem f_val'))) _ tr).
@@ -863,7 +886,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Calls 3-4: from_word on c1(d0) fst/snd --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eassert (Hpair2 : (FElem_Fp2 (word.add a_f fp6_c1_off) (c1_felem (d0_felem f_val')) ⋆ _) m_fw2).
       { pose proof Hsep_fw2 as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair2.
@@ -875,7 +898,7 @@ Section BN254_MillerLoop.
       subst rets_fw3. symmetry in Htr_fw3. subst t_fw3.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c1_felem (d0_felem f_val'))) _ tr).
@@ -885,7 +908,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Calls 5-6: from_word on c2(d0) fst/snd --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eassert (Hpair3 : (FElem_Fp2 (word.add a_f fp6_c2_off) (c2_felem (d0_felem f_val')) ⋆ _) m_fw4).
       { pose proof Hsep_fw4 as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair3.
@@ -897,7 +920,7 @@ Section BN254_MillerLoop.
       subst rets_fw5. symmetry in Htr_fw5. subst t_fw5.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c2_felem (d0_felem f_val'))) _ tr).
@@ -907,7 +930,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Calls 7-8: from_word on c0(d1) fst/snd --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eassert (Hpair4 : (FElem_Fp2 (word.add a_f (word.of_Z fp6_felem_offset)) (c0_felem (d1_felem f_val')) ⋆ _) m_fw6).
       { pose proof Hsep_fw6 as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair4.
@@ -919,7 +942,7 @@ Section BN254_MillerLoop.
       subst rets_fw7. symmetry in Htr_fw7. subst t_fw7.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c0_felem (d1_felem f_val'))) _ tr).
@@ -929,7 +952,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Calls 9-10: from_word on c1(d1) fst/snd --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eassert (Hpair5 : (FElem_Fp2 (word.add (word.add a_f (word.of_Z fp6_felem_offset)) fp6_c1_off) (c1_felem (d1_felem f_val')) ⋆ _) m_fw8).
       { pose proof Hsep_fw8 as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair5.
@@ -941,7 +964,7 @@ Section BN254_MillerLoop.
       subst rets_fw9. symmetry in Htr_fw9. subst t_fw9.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c1_felem (d1_felem f_val'))) _ tr).
@@ -951,7 +974,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* --- Calls 11-12: from_word on c2(d1) fst/snd --- *)
-      repeat straightline.
+      repeat straightline_nocall.
       eassert (Hpair6 : (FElem_Fp2 (word.add (word.add a_f (word.of_Z fp6_felem_offset)) fp6_c2_off) (c2_felem (d1_felem f_val')) ⋆ _) m_fw10).
       { pose proof Hsep_fw10 as H'. ecancel_assumption. }
       apply FElem_Fp2_split_in_sep in Hpair6.
@@ -963,7 +986,7 @@ Section BN254_MillerLoop.
       subst rets_fw11. symmetry in Htr_fw11. subst t_fw11.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply (HFfromword _ _
              (snd_felem (c2_felem (d1_felem f_val'))) _ tr).
@@ -1181,7 +1204,7 @@ Section BN254_MillerLoop.
         split; [exact Hfe_fp12_j | exact Hrest]. }
 
       (* === fp2_copy: copy q_x -> a_tx === *)
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply HFp2copy.
            pose proof Hsep_rejoined as Htmp_copy.
@@ -1192,7 +1215,7 @@ Section BN254_MillerLoop.
       cbv [map.putmany_of_list_zip]. eexists. split. { exact eq_refl. }
 
       (* === fp2_copy: copy q_y -> a_ty === *)
-      repeat straightline.
+      repeat straightline_nocall.
       eapply Semantics.weaken_call.
       1: { eapply HFp2copy.
            pose proof Hsep_c1 as Htmp_copy2.
@@ -1209,7 +1232,7 @@ Section BN254_MillerLoop.
         exact eq_refl. }
       { ecancel_assumption. }
       intros m_stores Hsep_stores.
-      repeat straightline.
+      repeat straightline_nocall.
 
       eapply Loops.while_localsmap
         with (v0 := 64%nat)
@@ -1310,7 +1333,7 @@ Section BN254_MillerLoop.
         { (* Sep -- the current sep matches the invariant (with u6p2 scalar) *)
           ecancel_assumption. }
         (* Locals: map.get for each variable *)
-        repeat split; repeat straightline. }
+        repeat split; repeat straightline_nocall. }
 
       (* Loop body *)
       { intros vi ti mi li Hinv.

@@ -25,11 +25,31 @@ Definition fp_base_funcs : list function_t :=
     bls377_select_znz;
     ("bls377_felem_copy", bls377_felem_copy) ].
 
-(** Curve operations *)
-Definition curve_funcs : list function_t :=
-  [ bls377_G1_add;
-    store_zero_func;
-    group_cmov_alt_func ].
+(** Curve operations.  [store_zero_func] and [cmov_alt_func] take the field parameters as
+    instances, which [bls12_377_prime] declares only inside its section, so they are given here as
+    in [BLS12_377_G1].  [CondMoveGroup.cmov_alt_func] takes its function name as an implicit
+    argument; "group_cmov_alt" is the name the GLV driver calls
+    ([BLS12_377_GLV_ScalarMultBedrock.v]).  [store_zero_func] takes the names of the zero and
+    one loaders implicitly; they follow the BLS12-381 names "bls12_zero"/"bls12_one"
+    ([BLS12_G1ArenaRust.v]). *)
+Section CurveFuncs.
+  Existing Instances
+    Bitwidth64.BW64
+    Defaults64.default_parameters
+    Defaults64.default_parameters_ok
+    bls377_field_parameters
+    bls377_field_parameters_ok
+    bls377_frep
+    bls377_frep_ok.
+
+  Definition group_cmov_alt_func : function_t :=
+    cmov_alt_func (group_cmov_alt := "group_cmov_alt").
+
+  Definition curve_funcs : list function_t :=
+    [ bls377_G1_add;
+      store_zero_func (zero_name := "bls377_zero") (one_name := "bls377_one");
+      group_cmov_alt_func ].
+End CurveFuncs.
 
 (** The GLV Shamir function itself *)
 (* Note: the actual bedrock2 function body is defined in

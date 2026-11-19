@@ -65,6 +65,18 @@
       ["curve_double_a0"]; [CurveDoubleInplaceOK] by
       [BLS12_MSM_Wrappers.copy_out_double_ok].
 
+    - ["bls12_glv_shamir"]: [BLS12_GLV_ScalarMultBedrock.glv_shamir_func]
+      (unchanged) with callees ["msm_curve_add"], ["msm_curve_double"],
+      ["glv_cmov"]: GLV Shamir, two 128-bit scalars, 129 iterations LSB first.
+      [BLS12_GLV_Closed.g1_glv_closed] (Qed, closed): k1 P + k2 Phi up to
+      pt_eq for on-curve P, Phi; [g1_glv_closed_eigen]: (k1 + lambda k2) P when
+      Phi = (omega X, Y, Z) is [lambda] P; [BLS12_GLV_ClosedGen.g1_glv_closed_gen]:
+      k P for every on-curve P = [m] G (G the standard generator), without
+      the eigen premise.  Variable time.  Not the shipped
+      k P path: about 1.4x slower than ["g1_scalar_mul"] in the crate bench.
+    - ["shift_scalar"] (two words), ["glv_cmov"]: [BLS12_GLV_Callees]
+      ([shift_scalar2_ok], [glv_cmov_ok], Qed).
+
     The field leaves ["bls12_mul"], ["bls12_add"], ["bls12_sub"] and the
     constant stores ["bls12_zero"], ["bls12_one"] are not printed: the
     Rust runtime routes them to the crate's own leaves
@@ -87,6 +99,8 @@ Require Import Bedrock.BLS12_G1_ScalarMulCT.
 Require Import Bedrock.Group.CurveAdd.CtSwap.
 Require Bedrock.BLS12_MSM_MixedAdd.
 Require Import Bedrock.ToSafeRustArena.
+Require Import Bedrock.BLS12_GLV_Prog.
+Require Import Bedrock.BLS12_GLV_Callees.
 Import ListNotations.
 Local Open Scope Z_scope.
 Local Open Scope string_scope.
@@ -158,10 +172,22 @@ Section BLS12G1.
   Definition g1_ct_cswap : function_t :=
     ("ct_cswap", ct_cswap (word:=BasicC64Semantics.word) felem_size_in_words).
 
+  (** GLV Shamir (two half-size scalars, LSB first, 129 iterations) over the
+      copy-out wrappers; its two own callees. *)
+  Definition g1_glv : function_t :=
+    glv_prog (width:=64) (BW:=BW64) (word:=BasicC64Semantics.word) (mem:=BasicC64Semantics.mem)
+      (field_parameters:=bls12_field_parameters) (field_representation:=bls12_frep)
+      "msm_curve_add" "msm_curve_double" "glv_cmov".
+
+  Definition g1_shift_scalar2 : function_t := shift_scalar2_func (width:=64).
+
+  Definition g1_glv_cmov : function_t :=
+    glv_cmov_func (field_parameters:=bls12_field_parameters).
+
   Definition bls12_g1_funcs : list function_t :=
     [g1_msm; g1_smul; msm_curve_add; msm_curve_double; g1_curve_add;
      g1_curve_double_a0; g1_store_zero; g1_three_b; g1_felem_copy;
-     g1_smul_ct; g1_ct_cswap].
+     g1_smul_ct; g1_ct_cswap; g1_glv; g1_shift_scalar2; g1_glv_cmov].
 End BLS12G1.
 
 Definition bls12_g1_rs_header : list string :=

@@ -976,3 +976,155 @@ pub fn ct_cswap(m: &mut Mem, mut v_mask: u64, mut v_a1: u64, mut v_a2: u64) {
         v__gs_from0 = (v__gs_from0).wrapping_add(1u64);
     }
 }
+
+pub fn bls12_glv_shamir(m: &mut Mem, mut v_outx: u64, mut v_outy: u64, mut v_outz: u64, mut v_px: u64, mut v_py: u64, mut v_pz: u64, mut v_phix: u64, mut v_phiy: u64, mut v_phiz: u64, mut v_pk1: u64, mut v_pk2: u64) {
+    let mut v_auxx: u64 = 0;
+    let mut v_auxy: u64 = 0;
+    let mut v_auxz: u64 = 0;
+    let mut v_cond1: u64 = 0;
+    let mut v_cond2: u64 = 0;
+    let mut v_iter: u64 = 0;
+    v_auxx = m.alloc(48);
+    v_auxy = m.alloc(48);
+    v_auxz = m.alloc(48);
+    v_cond1 = m.alloc(8);
+    v_cond2 = m.alloc(8);
+    v_iter = m.alloc(8);
+    {
+        let a0: u64 = v_outx;
+        let a1: u64 = v_outy;
+        let a2: u64 = v_outz;
+        store_zero(m, a0, a1, a2);
+    }
+    { let a: u64 = v_iter; let v: u64 = 0u64; m.store64(a, v); }
+    while ((m.load64(v_iter) < 129u64) as u64) != 0 {
+        { let a: u64 = v_iter; let v: u64 = (m.load64(v_iter)).wrapping_add(1u64); m.store64(a, v); }
+        {
+            let a0: u64 = v_cond1;
+            let a1: u64 = v_pk1;
+            shift_scalar(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_cond2;
+            let a1: u64 = v_pk2;
+            shift_scalar(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_auxx;
+            let a1: u64 = v_auxy;
+            let a2: u64 = v_auxz;
+            store_zero(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_auxx;
+            let a1: u64 = v_auxy;
+            let a2: u64 = v_auxz;
+            let a3: u64 = v_auxx;
+            let a4: u64 = v_auxy;
+            let a5: u64 = v_auxz;
+            let a6: u64 = v_px;
+            let a7: u64 = v_py;
+            let a8: u64 = v_pz;
+            let a9: u64 = v_cond1;
+            glv_cmov(m, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        }
+        {
+            let a0: u64 = v_outx;
+            let a1: u64 = v_auxx;
+            let a2: u64 = v_outy;
+            let a3: u64 = v_auxy;
+            let a4: u64 = v_outz;
+            let a5: u64 = v_auxz;
+            let a6: u64 = v_outx;
+            let a7: u64 = v_outy;
+            let a8: u64 = v_outz;
+            msm_curve_add(m, a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        }
+        {
+            let a0: u64 = v_auxx;
+            let a1: u64 = v_auxy;
+            let a2: u64 = v_auxz;
+            store_zero(m, a0, a1, a2);
+        }
+        {
+            let a0: u64 = v_auxx;
+            let a1: u64 = v_auxy;
+            let a2: u64 = v_auxz;
+            let a3: u64 = v_auxx;
+            let a4: u64 = v_auxy;
+            let a5: u64 = v_auxz;
+            let a6: u64 = v_phix;
+            let a7: u64 = v_phiy;
+            let a8: u64 = v_phiz;
+            let a9: u64 = v_cond2;
+            glv_cmov(m, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
+        }
+        {
+            let a0: u64 = v_outx;
+            let a1: u64 = v_auxx;
+            let a2: u64 = v_outy;
+            let a3: u64 = v_auxy;
+            let a4: u64 = v_outz;
+            let a5: u64 = v_auxz;
+            let a6: u64 = v_outx;
+            let a7: u64 = v_outy;
+            let a8: u64 = v_outz;
+            msm_curve_add(m, a0, a1, a2, a3, a4, a5, a6, a7, a8);
+        }
+        {
+            let a0: u64 = v_px;
+            let a1: u64 = v_py;
+            let a2: u64 = v_pz;
+            let a3: u64 = v_px;
+            let a4: u64 = v_py;
+            let a5: u64 = v_pz;
+            msm_curve_double(m, a0, a1, a2, a3, a4, a5);
+        }
+        {
+            let a0: u64 = v_phix;
+            let a1: u64 = v_phiy;
+            let a2: u64 = v_phiz;
+            let a3: u64 = v_phix;
+            let a4: u64 = v_phiy;
+            let a5: u64 = v_phiz;
+            msm_curve_double(m, a0, a1, a2, a3, a4, a5);
+        }
+    }
+    m.free(8);
+    m.free(8);
+    m.free(8);
+    m.free(48);
+    m.free(48);
+    m.free(48);
+}
+
+pub fn shift_scalar(m: &mut Mem, mut v_c2: u64, mut v_scalar: u64) {
+    let mut v_lo: u64 = 0;
+    let mut v_hi: u64 = 0;
+    v_lo = m.load64(v_scalar);
+    v_hi = m.load64((v_scalar).wrapping_add(8u64));
+    { let a: u64 = v_c2; let v: u64 = (v_lo & 1u64); m.store64(a, v); }
+    { let a: u64 = v_scalar; let v: u64 = (rt_sru(v_lo, 1u64)).wrapping_add(rt_slu(v_hi, 63u64)); m.store64(a, v); }
+    { let a: u64 = (v_scalar).wrapping_add(8u64); let v: u64 = rt_sru(v_hi, 1u64); m.store64(a, v); }
+}
+
+pub fn glv_cmov(m: &mut Mem, mut v_outx: u64, mut v_outy: u64, mut v_outz: u64, mut v_x1: u64, mut v_y1: u64, mut v_z1: u64, mut v_x2: u64, mut v_y2: u64, mut v_z2: u64, mut v_pc: u64) {
+    if m.load64(v_pc) != 0 {
+        {
+            let a0: u64 = v_outx;
+            let a1: u64 = v_x2;
+            bls12_felem_copy(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_outy;
+            let a1: u64 = v_y2;
+            bls12_felem_copy(m, a0, a1);
+        }
+        {
+            let a0: u64 = v_outz;
+            let a1: u64 = v_z2;
+            bls12_felem_copy(m, a0, a1);
+        }
+    } else {
+    }
+}

@@ -1,7 +1,7 @@
 (** * The bedrock2 -> Jasmin translation of straight-line code, and its simulation theorem. *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String Ascii.
@@ -61,6 +61,15 @@ Section C.
     | _ => None
     end.
 
+  (** A shift amount: a literal in [0, 64).  (bedrock2's concrete words, [Naive.word 64], mask a
+      larger amount to its low 6 bits, and coqutil's interface leaves it unspecified, so a shift
+      by a variable is not translated.) *)
+  Definition lit_shamt (b : expr) : option Z :=
+    match b with
+    | expr.literal k => if (0 <=? k) && (k <? 64) then Some k else None
+    | _ => None
+    end.
+
   (** [cexpr n e]: code computing [e], the variable holding the result, and the next free
       temporary.  It writes temporaries [tmp k], [n <= k < n'] only. *)
   Fixpoint cexpr (n : nat) (e : expr) : option (jcmd * string * nat) :=
@@ -109,6 +118,18 @@ Section C.
                 Some (ca ++ cb ++ [:: asg (tmp (S (S n2))) (pv ra);
                                       mulx name (tmp (S n2)) t (tmp (S (S n2))) rb],
                       t, S (S (S n2)))
+              | bopname.sru =>
+                match lit_shamt b with
+                | Some k => Some (ca ++ cb ++ [:: asg t (pv ra);
+                                   asg t (Papp2 (shop_sop2 ShR) (pv t) (cst k))], t, S n2)
+                | None => None
+                end
+              | bopname.slu =>
+                match lit_shamt b with
+                | Some k => Some (ca ++ cb ++ [:: asg t (pv ra);
+                                   asg t (Papp2 (shop_sop2 ShL) (pv t) (cst k))], t, S n2)
+                | None => None
+                end
               | _ => None
               end
             end
@@ -129,6 +150,11 @@ Section C.
         if ok_name x then
           match cexpr 0 e with Some (ce, r, _) => Some (ce ++ [:: asg x (pv r)]) | None => None end
         else None
+    | cmd.cond e c1 c2 =>
+        match cexpr 0 e, ccmd c1, ccmd c2 with
+        | Some (ce, r, _), Some j1, Some j2 => Some (ce ++ [:: cif name r j1 j2])
+        | _, _, _ => None
+        end
     | cmd.store access_size.word a v =>
         match cexpr 0 v with
         | Some (cv, rv, n1) =>

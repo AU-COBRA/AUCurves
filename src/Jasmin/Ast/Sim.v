@@ -1,14 +1,14 @@
 (** * Simulation: bedrock2's [exec] of a translated command implies Jasmin's execution. *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String Ascii.
 Require coqutil.Word.Bitwidth.
 Require bedrock2.Syntax bedrock2.Semantics.
 Require coqutil.Map.Interface coqutil.Map.Properties coqutil.Decidable.
-Require Import JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp.
+Require Import JasminBridge.Ast.PsemBig JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".
 
@@ -145,6 +145,12 @@ Section S.
     jw (if b then CW.of_Z (word:=W) 1 else CW.of_Z 0) = if b then 1%R else 0%R.
   Proof. by case: b; rewrite ?jw1 ?jw0. Qed.
 
+  Lemma lit_shamt_spec {b k} : lit_shamt b = Some k -> b = expr.literal k /\ (0 <= k < 64)%Z.
+  Proof.
+    case: b => // k'; rewrite /lit_shamt; case: ifP => // /andP [/Z.leb_le h0 /Z.ltb_lt h1] [<-].
+    by split.
+  Qed.
+
   Lemma cexpr_correct e : forall n c r n',
     cexpr name n e = Some (c, r, n') ->
     (n <= n')%coq_nat /\ res_ok n n' r /\
@@ -211,7 +217,7 @@ Section S.
       have [hn1 [hra hsa]] := iha _ _ _ _ ha.
       have [hn2 [hrb hsb]] := ihb _ _ _ _ hb.
       have hevab : forall m l v (s : @estate wsw syscall_state (@ep_of_asm_e _ _ _ _ _ _ _ x86_extra syscall_state sc_sem)), eval_expr m l (expr.op o a b) = Some v -> RL l (evm s) -> mem_rel m (emem s) ->
-        exists va vb vm2, [/\ v = bedrock2.Semantics.interp_binop o va vb,
+        exists va vb vm2, eval_expr m l b = Some vb /\ [/\ v = bedrock2.Semantics.interp_binop o va vb,
           run s (ca ++ cb) = ok (with_vm s vm2), get vm2 (vv ra) = Vword (jw va),
           get vm2 (vv rb) = Vword (jw vb) & agree_except n n2 (evm s) vm2].
       { move=> m l v s hev hl hm; simpl in hev.
@@ -219,7 +225,7 @@ Section S.
         case heb: (eval_expr m l b) hev => [vb|] // [<-].
         have [vm1 [hr1 [hv1 hag1]]] := hsa _ _ _ _ hea hl hm.
         have [vm2 [hr2 [hv2 hag2]]] := hsb m l vb (with_vm s vm1) heb (RL_agree hl hag1) hm.
-        exists va, vb, vm2; split => //.
+        exists va, vb, vm2; split => //; split => //.
         - by rewrite (run_app_ok _ hr1) hr2.
         - by rewrite (res_keep hra (le_n _) hag2).
         - apply: (agree_trans' hag1 hag2); lia. }
@@ -232,7 +238,7 @@ Section S.
       { (* add, sub, mul, and, or, xor *)
         move=> [<- <- <-]; split; first lia; split; first by right; exists n2; split; [lia|].
         move=> m l v s hev hl hm.
-        have [va [vb [vm2 [-> hr2 hva hvb hag2]]]] := hevab _ _ _ _ hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
         eexists; split.
         - rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
           rewrite (run_asg_op2 _ _ _ _ _ _ (jw va) (jw vb)) //=.
@@ -245,7 +251,7 @@ Section S.
         move=> [<- <- <-]; split; first lia; split; first by right; exists n2; split; [lia|].
         have htt3 : rb <> tmp (S (S n2)) by apply: (res_neq_tmp hrb); lia.
         move=> m l v s hev hl hm.
-        have [va [vb [vm2 [-> hr2 hva hvb hag2]]]] := hevab _ _ _ _ hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
         eexists; split.
         * rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
           rewrite (run_mulx _ _ _ _ _ _ _ (jw va) (jw vb)) //=.
@@ -254,10 +260,38 @@ Section S.
         * split; first by rewrite get_set_eq /= jw_mulhuu.
         apply: agree_set'; last lia; apply: agree_set'; last lia; apply: agree_set'; last lia.
         apply: (agree_weaken' hag2); lia.
+      + (* sru *)
+        case hk: (lit_shamt b) => [k|] // [<- <- <-].
+        have [hb' hk64] := lit_shamt_spec hk.
+        split; first lia; split; first by right; exists n2; split; [lia|].
+        move=> m l v s hev hl hm.
+        have [va [vb [vm2 [heb [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
+        move: heb; rewrite hb' => -[<-].
+        eexists; split.
+        * rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
+          rewrite (run_asg_shift _ _ _ ShR _ _ (jw va)) //.
+          by rewrite get_set_eq.
+        * split; first by rewrite get_set_eq /= jw_sru.
+        apply: agree_set'; last lia; apply: agree_set'; last lia.
+        apply: (agree_weaken' hag2); lia.
+      + (* slu *)
+        case hk: (lit_shamt b) => [k|] // [<- <- <-].
+        have [hb' hk64] := lit_shamt_spec hk.
+        split; first lia; split; first by right; exists n2; split; [lia|].
+        move=> m l v s hev hl hm.
+        have [va [vb [vm2 [heb [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
+        move: heb; rewrite hb' => -[<-].
+        eexists; split.
+        * rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
+          rewrite (run_asg_shift _ _ _ ShL _ _ (jw va)) //.
+          by rewrite get_set_eq.
+        * split; first by rewrite get_set_eq /= jw_slu.
+        apply: agree_set'; last lia; apply: agree_set'; last lia.
+        apply: (agree_weaken' hag2); lia.
       + (* ltu *)
         move=> [<- <- <-]; split; first lia; split; first by right; exists n2; split; [lia|].
         move=> m l v s hev hl hm.
-        have [va [vb [vm2 [-> hr2 hva hvb hag2]]]] := hevab _ _ _ _ hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
         eexists; split.
         * rewrite catA (run_app_ok _ hr2) run_cons run_asg_cst bind_ok run_cons run_asg_cst bind_ok run_cons.
           rewrite (run_asg_pif _ _ _ CLtu _ _ _ _ (jw va) (jw vb) (wrepr U64 1) (wrepr U64 0)) //=.
@@ -271,7 +305,7 @@ Section S.
       + (* eq *)
         move=> [<- <- <-]; split; first lia; split; first by right; exists n2; split; [lia|].
         move=> m l v s hev hl hm.
-        have [va [vb [vm2 [-> hr2 hva hvb hag2]]]] := hevab _ _ _ _ hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
         eexists; split.
         * rewrite catA (run_app_ok _ hr2) run_cons run_asg_cst bind_ok run_cons run_asg_cst bind_ok run_cons.
           rewrite (run_asg_pif _ _ _ CEq _ _ _ _ (jw va) (jw vb) (wrepr U64 1) (wrepr U64 0)) //=.
@@ -292,6 +326,28 @@ Section S.
   Qed.
 
   Local Notation exec := (@bedrock2.Semantics.exec.exec 64 BW W Mem L ext_spec).
+
+  (** ** Conditions: bedrock2 tests [word.unsigned v <> 0], the translation [jw v != 0]. *)
+  Lemma jw_ne0 (v : w64) : (jw v != 0%R) = ~~ (CW.unsigned v =? 0)%Z.
+  Proof.
+    rewrite -wunsigned_jw; case: (jw v =P 0%R) => [-> | h]; first by vm_compute.
+    apply/esym/negbT/Z.eqb_neq => h0; apply: h; apply: wunsigned_inj; by rewrite h0 wunsigned0.
+  Qed.
+
+  Lemma cexpr_cond_correct e n c r n' c1 c2 m l v s :
+    cexpr name n e = Some (c, r, n') ->
+    eval_expr m l e = Some v -> RL l (evm s) -> mem_rel m (emem s) ->
+    exists vm', run s (c ++ [:: cif name r c1 c2]) =
+      (if ~~ (CW.unsigned v =? 0)%Z then run (with_vm s vm') c1 else run (with_vm s vm') c2) /\
+      agree_except n n' (evm s) vm'.
+  Proof.
+    move=> he hev hl hm.
+    have [_ [_ hsem]] := cexpr_correct e n c r n' he.
+    have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
+    exists vm1; split => //.
+    rewrite (run_app_ok _ hr1) run_cons (run_cif _ _ _ _ _ _ (jw v)) // -jw_ne0.
+    by case: (_ != _); case: (run _ _).
+  Qed.
 
   Lemma RL_put l vm x (v : w64) : RL l vm -> ok_name x ->
     RL (map.put l x v) vm.[vv x <- Vword (jw v)].
@@ -371,6 +427,21 @@ Section S.
           by rewrite (run_storev _ _ _ _ _ (jw a) (jw v) jm').
         * exists m', l; split => //.
         exact: RL_agree (RL_agree hl hag1) hag2.
+    - (* if_true *)
+      move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
+      case h1: (ccmd name c1) => [j1|] //; case h2: (ccmd name c2) => [j2|] // [<-].
+      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he hev hl hm.
+      have [s2 [hr2 hpost]] := IHc1 _ h1 (with_vm s vm1) (RL_agree hl hag1) hm.
+      exists s2; split; last exact: hpost.
+      have hnz' : (CW.unsigned v =? 0)%Z = false by apply/Z.eqb_neq.
+      by rewrite hr hnz'.
+    - (* if_false *)
+      move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
+      case h1: (ccmd name c1) => [j1|] //; case h2: (ccmd name c2) => [j2|] // [<-].
+      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he hev hl hm.
+      have [s2 [hr2 hpost]] := IHc2 _ h2 (with_vm s vm1) (RL_agree hl hag1) hm.
+      exists s2; split; last exact: hpost.
+      by rewrite hr hz.
     - (* seq *)
       move: hcj; case h1: (ccmd name c1) => [ca|] //; case h2: (ccmd name c2) => [cb|] // [<-].
       have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 _ hl hm.
@@ -459,6 +530,12 @@ Section S.
       apply: (RL_defined hl) => y; rewrite List.in_app_iff => -[].
       + exact: eval_vars hea y.
       + exact: eval_vars hev y.
+    - (* if_true *)
+      have hex1 : exec fenv (cmd.cond e c1 c2) t m l post by apply: bedrock2.Semantics.exec.if_true; eauto.
+      exact: ccmd_correct fenv _ _ hcj _ _ _ _ hex1 _ hl hm.
+    - (* if_false *)
+      have hex1 : exec fenv (cmd.cond e c1 c2) t m l post by apply: bedrock2.Semantics.exec.if_false; eauto.
+      exact: ccmd_correct fenv _ _ hcj _ _ _ _ hex1 _ hl hm.
     - (* seq *)
       move: hcj; case h1: (ccmd_sp name spillp c1) => [ca|] //; case h2: (ccmd_sp name spillp c2) => [cb|] // [<-].
       have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 _ hl hm.
@@ -469,5 +546,32 @@ Section S.
       + by move=> k; rewrite hdom3 hdom2.
       + move=> p hp; rewrite hfr3; first exact: hfr2.
         by move=> a' ha'; rewrite -/(map.get m2 a' = None) hdom2; apply: hp.
+  Qed.
+  (** ** In Jasmin's big-step semantics
+      The two simulation theorems with [PsemBig.sem] (Jasmin's [sem], see [PsemBigIff]) in
+      place of the executable [run]: the translated code runs in any program [P] whose global
+      declarations are [gd]. *)
+  Theorem ccmd_correct' {dc : DirectCall} {pT : progT} {scP : semCallParams} (P : prog)
+      (ev : extra_val_t) (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
+    p_globs P = gd -> ccmd name c = Some jc ->
+    forall t m l post, exec fenv c t m l post ->
+    forall s, RL l (evm s) -> mem_rel m (emem s) ->
+    exists s', sem P ev s jc s' /\ sim_post m s post t s'.
+  Proof.
+    move=> hgd hc t m l post hex s hl hm.
+    have [s' [hr hp]] := ccmd_correct fenv c jc hc t m l post hex s hl hm.
+    by exists s'; split => //; exact: (@run_sem _ _ _ _ gd dc pT scP P ev hgd _ _ _ hr).
+  Qed.
+
+  Theorem ccmd_sp_correct' {dc : DirectCall} {pT : progT} {scP : semCallParams} (P : prog)
+      (ev : extra_val_t) (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
+    p_globs P = gd -> ccmd_sp name spillp c = Some jc ->
+    forall t m l post, exec fenv c t m l post ->
+    forall s, RL l (evm s) -> mem_rel m (emem s) ->
+    exists s', sem P ev s jc s' /\ sim_post m s post t s'.
+  Proof.
+    move=> hgd hc t m l post hex s hl hm.
+    have [s' [hr hp]] := ccmd_sp_correct fenv c jc hc t m l post hex s hl hm.
+    by exists s'; split => //; exact: (@run_sem _ _ _ _ gd dc pT scP P ev hgd _ _ _ hr).
   Qed.
 End S.

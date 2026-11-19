@@ -84,7 +84,7 @@ Section T.
     have [fenv [l [hl hex]]] := H pout px py x y out Rr nil m hpre.
     have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
       jfun_correct2 name name_inj cfn iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
+        hget hc (fun _ => naive_shift_masks) isT hl hex hm.
     by exists jm'; split => //; exists m'; split.
   Qed.
 
@@ -102,7 +102,7 @@ Section T.
     have [fenv [l [hl hex]]] := H pout px x out Rr nil m hpre.
     have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
       jfun_correct2 name name_inj cfn iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
+        hget hc (fun _ => naive_shift_masks) isT hl hex hm.
     by exists jm'; split => //; exists m'; split.
   Qed.
 

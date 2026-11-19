@@ -95,7 +95,8 @@ Section T.
     move=> hP ev scs jm sp pout x out R t m hpre hm.
     have hrel := translate_prog_get name fname finfo iinfo bls12_prog_funcs P fname_inj hP.
     have hcall := bls12_from_word_correct fenv fenv_from_word fenv_to_mont pout x out R t m hpre.
-    exact: (prog_correct name name_inj fname finfo iinfo P ev fenv hrel "bls12_from_word" t m
+    exact: (prog_correct name name_inj fname finfo iinfo P ev fenv hrel
+      (fun _ _ _ _ _ _ => naive_shift_masks) "bls12_from_word" t m
       [:: pout; x] _ jm scs sp hcall hm).
   Qed.
 
@@ -113,7 +114,8 @@ Section T.
   Proof.
     move=> hP ev scs jm sp pout px py t m post H hm.
     have hrel := translate_prog_get name fname finfo iinfo bls12_prog_funcs P fname_inj hP.
-    exact: (prog_correct name name_inj fname finfo iinfo P ev fenv hrel "bls12_mul" t m
+    exact: (prog_correct name name_inj fname finfo iinfo P ev fenv hrel
+      (fun _ _ _ _ _ _ => naive_shift_masks) "bls12_mul" t m
       [:: pout; px; py] post jm scs sp (H fenv fenv_mul) hm).
   Qed.
   (** ** The quadratic extension's copy, zero, one and opp: two calls each. *)

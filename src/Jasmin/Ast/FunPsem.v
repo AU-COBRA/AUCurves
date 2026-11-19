@@ -59,7 +59,7 @@ Section F.
   Theorem jfun_correct_psem {dc : DirectCall} (P : uprog) ev fn fi ps jc body
       (fenv : @map.rep _ _ bedrock2.Semantics.env) t m args l0 post scs jm :
     get_fundef (p_funcs P) fn = Some (jfun name iinfo spillp fi ps jc) ->
-    ccmd_sp name spillp body = Some jc -> all ok_name ps ->
+    ccmd_sp name spillp body = Some jc -> (vsh_c body -> @shift_masks W) -> all ok_name ps ->
     map.of_list_zip ps args = Some l0 ->
     exec fenv body t m l0 post ->
     mem_rel m jm ->
@@ -68,9 +68,9 @@ Section F.
         (forall k, map.get m' k = None <-> map.get m k = None) &
         (forall p, outside m p -> read jm' Aligned p U8 = read jm Aligned p U8)].
   Proof.
-    move=> hf hc hok hz hex hm.
+    move=> hf hc hS hok hz hex hm.
     have [jm' [hcall hpost]] := jfun_correct name name_inj iinfo spillp P ev fn fi ps jc body fenv
-      t m args l0 post scs jm hf hc hok hz hex hm.
+      t m args l0 post scs jm hf hc hS hok hz hex hm.
     by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 
@@ -78,6 +78,7 @@ Section F.
       (fenv : @map.rep _ _ bedrock2.Semantics.env) t m args l0 post scs jm :
     get_fundef (p_funcs P) fn = Some (jfun name iinfo spillp fi ps jc) ->
     xcmd name cfn spillp ps body = Some jc \/ ccmd_sp name spillp body = Some jc ->
+    (vsh_c body -> @shift_masks W) ->
     all ok_name ps ->
     map.of_list_zip ps args = Some l0 ->
     exec fenv body t m l0 post ->
@@ -87,9 +88,9 @@ Section F.
         (forall k, map.get m' k = None <-> map.get m k = None) &
         (forall p, outside m p -> read jm' Aligned p U8 = read jm Aligned p U8)].
   Proof.
-    move=> hf hc hok hz hex hm.
+    move=> hf hc hS hok hz hex hm.
     have [jm' [hcall hpost]] := jfun_correct2 name name_inj cfn iinfo spillp P ev fn fi ps jc body
-      fenv t m args l0 post scs jm hf hc hok hz hex hm.
+      fenv t m args l0 post scs jm hf hc hS hok hz hex hm.
     by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 End F.

@@ -186,6 +186,9 @@ Section P.
   Local Notation RL := (RL name).
   Local Notation agree_except := (agree_except name).
   Local Notation estate_x := (@estate wsw syscall_state (@ep_of_asm_e _ _ _ _ _ _ _ x86_extra syscall_state sc_sem)).
+  (** The shift hypothesis on the word ([Base.shift_masks]): assumed only for code with a
+      shift by a variable ([Comp.vsh_c]). *)
+  Local Notation SM := (@shift_masks W).
 
   Lemma res_ok_widen {n n1 n' r} : res_ok n1 n' r -> (n <= n1)%coq_nat -> res_ok n n' r.
   Proof. case=> [h | [k [hk ->]]] hn; [by left | right; exists k; split => //; lia]. Qed.
@@ -197,18 +200,19 @@ Section P.
   Proof. by move=> h; apply: h => -[k [_ /(vv_inj name name_inj)]]; apply: sp_ne_tmp. Qed.
 
   Lemma cargs_correct gd es : forall n c rs n', cargs n es = Some (c, rs, n') ->
+    (List.existsb vsh_e es -> SM) ->
     (n <= n')%coq_nat /\ (forall r, List.In r rs -> res_ok n n' r) /\
     forall m l vs (s : estate_x), eval_call_args m l es = Some vs -> RL l (evm s) -> mem_rel m (emem s) ->
       exists vm', Trans.run gd s c = ok (with_vm s vm') /\
         [seq get vm' (vv r) | r <- rs] = jargs vs /\ agree_except n n' (evm s) vm'.
   Proof.
     elim: es => [|e es ih] n c rs n' /=.
-    - move=> [<- <- <-]; split; first lia; split => //.
+    - move=> [<- <- <-] _; split; first lia; split => //.
       move=> m l vs s [<-] _ _; exists (evm s); rewrite with_vm_id; split => //; split => //; exact: agree_refl.
     - case he: (cexpr name n e) => [[[c1 r] n1]|] //.
-      case hes: (cargs n1 es) => [[[cs rs'] n2]|] // [<- <- <-].
-      have [hn1 [hr hsem1]] := cexpr_correct name name_inj gd e n c1 r n1 he.
-      have [hn2 [hrs hsem2]] := ih _ _ _ _ hes.
+      case hes: (cargs n1 es) => [[[cs rs'] n2]|] // [<- <- <-] hS.
+      have [hn1 [hr hsem1]] := cexpr_correct name name_inj gd e n c1 r n1 he (vsh_l hS).
+      have [hn2 [hrs hsem2]] := ih _ _ _ _ hes (vsh_r hS).
       split; first lia; split.
       { move=> x [<- | hx]; first exact: res_ok_widen_r hr hn2.
         exact: res_ok_widen (hrs x hx) hn1. }
@@ -287,6 +291,8 @@ Section P.
     Context {dc : DirectCall} (P : uprog) (ev : extra_val_t).
     Context (fenv : @map.rep _ _ bedrock2.Semantics.env).
     Hypothesis hP : prog_rel fenv P.
+    (** The shift hypothesis, for a program with a function that shifts by a variable. *)
+    Hypothesis hSv : forall f ps rs body, map.get fenv f = Some (ps, rs, body) -> vsh_c body -> SM.
     Local Notation gd := (p_globs P).
 
     (** A call of a translated function whose body simulates its bedrock2 execution. *)
@@ -340,12 +346,12 @@ Section P.
       post t m l -> RL l (evm s) -> mem_rel m (emem s) -> simp m s post t s.
     Proof. by move=> hp hl hm; split => //; exists m, l; split. Qed.
 
-    Theorem ccmdc_correct c jc : ccmdc c = Some jc ->
+    Theorem ccmdc_correct c jc : ccmdc c = Some jc -> (vsh_c c -> SM) ->
       forall t m l post, exec fenv c t m l post ->
       forall (s : estate_x) (sp : u64), RL l (evm s) -> get (evm s) vsp = Vword sp -> mem_rel m (emem s) ->
       exists s', sem P ev s jc s' /\ simp m s post t s'.
     Proof.
-      move=> hc0 t m l post hex; move: jc hc0.
+      move=> hc0 hS0 t m l post hex; move: jc hc0 hS0.
       induction hex as [t m l post hpost | x e t m l post v hev hpost | x t m l post hpost
         | sz ea ev' t m l post a v m' hea hev hst hpost
         | x n body t mSmall l post hmod hbody IHbody
@@ -354,12 +360,12 @@ Section P.
         | e c t m l post v hev hz hpost | e c t m l post v mid hev hnz hcw IHc hw IHw
         | binds f arges t m l post params rets fbody args lf mid hget hargs hlf hbody IHbody hrets
         | binds action arges args t m l post mKeep mGive mid hsplit hargs hext hmid];
-        move=> jc hcj s sp hl hsp hm; cbn [ccmdc] in hcj; try (simpl in hcj; discriminate).
+        move=> jc hcj hS s sp hl hsp hm; cbn [ccmdc] in hcj; simpl in hS; try (simpl in hcj; discriminate).
       - (* skip *)
         simpl in hcj; case: hcj => <-; exists s; split; [exact: Eskip | exact: sim_skip hpost hl hm].
       - (* set *)
         move: hcj => /=; case: ifP => // hok; case he: (cexpr name 0 e) => [[[ce r] n']|] // [<-].
-        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he.
+        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he hS.
         have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
         exists (with_vm s vm1.[vv x <- Vword (jw v)]); split.
         + apply: (run_sem gd P ev erefl).
@@ -372,7 +378,7 @@ Section P.
       - (* store *)
         move: hcj => /=; case: sz hst => // hst.
         case hv: (cexpr name 0 ev') => [[[cv rv] n1]|] //.
-        have [hn1 [hrv hsv]] := cexpr_correct ev' 0 cv rv n1 hv.
+        have [hn1 [hrv hsv]] := cexpr_correct ev' 0 cv rv n1 hv (vsh_r hS).
         have [vm1 [hr1 [hv1 hag1]]] := hsv _ _ _ _ hev hl hm.
         have [jm' [hw hrel hdom hframe]] := mem_rel_store hm hst.
         case hf: (addr_fast ea) => [[b k]|].
@@ -388,7 +394,7 @@ Section P.
           * split; last exact: vsp_agree hag1.
             by exists m', l; split => //; exact: RL_agree hl hag1.
         + case ha: (cexpr name n1 ea) => [[[ca ra] n2]|] // [<-].
-          have [hn2 [hra hsa]] := cexpr_correct ea n1 ca ra n2 ha.
+          have [hn2 [hra hsa]] := cexpr_correct ea n1 ca ra n2 ha (vsh_l hS).
           have [vm2 [hr2 [hv2 hag2]]] := hsa _ _ _ (with_vm s vm1) hea (RL_agree hl hag1) hm.
           have hrv2 : get vm2 (vv rv) = Vword (jw v) by rewrite (res_keep hrv (le_n _) hag2).
           exists (with_mem (with_vm s vm2) jm'); split.
@@ -400,10 +406,10 @@ Section P.
       - (* if_true *)
         move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
         case h1: (ccmdc c1) => [j1|] //; case h2: (ccmdc c2) => [j2|] // [<-].
-        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he.
+        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he (vsh_l (vsh_l hS)).
         have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
         have hsp1 : get vm1 vsp = Vword sp by rewrite (vsp_agree hag1).
-        have [s2 [hs2 [hpost hsp2]]] := IHc1 _ h1 (with_vm s vm1) sp (RL_agree hl hag1) hsp1 hm.
+        have [s2 [hs2 [hpost hsp2]]] := IHc1 _ h1 (vsh_r (vsh_l hS)) (with_vm s vm1) sp (RL_agree hl hag1) hsp1 hm.
         exists s2; split; last by split => //; rewrite hsp2 /= (vsp_agree hag1).
         apply: sem_cat; first exact: (run_sem gd P ev erefl _ _ _ hr1).
         apply: Eseq; last exact: Eskip; constructor; apply: Eif_true => //.
@@ -412,20 +418,20 @@ Section P.
       - (* if_false *)
         move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
         case h1: (ccmdc c1) => [j1|] //; case h2: (ccmdc c2) => [j2|] // [<-].
-        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he.
+        have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he (vsh_l (vsh_l hS)).
         have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
         have hsp1 : get vm1 vsp = Vword sp by rewrite (vsp_agree hag1).
-        have [s2 [hs2 [hpost hsp2]]] := IHc2 _ h2 (with_vm s vm1) sp (RL_agree hl hag1) hsp1 hm.
+        have [s2 [hs2 [hpost hsp2]]] := IHc2 _ h2 (vsh_r hS) (with_vm s vm1) sp (RL_agree hl hag1) hsp1 hm.
         exists s2; split; last by split => //; rewrite hsp2 /= (vsp_agree hag1).
         apply: sem_cat; first exact: (run_sem gd P ev erefl _ _ _ hr1).
         apply: Eseq; last exact: Eskip; constructor; apply: Eif_false => //.
         by rewrite (ne0_eval name gd (with_vm s vm1) r (jw v) hv1) jw_ne0 hz.
       - (* seq *)
         move: hcj; case h1: (ccmdc c1) => [ca|] //; case h2: (ccmdc c2) => [cb|] // [<-].
-        have [s2 [hs2 [[m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]] hsp2]]] := IHc1 _ h1 _ sp hl hsp hm.
+        have [s2 [hs2 [[m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]] hsp2]]] := IHc1 _ h1 (vsh_l hS) _ sp hl hsp hm.
         have hsp2' : get (evm s2) vsp = Vword sp by rewrite hsp2.
         have [s3 [hs3 [[m3 [l3 [hpost hl3 hm3 hscs3 [hdom3 hfr3]]]] hsp3]]] :=
-          IHc2 _ _ _ hmid _ h2 _ sp hl2 hsp2' hm2.
+          IHc2 _ _ _ hmid _ h2 (vsh_r hS) _ sp hl2 hsp2' hm2.
         exists s3; split; first exact: sem_cat hs2 hs3.
         split; last by rewrite hsp3 hsp2.
         exists m3, l3; split => //; first by rewrite hscs3.
@@ -435,13 +441,13 @@ Section P.
           by move=> a' ha'; rewrite -/(map.get m2 a' = None) hdom2; apply: hp.
       - (* call *)
         move: hcj; case: ifP => // hbinds; case hca: (cargs 0 arges) => [[[ca rs] n']|] // [<-].
-        have [_ [_ hsa]] := cargs_correct gd arges 0 ca rs n' hca.
+        have [_ [_ hsa]] := cargs_correct gd arges 0 ca rs n' hca hS.
         have [vm1 [hr1 [hvals hag1]]] := hsa _ _ _ _ hargs hl hm.
         have hsp1 : get vm1 vsp = Vword sp by rewrite (vsp_agree hag1).
         have [hps [hrs [jb [hjb hgetP]]]] := hP _ _ _ _ hget.
         have [jm' [m' [st [hmid hm' hdom hfr hcall]]]] :=
           call_sim f params rets jb t m args lf mid (escs s) (emem s) sp hgetP hps hlf
-            (fun s1 hl1 hsp1 hm1 => IHbody jb hjb s1 sp hl1 hsp1 hm1) hm.
+            (fun s1 hl1 hsp1 hm1 => IHbody jb hjb (hSv _ _ _ _ hget) s1 sp hl1 hsp1 hm1) hm.
         have [retvs [hgm [l' [hput hpost]]]] := hrets _ _ _ hmid.
         pose s2 : estate_x := with_scs (with_mem (with_vm s vm1) jm') (escs s).
         have [vm3 [hw [hl3 hsp3]]] :=
@@ -472,7 +478,7 @@ Section P.
       have [hps [hrs [jb [hjb hgetP]]]] := hP _ _ _ _ hget.
       have [jm' [m' [st [[rets [hgm hpost]] hm' hdom hfr hcall]]]] :=
         call_sim fn ps rs jb t m args lf _ scs jm sp hgetP hps hz
-          (fun s1 hl1 hsp1 hm1 => ccmdc_correct body jb hjb _ _ _ _ hex s1 sp hl1 hsp1 hm1) hm.
+          (fun s1 hl1 hsp1 hm1 => ccmdc_correct body jb hjb (hSv _ _ _ _ hget) _ _ _ _ hex s1 sp hl1 hsp1 hm1) hm.
       exists jm', (jargs rets); split; first exact: hcall rets hgm.
       by exists m', rets; split.
     Qed.

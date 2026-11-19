@@ -205,9 +205,12 @@ Section BN254_MillerLoop.
     Instance spec_of_Fp_from_word : spec_of PrimeField.from_word :=
       PrimeField.spec_of_from_word (field_representation:=bn254_Fp_rep).
 
-    (* spec_of for bn254_make_line -- needed by straightline_call *)
-    Instance spec_of_bn254_make_line : spec_of "bn254_make_line" :=
-      fnspec! "bn254_make_line" (pout plam pxt pyt pxp pyp : word)
+    (* spec_of for bn254_make_line_corrected, the line function that
+       bn254_miller_loop calls (BN254_Pairing.v) -- needed by straightline_call.
+       Same pre/postcondition as spec_of_bn254_make_line_corrected in
+       BN254_MillerLoopOptimal.v. *)
+    Instance spec_of_bn254_make_line_corrected : spec_of "bn254_make_line_corrected" :=
+      fnspec! "bn254_make_line_corrected" (pout plam pxt pyt pxp pyp : word)
         / (old_out : Fp12_felem) (lam xt yt : Fp2_felem)
           (xp yp : Fp_felem) Rr,
       { requires tr mem :=
@@ -518,11 +521,11 @@ Section BN254_MillerLoop.
         (HFpmul : spec_of_Fp_mul functions)
         (HFpcopy : spec_of_Fp_felem_copy functions)
         (HFfromword : spec_of_Fp_from_word functions)
-        (HMakeLine : map.get functions "bn254_make_line" =
-          Some (snd bn254_make_line))
+        (HMakeLine : map.get functions "bn254_make_line_corrected" =
+          Some (snd bn254_make_line_corrected))
         (HFp2mulfpEnv : map.get functions "bn254_Fp2_mul_fp" =
           Some (snd bn254_Fp2_mul_fp))
-        (HMakeLineOk : spec_of_bn254_make_line functions),
+        (HMakeLineOk : spec_of_bn254_make_line_corrected functions),
       spec_of_bn254_miller_loop functions.
     Proof.
       intros.

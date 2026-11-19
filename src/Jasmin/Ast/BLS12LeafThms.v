@@ -8,7 +8,8 @@ Require Import bedrock2.Syntax bedrock2.BasicC64Semantics.
 Require Import Crypto.Arithmetic.PrimeFieldTheorems.
 Require Import Bedrock.JasminAst.BLS12LeafBodies Bedrock.JasminAst.BLS12LeafSpecs.
 Require Import JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp
-  JasminBridge.Ast.Sim JasminBridge.Ast.Fun JasminBridge.Ast.BLS12Leaves.
+  JasminBridge.Ast.Sim JasminBridge.Ast.Fun JasminBridge.Ast.BLS12Leaves JasminBridge.Ast.PsemBigIff.
+Require Export JasminBridge.Ast.BLS12LeafBig.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".
 Local Open Scope string_scope.
@@ -26,29 +27,13 @@ Section T.
 
   Local Notation P := (bls12_leaves_prog name fname finfo iinfo K).
 
-  Lemma fname_neq a b : String.eqb a b = false -> (fname a == fname b) = false.
-  Proof. by move=> h; apply/eqP => /fname_inj e; move: h; rewrite e String.eqb_refl. Qed.
+  (** [fname_neq], [get_add], [get_sub], [get_mul], [get_square] and [jasmin_post] are in
+      [BLS12LeafBig]; the theorems below are its theorems for [psem.sem_call]. *)
 
   Local Notation leafd fn ps b :=
     (jfun name iinfo (spill_choice K ps b) (finfo fn) ps (leaf_code name K ps b)).
 
-  Lemma get_add : get_fundef (p_funcs P) (fname "bls12_add") = Some (leafd "bls12_add" params3 bls12_add_body).
-  Proof. by rewrite /get_fundef /= eqxx. Qed.
-  Lemma get_sub : get_fundef (p_funcs P) (fname "bls12_sub") = Some (leafd "bls12_sub" params3 bls12_sub_body).
-  Proof. by rewrite /get_fundef /= fname_neq // eqxx. Qed.
-  Lemma get_mul : get_fundef (p_funcs P) (fname "bls12_mul") = Some (leafd "bls12_mul" params3 bls12_mul_body).
-  Proof. by rewrite /get_fundef /= fname_neq // fname_neq // eqxx. Qed.
-  Lemma get_square : get_fundef (p_funcs P) (fname "bls12_square") = Some (leafd "bls12_square" params2 bls12_square_body).
-  Proof. by rewrite /get_fundef /= fname_neq // fname_neq // fname_neq // eqxx. Qed.
-
   Local Notation jargs xs := [seq Vword (jw a) | a <- xs].
-
-  (** What the Jasmin call establishes: the final Jasmin memory is related to a bedrock2 memory
-      satisfying the contract's postcondition, and no byte outside the bedrock2 domain changed. *)
-  Local Notation bmem := (@coqutil.Map.Interface.map.rep _ _ BasicC64Semantics.mem).
-  Definition jasmin_post (m : bmem) (jm jm' : low_memory.mem) (Q : bmem -> Prop) : Prop :=
-    exists m', [/\ Q m', mem_rel m' jm' &
-      forall p, outside m p -> read jm' Aligned p U8 = read jm Aligned p U8].
 
   Lemma binop_jasmin fn body model :
     get_fundef (p_funcs P) (fname fn) = Some (leafd fn params3 body) ->
@@ -60,11 +45,9 @@ Section T.
         jasmin_post m jm jm' (result_post pout (model (eval_w x) (eval_w y)) Rr).
   Proof.
     move=> hget hc H ev scs jm pout px py x y out Rr m hpre hm.
-    have [fenv [l [hl hex]]] := H pout px py x y out Rr nil m hpre.
-    have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
-      jfun_correct name name_inj iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
-    by exists jm'; split => //; exists m'; split.
+    have [jm' [hcall hpost]] := binop_big name fname finfo iinfo K name_inj fn body model hget hc H ev scs jm
+      pout px py x y out Rr m hpre hm.
+    by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 
   Lemma unop_jasmin fn body model :
@@ -77,11 +60,9 @@ Section T.
         jasmin_post m jm jm' (result_post pout (model (eval_w x)) Rr).
   Proof.
     move=> hget hc H ev scs jm pout px x out Rr m hpre hm.
-    have [fenv [l [hl hex]]] := H pout px x out Rr nil m hpre.
-    have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
-      jfun_correct name name_inj iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
-    by exists jm'; split => //; exists m'; split.
+    have [jm' [hcall hpost]] := unop_big name fname finfo iinfo K name_inj fn body model hget hc H ev scs jm
+      pout px x out Rr m hpre hm.
+    by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 
   (** The four leaves.  Premise: fiat-crypto's contract of the leaf, as a bedrock2 execution
@@ -90,23 +71,23 @@ Section T.
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_add") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.add (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin get_add (ccmd_add name K). Qed.
+  Proof. exact: binop_jasmin (get_add name fname finfo iinfo K) (ccmd_add name K). Qed.
 
   Theorem bls12_sub_jasmin : bls12_sub_contract ->
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_sub") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.sub (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin get_sub (ccmd_sub name K). Qed.
+  Proof. exact: binop_jasmin (get_sub name fname finfo iinfo K fname_inj) (ccmd_sub name K). Qed.
 
   Theorem bls12_mul_jasmin : bls12_mul_contract ->
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_mul") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.mul (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin get_mul (ccmd_mul name K). Qed.
+  Proof. exact: binop_jasmin (get_mul name fname finfo iinfo K fname_inj) (ccmd_mul name K). Qed.
 
   Theorem bls12_square_jasmin : bls12_square_contract ->
     forall ev scs jm pout px x out Rr m, unop_pre pout px x out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_square") (jargs [:: pout; px]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.pow (eval_w x) 2) Rr).
-  Proof. exact: unop_jasmin get_square (ccmd_square name K). Qed.
+  Proof. exact: unop_jasmin (get_square name fname finfo iinfo K fname_inj) (ccmd_square name K). Qed.
 End T.

@@ -11,7 +11,8 @@ Require Import Bedrock.JasminAst.BLS12LeafBodies Bedrock.JasminAst.BLS12LeafSpec
 Require Import JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp
   JasminBridge.Ast.Sim JasminBridge.Ast.Fun JasminBridge.Ast.BLS12Leaves
   JasminBridge.Ast.Carry JasminBridge.Ast.CarrySim JasminBridge.Ast.Fun2 JasminBridge.Ast.BLS12Leaves2
-  JasminBridge.Ast.BLS12LeafThms.
+  JasminBridge.Ast.BLS12LeafThms JasminBridge.Ast.PsemBigIff.
+Require Export JasminBridge.Ast.BLS12LeafBig2.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".
 Local Open Scope string_scope.
@@ -32,36 +33,8 @@ Section T.
   Local Notation leafd fn ps b :=
     (jfun name iinfo (spill2 name cfn budget ps b) (finfo fn) ps (leaf_code2 name cfn budget ps b)).
 
-  (** The code of a leaf comes from [xcmd] or, if that fails, from [ccmd_sp]. *)
-  Lemma code2_ok ps b : isSome (ccmd name b) ->
-    xcmd name cfn (spill2 name cfn budget ps b) ps b = Some (leaf_code2 name cfn budget ps b) \/
-    ccmd_sp name (spill2 name cfn budget ps b) b = Some (leaf_code2 name cfn budget ps b).
-  Proof.
-    move=> h; rewrite /leaf_code2; case: xcmd => [c|]; first by left.
-    right; have := ccmd_sp_some name (spill2 name cfn budget ps b) b h.
-    by move/(_ atoI); case: ccmd_sp.
-  Qed.
-
-  Definition code2_add := code2_ok params3 bls12_add_body ltac:(by vm_compute).
-  Definition code2_sub := code2_ok params3 bls12_sub_body ltac:(by vm_compute).
-  Definition code2_mul := code2_ok params3 bls12_mul_body ltac:(by vm_compute).
-  Definition code2_square := code2_ok params2 bls12_square_body ltac:(by vm_compute).
-
-  Lemma get_add2 : get_fundef (p_funcs P) (fname "bls12_add") = Some (leafd "bls12_add" params3 bls12_add_body).
-  Proof. by rewrite /get_fundef /= eqxx. Qed.
-  Lemma get_sub2 : get_fundef (p_funcs P) (fname "bls12_sub") = Some (leafd "bls12_sub" params3 bls12_sub_body).
-  Proof. by rewrite /get_fundef /= (fname_neq fname fname_inj "bls12_sub" "bls12_add") // eqxx. Qed.
-  Lemma get_mul2 : get_fundef (p_funcs P) (fname "bls12_mul") = Some (leafd "bls12_mul" params3 bls12_mul_body).
-  Proof.
-    by rewrite /get_fundef /= (fname_neq fname fname_inj "bls12_mul" "bls12_add") //
-      (fname_neq fname fname_inj "bls12_mul" "bls12_sub") // eqxx.
-  Qed.
-  Lemma get_square2 : get_fundef (p_funcs P) (fname "bls12_square") = Some (leafd "bls12_square" params2 bls12_square_body).
-  Proof.
-    by rewrite /get_fundef /= (fname_neq fname fname_inj "bls12_square" "bls12_add") //
-      (fname_neq fname fname_inj "bls12_square" "bls12_sub") //
-      (fname_neq fname fname_inj "bls12_square" "bls12_mul") // eqxx.
-  Qed.
+  (** [code2_ok], [code2_*] and [get_*2] are in [BLS12LeafBig2]; the theorems below are its
+      theorems for [psem.sem_call]. *)
 
   Local Notation jargs xs := [seq Vword (jw a) | a <- xs].
 
@@ -80,11 +53,9 @@ Section T.
         jasmin_post m jm jm' (result_post pout (model (eval_w x) (eval_w y)) Rr).
   Proof.
     move=> hget hc H ev scs jm pout px py x y out Rr m hpre hm.
-    have [fenv [l [hl hex]]] := H pout px py x y out Rr nil m hpre.
-    have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
-      jfun_correct2 name name_inj cfn iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
-    by exists jm'; split => //; exists m'; split.
+    have [jm' [hcall hpost]] := binop_big2 name cfn fname finfo iinfo budget name_inj fn body model hget hc H
+      ev scs jm pout px py x y out Rr m hpre hm.
+    by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 
   Lemma unop_jasmin2 fn body model :
@@ -98,11 +69,9 @@ Section T.
         jasmin_post m jm jm' (result_post pout (model (eval_w x)) Rr).
   Proof.
     move=> hget hc H ev scs jm pout px x out Rr m hpre hm.
-    have [fenv [l [hl hex]]] := H pout px x out Rr nil m hpre.
-    have [jm' [hcall [m' [l' [[_ hpost] hm' _ hfr]]]]] :=
-      jfun_correct2 name name_inj cfn iinfo _ P ev _ _ _ _ _ fenv _ _ _ _ _ scs jm
-        hget hc isT hl hex hm.
-    by exists jm'; split => //; exists m'; split.
+    have [jm' [hcall hpost]] := unop_big2 name cfn fname finfo iinfo budget name_inj fn body model hget hc H
+      ev scs jm pout px x out Rr m hpre hm.
+    by exists jm'; split => //; apply/sem_call_iff.
   Qed.
 
   (** The four leaves.  Premise: fiat-crypto's contract of the leaf, as a bedrock2 execution
@@ -111,23 +80,23 @@ Section T.
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_add") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.add (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin2 get_add2 code2_add. Qed.
+  Proof. exact: binop_jasmin2 (get_add2 name cfn fname finfo iinfo budget) (code2_add name cfn budget). Qed.
 
   Theorem bls12_sub_jasmin2 : bls12_sub_contract ->
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_sub") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.sub (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin2 get_sub2 code2_sub. Qed.
+  Proof. exact: binop_jasmin2 (get_sub2 name cfn fname finfo iinfo budget fname_inj) (code2_sub name cfn budget). Qed.
 
   Theorem bls12_mul_jasmin2 : bls12_mul_contract ->
     forall ev scs jm pout px py x y out Rr m, binop_pre pout px py x y out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_mul") (jargs [:: pout; px; py]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.mul (eval_w x) (eval_w y)) Rr).
-  Proof. exact: binop_jasmin2 get_mul2 code2_mul. Qed.
+  Proof. exact: binop_jasmin2 (get_mul2 name cfn fname finfo iinfo budget fname_inj) (code2_mul name cfn budget). Qed.
 
   Theorem bls12_square_jasmin2 : bls12_square_contract ->
     forall ev scs jm pout px x out Rr m, unop_pre pout px x out Rr m -> mem_rel m jm ->
     exists jm', sem_call P ev scs jm (fname "bls12_square") (jargs [:: pout; px]) scs jm' [::] /\
       jasmin_post m jm jm' (result_post pout (F.pow (eval_w x) 2) Rr).
-  Proof. exact: unop_jasmin2 get_square2 code2_square. Qed.
+  Proof. exact: unop_jasmin2 (get_square2 name cfn fname finfo iinfo budget fname_inj) (code2_square name cfn budget). Qed.
 End T.

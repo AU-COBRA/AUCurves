@@ -1,14 +1,17 @@
-(** * Functions: a translated bedrock2 function, called through Jasmin's [sem_call]. *)
+(** * Functions: a translated bedrock2 function, called through Jasmin's [sem_call].
+
+    [sem_call] here is [PsemBig.sem_call], the copy of Jasmin's big-step semantics without ITree;
+    [FunPsem.jfun_correct_psem] states [jfun_correct] for Jasmin's [psem.sem_call]. *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String.
 Require coqutil.Word.Bitwidth.
 Require bedrock2.Syntax bedrock2.Semantics.
 Require coqutil.Map.Interface coqutil.Map.Properties.
-Require Import JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp JasminBridge.Ast.Sim.
+Require Import JasminBridge.Ast.PsemBig JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp JasminBridge.Ast.Sim.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".
 

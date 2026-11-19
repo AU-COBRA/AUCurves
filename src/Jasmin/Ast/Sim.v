@@ -1,7 +1,7 @@
 (** * Simulation: bedrock2's [exec] of a translated command implies Jasmin's execution. *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String Ascii.

@@ -1,15 +1,16 @@
 (** * Functions translated by [Carry.xcmd] (or, when it fails, by [Comp.ccmd_sp]), called
-    through Jasmin's [sem_call]. *)
+    through Jasmin's [sem_call] ([PsemBig.sem_call]; [FunPsem.jfun_correct2_psem] for
+    [psem.sem_call]). *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String.
 Require coqutil.Word.Bitwidth.
 Require bedrock2.Syntax bedrock2.Semantics.
 Require coqutil.Map.Interface coqutil.Map.Properties.
-Require Import JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp JasminBridge.Ast.Sim
+Require Import JasminBridge.Ast.PsemBig JasminBridge.Ast.Base JasminBridge.Ast.Trans JasminBridge.Ast.Comp JasminBridge.Ast.Sim
   JasminBridge.Ast.Fun JasminBridge.Ast.Carry JasminBridge.Ast.CarrySim.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".

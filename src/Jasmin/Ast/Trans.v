@@ -1,12 +1,12 @@
 (** * Straight-line bedrock2 commands to Jasmin instructions, and their semantics. *)
 From HB Require Import structures.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat ssralg seq.
-From Jasmin Require Import utils wsize word memory_model low_memory expr psem psem_facts
+From Jasmin Require Import utils wsize word memory_model low_memory expr psem_defs psem_core
   values varmap sem_type sopn arch_decl arch_extra x86_decl x86_instr_decl x86_extra
   sem_params_of_arch_extra.
 From Stdlib Require Import ZArith Lia String.
 Require bedrock2.Syntax bedrock2.Semantics.
-Require Import JasminBridge.Ast.Base.
+Require Import JasminBridge.Ast.Base JasminBridge.Ast.PsemBig.
 Set SsrOldRewriteGoalsOrder.
 Set Bullet Behavior "Strict Subproofs".
 
@@ -34,7 +34,10 @@ Section T.
 
   Definition jcmd := seq instr.
 
-  (** An executable semantics of the assignments and operations, as Jasmin's [sem] runs them. *)
+  (** An executable semantics of the assignments and operations, as Jasmin's [sem] runs them.
+      [run_sem] concludes [PsemBig.sem], Jasmin's big-step semantics without ITree, so that the
+      translation loads with fiat-crypto's synthesis modules; [FunPsem.run_sem_psem] states it
+      for Jasmin's [psem.sem]. *)
   Context (gd : glob_decls).
 
   Definition run_i (s : estate) (i : instr) : exec estate :=

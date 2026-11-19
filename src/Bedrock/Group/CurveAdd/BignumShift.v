@@ -442,23 +442,22 @@ Section impl.
            terminate: the lemma's RHS [word.slu w (word.of_Z (width - 1))]
            occurs inside its own LHS, so each right-to-left pass wraps
            another [word.and _ (word.of_Z 1)] around the shifted word and
-           [!] never fails.  That divergence, not any proof cost, is what
-           made this file consume ~4 GB before being killed; a [-time]
-           stream accounts for the whole file in 4.7 s up to this point.
-
-           Rewriting is in any case unnecessary: [Hret] carries no masks
-           ([scalar px (r >>w 1 +w r0 <<w (width - 1))] and its three
-           siblings), and neither does the goal.
-
-           REMAINING GAP: the goal here still has unreduced
-           [nth_default (word.of_Z 0) [r; r0; r1; r2] i] applications and
-           an unfolded [array] fixpoint, and [ecancel_assumption] fails
-           on it with "No matching clauses for match" -- the failure is
-           inside the canceller's own [match goal], and reproduces with
-           [SeparationLogic.ecancel_assumption] and after [cbn] with
-           [nth_error] added.  This file has never compiled; the tail
-           below was never discharged.  Left failing fast and cheaply
-           rather than diverging. *)
+           [!] never fails (that divergence was the ~4 GB of the old build
+           timings).  The masks are in [Hret] (the stored carries are
+           [word.and r_{i+1} 1 << (width - 1)]), not in the goal, so the
+           directed fix is to rewrite LEFT TO RIGHT in [Hret]: the LHS
+           pattern [word.slu (word.and _ 1) _] does not occur in the RHS, so
+           [rewrite !] terminates.  Then reduce the [nth_default], [app] and
+           [length] of the concrete 4-element list and the unfolded [array]
+           fixpoint, normalise the addresses, and cancel. *)
+        rewrite !slu_and1_width_minus_1 in Hret.
+        cbn [nth_default nth_error List.app List.length] in *.
+        cbn [List.app List.length].
+        cbv beta iota fix.
+        replace ((px +w word.of_Z bytes) +w word.of_Z bytes)
+          with (px +w word.of_Z (2 * bytes)) by ring.
+        replace ((px +w word.of_Z (2 * bytes)) +w word.of_Z bytes)
+          with (px +w word.of_Z (3 * bytes)) by ring.
         ecancel_assumption. }
     Qed.
 

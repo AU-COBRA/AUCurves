@@ -173,3 +173,18 @@ CertiRocq's `LLVM_nonvacuity.v` (Rocq 9.1, not part of this repository): in `mal
 16432 poison bytes, and the kernel computed with it while checking a `rewrite ... in Ha`. The `Qed` went from
 1722 s to 2.6 s and the file from 1733 s to 12.8 s. The script does not count this pattern. We have not checked
 whether `set` followed by `clearbody` leaves the same `let`.
+
+## `Local Ltac ecancel_assumption ::= SeparationLogic.ecancel_assumption` after importing `WPTactics`
+
+`WPTactics.v` redefines coqutil's `SeparationLogic.ecancel_assumption` itself with `::=`, so after importing it this
+line makes the tactic call itself: every `ecancel_assumption` in the file recurses until memory runs out, even on a
+one-atom goal. To use the original search, call `SeparationLogic.ecancel_assumption_impl`, or write its body under a
+new name; do not `::=` the name to itself. The comment above the override in `WPTactics.v` recommends exactly this
+line for reverting a file; it does not revert anything.
+
+`BN254_MillerLoopOptimal.v`: the worker passed 11 GB at the first `ecancel_assumption`; without the line the file
+builds in 140 s and 2.6 GB.
+
+In the same file, a chain of calls (the Frobenius corrections) solved its `map.get` and `bounded_by` premises with
+`assumption`/`eassumption`, which took 3 to 9 s per call and grew with each call. Matching the hypotheses
+syntactically (`match goal with H : map.get m k = Some _ |- _ => exact H end`) brings each call well under a second.

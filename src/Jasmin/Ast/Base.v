@@ -105,6 +105,26 @@ Section W.
     by rewrite /wunsigned word.mkwordK -/(wunsigned _) wunsigned_jw hm.
   Qed.
 
+  (** ** Shifts by a variable amount
+      coqutil's [word.ok] specifies [sru]/[slu] only for an amount below the width.  The
+      translation of a shift by a variable emits [x >> (k & 63)], so its correctness needs the
+      word to mask the amount to its low 6 bits, as bedrock2's concrete [Naive.word 64] does
+      ([naive_shift_masks]).  Only statements about code with such a shift assume it. *)
+  Definition shift_masks : Prop := forall x k : w64,
+    CW.sru x k = CW.sru x (CW.of_Z (CW.unsigned k mod 64)) /\
+    CW.slu x k = CW.slu x (CW.of_Z (CW.unsigned k mod 64)).
+
+  Lemma mod64_range k : 0 <= k mod 64 < 64.
+  Proof. apply: Z.mod_pos_bound; lia. Qed.
+
+  Lemma jw_sru_var a k : shift_masks ->
+    jw (CW.sru a k) = wshr (jw a) (wunsigned (jw k) mod 64).
+  Proof. by move=> h; rewrite (proj1 (h a k)) wunsigned_jw jw_sru //; apply: mod64_range. Qed.
+
+  Lemma jw_slu_var a k : shift_masks ->
+    jw (CW.slu a k) = wshl (jw a) (wunsigned (jw k) mod 64).
+  Proof. by move=> h; rewrite (proj2 (h a k)) wunsigned_jw jw_slu //; apply: mod64_range. Qed.
+
   Lemma jw_ltu a b : CW.ltu a b = wlt Unsigned (jw a) (jw b).
   Proof. by rewrite CW.unsigned_ltu /wlt -!/(wunsigned _) !wunsigned_jw. Qed.
 
@@ -123,6 +143,28 @@ Section W.
   Lemma jw1 : jw (CW.of_Z 1) = 1%R.
   Proof. by rewrite jw_of_Z wrepr1. Qed.
 End W.
+
+(** bedrock2's concrete word ([BasicC64Semantics.word]) masks the shift amount. *)
+Require coqutil.Word.Naive.
+
+Lemma naive_shift_masks : @shift_masks (coqutil.Word.Naive.word 64).
+Proof.
+  move=> x k; have := CWP.unsigned_range (word_ok := coqutil.Word.Naive.word64_ok) k.
+  case: k => u hu /=.
+  cbv [CW.sru CW.slu CW.of_Z CW.unsigned coqutil.Word.Naive.word coqutil.Word.Naive.gen_word
+    coqutil.Word.Naive.default_special_case_handlers
+    coqutil.Word.Naive.adjust_too_big_shift_amount coqutil.Word.Naive.wrap] => hr.
+  (* [adjust_shift_amount u = adjust_shift_amount (u mod 64)] *)
+  have -> : (if u <? 64 then u else u mod Z.pow_pos 2 6) =
+    (if (u mod 64) mod Z.pow_pos 2 64 <? 64 then (u mod 64) mod Z.pow_pos 2 64
+     else ((u mod 64) mod Z.pow_pos 2 64) mod Z.pow_pos 2 6).
+  { have [h0 h1] := mod64_range u.
+    rewrite (Z.mod_small (u mod 64)); last by split; [lia | apply: (Z.lt_trans _ 64); [lia | reflexivity]].
+    rewrite (_ : (u mod 64 <? 64) = true); last by apply/Z.ltb_lt.
+    case: (Z.ltb_spec u 64) => h; last by [].
+    by rewrite Z.mod_small //; lia. }
+  by [].
+Qed.
 
 (** ** Bytes and memories *)
 Require bedrock2.Memory bedrock2.Syntax.

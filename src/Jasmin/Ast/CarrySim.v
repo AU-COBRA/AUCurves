@@ -1570,7 +1570,8 @@ Section S.
   Lemma rule_plain_ok AV F ss r : rule_plain name ss = Some r -> pspec AV F ss r.
   Proof.
     rewrite /rule_plain; case: ss => [|[x e|a v] rest] //.
-    - case hc: (ccmd name (cmd.set x e)) => [c|] // [<-].
+    - case hve: (vsh_e e) => //.
+      case hc: (ccmd name (cmd.set x e)) => [c|] // [<-].
       have hne : noite e.
       { move: hc => /=; case: ifP => // _; case he: (cexpr name 0 e) => [[[ce r0] n']|] // _.
         exact: cexpr_noite he. }
@@ -1583,7 +1584,7 @@ Section S.
         fun t' m' l'' => t' = nil /\ m' = m /\ l'' = map.put (removes l D) x v.
       have hex : exec map.empty (cmd.set x e) nil m (removes l D) post by econstructor; [exact: hv0 | ].
       have [s' [hrun [m2 [l2 [[_ [? ?]] hRL hm2 hscs [hdom hfr]]]]]] :=
-        ccmd_correct name name_inj gd map.empty _ _ hc _ _ _ _ hex s (RL_removes D l (evm s) hl) hm.
+        ccmd_correct name name_inj gd map.empty _ _ hc (vsh_false hve) _ _ _ _ hex s (RL_removes D l (evm s) hl) hm.
       subst m2 l2.
       exists s'; split => //; split.
       + move=> z w; rewrite get_put_dec'; case hxz: (String.eqb x z).
@@ -1602,7 +1603,8 @@ Section S.
         * move=> z hz; have hz' : smem z [:: x] := hz; move: hz'; rewrite smem1 => /String.eqb_eq ->.
           by have [_ ->] := hRL x v (get_put_eq _ _ _); eexists.
       + by split.
-    - case hc: (ccmd name (cmd.store access_size.word a v)) => [c|] // [<-].
+    - case hve: (vsh_e a || vsh_e v) => //.
+      case hc: (ccmd name (cmd.store access_size.word a v)) => [c|] // [<-].
       have hne : noite a && noite v.
       { move: hc => /=; case he: (cexpr name 0 v) => [[[cv rv] n1]|] //.
         rewrite (cexpr_noite _ _ _ _ _ he) andbT.
@@ -1624,7 +1626,7 @@ Section S.
       have hex : exec map.empty (cmd.store access_size.word a v) nil m (removes l D) post.
       { by econstructor; [exact: ha0 | exact: hv0 | exact: hst |]. }
       have [s' [hrun [m2 [l2 [[_ [? ?]] hRL hm2 hscs [hdom hfr]]]]]] :=
-        ccmd_correct name name_inj gd map.empty _ _ hc _ _ _ _ hex s (RL_removes D l (evm s) hl) hm.
+        ccmd_correct name name_inj gd map.empty _ _ hc (vsh_false hve) _ _ _ _ hex s (RL_removes D l (evm s) hl) hm.
       subst m2 l2.
       exists s'; split => //; split.
       + move=> z w hz; have [hok _] := hl _ _ hz; split => // hD.
@@ -1650,8 +1652,8 @@ Section S.
   Lemma rule_plain_av ss r : rule_plain name ss = Some r -> r_av r = false.
   Proof.
     rewrite /rule_plain; case: ss => [|[x e|a v] rest] //.
-    - by case: ccmd => // c [<-].
-    - by case: ccmd => // c [<-].
+    - by case: vsh_e => //; case: ccmd => // c [<-].
+    - by case: (_ || _) => //; case: ccmd => // c [<-].
   Qed.
 
   Lemma step_ok AV F ss r : step name cfn AV F ss = Some r ->

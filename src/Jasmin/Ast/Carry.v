@@ -428,15 +428,17 @@ Section C.
     | _ => None
     end.
 
-  (** Any other statement, as [Comp.ccmd]. *)
+  (** Any other statement without a shift by a variable ([Comp.vsh_e]), as [Comp.ccmd]. *)
   Definition rule_plain (ss : list stmt) : option res :=
     match ss with
     | SSet x e :: rest =>
+        if vsh_e e then None else
         match ccmd name (cmd.set x e) with
         | Some c => Some (mkres' c None [::] (evars e) [:: x] rest false)
         | None => None
         end
     | SStore a v :: rest =>
+        if vsh_e a || vsh_e v then None else
         match ccmd name (cmd.store access_size.word a v) with
         | Some c => Some (mkres' c None [::] (evars a ++ evars v) [::] rest false)
         | None => None

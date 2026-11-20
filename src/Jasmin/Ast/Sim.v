@@ -34,6 +34,15 @@ Section S.
   Local Notation vv := (vv name).
   Local Notation get vm x := (Vm.get vm x).
   Local Notation run := (Trans.run gd).
+  (** The shift hypothesis on the word: assumed only by code with a variable shift. *)
+  Local Notation SM := (@shift_masks W).
+
+  Lemma vsh_l {b1 b2 : bool} {P : Prop} : (b1 || b2 -> P) -> b1 -> P.
+  Proof. by move=> h h1; apply: h; rewrite h1. Qed.
+  Lemma vsh_false {b : bool} {P : Prop} : b = false -> b -> P.
+  Proof. by move=> ->. Qed.
+  Lemma vsh_r {b1 b2 : bool} {P : Prop} : (b1 || b2 -> P) -> b2 -> P.
+  Proof. by move=> h h2; apply: h; rewrite h2 orbT. Qed.
 
   Lemma vv_inj {x y} : vv x = vv y -> x = y.
   Proof. by move=> [] /name_inj. Qed.
@@ -152,7 +161,7 @@ Section S.
   Qed.
 
   Lemma cexpr_correct e : forall n c r n',
-    cexpr name n e = Some (c, r, n') ->
+    cexpr name n e = Some (c, r, n') -> (vsh_e e -> SM) ->
     (n <= n')%coq_nat /\ res_ok n n' r /\
     forall m l v s, eval_expr m l e = Some v -> RL l (evm s) -> mem_rel m (emem s) ->
       exists vm', run s c = ok (with_vm s vm') /\ get vm' (vv r) = Vword (jw v) /\
@@ -160,19 +169,19 @@ Section S.
   Proof.
     elim: e => [z | x | sz a iha | sz tbl idx ihi | o1 a iha | o a iha b ihb | ec ihc e1 ih1 e2 ih2] n c r n' //=.
     - (* literal *)
-      move=> [<- <- <-]; split; first lia; split; first by right; exists n; split; [lia|].
+      move=> [<- <- <-] _; split; first lia; split; first by right; exists n; split; [lia|].
       move=> m l v s [<-] hl hm; eexists; split.
       + by rewrite run_cons run_asg_cst.
       + split; first by rewrite get_set_eq jw_of_Z.
       by apply: agree_set; lia.
     - (* variable *)
-      case: ifP => // hok [<- <- <-]; split; first lia; split; first by left.
+      case: ifP => // hok [<- <- <-] _; split; first lia; split; first by left.
       move=> m l v s hx hl hm; exists (evm s); split; first by rewrite with_vm_id.
       by split; [have [_ ->] := hl _ _ hx | apply: agree_refl].
     - (* load *)
       case: sz => //.
       case hf: (addr_fast a) => [[b k]|].
-      + move=> [<- <- <-]; split; first lia; split; first by right; exists n; split; [lia|].
+      + move=> [<- <- <-] _; split; first lia; split; first by right; exists n; split; [lia|].
         move: hf; rewrite /addr_fast.
         case: a iha => // -[] // [] // b' [] // k' _; case: ifP => // /andP [hob _] [<- <-].
         move=> m l v s hev hl hm; simpl in hev.
@@ -184,8 +193,8 @@ Section S.
           have := mem_rel_load hm hld; rewrite /jp jw_add_of_Z; exact.
         * split; first by rewrite get_set_eq.
         by apply: agree_set; lia.
-      + case ha: (cexpr name n a) => [[[ca ra] n1]|] // [<- <- <-].
-        have [hn1 [hra hsa]] := iha _ _ _ _ ha.
+      + case ha: (cexpr name n a) => [[[ca ra] n1]|] // [<- <- <-] hS.
+        have [hn1 [hra hsa]] := iha _ _ _ _ ha hS.
         split; first lia; split; first by right; exists n1; split; [lia|].
         move=> m l v s hev hl hm; simpl in hev.
         case hea: (eval_expr m l a) hev => [va|] // hld.
@@ -197,8 +206,8 @@ Section S.
         apply: agree_set'; last lia; apply: (agree_weaken' hag1); lia.
     - (* op1 *)
       case: o1 => //.
-      case ha: (cexpr name n a) => [[[ca ra] n1]|] // [<- <- <-].
-      have [hn1 [hra hsa]] := iha _ _ _ _ ha.
+      case ha: (cexpr name n a) => [[[ca ra] n1]|] // [<- <- <-] hS.
+      have [hn1 [hra hsa]] := iha _ _ _ _ ha hS.
       split; first lia; split; first by right; exists n1; split; [lia|].
       move=> m l v s hev hl hm; simpl in hev.
       case hea: (eval_expr m l a) hev => [va|] // [<-].
@@ -214,8 +223,9 @@ Section S.
     - (* op *)
       case ha: (cexpr name n a) => [[[ca ra] n1]|] //.
       case hb: (cexpr name n1 b) => [[[cb rb] n2]|] //.
-      have [hn1 [hra hsa]] := iha _ _ _ _ ha.
-      have [hn2 [hrb hsb]] := ihb _ _ _ _ hb.
+      move=> hc hS; move: hc.
+      have [hn1 [hra hsa]] := iha _ _ _ _ ha (vsh_r (vsh_l hS)).
+      have [hn2 [hrb hsb]] := ihb _ _ _ _ hb (vsh_r hS).
       have hevab : forall m l v (s : @estate wsw syscall_state (@ep_of_asm_e _ _ _ _ _ _ _ x86_extra syscall_state sc_sem)), eval_expr m l (expr.op o a b) = Some v -> RL l (evm s) -> mem_rel m (emem s) ->
         exists va vb vm2, eval_expr m l b = Some vb /\ [/\ v = bedrock2.Semantics.interp_binop o va vb,
           run s (ca ++ cb) = ok (with_vm s vm2), get vm2 (vv ra) = Vword (jw va),
@@ -246,7 +256,7 @@ Section S.
           + by rewrite get_set_neq.
         - split; first by rewrite get_set_eq (wop_of_sem _ _ hw).
         apply: agree_set'; last lia; apply: agree_set'; last lia; apply: (agree_weaken' hag2); lia. }
-      case: o hw hevab => // _ hevab.
+      case: o hw hevab hS => // _ hevab hS.
       + (* mulhuu *)
         move=> [<- <- <-]; split; first lia; split; first by right; exists n2; split; [lia|].
         have htt3 : rb <> tmp (S (S n2)) by apply: (res_neq_tmp hrb); lia.
@@ -261,7 +271,8 @@ Section S.
         apply: agree_set'; last lia; apply: agree_set'; last lia; apply: agree_set'; last lia.
         apply: (agree_weaken' hag2); lia.
       + (* sru *)
-        case hk: (lit_shamt b) => [k|] // [<- <- <-].
+        case hk: (lit_shamt b) => [k|] [<- <- <-].
+        { (* by a literal *)
         have [hb' hk64] := lit_shamt_spec hk.
         split; first lia; split; first by right; exists n2; split; [lia|].
         move=> m l v s hev hl hm.
@@ -273,9 +284,23 @@ Section S.
           by rewrite get_set_eq.
         * split; first by rewrite get_set_eq /= jw_sru.
         apply: agree_set'; last lia; apply: agree_set'; last lia.
+        apply: (agree_weaken' hag2); lia. }
+        (* by a variable amount: [t >> (rb & 63)] *)
+        have hSM : SM by apply: hS; rewrite /= hk.
+        split; first lia; split; first by right; exists n2; split; [lia|].
+        move=> m l v s hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
+        eexists; split.
+        * rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
+          rewrite (run_asg_vshift _ _ _ ShR _ _ (jw va) (jw vb)) //.
+          -- by rewrite get_set_eq.
+          -- by rewrite get_set_neq.
+        * split; first by rewrite get_set_eq /= jw_sru_var.
+        apply: agree_set'; last lia; apply: agree_set'; last lia.
         apply: (agree_weaken' hag2); lia.
       + (* slu *)
-        case hk: (lit_shamt b) => [k|] // [<- <- <-].
+        case hk: (lit_shamt b) => [k|] [<- <- <-].
+        { (* by a literal *)
         have [hb' hk64] := lit_shamt_spec hk.
         split; first lia; split; first by right; exists n2; split; [lia|].
         move=> m l v s hev hl hm.
@@ -286,6 +311,19 @@ Section S.
           rewrite (run_asg_shift _ _ _ ShL _ _ (jw va)) //.
           by rewrite get_set_eq.
         * split; first by rewrite get_set_eq /= jw_slu.
+        apply: agree_set'; last lia; apply: agree_set'; last lia.
+        apply: (agree_weaken' hag2); lia. }
+        (* by a variable amount: [t >> (rb & 63)] *)
+        have hSM : SM by apply: hS; rewrite /= hk.
+        split; first lia; split; first by right; exists n2; split; [lia|].
+        move=> m l v s hev hl hm.
+        have [va [vb [vm2 [_ [-> hr2 hva hvb hag2]]]]] := hevab _ _ _ _ hev hl hm.
+        eexists; split.
+        * rewrite catA (run_app_ok _ hr2) run_cons (run_asg_var _ _ _ _ _ (jw va)) // bind_ok run_cons.
+          rewrite (run_asg_vshift _ _ _ ShL _ _ (jw va) (jw vb)) //.
+          -- by rewrite get_set_eq.
+          -- by rewrite get_set_neq.
+        * split; first by rewrite get_set_eq /= jw_slu_var.
         apply: agree_set'; last lia; apply: agree_set'; last lia.
         apply: (agree_weaken' hag2); lia.
       + (* ltu *)
@@ -335,14 +373,14 @@ Section S.
   Qed.
 
   Lemma cexpr_cond_correct e n c r n' c1 c2 m l v s :
-    cexpr name n e = Some (c, r, n') ->
+    cexpr name n e = Some (c, r, n') -> (vsh_e e -> SM) ->
     eval_expr m l e = Some v -> RL l (evm s) -> mem_rel m (emem s) ->
     exists vm', run s (c ++ [:: cif name r c1 c2]) =
       (if ~~ (CW.unsigned v =? 0)%Z then run (with_vm s vm') c1 else run (with_vm s vm') c2) /\
       agree_except n n' (evm s) vm'.
   Proof.
-    move=> he hev hl hm.
-    have [_ [_ hsem]] := cexpr_correct e n c r n' he.
+    move=> he hS hev hl hm.
+    have [_ [_ hsem]] := cexpr_correct e n c r n' he hS.
     have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
     exists vm1; split => //.
     rewrite (run_app_ok _ hr1) run_cons (run_cif _ _ _ _ _ _ (jw v)) // -jw_ne0.
@@ -374,12 +412,12 @@ Section S.
       the final bedrock2 state satisfying the postcondition; it writes no Jasmin memory outside
       the bedrock2 domain. *)
   Theorem ccmd_correct (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
-    ccmd name c = Some jc ->
+    ccmd name c = Some jc -> (vsh_c c -> SM) ->
     forall t m l post, exec fenv c t m l post ->
     forall s, RL l (evm s) -> mem_rel m (emem s) ->
     exists s', run s jc = ok s' /\ sim_post m s post t s'.
   Proof.
-    move=> hc0 t m l post hex; move: jc hc0.
+    move=> hc0 hS0 t m l post hex; move: jc hc0 hS0.
     induction hex as [t m l post hpost | x e t m l post v hev hpost | x t m l post hpost
       | sz ea ev t m l post a v m' hea hev hst hpost
       | x n body t mSmall l post hmod hbody IHbody
@@ -388,12 +426,12 @@ Section S.
       | e c t m l post v hev hz hpost | e c t m l post v mid hev hnz hc IHc hw IHw
       | binds fname arges t m l post params rets fbody args lf mid hget hargs hlf hbody IHbody hrets
       | binds action arges args t m l post mKeep mGive mid hsplit hargs hext hmid];
-      move=> jc hcj s hl hm; simpl in hcj; try discriminate.
+      move=> jc hcj hS s hl hm; simpl in hcj, hS; try discriminate.
     - (* skip *)
       case: hcj => <-; exists s; split => //; exists m, l; split => //.
     - (* set *)
       move: hcj; case: ifP => // hok; case he: (cexpr name 0 e) => [[[ce r] n']|] // [<-].
-      have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he.
+      have [_ [hr hsem]] := cexpr_correct e 0 ce r n' he hS.
       have [vm1 [hr1 [hv1 hag1]]] := hsem _ _ _ _ hev hl hm.
       exists (with_vm s vm1.[vv x <- Vword (jw v)]); split.
       + by rewrite (run_app_ok _ hr1) run_cons (run_asg_var _ _ _ _ _ (jw v)) // bind_ok.
@@ -405,7 +443,7 @@ Section S.
     - (* store *)
       move: hcj; case: sz hst => // hst.
       case hv: (cexpr name 0 ev) => [[[cv rv] n1]|] //.
-      have [hn1 [hrv hsv]] := cexpr_correct ev 0 cv rv n1 hv.
+      have [hn1 [hrv hsv]] := cexpr_correct ev 0 cv rv n1 hv (vsh_r hS).
       have [vm1 [hr1 [hv1 hag1]]] := hsv _ _ _ _ hev hl hm.
       have [jm' [hw hrel hdom hframe]] := mem_rel_store hm hst.
       case hf: (addr_fast ea) => [[b k]|].
@@ -419,7 +457,7 @@ Section S.
           by move: hw; rewrite -ha /jp jw_add_of_Z.
         * exists m', l; split => //; exact: RL_agree hl hag1.
       + case ha: (cexpr name n1 ea) => [[[ca ra] n2]|] // [<-].
-        have [hn2 [hra hsa]] := cexpr_correct ea n1 ca ra n2 ha.
+        have [hn2 [hra hsa]] := cexpr_correct ea n1 ca ra n2 ha (vsh_l hS).
         have [vm2 [hr2 [hv2 hag2]]] := hsa _ _ _ (with_vm s vm1) hea (RL_agree hl hag1) hm.
         have hrv2 : get vm2 (vv rv) = Vword (jw v) by rewrite (res_keep hrv (le_n _) hag2).
         exists (with_mem (with_vm s vm2) jm'); split.
@@ -430,22 +468,22 @@ Section S.
     - (* if_true *)
       move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
       case h1: (ccmd name c1) => [j1|] //; case h2: (ccmd name c2) => [j2|] // [<-].
-      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he hev hl hm.
-      have [s2 [hr2 hpost]] := IHc1 _ h1 (with_vm s vm1) (RL_agree hl hag1) hm.
+      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he (vsh_l (vsh_l hS)) hev hl hm.
+      have [s2 [hr2 hpost]] := IHc1 _ h1 (vsh_r (vsh_l hS)) (with_vm s vm1) (RL_agree hl hag1) hm.
       exists s2; split; last exact: hpost.
       have hnz' : (CW.unsigned v =? 0)%Z = false by apply/Z.eqb_neq.
       by rewrite hr hnz'.
     - (* if_false *)
       move: hcj; case he: (cexpr name 0 e) => [[[ce r] n']|] //.
       case h1: (ccmd name c1) => [j1|] //; case h2: (ccmd name c2) => [j2|] // [<-].
-      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he hev hl hm.
-      have [s2 [hr2 hpost]] := IHc2 _ h2 (with_vm s vm1) (RL_agree hl hag1) hm.
+      have [vm1 [hr hag1]] := cexpr_cond_correct e 0 ce r n' j1 j2 _ _ _ s he (vsh_l (vsh_l hS)) hev hl hm.
+      have [s2 [hr2 hpost]] := IHc2 _ h2 (vsh_r hS) (with_vm s vm1) (RL_agree hl hag1) hm.
       exists s2; split; last exact: hpost.
       by rewrite hr hz.
     - (* seq *)
       move: hcj; case h1: (ccmd name c1) => [ca|] //; case h2: (ccmd name c2) => [cb|] // [<-].
-      have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 _ hl hm.
-      have [s3 [hr3 [m3 [l3 [hpost hl3 hm3 hscs3 [hdom3 hfr3]]]]]] := IHc2 _ _ _ hmid _ h2 _ hl2 hm2.
+      have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 (vsh_l hS) _ hl hm.
+      have [s3 [hr3 [m3 [l3 [hpost hl3 hm3 hscs3 [hdom3 hfr3]]]]]] := IHc2 _ _ _ hmid _ h2 (vsh_r hS) _ hl2 hm2.
       exists s3; split; first by rewrite run_cat hr2.
       exists m3, l3; split => //; first by rewrite hscs3.
       split.
@@ -486,12 +524,12 @@ Section S.
   Proof. move=> hl h x hx; have [w hw] := h x hx; have [_ ->] := hl _ _ hw; by exists (jw w). Qed.
 
   Theorem ccmd_sp_correct (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
-    ccmd_sp name spillp c = Some jc ->
+    ccmd_sp name spillp c = Some jc -> (vsh_c c -> SM) ->
     forall t m l post, exec fenv c t m l post ->
     forall s, RL l (evm s) -> mem_rel m (emem s) ->
     exists s', run s jc = ok s' /\ sim_post m s post t s'.
   Proof.
-    move=> hc0 t m l post hex; move: jc hc0.
+    move=> hc0 hS0 t m l post hex; move: jc hc0 hS0.
     induction hex as [t m l post hpost | x e t m l post v hev hpost | x t m l post hpost
       | sz ea ev t m l post a v m' hea hev hst hpost
       | x n body t mSmall l post hmod hbody IHbody
@@ -500,7 +538,7 @@ Section S.
       | e c t m l post v hev hz hpost | e c t m l post v mid hev hnz hcw IHc hw IHw
       | binds fname arges t m l post params rets fbody args lf mid hget hargs hlf hbody IHbody hrets
       | binds action arges args t m l post mKeep mGive mid hsplit hargs hext hmid];
-      move=> jc hcj s hl hm; cbn [ccmd_sp] in hcj; try (simpl in hcj; discriminate).
+      move=> jc hcj hS s hl hm; cbn [ccmd_sp] in hcj; try (simpl in hcj; discriminate).
     - (* skip *)
       simpl in hcj; case: hcj => <-; exists s; split => //; exists m, l; split => //.
     - (* set *)
@@ -509,7 +547,7 @@ Section S.
           (fun t' m' l' => t' = t /\ m' = m /\ l' = map.put l x v).
       { by econstructor; [exact: hev | ]. }
       have [s1 [hr1 [m1 [l1 [[_ [-> ->]] hl1 hm1 hscs1 [hdom1 hfr1]]]]]] :=
-        ccmd_correct fenv _ _ hce _ _ _ _ hex1 _ hl hm.
+        ccmd_correct fenv _ _ hce hS _ _ _ _ hex1 _ hl hm.
       exists s1; split.
       + rewrite run_cat run_spills; last first.
         { apply: (RL_defined hl); exact: eval_vars hev. }
@@ -524,7 +562,7 @@ Section S.
       move: hcj; case hcs: (ccmd name (cmd.store sz ea ev)) => [cs|] // [<-].
       have hex1 : exec fenv (cmd.store sz ea ev) t m l post.
       { by econstructor; eauto. }
-      have [s1 [hr1 hpost1]] := ccmd_correct fenv _ _ hcs _ _ _ _ hex1 _ hl hm.
+      have [s1 [hr1 hpost1]] := ccmd_correct fenv _ _ hcs hS _ _ _ _ hex1 _ hl hm.
       exists s1; split => //.
       rewrite run_cat run_spills //.
       apply: (RL_defined hl) => y; rewrite List.in_app_iff => -[].
@@ -532,14 +570,14 @@ Section S.
       + exact: eval_vars hev y.
     - (* if_true *)
       have hex1 : exec fenv (cmd.cond e c1 c2) t m l post by apply: bedrock2.Semantics.exec.if_true; eauto.
-      exact: ccmd_correct fenv _ _ hcj _ _ _ _ hex1 _ hl hm.
+      exact: ccmd_correct fenv _ _ hcj hS _ _ _ _ hex1 _ hl hm.
     - (* if_false *)
       have hex1 : exec fenv (cmd.cond e c1 c2) t m l post by apply: bedrock2.Semantics.exec.if_false; eauto.
-      exact: ccmd_correct fenv _ _ hcj _ _ _ _ hex1 _ hl hm.
+      exact: ccmd_correct fenv _ _ hcj hS _ _ _ _ hex1 _ hl hm.
     - (* seq *)
       move: hcj; case h1: (ccmd_sp name spillp c1) => [ca|] //; case h2: (ccmd_sp name spillp c2) => [cb|] // [<-].
-      have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 _ hl hm.
-      have [s3 [hr3 [m3 [l3 [hpost hl3 hm3 hscs3 [hdom3 hfr3]]]]]] := IHc2 _ _ _ hmid _ h2 _ hl2 hm2.
+      have [s2 [hr2 [m2 [l2 [hmid hl2 hm2 hscs2 [hdom2 hfr2]]]]]] := IHc1 _ h1 (vsh_l hS) _ hl hm.
+      have [s3 [hr3 [m3 [l3 [hpost hl3 hm3 hscs3 [hdom3 hfr3]]]]]] := IHc2 _ _ _ hmid _ h2 (vsh_r hS) _ hl2 hm2.
       exists s3; split; first by rewrite run_cat hr2.
       exists m3, l3; split => //; first by rewrite hscs3.
       split.
@@ -553,25 +591,25 @@ Section S.
       declarations are [gd]. *)
   Theorem ccmd_correct' {dc : DirectCall} {pT : progT} {scP : semCallParams} (P : prog)
       (ev : extra_val_t) (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
-    p_globs P = gd -> ccmd name c = Some jc ->
+    p_globs P = gd -> ccmd name c = Some jc -> (vsh_c c -> SM) ->
     forall t m l post, exec fenv c t m l post ->
     forall s, RL l (evm s) -> mem_rel m (emem s) ->
     exists s', sem P ev s jc s' /\ sim_post m s post t s'.
   Proof.
-    move=> hgd hc t m l post hex s hl hm.
-    have [s' [hr hp]] := ccmd_correct fenv c jc hc t m l post hex s hl hm.
+    move=> hgd hc hS t m l post hex s hl hm.
+    have [s' [hr hp]] := ccmd_correct fenv c jc hc hS t m l post hex s hl hm.
     by exists s'; split => //; exact: (@run_sem _ _ _ _ gd dc pT scP P ev hgd _ _ _ hr).
   Qed.
 
   Theorem ccmd_sp_correct' {dc : DirectCall} {pT : progT} {scP : semCallParams} (P : prog)
       (ev : extra_val_t) (fenv : @map.rep _ _ bedrock2.Semantics.env) c jc :
-    p_globs P = gd -> ccmd_sp name spillp c = Some jc ->
+    p_globs P = gd -> ccmd_sp name spillp c = Some jc -> (vsh_c c -> SM) ->
     forall t m l post, exec fenv c t m l post ->
     forall s, RL l (evm s) -> mem_rel m (emem s) ->
     exists s', sem P ev s jc s' /\ sim_post m s post t s'.
   Proof.
-    move=> hgd hc t m l post hex s hl hm.
-    have [s' [hr hp]] := ccmd_sp_correct fenv c jc hc t m l post hex s hl hm.
+    move=> hgd hc hS t m l post hex s hl hm.
+    have [s' [hr hp]] := ccmd_sp_correct fenv c jc hc hS t m l post hex s hl hm.
     by exists s'; split => //; exact: (@run_sem _ _ _ _ gd dc pT scP P ev hgd _ _ _ hr).
   Qed.
 End S.

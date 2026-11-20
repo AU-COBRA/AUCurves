@@ -132,7 +132,7 @@ Section F.
   Theorem jfun_correct {dc : DirectCall} (P : uprog) ev fn fi ps jc body
       (fenv : @map.rep _ _ bedrock2.Semantics.env) t m args l0 post scs jm :
     get_fundef (p_funcs P) fn = Some (jfun fi ps jc) ->
-    ccmd_sp name spillp body = Some jc -> all ok_name ps ->
+    ccmd_sp name spillp body = Some jc -> (vsh_c body -> @shift_masks W) -> all ok_name ps ->
     map.of_list_zip ps args = Some l0 ->
     exec fenv body t m l0 post ->
     mem_rel m jm ->
@@ -141,13 +141,13 @@ Section F.
         (forall k, map.get m' k = None <-> map.get m k = None) &
         (forall p, outside m p -> read jm' Aligned p U8 = read jm Aligned p U8)].
   Proof.
-    move=> hf hc hok hz hex hm.
+    move=> hf hc hS hok hz hex hm.
     have hsz := size_zip_args hz.
     pose (s0 := @Estate wsw syscall_state (@ep_of_asm_e _ _ _ _ _ _ _ x86_extra syscall_state sc_sem) scs jm Vm.init).
     pose (s1 := with_vm s0 (set_params Vm.init ps args)).
     have hl1 : RL name l0 (evm s1) by apply: RL_params hok hz; apply: RL_empty.
     have [s2 [hr [m' [l' [hpost hl2 hm2 hscs hdf]]]]] :=
-      ccmd_sp_correct name name_inj (p_globs P) spillp _ _ _ hc _ _ _ _ hex s1 hl1 hm.
+      ccmd_sp_correct name name_inj (p_globs P) spillp _ _ _ hc hS _ _ _ _ hex s1 hl1 hm.
     case: hdf => hdom hfr.
     exists (emem s2); split; last by exists m', l'; split.
     eapply EcallRun with (f := jfun fi ps jc) (s0 := s0) (s1 := s1) (s2 := s2); try reflexivity.

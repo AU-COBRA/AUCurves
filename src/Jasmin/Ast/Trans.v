@@ -264,6 +264,35 @@ Section T.
     - by rewrite /sem_shl /sem_shift wunsigned_u8_of.
   Qed.
 
+  (** ** Shifts by a variable amount: [t >> (k & 63)], [t << (k & 63)]
+      Jasmin's [Olsr]/[Olsl] shift by the [u8] truncation of the amount and give [0] past the
+      width, so the amount is masked to [k mod 64]; x86 lowering ([check_shift_amount]) drops
+      the mask, as [SHR]/[SHL] mask the count themselves. *)
+  Definition shamt (k : string) : pexpr := Papp2 (Oland U64) (pv k) (cst 63).
+
+  Lemma wunsigned_shamt (wk : u64) :
+    wunsigned (zero_extend U8 (wand wk (wrepr U64 63))) = wunsigned wk mod 64.
+  Proof.
+    have h := wand_modulo wk 6.
+    rewrite (_ : 2 ^ Z.of_nat 6 - 1 = 63) // (_ : 2 ^ Z.of_nat 6 = 64) // in h.
+    rewrite /zero_extend wunsigned_repr h.
+    have [h0 h1] : 0 <= wunsigned wk mod 64 < 64 by apply: Z.mod_pos_bound; lia.
+    by rewrite Z.mod_small //; split => //; apply: (Z.lt_le_trans _ 64).
+  Qed.
+
+  Lemma run_asg_vshift s o t k (wt wk : u64) :
+    get (evm s) (vv t) = Vword wt -> get (evm s) (vv k) = Vword wk ->
+    run_i s (asg t (Papp2 (shop_sop2 o) (pv t) (shamt k))) =
+      ok (with_vm s (evm s).[vv t <- Vword (shop_sem o wt (wunsigned wk mod 64))]).
+  Proof.
+    move=> ht hk; apply: run_asg.
+    rewrite /= !gvar_eval (get_var_word ht) (get_var_word hk) /= /sem_sop1 /= wrepr_mod /sem_sop2 /=.
+    rewrite !truncate_word_u /=.
+    case: o => /=; rewrite truncate_word_u /= truncate_word_le //=.
+    - by rewrite /sem_shr /sem_shift wunsigned_shamt.
+    - by rewrite /sem_shl /sem_shift wunsigned_shamt.
+  Qed.
+
   Definition mulx (lo hi a b : string) : instr :=
     I (Copn [:: lv lo; lv hi] AT_none (Oasm (BaseOp (None, MULX_lo_hi U64))) [:: pv a; pv b]).
 

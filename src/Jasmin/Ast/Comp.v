@@ -61,13 +61,41 @@ Section C.
     | _ => None
     end.
 
-  (** A shift amount: a literal in [0, 64).  (bedrock2's concrete words, [Naive.word 64], mask a
-      larger amount to its low 6 bits, and coqutil's interface leaves it unspecified, so a shift
-      by a variable is not translated.) *)
+  (** A literal shift amount in [0, 64).  Any other amount [b] (a variable shift) is translated
+      as [x >> (b & 63)]: bedrock2's concrete words, [Naive.word 64], mask the amount to its low
+      6 bits, while coqutil's interface leaves an amount [>= 64] unspecified, so the correctness
+      of that case assumes [Base.shift_masks] (only for code with a variable shift, [vsh_e]). *)
   Definition lit_shamt (b : expr) : option Z :=
     match b with
     | expr.literal k => if (0 <=? k) && (k <? 64) then Some k else None
     | _ => None
+    end.
+
+  (** [vsh_e e]: [e] contains a shift [sru]/[slu] by an amount other than a literal in [0, 64). *)
+  Definition is_vshift (o : bopname) (b : expr) : bool :=
+    match o with
+    | bopname.sru | bopname.slu => if lit_shamt b is Some _ then false else true
+    | _ => false
+    end.
+
+  Fixpoint vsh_e (e : expr) : bool :=
+    match e with
+    | expr.load _ a | expr.op1 _ a | expr.inlinetable _ _ a => vsh_e a
+    | expr.op o a b => is_vshift o b || vsh_e a || vsh_e b
+    | expr.ite c a b => vsh_e c || vsh_e a || vsh_e b
+    | _ => false
+    end.
+
+  Fixpoint vsh_c (c : cmd) : bool :=
+    match c with
+    | cmd.set _ e => vsh_e e
+    | cmd.store _ a v => vsh_e a || vsh_e v
+    | cmd.stackalloc _ _ b => vsh_c b
+    | cmd.cond e c1 c2 => vsh_e e || vsh_c c1 || vsh_c c2
+    | cmd.seq c1 c2 => vsh_c c1 || vsh_c c2
+    | cmd.while e b => vsh_e e || vsh_c b
+    | cmd.call _ _ args | cmd.interact _ _ args => List.existsb vsh_e args
+    | _ => false
     end.
 
   (** [cexpr n e]: code computing [e], the variable holding the result, and the next free
@@ -122,13 +150,15 @@ Section C.
                 match lit_shamt b with
                 | Some k => Some (ca ++ cb ++ [:: asg t (pv ra);
                                    asg t (Papp2 (shop_sop2 ShR) (pv t) (cst k))], t, S n2)
-                | None => None
+                | None => Some (ca ++ cb ++ [:: asg t (pv ra);
+                                   asg t (Papp2 (shop_sop2 ShR) (pv t) (shamt name rb))], t, S n2)
                 end
               | bopname.slu =>
                 match lit_shamt b with
                 | Some k => Some (ca ++ cb ++ [:: asg t (pv ra);
                                    asg t (Papp2 (shop_sop2 ShL) (pv t) (cst k))], t, S n2)
-                | None => None
+                | None => Some (ca ++ cb ++ [:: asg t (pv ra);
+                                   asg t (Papp2 (shop_sop2 ShL) (pv t) (shamt name rb))], t, S n2)
                 end
               | _ => None
               end

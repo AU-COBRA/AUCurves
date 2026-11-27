@@ -604,9 +604,9 @@ Section Secp256k1_wNAF.
         destruct (Z.odd k) eqn:Hok; [|exfalso; apply Hnz; reflexivity];
         set (m := k mod 2 ^ Z.of_nat 4) in *;
         assert (Hmodd : Z.odd m = true)
-          by (subst m; pose proof (Z.div_mod k (2^Z.of_nat 4) ltac:(simpl;lia)) as Hkdm;
+          by (subst m;
               assert (Z.odd (k mod 2^Z.of_nat 4) = Z.odd k)
-                by (rewrite Hkdm at 2; rewrite Z.odd_add, Z.odd_mul; simpl; ring_simplify; reflexivity);
+                by (rewrite <- !Z.bit0_odd, Z.mod_pow2_bits_low; [reflexivity|simpl; lia]);
               congruence);
         destruct (m >=? 2 ^ (Z.of_nat 4 - 1));
         [ rewrite <- Z.negb_even, Z.even_sub; simpl (Z.even (2 ^ Z.of_nat 4));
